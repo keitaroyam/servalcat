@@ -305,13 +305,13 @@ def main(args):
             new_shape = [ll[0].stop-ll[0].start,
                          ll[1].stop-ll[1].start,
                          ll[2].stop-ll[2].start]
-            tmp = map_obs.point_to_position(*new_shape)
+            tmp = map_obs.get_position(*new_shape)
             new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], 90, 90, 90)
             logger.write("  New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
             logger.write("  New grid: {} {} {}".format(*new_shape))
 
             if st_new:
-                shifts = -mask.point_to_position(ll[0].start, ll[1].start, ll[2].start)
+                shifts = -mask.get_position(ll[0].start, ll[1].start, ll[2].start)
                 logger.write("  Shifts: {:.4f} {:.4f} {:.4f}".format(*shifts.tolist()))
                 for cra in st_new[0].all():
                     cra.atom.pos += shifts

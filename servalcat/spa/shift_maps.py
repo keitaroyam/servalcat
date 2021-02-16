@@ -141,7 +141,7 @@ def main(args):
         logger.write("Cubic Slices: {}".format(slices))
 
     if args.model:
-        shifts = -mask.point_to_position(slices[0].start, slices[1].start, slices[2].start)
+        shifts = -mask.get_position(slices[0].start, slices[1].start, slices[2].start)
         logger.write("Shift for model: {}".format(shifts))
         for st in sts:
             for mol in st:
@@ -151,7 +151,7 @@ def main(args):
     new_shape = [slices[0].stop-slices[0].start,
                  slices[1].stop-slices[1].start,
                  slices[2].stop-slices[2].start]
-    tmp = mask.point_to_position(*new_shape)
+    tmp = mask.get_position(*new_shape)
     new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], cell.alpha, cell.beta, cell.gamma)
 
     if args.model:
