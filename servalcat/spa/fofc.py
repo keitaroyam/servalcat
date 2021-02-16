@@ -17,31 +17,19 @@ var_cmpl = lambda x: numpy.var(x)
 
 def add_arguments(parser):
     parser.description = 'Fo-Fc map calculation based on model and data errors'
-    parser.add_argument("--halfmaps",
-                        required=True, nargs=2)
-    parser.add_argument('--mapref',
-                        help='Reference map file')
-    parser.add_argument('--model',
-                        required=True,
+    parser.add_argument("--halfmaps", required=True, nargs=2)
+    #parser.add_argument('--mapref', help='Reference map file')
+    parser.add_argument('--model', required=True,
                         help='Input atomic model file (PDB or mmCIF/PDBx')
-    parser.add_argument("-d", '--resolution',
-                        type=float,
-                        required=True)
-    parser.add_argument('-m', '--mask',
-                        help="mask file")
-    parser.add_argument('-r', '--mask_radius',
-                        type=float,
-                        help="mask radius")
-    parser.add_argument("-B",
-                        type=float,
-                        help="Estimated blurring.")
-    parser.add_argument("--normalized_map",
-                        action='store_true',
+    parser.add_argument("-d", '--resolution', type=float, required=True)
+    parser.add_argument('-m', '--mask', help="mask file")
+    parser.add_argument('-r', '--mask_radius', type=float, help="mask radius")
+    parser.add_argument("-B", type=float, help="Estimated blurring.")
+    parser.add_argument("--normalized_map", action='store_true',
                         help="Write normalized map in the masked region")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
-    parser.add_argument('--output_prefix',
-                        default="diffmap",
+    parser.add_argument('--output_prefix', default="diffmap",
                         help='output file name prefix')
 # add_arguments()
 

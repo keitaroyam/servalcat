@@ -152,7 +152,7 @@ def main(args):
                  slices[1].stop-slices[1].start,
                  slices[2].stop-slices[2].start]
     tmp = mask.point_to_position(*new_shape)
-    new_cell = gemmi.UnitCell(*tmp, cell.alpha, cell.beta, cell.gamma)
+    new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], cell.alpha, cell.beta, cell.gamma)
 
     if args.model:
         for i, st in enumerate(sts):

@@ -18,56 +18,27 @@ from servalcat import spa
 def add_arguments(parser):
     parser.description = 'Run REFMAC5 for SPA'
 
-    parser.add_argument('--exe',
-                        default="refmac5",
-                        help='refmac5 binary')
+    parser.add_argument('--exe', default="refmac5", help='refmac5 binary')
     # sfcalc options
-    parser.add_argument('--map',
-                        required=False,
-                        help='Input map file')
-    parser.add_argument('--halfmaps',
-                        required=False,
-                        nargs=2,
-                        help='Input half map files')
-    parser.add_argument('--mapref',
-                        required=False,
-                        help='Reference map file')
-    parser.add_argument('--mask',
-                        required=False,
-                        help='Mask file')
-    parser.add_argument('--model',
-                        help="")
-    parser.add_argument('--mask_radius',
-                        required=False,
-                        type=float,
-                        help='')
-    parser.add_argument('--resolution',
-                        type=float,
-                        help='')
-    parser.add_argument('--shift',
-                        action='store_true',
-                        help='')
-    parser.add_argument('--blur',
-                        required=False,
-                        nargs="+",
-                        type=float,
-                        help='Sharpening or blurring B')
-    parser.add_argument('--ligand',
-                        nargs="*")
+    parser.add_argument('--map', help='Input map file')
+    parser.add_argument('--halfmaps', nargs=2, help='Input half map files')
+    parser.add_argument('--mapref', help='Reference map file')
+    parser.add_argument('--mask', help='Mask file')
+    parser.add_argument('--model', required=True, help="")
+    parser.add_argument('--mask_radius', type=float, help='')
+    parser.add_argument('--resolution', type=float, help='')
+    parser.add_argument('--shift', action='store_true', help='')
+    parser.add_argument('--blur', nargs="+", type=float, help='Sharpening or blurring B')
+    parser.add_argument('--ligand', nargs="*")
     parser.add_argument('--relion_pg',
-                        required=False,
                         help='RELION point group symbol for strict symmetry')
-    parser.add_argument('--ignore_symmetry',
-                        required=False,
+    parser.add_argument('--ignore_symmetry', action='store_true',
                         help='Ignore symmetry information in the model file')
-    parser.add_argument('--remove_multiple_models',
+    parser.add_argument('--remove_multiple_models', action='store_true',
                         help='Keep 1st model only')
     # run_refmac options
-    parser.add_argument('--mtz',
-                        help='Input mtz file')
-    parser.add_argument('--mtz_half',
-                        nargs=2,
-                        help='Input mtz files for half maps')
+    parser.add_argument('--mtz', help='Input mtz file')
+    parser.add_argument('--mtz_half', nargs=2, help='Input mtz files for half maps')
     parser.add_argument('--lab_f')
     parser.add_argument('--lab_sigf')
     parser.add_argument('--lab_phi')
@@ -75,25 +46,16 @@ def add_arguments(parser):
     parser.add_argument('--ncsr', default="local")
     parser.add_argument('--ncycle', type=int, default=10)
     parser.add_argument('--hydrogen', default="all")
-    parser.add_argument('--jellybody',
-                        action='store_true')
-    parser.add_argument('--hout',
-                        action='store_true')
-    parser.add_argument('--weight_auto_scale',
-                        type=float)
-    parser.add_argument('--keywords',
-                        nargs='+')
-    parser.add_argument('--keyword_file',
-                        nargs='+')
-    parser.add_argument('--output_prefix',
-                        required=False,
-                        default="refined",
+    parser.add_argument('--jellybody', action='store_true')
+    parser.add_argument('--hout', action='store_true')
+    parser.add_argument('--weight_auto_scale', type=float)
+    parser.add_argument('--keywords', nargs='+')
+    parser.add_argument('--keyword_file', nargs='+')
+    parser.add_argument('--output_prefix', default="refined",
                         help='output file name prefix')
-    parser.add_argument('--cross_validation',
-                        action='store_true',
+    parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation')
-    parser.add_argument('--shake_radius',
-                        default=0.3,
+    parser.add_argument('--shake_radius', default=0.3,
                         help='Shake rmsd')
 
 # add_arguments()

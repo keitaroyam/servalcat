@@ -306,7 +306,7 @@ def main(args):
                          ll[1].stop-ll[1].start,
                          ll[2].stop-ll[2].start]
             tmp = map_obs.point_to_position(*new_shape)
-            new_cell = gemmi.UnitCell(*tmp, 90, 90, 90)
+            new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], 90, 90, 90)
             logger.write("  New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
             logger.write("  New grid: {} {} {}".format(*new_shape))
 
