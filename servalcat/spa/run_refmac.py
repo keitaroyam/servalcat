@@ -172,6 +172,8 @@ def main(args):
             args.lab_f = "Fout0"
         if args.shift:
             args.model = "shifted_local" + model_format
+        else:
+            args.model = "starting_model" + model_format
 
     keyword_files = []
     if args.keyword_file:

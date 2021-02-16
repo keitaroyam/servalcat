@@ -349,6 +349,11 @@ def main(args):
                            shifts=shifts.tolist()),
                       open("shifts.json", "w"), indent=2)
         else:
+            logger.write(" Saving input model with unit cell information")
+            st.cell = unit_cell
+            st.spacegroup_hm = "P 1"
+            utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+            
             logger.write(" Saving masked maps as mtz files..")
             for ma, lab in zip(input_maps, input_map_labels):
                 logger.write("  Processing {} map".format(lab))
