@@ -16,7 +16,7 @@ import servalcat.spa.run_refmac
 import servalcat.spa.fsc
 import servalcat.spa.fofc
 import servalcat.spa.shift_maps
-import servalcat.spa.bestmap
+#import servalcat.spa.bestmap
 
 from servalcat.utils import logger
 
@@ -42,8 +42,8 @@ def main():
     servalcat.spa.fofc.add_arguments(fofc)
     shift_maps = subparsers.add_parser('shift')
     servalcat.spa.shift_maps.add_arguments(shift_maps)
-    bestmap = subparsers.add_parser('bestmap')
-    servalcat.spa.bestmap.add_arguments(bestmap)
+    #bestmap = subparsers.add_parser('bestmap')
+    #servalcat.spa.bestmap.add_arguments(bestmap)
 
     args = parser.parse_args()
 
@@ -59,8 +59,8 @@ def main():
         servalcat.spa.fofc.main(args)
     elif args.command == "shift":
         servalcat.spa.shift_maps.main(args)
-    elif args.command == "bestmap":
-        servalcat.spa.bestmap.main(args)
+    #elif args.command == "bestmap":
+    #    servalcat.spa.bestmap.main(args)
     else:
         parser.print_help()
         
