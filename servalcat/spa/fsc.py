@@ -49,7 +49,7 @@ def read_and_fft_maps(filenames, d_min, mask, check_consistency=True):
     last_cell, last_shape, last_sg = None, None, None
     
     for idx, mapin in enumerate(filenames):
-        m = gemmi.read_ccp4_map(mapin).grid
+        m = utils.fileio.read_ccp4_map(mapin).grid
         if check_consistency:
             if last_cell is not None:
                 assert m.unit_cell == last_cell
@@ -74,7 +74,7 @@ def read_and_fft_maps(filenames, d_min, mask, check_consistency=True):
 def main(args):
     st = gemmi.read_structure(args.model)
 
-    ref_grid = gemmi.read_ccp4_map(args.maps[0]).grid
+    ref_grid = utils.fileio.read_ccp4_map(args.maps[0]).grid
     mask = gemmi.FloatGrid(*ref_grid.shape)
     mask.set_unit_cell(ref_grid.unit_cell)
     mask.spacegroup = ref_grid.spacegroup

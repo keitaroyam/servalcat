@@ -1,3 +1,4 @@
+# TODO shift map first using mask!
 """
 Author: "Keitaro Yamashita, Garib N. Murshudov"
 MRC Laboratory of Molecular Biology
@@ -43,10 +44,8 @@ def parse_args(arg_list):
 
 def read_maps(halfmaps, d_min, mask=None):
     assert len(halfmaps) == 2
-    map1 = gemmi.read_ccp4_map(halfmaps[0])
-    map2 = gemmi.read_ccp4_map(halfmaps[1])
-    logger.write("SG1= {}".format(map1.grid.spacegroup.hm))
-    logger.write("SG2= {}".format(map1.grid.spacegroup.hm))
+    map1 = utils.fileio.read_ccp4_map(halfmaps[0])
+    map2 = utils.fileio.read_ccp4_map(halfmaps[1])
     
     if mask is not None:
         map1.grid = gemmi.FloatGrid(numpy.array(map1.grid)*mask,
@@ -205,14 +204,6 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
         mtz.add_column(lab, "F")
         mtz.add_column(("PH"+lab).replace("FWT", "WT"), "P")
     
-    #mtz.add_column("FWT", "F")
-    #mtz.add_column("PHWT", "P")
-    #mtz.add_column("DELFWT", "F")
-    #mtz.add_column("PHDELWT", "P")
-    #mtz.add_column("FP", "F")
-    #mtz.add_column("PHFP", "P")
-    #mtz.add_column("FC", "F")
-    #mtz.add_column("PHFC", "P")
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 # dump_to_mtz()
@@ -221,7 +212,7 @@ def main(args):
     st = gemmi.read_structure(args.model)
     st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
 
-    g = gemmi.read_ccp4_map(args.halfmaps[0]).grid
+    g = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
     st.spacegroup_hm = "P1"
     st.cell = g.unit_cell
 
@@ -232,9 +223,9 @@ def main(args):
         monlib = None
 
     if args.mask:
-        mask = numpy.array(gemmi.read_ccp4_map(args.mask).grid)
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask).grid)
     elif args.mask_radius:
-        tmp = gemmi.read_ccp4_map(args.halfmaps[0]).grid
+        tmp = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
         mask = gemmi.FloatGrid(tmp.nu, tmp.nv, tmp.nw)
         mask.set_unit_cell(tmp.unit_cell)
         mask.spacegroup = gemmi.SpaceGroup(1)

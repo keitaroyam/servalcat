@@ -161,18 +161,17 @@ def main(args):
 
     if args.map:
         logger.write("Input map: {}".format(args.map))
-        map_obs = gemmi.read_ccp4_map(args.map).grid
+        map_obs = utils.fileio.read_ccp4_map(args.map).grid
         input_maps.append(map_obs)
         input_map_labels.append("obs")
-        logger.write("Grid spacings: {} {} {}".format(*map_obs.spacing))
     else:
         map_obs = None
         
     if args.halfmaps:
         logger.write("Half map 1: {}".format(args.halfmaps[0]))
+        map_h1 = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
         logger.write("Half map 2: {}".format(args.halfmaps[1]))
-        map_h1 = gemmi.read_ccp4_map(args.halfmaps[0]).grid
-        map_h2 = gemmi.read_ccp4_map(args.halfmaps[1]).grid
+        map_h2 = utils.fileio.read_ccp4_map(args.halfmaps[1]).grid
         assert map_h1.shape == map_h2.shape
         assert map_h1.unit_cell == map_h2.unit_cell
 
@@ -202,8 +201,8 @@ def main(args):
             map_ref = map_obs
             logger.write("Using input map as a reference")
         else:
-            map_ref = gemmi.read_ccp4_map(args.mapref).grid
             logger.write("Reference map: {}".format(args.mapref))
+            map_ref = utils.fileio.read_ccp4_map(args.mapref).grid
             assert unit_cell == map_ref.unit_cell
             assert map_obs.shape == map_ref.shape
 
@@ -215,7 +214,7 @@ def main(args):
     mask = None
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
-        mask = numpy.array(gemmi.read_ccp4_map(args.mask).grid)
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask).grid)
     
     st_new = None
     if args.model: # and 

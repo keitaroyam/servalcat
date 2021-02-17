@@ -6,6 +6,7 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
+from servalcat.utils import logger
 import os
 import subprocess
 import gemmi
@@ -85,6 +86,25 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
+def read_ccp4_map(filename, setup=True):
+    m = gemmi.read_ccp4_map(filename)
+    g = m.grid
+    logger.write("Reading CCP4/MRC map file {}".format(filename))
+    logger.write("        Grid: {}".format(g.shape))
+    logger.write("    Map mode: {}".format(m.header_i32(4)))
+    logger.write("       Start: {}".format([m.header_i32(x) for x in (5,6,7)]))
+    logger.write("        Cell: {}".format(g.unit_cell.parameters))
+    logger.write("  Axis order: {}".format(g.axis_order))
+    logger.write(" Space group: {}".format(g.spacegroup.hm))
+    logger.write("     Spacing: {}".format(g.spacing)) # XXX invalid if setup() is needed
+    logger.write("")
+    # Labels, Title, 
+    if setup:
+        m.setup()
+        
+    return m # should return original headers?
+# read_ccp4_map()
+
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
     mtz = gemmi.read_mtz_file(mtz_in)
     d_min = mtz.resolution_high() # TODO get resolution for column?
@@ -119,7 +139,6 @@ def read_asu_data_from_mtz(mtz_in, cols):
         asu = gr_t(cell, sg, miller, f)
         return asu
 # read_asu_data_from_mtz()
-
 
 def read_structure_from_pdb_and_mmcif(xyz_in):
     st = gemmi.read_structure(xyz_in)

@@ -1,3 +1,4 @@
+# Care starting grid!!
 """
 Author: "Keitaro Yamashita, Garib N. Murshudov"
 MRC Laboratory of Molecular Biology
@@ -56,14 +57,8 @@ def check_maps(map_files, disable_cell_check=False):
     logger.write("Input map files:")
     params = []
     for f in map_files:
-        m = gemmi.read_ccp4_map(f)
+        m = utils.fileio.read_ccp4_map(f)
         g = m.grid
-        logger.write(" {}".format(f))
-        logger.write("     Cell: {}".format(g.unit_cell.parameters))
-        logger.write("     Grid: {}".format(g.shape))
-        logger.write("    Start: {}".format([m.header_i32(x) for x in (5,6,7)]))
-        logger.write("  Spacing: {}".format(g.spacing))
-        logger.write(" Space group: {}".format(g.spacegroup.hm))
         params.append((g.unit_cell.parameters, g.shape, g.spacing))
 
     shapes = set([x[1] for x in params])
@@ -96,7 +91,7 @@ def main(args):
         
     if args.mask:
         logger.write("Using mask to decide border: {}".format(args.mask))
-        mask = gemmi.read_ccp4_map(args.mask).grid
+        mask = utils.fileio.read_ccp4_map(args.mask).grid
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
     elif args.model:
@@ -170,7 +165,7 @@ def main(args):
     
     for f in args.maps:
         logger.write("Slicing {}".format(f))
-        g = numpy.array(gemmi.read_ccp4_map(f).grid)
+        g = numpy.array(utils.fileio.read_ccp4_map(f).grid)
         newg = g[slices[0], slices[1], slices[2]]
         ccp4 = gemmi.Ccp4Map()
         ccp4.grid = gemmi.FloatGrid(newg, new_cell, mask.spacegroup)
