@@ -99,7 +99,7 @@ def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, r
                 if cra.atom.is_hydrogen():
                     dc.add_c_contribution_to_grid(cra.atom, -1)
                     
-            dc.sum_symmetry_equivalent_grid_points()
+            dc.symmetrize_sum()
 
         grid = gemmi.transform_map_to_f_phi(dc.grid)
         asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
