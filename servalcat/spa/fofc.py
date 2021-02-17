@@ -9,6 +9,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import time
 from servalcat.utils import logger
 from servalcat import utils
 import argparse
@@ -65,9 +66,7 @@ def calc_noise_var(asu1, asu2, fc_asu):
     hkldata.merge_asu_data(asu2, "F_map2")
     hkldata.merge_asu_data(fc_asu, "FC")
     hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
-    #logger.write(hkldata.df)
     hkldata.setup_relion_binning()
-    #logger.write(hkldata.df[hkldata.df.bin==1])
     # Scale
     #iniscale = utils.scaling.InitialScaler(fo_asu, fc_asu, aniso=True)
     #iniscale.run()
@@ -76,12 +75,9 @@ def calc_noise_var(asu1, asu2, fc_asu):
     #asu1.value_array[:] *= scale_for_fo
     #asu2.value_array[:] *= scale_for_fo
 
-    #logger.write("half_l=", gemmi.transform_map_to_f_phi(map1.grid).half_l)
     s_array = 1./hkldata.d_spacings()
     hkldata.binned_df["var_noise"] = 0.
     hkldata.binned_df["FSCfull"] = 0.
-    #logger.write(hkldata.df)
-
 
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
@@ -109,9 +105,9 @@ def calc_noise_var(asu1, asu2, fc_asu):
 # calc_noise_var()
 
 def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes):
-    hkldata.binned_df["D"] = 0.
-    hkldata.binned_df["S"] = 0.
-
+    bdf = hkldata.binned_df
+    bdf["D"] = 0.
+    bdf["S"] = 0.
     ofs = open("{}_Fstats.dat".format(output_prefix), "w")
     ofs.write("bin       n   d_max   d_min         Fo         Fc FSC.model FSC.full      D          S          N\n")
     tmpl = "{:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {: .4f}   {: .4f} {: .4e} {:.4e} {:.4e}\n"
@@ -119,50 +115,59 @@ def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes)
         sel = i_bin == hkldata.df.bin
         Fo = numpy.array(hkldata.df.FP[sel])
         Fc = numpy.array(hkldata.df.FC[sel])
-        D = hkldata.binned_df.D
-        S = hkldata.binned_df.S
         varn = hkldata.binned_df.var_noise[i_bin]
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         fsc_full = hkldata.binned_df.FSCfull
-        D.loc[i_bin] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
-        #D.loc[i_bin] = numpy.sum(numpy.abs(Fo) * numpy.abs(Fc))/numpy.sum(numpy.abs(Fc)**2)
-        S.loc[i_bin] = max(0, numpy.average(numpy.abs(Fo-D[i_bin]*Fc)**2)-varn)
+        bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
+        bdf.loc[i_bin, "S"] = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
         ofs.write(tmpl.format(i_bin, Fo.size, bin_d_max, bin_d_min,
                               numpy.average(numpy.abs(Fo)),
                               numpy.average(numpy.abs(Fc)),
-                              fsc, fsc_full[i_bin], D[i_bin], S[i_bin], varn))
+                              fsc, fsc_full[i_bin], bdf.D[i_bin], bdf.S[i_bin], varn))
 # calc_D_and_S()
 
+#import line_profiler
+#profile = line_profiler.LineProfiler()
+#import atexit
+#atexit.register(profile.print_stats)
+#@profile
 def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
     labs = ["DELFWT", "FWT", "DELFWT_noscale", "FWT_noscale"]
     if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
-    for l in labs: hkldata.df[l] = 0.j
-    logger.write("Calculating maps..")
+    tmp = {}
+    for l in labs:
+        tmp[l] = numpy.zeros(len(hkldata.df.index), numpy.complex128)
 
+    logger.write("Calculating maps..")
+    time_t = time.time()
+
+    FP = numpy.array(hkldata.df.FP)
+    FC = numpy.array(hkldata.df.FC)
+    
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
-        Fo = hkldata.df.FP[sel]
-        Fc = hkldata.df.FC[sel]
+        Fo = FP[sel]
+        Fc = FC[sel]
         D = hkldata.binned_df.D[i_bin]
         S = hkldata.binned_df.S[i_bin]
         FSCfull = hkldata.binned_df.FSCfull[i_bin]
         varn = hkldata.binned_df.var_noise[i_bin]
-        FSCfull = min(1e-6, FSCfull)
+        FSCfull = max(1e-6, FSCfull)
 
         delfwt = (Fo-D*Fc)*S/(S+varn)
         fwt = (Fo*S+varn*D*Fc)/(S+varn)
 
-        hkldata.df.loc[sel, "DELFWT_noscale"] = delfwt
-        hkldata.df.loc[sel, "FWT_noscale"] = fwt
+        tmp["DELFWT_noscale"][sel] = delfwt
+        tmp["FWT_noscale"][sel] = fwt
 
         #sig_fo = numpy.sqrt(var_cmpl(Fo))
-        sig_fo = numpy.std(numpy.array(Fo))
+        sig_fo = numpy.std(Fo)
         n_fo = sig_fo * numpy.sqrt(FSCfull)
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"
-        hkldata.df.loc[sel, "DELFWT"+lab_suf] = delfwt/n_fo
-        hkldata.df.loc[sel, "FWT"+lab_suf] = fwt/n_fo
+        tmp["DELFWT"+lab_suf][sel] = delfwt/n_fo
+        tmp["FWT"+lab_suf][sel] = fwt/n_fo
 
         if B is not None:
             s2 = 1./hkldata.d_spacings()[sel]**2
@@ -181,8 +186,13 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
                                                                            numpy.average(k),
                                                                            numpy.average(abs(fwt)),
                                                                            numpy.average(abs(delfwt))))
-            hkldata.df.loc[sel, "DELFWT"] = delfwt
-            hkldata.df.loc[sel, "FWT"] = fwt
+            tmp["DELFWT"][sel] = delfwt
+            tmp["FWT"][sel] = fwt
+
+    for l in labs:
+        hkldata.df[l] = tmp[l]
+
+    logger.write(" finished in {:.3f} sec.".format(time.time()-time_t))
     return labs
 # calc_maps()
 
