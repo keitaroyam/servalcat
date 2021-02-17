@@ -57,9 +57,18 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
 
     return good
 
-def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=0, r_cut=1e-5, rate=1.5):
-    # XXX check minimum B and set appropriate blur
+def determine_blur_for_dencalc(st, grid):
+    b_min = min((cra.atom.b_iso for cra in st[0].all()))
+    b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
+    b_add = b_need - b_min
+    return b_add
+# determine_blur_for_dencalc()
 
+def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+    if blur is None:
+        blur = determine_blur_for_dencalc(st, d_min/2/rate)
+        logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+        
     if monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
         topo = gemmi.prepare_topology(st, monlib)
@@ -109,6 +118,24 @@ def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=0, r_cut=1e-5, rate
     return asu_data
 
 # calc_fc_em()
+
+def calc_fc_xray(st, d_min, blur=None, r_cut=1e-5, rate=1.5):
+    if blur is None:
+        blur = determine_blur_for_dencalc(st, d_min/2/rate)
+        logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+
+    dc = gemmi.DensityCalculatorX()
+    dc.d_min = d_min
+    dc.blur = blur
+    dc.r_cut = r_cut
+    dc.rate = rate
+    dc.set_grid_cell_and_spacegroup(st)
+    dc.put_model_density_on_grid(st[0])
+    grid = gemmi.transform_map_to_f_phi(dc.grid)
+    asu_data = grid.prepare_asu_data(dmin=d_min,  unblur=dc.blur)
+    return asu_data
+# calc_fc_xray()
+
 
 def all_B(st):
     ret = []
