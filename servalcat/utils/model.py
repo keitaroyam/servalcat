@@ -64,7 +64,10 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
-def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+    assert source in ("xray", "electron")
+    if source != "electron": assert not mott_bethe
+
     if blur is None:
         blur = determine_blur_for_dencalc(st, d_min/2/rate)
         logger.write("Setting blur= {:.2f} in density calculation".format(blur))
@@ -77,65 +80,86 @@ def calc_fc_em(st, d_min, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, r
     else:
         topo = None
         
-    if mott_bethe:
+    if source == "xray" or mott_bethe:
         dc = gemmi.DensityCalculatorX()
-        dc.d_min = d_min
-        dc.blur = blur
-        dc.r_cut = r_cut
-        dc.rate = rate
-        dc.set_grid_cell_and_spacegroup(st)
+    else:
+        dc = gemmi.DensityCalculatorE()
 
+    dc.d_min = d_min
+    dc.blur = blur
+    dc.r_cut = r_cut
+    dc.rate = rate
+    dc.set_grid_cell_and_spacegroup(st)
+
+    if mott_bethe:
         if topo is None:
             dc.addends.subtract_z()
             dc.put_model_density_on_grid(st[0])
         else:
-            # 
+            # Z-fx but for hydrogen -fx only
             dc.initialize_grid()
             dc.addends.subtract_z(except_hydrogen=True)
             dc.add_model_density_to_grid(st[0])
-            # 
+            # Shift proton positions and add Z components
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
             for cra in st[0].all():
                 if cra.atom.is_hydrogen():
                     dc.add_c_contribution_to_grid(cra.atom, -1)
                     
             dc.symmetrize_sum()
-
-        grid = gemmi.transform_map_to_f_phi(dc.grid)
-        asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
     else:
-        dc = gemmi.DensityCalculatorE()
-        dc.d_min = d_min
-        dc.blur = blur
-        d.r_cut = r_cut
-        dc.rate = rate
-        dc.addends.subtract_z()
-        dc.set_grid_cell_and_spacegroup(st)
         dc.put_model_density_on_grid(st[0])
-        grid = gemmi.transform_map_to_f_phi(dc.grid)
-        asu_data = grid.prepare_asu_data(dmin=d_min)
+
+    grid = gemmi.transform_map_to_f_phi(dc.grid)
+    asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
         
     return asu_data
 
 # calc_fc_em()
 
-def calc_fc_xray(st, d_min, blur=None, r_cut=1e-5, rate=1.5):
-    if blur is None:
-        blur = determine_blur_for_dencalc(st, d_min/2/rate)
-        logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
+    assert source in ("xray", "electron")
+    if source != "electron": assert not mott_bethe
+    
+    unit_cell = st.cell
+    spacegroup = gemmi.SpaceGroup(st.spacegroup_hm)
+    miller_array = gemmi.make_miller_array(unit_cell, spacegroup, d_min)
+    topo = None
 
-    dc = gemmi.DensityCalculatorX()
-    dc.d_min = d_min
-    dc.blur = blur
-    dc.r_cut = r_cut
-    dc.rate = rate
-    dc.set_grid_cell_and_spacegroup(st)
-    dc.put_model_density_on_grid(st[0])
-    grid = gemmi.transform_map_to_f_phi(dc.grid)
-    asu_data = grid.prepare_asu_data(dmin=d_min,  unblur=dc.blur)
-    return asu_data
-# calc_fc_xray()
+    if source == "xray" or mott_bethe:
+        calc = gemmi.StructureFactorCalculatorX(st.cell)
+    else:
+        calc = gemmi.StructureFactorCalculatorE(st.cell)
+        
+    
+    if source == "electron" and mott_bethe:
+        if monlib is not None and st[0].count_hydrogen_sites() > 0:
+            st = st.clone()
+            topo = gemmi.prepare_topology(st, monlib)
+            resnames = st[0].get_all_residue_names()
+            check_monlib_support_nucleus_distances(monlib, resnames)
 
+        calc.addends.clear()
+        calc.addends.subtract_z(except_hydrogen=True)
+
+    vals = []
+    for hkl in miller_array:
+        sf = calc.calculate_sf_from_model(st[0], hkl)
+        if mott_bethe: sf *= calc.mott_bethe_factor()
+        vals.append(sf)
+
+    if topo is not None:
+        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+
+        for i, hkl in enumerate(miller_array):
+            sf = calc.calculate_mb_z_from_h(st[0], hkl)
+            if mott_bethe: sf *= calc.mott_bethe_factor()
+            vals[i] += sf
+    
+    asu = gemmi.ComplexAsuData(unit_cell, spacegroup,
+                               miller_array, vals)
+    return asu
+# calc_fc_direct()
 
 def all_B(st):
     ret = []

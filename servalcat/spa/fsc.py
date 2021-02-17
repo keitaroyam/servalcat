@@ -83,7 +83,7 @@ def main(args):
     mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
 
     
-    fc = utils.model.calc_fc_em(st, args.resolution)
+    fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
 
     hkldata = read_and_fft_maps(args.maps, args.resolution, mask)
     

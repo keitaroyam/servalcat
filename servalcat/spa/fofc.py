@@ -138,7 +138,7 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
     if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
     for l in labs: hkldata.df[l] = 0.j
     logger.write("Calculating maps..")
-    logger.write("NOTE: do not use FSC_local, but FSC")
+
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         Fo = hkldata.df.FP[sel]
@@ -225,9 +225,8 @@ def main(args):
     if args.mask:
         mask = numpy.array(utils.fileio.read_ccp4_map(args.mask).grid)
     elif args.mask_radius:
-        tmp = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
-        mask = gemmi.FloatGrid(tmp.nu, tmp.nv, tmp.nw)
-        mask.set_unit_cell(tmp.unit_cell)
+        mask = gemmi.FloatGrid(*g.shape)
+        mask.set_unit_cell(g.unit_cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
         ccp4 = gemmi.Ccp4Map()
@@ -240,7 +239,7 @@ def main(args):
         if args.normalized_map:
             logger.write("WARNING: Mask is not available. --normalized-map will have no effect.")
         
-    fc_asu = utils.model.calc_fc_em(st, args.resolution, r_cut=1e-7, monlib=monlib)
+    fc_asu = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron")
     asu1, asu2 = read_maps(args.halfmaps, args.resolution, mask)
     hkldata = calc_noise_var(asu1, asu2, fc_asu)
     #dump_to_mtz(fo_asu, "Fo.mtz")
@@ -254,8 +253,8 @@ def main(args):
     else:
         B = None
         
-    calc_D_and_S(hkldata, args.output_prefix)#fo_asu, fc_asu, varn_bin, bins, bin_idxes)
-    map_labs = calc_maps(hkldata, B=B)#fo_asu, fc_asu, D, S, varn_bin, bins, bin_idxes)
+    calc_D_and_S(hkldata, args.output_prefix)
+    map_labs = calc_maps(hkldata, B=B)
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(args.output_prefix))
 
     if args.normalized_map and mask is not None:
