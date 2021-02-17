@@ -27,6 +27,8 @@ def add_arguments(parser):
     parser.add_argument("-B", type=float, help="Estimated blurring.")
     parser.add_argument("--normalized_map", action='store_true',
                         help="Write normalized map in the masked region")
+    parser.add_argument("--crop", action='store_true',
+                        help="Write cropped maps")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--output_prefix', default="diffmap",
@@ -284,7 +286,8 @@ def main(args):
         scaled = (delfwt_map - masked_mean)/masked_std
         filename = "{}_normalized_fofc.mrc".format(args.output_prefix)
         logger.write("  Writing {}".format(filename))
-        utils.maps.write_ccp4_map(filename, scaled, cell=st.cell)
+        utils.maps.write_ccp4_map(filename, scaled, cell=st.cell,
+                                  mask_for_extent=mask if args.crop else None)
 
 # main()
 

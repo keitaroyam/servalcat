@@ -20,7 +20,7 @@ def half2full(map_h1, map_h2):
     return gr
 # half2full()
 
-def write_ccp4_map(filename, array, cell=None, sg=None):
+def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None):
     if type(array) == numpy.ndarray:
         # TODO check dtype
         if sg is None: sg = gemmi.SpaceGroup(1)
@@ -32,5 +32,16 @@ def write_ccp4_map(filename, array, cell=None, sg=None):
     ccp4 = gemmi.Ccp4Map()
     ccp4.grid = grid
     ccp4.update_ccp4_header(2, True) # float, update stats
+
+    if mask_for_extent is not None:
+        tmp = numpy.where(numpy.array(mask_for_extent)>0)
+        l = [(min(x), max(x)) for x in tmp]
+        box = gemmi.FractionalBox()
+        for i in (0, 1):
+            fm = grid.get_fractional(l[0][i], l[1][i], l[2][i])
+            box.extend(fm)
+            
+        ccp4.set_extent(box)
+
     ccp4.write_ccp4_map(filename)
 # write_ccp4_map()
