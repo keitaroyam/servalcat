@@ -12,3 +12,4 @@ from . import fileio
 from . import hkl
 from . import model
 from . import maps
+from . import show

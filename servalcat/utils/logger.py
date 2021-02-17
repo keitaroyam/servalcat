@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import sys
+import datetime
 import traceback
 
 class Logger(object):
@@ -48,6 +49,8 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     name = type(exc_value).__name__ if hasattr(type(exc_value), "__name__") else "(unknown)"
     #_logger.write("Uncaught exception: {}: {}".format(name, exc_value))
     _logger.write("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    _logger.write("# Abnormally finished on {}\n".format(datetime.datetime.now()))
+
 # handle_exception()
 
 sys.excepthook = handle_exception
