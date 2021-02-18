@@ -64,15 +64,20 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
-def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5,
+                omit_proton=False):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
-
+    if omit_proton:
+        assert mott_bethe
+        if st[0].count_hydrogen_sites() == 0:
+            logger.write("WARNING: omit_proton requested, but no hydrogen exists!")
+    
     if blur is None:
         blur = determine_blur_for_dencalc(st, d_min/2/rate)
         logger.write("Setting blur= {:.2f} in density calculation".format(blur))
         
-    if monlib is not None and st[0].count_hydrogen_sites() > 0:
+    if not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
         topo = gemmi.prepare_topology(st, monlib)
         resnames = st[0].get_all_residue_names()
@@ -92,10 +97,18 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
     dc.set_grid_cell_and_spacegroup(st)
 
     if mott_bethe:
-        if topo is None:
+        if omit_proton:
+            logger.write("Calculating proton-omit Fc using Mott-Bethe formula")
+            dc.initialize_grid()
+            dc.addends.subtract_z(except_hydrogen=True)
+            dc.add_model_density_to_grid(st[0])
+            dc.grid.symmetrize_sum()
+        elif topo is None:
+            logger.write("Calculating Fc using Mott-Bethe formula")
             dc.addends.subtract_z()
             dc.put_model_density_on_grid(st[0])
         else:
+            logger.write("Calculating proton-shifted Fc using Mott-Bethe formula")
             # Z-fx but for hydrogen -fx only
             dc.initialize_grid()
             dc.addends.subtract_z(except_hydrogen=True)
@@ -108,6 +121,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
                     
             dc.grid.symmetrize_sum()
     else:
+        logger.write("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
 
     grid = gemmi.transform_map_to_f_phi(dc.grid)

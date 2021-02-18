@@ -33,6 +33,8 @@ def add_arguments(parser):
                         help="Write cropped maps")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument("--omit_proton", action='store_true',
+                        help="Omit proton from model in map calculation")
     parser.add_argument('--output_prefix', default="diffmap",
                         help='output file name prefix')
 # add_arguments()
@@ -79,6 +81,7 @@ def calc_noise_var(asu1, asu2, fc_asu):
     hkldata.binned_df["var_noise"] = 0.
     hkldata.binned_df["FSCfull"] = 0.
 
+    logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         # scale
@@ -226,6 +229,10 @@ def main(args):
     st.spacegroup_hm = "P1"
     st.cell = g.unit_cell
 
+    if args.omit_proton and st[0].count_hydrogen_sites() == 0:
+        logger.write("ERROR! --omit_proton requested, but no hydrogen atoms were found.")
+        return
+    
     if st[0].count_hydrogen_sites() > 0:
         monlib = utils.model.load_monomer_library(st[0].get_all_residue_names(),
                                                   monomer_dir=args.monlib)
@@ -264,6 +271,13 @@ def main(args):
         B = None
         
     calc_D_and_S(hkldata, args.output_prefix)
+
+    if args.omit_proton:
+        fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron",
+                                           omit_proton=True)
+        del hkldata.df["FC"]
+        hkldata.merge_asu_data(fc_asu_2, "FC")
+    
     map_labs = calc_maps(hkldata, B=B)
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(args.output_prefix))
 
