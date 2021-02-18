@@ -166,7 +166,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
         topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
 
         for i, hkl in enumerate(miller_array):
-            sf = calc.calculate_mb_z_from_h(st[0], hkl)
+            sf = calc.calculate_mb_z(st[0], hkl, only_h=True)
             if mott_bethe: sf *= calc.mott_bethe_factor()
             vals[i] += sf
     
