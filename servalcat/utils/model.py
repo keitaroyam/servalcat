@@ -106,7 +106,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
                 if cra.atom.is_hydrogen():
                     dc.add_c_contribution_to_grid(cra.atom, -1)
                     
-            dc.symmetrize_sum()
+            dc.grid.symmetrize_sum()
     else:
         dc.put_model_density_on_grid(st[0])
 
