@@ -14,9 +14,6 @@ from servalcat.utils import logger
 from servalcat import utils
 import argparse
 
-var_cmpl = lambda x: numpy.var(x.real)+numpy.var(x.imag)
-var_cmpl = lambda x: numpy.var(x)
-
 def add_arguments(parser):
     parser.description = 'Fo-Fc map calculation based on model and data errors'
     parser.add_argument("--halfmaps", required=True, nargs=2)
@@ -82,25 +79,27 @@ def calc_noise_var(asu1, asu2, fc_asu):
     s_array = 1./hkldata.d_spacings()
     hkldata.binned_df["var_noise"] = 0.
     hkldata.binned_df["FSCfull"] = 0.
-
+    
     logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
+    F_map1 = numpy.array(hkldata.df.F_map1)
+    F_map2 = numpy.array(hkldata.df.F_map2)
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         # scale
         #fo = numpy.array(hkldata.df.FP[sel])
         #fc = numpy.array(hkldata.df.FC[sel])
-        fo = hkldata.df.FP[sel]
-        fc = hkldata.df.FC[sel]
+        #fo = hkldata.df.FP[sel]
+        #fc = hkldata.df.FC[sel]
         scale = 1. #numpy.sqrt(var_cmpl(fc)/var_cmpl(fo))
         #hkldata.df.loc[sel, "FP"] *= scale
         #hkldata.df.loc[sel, "F_map1"] *= scale
         #hkldata.df.loc[sel, "F_map2"] *= scale
         
-        sel1 = numpy.array(hkldata.df.F_map1[sel])
-        sel2 = numpy.array(hkldata.df.F_map2[sel])
+        sel1 = F_map1[sel]
+        sel2 = F_map2[sel]
 
         fsc = numpy.real(numpy.corrcoef(sel1, sel2)[1,0])
-        varn = var_cmpl(sel1-sel2)/4
+        varn = numpy.var(sel1-sel2)/4
         logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e} {}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
                                                                          fsc, varn, scale))
         hkldata.binned_df.loc[i_bin, "var_noise"] = varn
@@ -116,10 +115,12 @@ def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes)
     ofs = open("{}_Fstats.dat".format(output_prefix), "w")
     ofs.write("bin       n   d_max   d_min         Fo         Fc FSC.model FSC.full      D          S          N\n")
     tmpl = "{:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {: .4f}   {: .4f} {: .4e} {:.4e} {:.4e}\n"
+    FP = numpy.array(hkldata.df.FP)
+    FC = numpy.array(hkldata.df.FC)
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
-        Fo = numpy.array(hkldata.df.FP[sel])
-        Fc = numpy.array(hkldata.df.FC[sel])
+        Fo = FP[sel]
+        Fc = FC[sel]
         varn = hkldata.binned_df.var_noise[i_bin]
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         fsc_full = hkldata.binned_df.FSCfull

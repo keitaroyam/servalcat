@@ -94,17 +94,16 @@ class HklData:
         self.df["bin"] = (max_edge/self.df.d).astype(numpy.int)
         self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
                                           columns=["bin"])
+        self._bin_and_limits = []
+        # TODO very slow
+        for i_bin in set(self.df.bin):
+            sel = self.df.bin == i_bin # selection may be kept, but df size may change later..?
+            d_sel = self.df.d[sel]
+            self._bin_and_limits.append((i_bin, max(d_sel), min(d_sel)))
     # setup_relion_binning()
 
     def bin_and_limits(self):
-        bins = set(self.df.bin)
-        ret = []
-        for i_bin in bins:
-            sel = self.df.bin == i_bin
-            d_sel = self.df.d[sel]
-            ret.append((i_bin, max(d_sel), min(d_sel)))
-
-        return ret
+        return self._bin_and_limits
     # bin_and_limits()
     
     def merge(self, other, common_only=True):
