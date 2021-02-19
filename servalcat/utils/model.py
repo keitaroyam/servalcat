@@ -65,19 +65,25 @@ def determine_blur_for_dencalc(st, grid):
 # determine_blur_for_dencalc()
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5,
-                omit_proton=False):
+                omit_proton=False, omit_h_electron=False):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
-    if omit_proton:
+    if omit_proton or omit_h_electron:
         assert mott_bethe
         if st[0].count_hydrogen_sites() == 0:
-            logger.write("WARNING: omit_proton requested, but no hydrogen exists!")
+            logger.write("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
+            omit_proton = omit_h_electron = False
+        elif omit_proton and omit_h_electron:
+            logger.write("omit_proton and omit_h_electron requested. removing hydrogens")
+            st = st.clone()
+            st.remove_hydrogens()
+            omit_proton = omit_h_electron = False
     
     if blur is None:
         blur = determine_blur_for_dencalc(st, d_min/2/rate)
         logger.write("Setting blur= {:.2f} in density calculation".format(blur))
         
-    if not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
+    if mott_bethe and not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
         topo = gemmi.prepare_topology(st, monlib)
         resnames = st[0].get_all_residue_names()
@@ -98,28 +104,39 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
 
     if mott_bethe:
         if omit_proton:
-            logger.write("Calculating proton-omit Fc using Mott-Bethe formula")
-            dc.initialize_grid()
-            dc.addends.subtract_z(except_hydrogen=True)
-            dc.add_model_density_to_grid(st[0])
-            dc.grid.symmetrize_sum()
-        elif topo is None:
-            logger.write("Calculating Fc using Mott-Bethe formula")
-            dc.addends.subtract_z()
-            dc.put_model_density_on_grid(st[0])
+            method_str = "proton-omit Fc"
+        elif omit_h_electron:
+            if topo is None:
+                method_str = "hydrogen electron-omit Fc"
+            else:
+                method_str = "hydrogen electron-omit, proton-shifted Fc"
+        elif topo is not None:
+            method_str = "proton-shifted Fc"
         else:
-            logger.write("Calculating proton-shifted Fc using Mott-Bethe formula")
-            # Z-fx but for hydrogen -fx only
-            dc.initialize_grid()
-            dc.addends.subtract_z(except_hydrogen=True)
+            method_str = "Fc"
+
+        logger.write("Calculating {} using Mott-Bethe formula".format(method_str))
+            
+        dc.initialize_grid()
+        dc.addends.subtract_z(except_hydrogen=True)
+
+        if omit_h_electron:
+            st2 = st.clone()
+            st2.remove_hydrogens()
+            dc.add_model_density_to_grid(st2[0])
+        else:
             dc.add_model_density_to_grid(st[0])
-            # Shift proton positions and add Z components
-            topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+
+        # Subtract hydrogen Z
+        if not omit_proton and st[0].count_hydrogen_sites() > 0:
+            if topo is not None:
+                # Shift proton positions
+                topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
             for cra in st[0].all():
                 if cra.atom.is_hydrogen():
                     dc.add_c_contribution_to_grid(cra.atom, -1)
-                    
-            dc.grid.symmetrize_sum()
+
+        dc.grid.symmetrize_sum()
     else:
         logger.write("Calculating Fc")
         dc.put_model_density_on_grid(st[0])

@@ -35,6 +35,8 @@ def add_arguments(parser):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument("--omit_proton", action='store_true',
                         help="Omit proton from model in map calculation")
+    parser.add_argument("--omit_h_electron", action='store_true',
+                        help="Omit hydrogen electrons from model in map calculation")
     parser.add_argument('--output_prefix', default="diffmap",
                         help='output file name prefix')
 # add_arguments()
@@ -229,10 +231,10 @@ def main(args):
     st.spacegroup_hm = "P1"
     st.cell = g.unit_cell
 
-    if args.omit_proton and st[0].count_hydrogen_sites() == 0:
-        logger.write("ERROR! --omit_proton requested, but no hydrogen atoms were found.")
+    if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
+        logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
         return
-    
+
     if st[0].count_hydrogen_sites() > 0:
         monlib = utils.model.load_monomer_library(st[0].get_all_residue_names(),
                                                   monomer_dir=args.monlib)
@@ -272,9 +274,9 @@ def main(args):
         
     calc_D_and_S(hkldata, args.output_prefix)
 
-    if args.omit_proton:
+    if args.omit_proton or args.omit_h_electron:
         fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron",
-                                           omit_proton=True)
+                                           omit_proton=args.omit_proton, omit_h_electron=args.omit_h_electron)
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
     
