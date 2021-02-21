@@ -37,6 +37,28 @@ def shake_structure(st, sigma):
     return st2
 # shake_structure()
 
+def normalize_it92(st=None, all_elements=False, quiet=False):
+    elements = set()
+        
+    if all_elements:
+        elements.add("H")
+        elements.add("D")
+        for i in range(2, 119):
+            elements.add(gemmi.Element(i).name)
+    elif st is not None:
+        for cra in st[0].all():
+            elements.add(cra.atom.element.name)
+
+    for el in elements:
+        elem = gemmi.Element(el)
+        z = elem.atomic_number
+        coef = elem.it92
+        norm = z/(sum(coef.a)+coef.c)
+        if not quiet: logger.write("Normalizing atomic scattering factor of {} by {}".format(el, norm))
+        new_coef = [x*norm for x in coef.a] + coef.b + [coef.c*norm]
+        coef.set_coefs(new_coef)
+# normalize_it92()
+
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True
     for resn in resnames:
@@ -56,6 +78,7 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
                 good = False
 
     return good
+# check_monlib_support_nucleus_distances()
 
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))

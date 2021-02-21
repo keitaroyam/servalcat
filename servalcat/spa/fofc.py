@@ -258,7 +258,8 @@ def main(args):
         mask = None
         if args.normalized_map:
             logger.write("WARNING: Mask is not available. --normalized-map will have no effect.")
-        
+
+    utils.model.normalize_it92(st)
     fc_asu = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron")
     asu1, asu2 = read_maps(args.halfmaps, args.resolution, mask)
     hkldata = calc_noise_var(asu1, asu2, fc_asu)
