@@ -21,11 +21,6 @@ import servalcat.spa.shift_maps
 from servalcat.utils import logger
 
 def main():
-    logger.set_file("servalcat.log")
-    logger.write("# Started on {}".format(datetime.datetime.now()))
-    logger.write("# Command-line args:")
-    logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
-
     
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", description='')
@@ -47,11 +42,15 @@ def main():
     args = parser.parse_args()
     
     if args.command in modules:
+        logger.set_file("servalcat.log")
+        logger.write("# Started on {}".format(datetime.datetime.now()))
+        logger.write("# Command-line args:")
+        logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
         modules[args.command].main(args)
+        logger.write("# Finished on {}\n".format(datetime.datetime.now()))
     else:
         parser.print_help()
 
-    logger.write("# Finished on {}\n".format(datetime.datetime.now()))
 # main()
 
 if __name__ == "__main__":
