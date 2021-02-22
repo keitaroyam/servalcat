@@ -17,11 +17,9 @@ from servalcat import utils
 def add_arguments(parser):
     parser.description = 'Shift back for Refmac local refinement results'
     parser.add_argument('--model',
-                        required=True,
-                        help='Input atomic model file')
+                        help='Atomic model file that needs shift back')
     parser.add_argument('--refine_mtz',
-                        required=True,
-                        help='Refmac mtz file for shift_back mode')
+                        help='Local-refined Refmac mtz file that needs shift back')
     parser.add_argument('--shifts',
                         required=True,
                         default="shifts.json",
@@ -114,6 +112,10 @@ def shift_back(xyz_in, refine_mtz, shifts_json, ncsc_in, out_prefix):
 
 
 def main(args):
+    if not args.model and not args.refine_mtz:
+        logger.write("ERROR: give --model and/or --refine_mtz")
+        return
+    
     shift_back(args.model, args.refine_mtz, args.shifts,
                args.ncsc_file, args.output_prefix)
 

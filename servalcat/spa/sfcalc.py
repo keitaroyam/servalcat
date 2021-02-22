@@ -147,6 +147,15 @@ def scale_maps(maps_in, map_ref, d_min):
     return maps_scaled
 # scale_maps()
 
+def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
+    json.dump(dict(cell=cell,
+                   grid=shape,
+                   new_cell=new_cell,
+                   new_grid=new_shape,
+                   shifts=shifts),
+              open(filename, "w"), indent=2)
+# write_shifts_json()
+
 def main(args):
     if args.mask and args.mask_radius:
         logger.write("You cannot give mask and mask_radius")
@@ -341,12 +350,10 @@ def main(args):
                 asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=args.resolution)
                 write_map_mtz(asu_new, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
 
-            json.dump(dict(cell=unit_cell.parameters,
-                           grid=map_obs.shape,
-                           new_cell=new_cell.parameters,
-                           new_grid=list(map(int, new_shape)),
-                           shifts=shifts.tolist()),
-                      open("shifts.json", "w"), indent=2)
+            write_shifts_json("shifts.json",
+                              cell=unit_cell.parameters, shape=map_obs.shape,
+                              new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
+                              shifts=shifts.tolist())
         else:
             logger.write(" Saving input model with unit cell information")
             st.cell = unit_cell

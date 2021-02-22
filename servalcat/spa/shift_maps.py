@@ -14,6 +14,7 @@ import argparse
 import json
 from servalcat.utils import logger
 from servalcat import utils
+from servalcat.spa.sfcalc import write_shifts_json
 
 def add_arguments(parser):
     parser.description = 'Trim maps and shift models into a small new box.'
@@ -169,7 +170,11 @@ def main(args):
         ccp4.grid = gemmi.FloatGrid(newg, new_cell, mask.spacegroup)
         ccp4.update_ccp4_header(2, True) # float, update stats
         ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc")
-    
+
+    write_shifts_json("trim_shifts.json",
+                      cell=cell.parameters, shape=grid_shape,
+                      new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
+                      shifts=shifts.tolist())
 # main()
 
 if __name__ == "__main__":
