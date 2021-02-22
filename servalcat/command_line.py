@@ -16,6 +16,7 @@ import servalcat.spa.run_refmac
 import servalcat.spa.fsc
 import servalcat.spa.fofc
 import servalcat.spa.shift_maps
+import servalcat.utils.show
 #import servalcat.spa.bestmap
 
 from servalcat.utils import logger

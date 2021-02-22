@@ -6,7 +6,7 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
-from servalcat import utils
+from servalcat.utils import fileio
 from servalcat.utils import logger
 
 def add_arguments(parser):
@@ -21,9 +21,9 @@ def parse_args(arg_list):
 # parse_args()
 
 def show(filename):
-    ext = utils.fileio.splitext(filename)[1]
+    ext = fileio.splitext(filename)[1]
     if ext in (".mrc", ".ccp4", ".map"):
-        utils.fileio.read_ccp4_map(filename)
+        fileio.read_ccp4_map(filename)
     logger.write("\n")
 # show()
 
