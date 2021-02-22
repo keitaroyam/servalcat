@@ -38,6 +38,9 @@ def add_arguments(parser):
                         help='Mask value cutoff to define boundary')
     parser.add_argument('--noncubic',
                         action='store_true')
+    parser.add_argument('--noncentered',
+                        action='store_true',
+                        help='If specified non-centered trimming is performed. Not recommended if having some symmetry')
     parser.add_argument('--force_cell',
                         type=float,
                         nargs=6,
@@ -111,27 +114,27 @@ def main(args):
     p = p.astype(int)
     logger.write("Limits: {}".format(limits))
     logger.write("Padding: {}".format(p))
-    new_shape = [0, 0, 0]
-    min_points = [0, 0, 0]
-    slices = [0, 0, 0]
-    rads = [0, 0, 0]
-    for i in range(3):
-        ctr = (grid_shape[i]-1)/2 
-        rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
-        logger.write("Rad{}= {}".format(i, rad))
-        if rad < grid_shape[i]/2:
-            slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
-        else:
-            slices[i] = slice(0, grid_shape[i], None)
+    if args.noncentered:
+        logger.write("Non-centered trimming will be performed.")
+        slices = [slice(max(0, limits[i][0]-p[i]),
+                        min(limits[i][1]+p[i]+1, grid_shape[i])) for i in range(3)]
+    else:
+        logger.write("Centered trimming will be performed.")
+        slices = [0, 0, 0]
+        for i in range(3):
+            ctr = (grid_shape[i]-1)/2 
+            rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
+            logger.write("Rad{}= {}".format(i, rad))
+            if rad < grid_shape[i]/2:
+                slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
+            else:
+                slices[i] = slice(0, grid_shape[i], None)
             
-        min_points[i] = slices[i].start
-
     logger.write("Slices: {}".format(slices))
     if not args.noncubic:
         min_s = min([slices[i].start for i in range(3)])
         max_s = max([slices[i].stop for i in range(3)])
         slices = [slice(min_s, max_s, None) for i in range(3)]
-        min_points = [min_s for i in range(3)]
         logger.write("Cubic Slices: {}".format(slices))
 
     if args.model:
