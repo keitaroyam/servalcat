@@ -30,7 +30,7 @@ def main():
                    refine_spa=servalcat.spa.run_refmac,
                    fsc=servalcat.spa.fsc,
                    fofc=servalcat.spa.fofc,
-                   shift=servalcat.spa.shift_maps,
+                   trim=servalcat.spa.shift_maps,
                    show=servalcat.utils.show,
                    #bestmap=servalcat.spa.bestmap,
                    )

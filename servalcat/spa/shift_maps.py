@@ -16,30 +16,28 @@ from servalcat.utils import logger
 from servalcat import utils
 
 def add_arguments(parser):
-    parser.description = 'Shift maps and models into new small box'
+    parser.description = 'Trim maps and shift models into a small new box.'
+    parser.epilog = 'If --mask is provided, a boundary is decided using the mask and --padding. Otherwise the model is used.'
     parser.add_argument('--maps',
                         required=True,
                         nargs="+",
                         help='Input map file(s)')
     parser.add_argument('--mask',
-                        required=False,
                         help='Mask file')    
     parser.add_argument('--model',
-                        required=False,
                         nargs="+",
-                        help='Input atomic model file')
-    parser.add_argument('--output_prefix',
-                        required=False,
-                        default="newbox",
-                        help='outpu file name prefix')
-    parser.add_argument('--mask_radius',
-                        required=False,
+                        help='Input atomic model file(s)')
+    parser.add_argument('--padding',
                         type=float,
-                        help='Define new box using model')
+                        default=10.0,
+                        help='in angstrom unit')
+    parser.add_argument('--mask_cutoff',
+                        type=float,
+                        default=1e-5,
+                        help='Mask value cutoff to define boundary')
     parser.add_argument('--noncubic',
                         action='store_true')
     parser.add_argument('--force_cell',
-                        required=False,
                         type=float,
                         nargs=6,
                         help='Force cell')
@@ -100,15 +98,15 @@ def main(args):
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         for st in sts:
-            mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
+            mask.mask_points_in_constant_radius(st[0], args.padding, 1.)
     else:
         raise RuntimeError("Give mask or model")
 
-    tmp = numpy.where(numpy.array(mask)>0)
+    tmp = numpy.where(numpy.array(mask)>args.mask_cutoff)
     limits = [(min(x), max(x)) for x in tmp]
     # Option to keep cubic?
     spacing = numpy.array(spacing)
-    p = args.mask_radius/spacing if args.mask_radius else 3/spacing
+    p = args.padding / spacing
     p = p.astype(int)
     logger.write("Limits: {}".format(limits))
     logger.write("Padding: {}".format(p))
@@ -151,17 +149,17 @@ def main(args):
 
     if args.model:
         for i, st in enumerate(sts):
+            spext = utils.fileio.splitext(os.path.basename(args.model[i]))
             st.cell = new_cell
             if len(st.ncs) > 0:
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
                 st.ncs.clear()
                 st.ncs.extend(new_ops)
                 logger.write(" Writing symmetry expanded model for shifted model")
-                utils.symmetry.write_symmetry_expanded_model(st, "shifted_local_expanded",
+                utils.symmetry.write_symmetry_expanded_model(st, spext[0]+"_trimmed_local_expanded",
                                                              pdb=True, cif=True)
 
-            spext = utils.fileio.splitext(os.path.basename(args.model[i]))
-            utils.fileio.write_model(st, file_name=spext[0]+"_cut"+spext[1], cif_ref=cif_refs[i])
+            utils.fileio.write_model(st, file_name=spext[0]+"_trimmed"+spext[1], cif_ref=cif_refs[i])
     
     for f in args.maps:
         logger.write("Slicing {}".format(f))
@@ -170,7 +168,7 @@ def main(args):
         ccp4 = gemmi.Ccp4Map()
         ccp4.grid = gemmi.FloatGrid(newg, new_cell, mask.spacegroup)
         ccp4.update_ccp4_header(2, True) # float, update stats
-        ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_cut.mrc")
+        ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc")
     
 # main()
 
