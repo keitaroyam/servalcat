@@ -14,7 +14,6 @@ import argparse
 import json
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.spa.sfcalc import write_shifts_json
 
 def add_arguments(parser):
     parser.description = 'Trim maps and shift models into a small new box.'
@@ -75,6 +74,72 @@ def check_maps(map_files, disable_cell_check=False):
             raise RuntimeError("Error: different cell parameters included")
 
     return params[0]
+# check_maps()
+
+def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
+    json.dump(dict(cell=cell,
+                   grid=shape,
+                   new_cell=new_cell,
+                   new_grid=new_shape,
+                   shifts=shifts),
+              open(filename, "w"), indent=2)
+# write_shifts_json()
+
+def determine_shape_and_shift(mask, padding, mask_cutoff=1e-5, noncentered=False, noncubic=False,
+                              json_out="trim_shifts.json"):
+    grid_shape = mask.shape
+    spacing = numpy.array(mask.spacing)
+    cell = mask.unit_cell
+    tmp = numpy.where(numpy.array(mask)>mask_cutoff)
+    limits = [(min(x), max(x)) for x in tmp]
+    p = padding / spacing
+    p = p.astype(int)
+    logger.write("Limits: {}".format(limits))
+    logger.write("Padding: {}".format(p))
+    if noncentered:
+        logger.write("Non-centered trimming will be performed.")
+        slices = [slice(max(0, limits[i][0]-p[i]),
+                        min(limits[i][1]+p[i]+1, grid_shape[i])) for i in range(3)]
+    else:
+        logger.write("Centered trimming will be performed.")
+        slices = [0, 0, 0]
+        for i in range(3):
+            ctr = (grid_shape[i]-1)/2 
+            rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
+            logger.write("Rad{}= {}".format(i, rad))
+            if rad < grid_shape[i]/2:
+                slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
+            else:
+                slices[i] = slice(0, grid_shape[i], None)
+            
+    logger.write("Slices: {}".format(slices))
+    if not noncubic: # XXX this only works for cubic input
+        min_s = min([slices[i].start for i in range(3)])
+        max_s = max([slices[i].stop for i in range(3)])
+        slices = [slice(min_s, max_s, None) for i in range(3)]
+        logger.write("Cubic Slices: {}".format(slices))
+
+    # Shifts for model
+    shifts = -mask.get_position(slices[0].start, slices[1].start, slices[2].start)
+    logger.write("Shift for model: {}".format(shifts))
+
+    new_shape = [slices[0].stop-slices[0].start,
+                 slices[1].stop-slices[1].start,
+                 slices[2].stop-slices[2].start]
+    tmp = mask.get_position(*new_shape)
+    new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], cell.alpha, cell.beta, cell.gamma)
+    
+    logger.write("New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
+    logger.write("New grid: {} {} {}".format(*new_shape))
+
+    if json_out:
+        write_shifts_json(json_out,
+                          cell=mask.unit_cell.parameters, shape=mask.shape,
+                          new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
+                          shifts=shifts.tolist())
+
+    return new_cell, new_shape, slices, shifts
+# determine_shape_and_shift()    
         
 def main(args):
     cell, grid_shape, spacing = check_maps(args.maps, args.disable_cell_check)
@@ -94,6 +159,7 @@ def main(args):
     if args.mask:
         logger.write("Using mask to decide border: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask).grid
+        assert mask.shape == grid_shape
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
     elif args.model:
@@ -106,55 +172,21 @@ def main(args):
     else:
         raise RuntimeError("Give mask or model")
 
-    tmp = numpy.where(numpy.array(mask)>args.mask_cutoff)
-    limits = [(min(x), max(x)) for x in tmp]
-    # Option to keep cubic?
-    spacing = numpy.array(spacing)
-    p = args.padding / spacing
-    p = p.astype(int)
-    logger.write("Limits: {}".format(limits))
-    logger.write("Padding: {}".format(p))
-    if args.noncentered:
-        logger.write("Non-centered trimming will be performed.")
-        slices = [slice(max(0, limits[i][0]-p[i]),
-                        min(limits[i][1]+p[i]+1, grid_shape[i])) for i in range(3)]
-    else:
-        logger.write("Centered trimming will be performed.")
-        slices = [0, 0, 0]
-        for i in range(3):
-            ctr = (grid_shape[i]-1)/2 
-            rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
-            logger.write("Rad{}= {}".format(i, rad))
-            if rad < grid_shape[i]/2:
-                slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
-            else:
-                slices[i] = slice(0, grid_shape[i], None)
-            
-    logger.write("Slices: {}".format(slices))
-    if not args.noncubic:
-        min_s = min([slices[i].start for i in range(3)])
-        max_s = max([slices[i].stop for i in range(3)])
-        slices = [slice(min_s, max_s, None) for i in range(3)]
-        logger.write("Cubic Slices: {}".format(slices))
-
+    # call func
+    new_cell, new_shape, slices, shifts = determine_shape_and_shift(mask=mask, padding=args.padding,
+                                                                    mask_cutoff=args.mask_cutoff,
+                                                                    noncentered=args.noncentered,
+                                                                    noncubic=args.noncubic)
     if args.model:
-        shifts = -mask.get_position(slices[0].start, slices[1].start, slices[2].start)
-        logger.write("Shift for model: {}".format(shifts))
-        for st in sts:
+        for i, st in enumerate(sts):
+            st.cell = new_cell
+            # apply shifts
             for mol in st:
                 for cra in mol.all():
                     cra.atom.pos += shifts
 
-    new_shape = [slices[0].stop-slices[0].start,
-                 slices[1].stop-slices[1].start,
-                 slices[2].stop-slices[2].start]
-    tmp = mask.get_position(*new_shape)
-    new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], cell.alpha, cell.beta, cell.gamma)
-
-    if args.model:
-        for i, st in enumerate(sts):
+            # save files
             spext = utils.fileio.splitext(os.path.basename(args.model[i]))
-            st.cell = new_cell
             if len(st.ncs) > 0:
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
                 st.ncs.clear()
@@ -174,10 +206,6 @@ def main(args):
         ccp4.update_ccp4_header(2, True) # float, update stats
         ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc")
 
-    write_shifts_json("trim_shifts.json",
-                      cell=cell.parameters, shape=grid_shape,
-                      new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
-                      shifts=shifts.tolist())
 # main()
 
 if __name__ == "__main__":

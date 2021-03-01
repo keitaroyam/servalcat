@@ -9,9 +9,9 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 import argparse
-import json
 from servalcat.utils import logger
 from servalcat import utils
+from servalcat.spa import shift_maps
 
 def add_sfcalc_args(parser):
     parser.add_argument('--map',
@@ -140,15 +140,6 @@ def scale_maps(maps_in, map_ref, d_min):
                    for f in f_inps_scaled]
     return maps_scaled
 # scale_maps()
-
-def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
-    json.dump(dict(cell=cell,
-                   grid=shape,
-                   new_cell=new_cell,
-                   new_grid=new_shape,
-                   shifts=shifts),
-              open(filename, "w"), indent=2)
-# write_shifts_json()
 
 def main(args):
     if args.no_mask:
@@ -295,35 +286,14 @@ def main(args):
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
-            tmp = numpy.where(numpy.array(mask)>0)
-            limits = [(min(x), max(x)) for x in tmp]
-            logger.write("  New limits: {} {} {}".format(*limits))
-            min_points = [x[0] for x in limits]
-            lu, lv, lw = limits
-            # padding
-            spacing = numpy.array(map_obs.spacing)
-            p = args.mask_radius/spacing if args.mask_radius else 3/spacing
-            p = p.astype(int)
-            logger.write("  Spacing: {} {} {}".format(*map_obs.spacing))
-            logger.write("  Padding: {} {} {}".format(*p))
-            ll = [slice(max(0, limits[i][0]-p[i]),
-                        min(limits[i][1]+p[i]+1, map_obs.shape[i])) for i in range(3)]
-            #ll = [slice(28,120), slice(32,116), slice(36,112)]
-            
-            logger.write("  Slice {}".format(ll))
-            
-            # FIXME does not work for non-orthogonal cell
-            new_shape = [ll[0].stop-ll[0].start,
-                         ll[1].stop-ll[1].start,
-                         ll[2].stop-ll[2].start]
-            tmp = map_obs.get_position(*new_shape)
-            new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], 90, 90, 90)
-            logger.write("  New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
-            logger.write("  New grid: {} {} {}".format(*new_shape))
+            new_cell, new_shape, slices, shifts = shift_maps.determine_shape_and_shift(mask=mask,
+                                                                                       padding=args.mask_radius,
+                                                                                       mask_cutoff=0.1,
+                                                                                       noncentered=True,
+                                                                                       noncubic=True,
+                                                                                       json_out="shifts.json")
 
             if st_new:
-                shifts = -mask.get_position(ll[0].start, ll[1].start, ll[2].start)
-                logger.write("  Shifts: {:.4f} {:.4f} {:.4f}".format(*shifts.tolist()))
                 for cra in st_new[0].all():
                     cra.atom.pos += shifts
                 
@@ -342,21 +312,16 @@ def main(args):
                 logger.write(" Saving shifted model..")
                 utils.fileio.write_model(st_new, "shifted_local", pdb=True, cif=True)
 
-
             logger.write(" Saving masked and shifted maps as mtz files..")
             for ma, lab in zip(input_maps, input_map_labels):
                 logger.write("  Processing {} map".format(lab))
                 org_grid = numpy.array(ma)
-                new_grid = org_grid[ll[0], ll[1], ll[2]]
+                new_grid = org_grid[slices[0], slices[1], slices[2]]
 
                 new_grid = gemmi.FloatGrid(new_grid, new_cell, spacegroup)
                 asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=resolution)
                 write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)
 
-            write_shifts_json("shifts.json",
-                              cell=unit_cell.parameters, shape=map_obs.shape,
-                              new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
-                              shifts=shifts.tolist())
         else:
             logger.write(" Saving masked maps as mtz files..")
             for ma, lab in zip(input_maps, input_map_labels):
