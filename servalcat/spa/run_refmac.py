@@ -20,32 +20,21 @@ def add_arguments(parser):
 
     parser.add_argument('--exe', default="refmac5", help='refmac5 binary')
     # sfcalc options
-    parser.add_argument('--map', help='Input map file')
-    parser.add_argument('--halfmaps', nargs=2, help='Input half map files')
-    parser.add_argument('--mapref', help='Reference map file')
-    parser.add_argument('--mask', help='Mask file')
-    parser.add_argument('--model', required=True, help="")
-    parser.add_argument('--mask_radius', type=float, help='')
-    parser.add_argument('--resolution', type=float, help='')
-    parser.add_argument('--shift', action='store_true', help='')
-    parser.add_argument('--blur', nargs="+", type=float, help='Sharpening or blurring B')
-    parser.add_argument('--ligand', nargs="*")
-    parser.add_argument('--relion_pg',
-                        help='RELION point group symbol for strict symmetry')
-    parser.add_argument('--ignore_symmetry', action='store_true',
-                        help='Ignore symmetry information in the model file')
-    parser.add_argument('--remove_multiple_models', action='store_true',
-                        help='Keep 1st model only')
+    sfcalc_group = parser.add_argument_group("sfcalc")
+    spa.sfcalc.add_sfcalc_args(sfcalc_group)
+
     # run_refmac options
+    # TODO use group! like refmac options
+    parser.add_argument('--ligand', nargs="*")
     parser.add_argument('--mtz', help='Input mtz file')
     parser.add_argument('--mtz_half', nargs=2, help='Input mtz files for half maps')
     parser.add_argument('--lab_f')
     parser.add_argument('--lab_sigf')
     parser.add_argument('--lab_phi')
     parser.add_argument('--bfactor', type=float)
-    parser.add_argument('--ncsr', default="local")
+    parser.add_argument('--ncsr', default="local", choices=["local", "global"])
     parser.add_argument('--ncycle', type=int, default=10)
-    parser.add_argument('--hydrogen', default="all")
+    parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"])
     parser.add_argument('--jellybody', action='store_true')
     parser.add_argument('--hout', action='store_true')
     parser.add_argument('--weight_auto_scale', type=float)
@@ -156,21 +145,26 @@ def run_refmac(mtz_in, model_in, ncycle, lab_f, lab_phi, lab_sigf=None, hydrogen
 # run_refmac()
 
 def main(args):
+    if not args.model:
+        logger.write("Error: give --model.")
+        return
+    
     model_format = utils.fileio.check_model_format(args.model)
     if args.map or args.halfmaps:
         args.output_model_prefix = "shifted_local"
-        args.output_mtz_prefix = "masked_fs"
+        args.output_masked_prefix = "masked_fs"
+        args.output_mtz_prefix = "starting_map"
         args.remove_multiple_models = True
         spa.sfcalc.main(args)
-        args.mtz = "masked_fs_obs.mtz"
-        if args.halfmaps:
+        args.mtz = "starting_map_obs.mtz" if args.no_mask else "masked_fs_obs.mtz"
+        if args.halfmaps: # FIXME if no_mask?
             args.mtz_half = ["masked_fs_half1.mtz", "masked_fs_half2.mtz"]
         args.lab_phi = "Pout0"
         if args.blur:
             args.lab_f = "FoutBlur_{:.2f}".format(args.blur[0])
         else:
             args.lab_f = "Fout0"
-        if args.shift:
+        if not args.no_shift:
             args.model = "shifted_local" + model_format
         else:
             args.model = "starting_model" + model_format
@@ -185,8 +179,9 @@ def main(args):
     keywords = ""
     if args.keywords:
         keywords = "\n".join(args.keywords)
-            
-    if args.shift:
+
+    # FIXME danger
+    if not args.no_shift:
         refmac_prefix = args.output_prefix + "_local"
         if os.path.isfile("ncsc_local.txt"):
             keyword_files.append("ncsc_local.txt")
@@ -225,7 +220,7 @@ def main(args):
         spa.fofc.
     """
 
-    if args.shift:
+    if not args.no_shift:
         ncsc_in = ("ncsc_global.txt") if os.path.isfile("ncsc_global.txt") else None
         spa.shiftback.shift_back(xyz_in=refmac_prefix+model_format,
                                  refine_mtz=refmac_prefix+".mtz",
@@ -248,7 +243,7 @@ def main(args):
         st = utils.model.shake_structure(st, args.shake_radius)
         shaken_file = refmac_prefix+"_shaken"+model_format
         utils.fileio.write_model(st, file_name=shaken_file)
-        if args.shift:
+        if not args.no_shift:
             refmac_prefix_shaken = refmac_prefix+"_shaken_refined_local"
         else:
             refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
@@ -267,7 +262,7 @@ def main(args):
 
         # TODO calc FSC
 
-        if args.shift:
+        if not args.no_shift:
             ncsc_in = ("ncsc_global.txt") if os.path.isfile("ncsc_global.txt") else None
             spa.shiftback.shift_back(xyz_in=refmac_prefix_shaken+model_format,
                                  refine_mtz=refmac_prefix_shaken+".mtz",

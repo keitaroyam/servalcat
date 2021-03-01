@@ -13,60 +13,54 @@ import json
 from servalcat.utils import logger
 from servalcat import utils
 
-def add_arguments(parser):
-    parser.description = 'Structure factor calculation for Refmac'
+def add_sfcalc_args(parser):
     parser.add_argument('--map',
-                        required=False,
                         help='Input map file')
     parser.add_argument('--halfmaps',
-                        required=False,
                         nargs=2,
                         help='Input half map files')
     parser.add_argument('--mapref',
-                        required=False,
                         help='Reference map file')
     parser.add_argument('--mask',
-                        required=False,
                         help='Mask file')
     parser.add_argument('--model',
-                        required=False,
                         help='Input atomic model file')
-    parser.add_argument('--output_masked_prefix',
-                        required=False,
-                        default="masked_fs",
-                        help='output MTZ file name for masked F')
-    parser.add_argument('--output_mtz_prefix',
-                        required=False,
-                        default="starting_map",
-                        help='output MTZ file name for original F')
-    parser.add_argument('--output_model_prefix',
-                        required=False,
-                        default="shifted_local",
-                        help='output model file name')
     parser.add_argument('--mask_radius',
-                        required=False,
-                        type=float,
+                        type=float, default=3,
                         help='')
+    parser.add_argument('--no_mask',
+                        action='store_true')
     parser.add_argument('--resolution',
                         required=True,
                         type=float,
                         help='')
-    parser.add_argument('--shift',
+    parser.add_argument('--no_shift',
                         action='store_true',
                         help='')
     parser.add_argument('--blur',
-                        required=False,
                         nargs="+",
                         type=float,
                         help='Sharpening or blurring B')
     parser.add_argument('--relion_pg',
-                        required=False,
                         help='RELION point group symbol for strict symmetry')
     parser.add_argument('--ignore_symmetry',
-                        required=False,
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models',
                         help='Keep 1st model only')
+# add_sfcalc_args()
+
+def add_arguments(parser):
+    parser.description = 'Structure factor calculation for Refmac'
+    add_sfcalc_args(parser)
+    parser.add_argument('--output_masked_prefix',
+                        default="masked_fs",
+                        help='output MTZ file name for masked F')
+    parser.add_argument('--output_mtz_prefix',
+                        default="starting_map",
+                        help='output MTZ file name for original F')
+    parser.add_argument('--output_model_prefix',
+                        default="shifted_local",
+                        help='output model file name')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -157,16 +151,18 @@ def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
 # write_shifts_json()
 
 def main(args):
-    if args.mask and args.mask_radius:
-        logger.write("You cannot give mask and mask_radius")
-        return
-    if args.mask_radius and not args.model:
-        logger.write("You need model when you give mask_radius")
-        return
-    
+    if args.no_mask:
+        args.mask_radius = None
+        if not args.no_shift:
+            logger.write("WARNING: setting --no_shift because --no_mask is given")
+            args.no_shift = True
+        if args.mask:
+            logger.write("WARNING: Your --mask is ignored because --no_mask is given")
+            args.mask = None
+        
     input_maps = []
     input_map_labels = []
-    args.resolution -= 1e-6
+    resolution = args.resolution - 1e-6
 
     if args.map:
         logger.write("Input map: {}".format(args.map))
@@ -217,7 +213,7 @@ def main(args):
 
         # Overwrite input_maps
         logger.write("Scaling maps..")
-        input_maps = scale_maps(input_maps, map_ref, args.resolution)
+        input_maps = scale_maps(input_maps, map_ref, resolution)
 
     # Create mask
     mask = None
@@ -229,6 +225,9 @@ def main(args):
     if args.model: # and 
         logger.write("Input model: {}".format(args.model))
         st = gemmi.read_structure(args.model)
+        st.cell = unit_cell
+        st.spacegroup_hm = "P 1"
+
         if args.remove_multiple_models and len(st) > 1:
             logger.write(" Removing models 2-{}".format(len(st)))
             for i in reversed(range(1, len(st))):
@@ -258,7 +257,7 @@ def main(args):
             utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc_global.txt")
         
         st_new = st.clone()
-        if len(st.ncs) > 0 and args.shift:
+        if len(st.ncs) > 0 and not args.no_shift:
             logger.write("Expanding symmetry.")
             st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
             logger.write(" Saving expanded model: input_model_expanded.*")
@@ -278,11 +277,15 @@ def main(args):
 
     # TODO Apply sharpening/blurring here?
     # 
-    
-    logger.write("Saving original maps as mtz files..")
-    for ma, lab in zip(input_maps, input_map_labels):
-        asu_obs = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=args.resolution)
-        write_map_mtz(asu_obs, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
+
+    if args.no_shift:
+        logger.write(" Saving input model with unit cell information")
+        utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+
+        logger.write("Saving original maps as mtz files..")
+        for ma, lab in zip(input_maps, input_map_labels):
+            asu_obs = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=resolution)
+            write_map_mtz(asu_obs, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
 
     if mask:
         # Mask maps
@@ -290,7 +293,7 @@ def main(args):
         input_maps = [gemmi.FloatGrid(numpy.array(ma)*mask, unit_cell, spacegroup)
                       for ma in input_maps]
 
-        if args.shift:
+        if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
             tmp = numpy.where(numpy.array(mask)>0)
             limits = [(min(x), max(x)) for x in tmp]
@@ -347,26 +350,20 @@ def main(args):
                 new_grid = org_grid[ll[0], ll[1], ll[2]]
 
                 new_grid = gemmi.FloatGrid(new_grid, new_cell, spacegroup)
-                asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=args.resolution)
-                write_map_mtz(asu_new, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
+                asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=resolution)
+                write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)
 
             write_shifts_json("shifts.json",
                               cell=unit_cell.parameters, shape=map_obs.shape,
                               new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
                               shifts=shifts.tolist())
         else:
-            logger.write(" Saving input model with unit cell information")
-            st.cell = unit_cell
-            st.spacegroup_hm = "P 1"
-            utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
-            
             logger.write(" Saving masked maps as mtz files..")
             for ma, lab in zip(input_maps, input_map_labels):
                 logger.write("  Processing {} map".format(lab))
-                asu_new = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=args.resolution)
-                write_map_mtz(asu_new, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
+                asu_new = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=resolution)
+                write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)
 
-    # TODO write NCS file for REFMAC5
 # main()
 
 if __name__ == "__main__":
