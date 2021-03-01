@@ -49,6 +49,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         doc.write_file(cif_out)
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
+        if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
         st_new.make_mmcif_document().write_file(cif_out)
 # write_mmcif()
 
