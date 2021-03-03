@@ -38,7 +38,7 @@ def add_sfcalc_args(parser):
                         action='store_true',
                         help='')
     parser.add_argument('--blur',
-                        nargs="+",
+                        nargs="+", # XXX probably no need to be multiple
                         type=float,
                         help='Sharpening or blurring B')
     parser.add_argument('--relion_pg',
@@ -72,7 +72,7 @@ def parse_args(arg_list):
 def write_map_mtz(asu_data, mtz_out, blurs=None):
     if not blurs: blurs = []
     if 0 not in blurs:
-        blurs.insert(0, 0)
+        blurs = [0.] + blurs
     
     mtz = gemmi.Mtz()
     mtz.spacegroup = asu_data.spacegroup
@@ -106,7 +106,7 @@ def write_map_mtz(asu_data, mtz_out, blurs=None):
 
 def scale_maps(maps_in, map_ref, d_min):
     fs = []
-    for m in maps_in+[map_ref]:
+    for m in [map_ref]+maps_in:
         asu = gemmi.transform_map_to_f_phi(m).prepare_asu_data(dmin=d_min)
         fs.append(asu)
 

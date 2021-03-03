@@ -29,6 +29,7 @@ def load_monomer_library(resnames, monomer_dir=None): #TODO add cif_paths
 def shake_structure(st, sigma):
     print("Randomizing structure with rmsd of {}".format(sigma))
     st2 = st.clone()
+    sigma /= numpy.sqrt(3)
     for model in st2:
         for cra in model.all():
             r = numpy.random.normal(0, sigma, 3)

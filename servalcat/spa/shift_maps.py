@@ -18,31 +18,22 @@ from servalcat import utils
 def add_arguments(parser):
     parser.description = 'Trim maps and shift models into a small new box.'
     parser.epilog = 'If --mask is provided, a boundary is decided using the mask and --padding. Otherwise the model is used.'
-    parser.add_argument('--maps',
-                        required=True,
-                        nargs="+",
+    parser.add_argument('--maps', required=True, nargs="+", action="append",
                         help='Input map file(s)')
     parser.add_argument('--mask',
                         help='Mask file')    
-    parser.add_argument('--model',
-                        nargs="+",
+    parser.add_argument('--model', nargs="+", action="append",
                         help='Input atomic model file(s)')
-    parser.add_argument('--padding',
-                        type=float,
-                        default=10.0,
+    parser.add_argument('--padding', type=float, default=10.0,
                         help='in angstrom unit')
-    parser.add_argument('--mask_cutoff',
-                        type=float,
-                        default=1e-5,
+    parser.add_argument('--mask_cutoff', type=float, default=1e-5,
                         help='Mask value cutoff to define boundary')
     parser.add_argument('--noncubic',
                         action='store_true')
     parser.add_argument('--noncentered',
                         action='store_true',
                         help='If specified non-centered trimming is performed. Not recommended if having some symmetry')
-    parser.add_argument('--force_cell',
-                        type=float,
-                        nargs=6,
+    parser.add_argument('--force_cell', type=float, nargs=6,
                         help='Force cell')
     parser.add_argument('--disable_cell_check',
                         action='store_true')
@@ -92,8 +83,7 @@ def determine_shape_and_shift(mask, padding, mask_cutoff=1e-5, noncentered=False
     cell = mask.unit_cell
     tmp = numpy.where(numpy.array(mask)>mask_cutoff)
     limits = [(min(x), max(x)) for x in tmp]
-    p = padding / spacing
-    p = p.astype(int)
+    p = numpy.ceil(padding / spacing).astype(int)
     logger.write("Limits: {}".format(limits))
     logger.write("Padding: {}".format(p))
     if noncentered:
@@ -142,6 +132,7 @@ def determine_shape_and_shift(mask, padding, mask_cutoff=1e-5, noncentered=False
 # determine_shape_and_shift()    
         
 def main(args):
+    args.maps = sum(args.maps, [])
     cell, grid_shape, spacing = check_maps(args.maps, args.disable_cell_check)
     if args.force_cell:
         cell = args.force_cell
@@ -149,6 +140,7 @@ def main(args):
     cell = gemmi.UnitCell(*cell)
     sts, cif_refs = [], []
     if args.model:
+        args.model = sum(args.model, [])
         for m in args.model:
             st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(m)
             st.spacegroup_hm = "P1"

@@ -9,8 +9,6 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 import os
-import subprocess
-import pipes
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import spa
@@ -25,7 +23,7 @@ def add_arguments(parser):
 
     # run_refmac options
     # TODO use group! like refmac options
-    parser.add_argument('--ligand', nargs="*")
+    parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument('--mtz', help='Input mtz file')
     parser.add_argument('--mtz_half', nargs=2, help='Input mtz files for half maps')
     parser.add_argument('--lab_f')
@@ -36,15 +34,20 @@ def add_arguments(parser):
     parser.add_argument('--ncycle', type=int, default=10)
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"])
     parser.add_argument('--jellybody', action='store_true')
+    parser.add_argument('--jellybody_params', nargs=2, type=float,
+                        metavar=("sigma", "dmax"), default=[0.01, 4.2])
     parser.add_argument('--hout', action='store_true')
-    parser.add_argument('--weight_auto_scale', type=float)
-    parser.add_argument('--keywords', nargs='+')
-    parser.add_argument('--keyword_file', nargs='+')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--weight_auto_scale', type=float)
+    group.add_argument('--weight', type=float)
+    parser.add_argument('--keywords', nargs='+', action="append")
+    parser.add_argument('--keyword_file', nargs='+', action="append")
+    parser.add_argument('--external_restraints_json')
     parser.add_argument('--output_prefix', default="refined",
                         help='output file name prefix')
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation')
-    parser.add_argument('--shake_radius', default=0.3,
+    parser.add_argument('--shake_radius', default=0.5,
                         help='Shake rmsd')
 
 # add_arguments()
@@ -55,101 +58,27 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def make_cmd(xyzin, hklin, xyzout=None, hklout=None, prefix=None, exe="refmac5", libin=None):
-    cmd = [exe]
-    if prefix:
-        if not xyzout: xyzout = prefix + ".pdb"
-        if not hklout: hklout = prefix + ".mtz"
-        
-    cmd.extend(["hklin", pipes.quote(hklin)])
-    cmd.extend(["hklout", pipes.quote(hklout)])
-    cmd.extend(["xyzin", pipes.quote(xyzin)])
-    cmd.extend(["xyzout", pipes.quote(xyzout)])
-    if libin:
-        if len(libin) > 1:
-            mcif = "merged_ligands.cif"
-            logger.write("Merging ligand cif inputs: {}".format(libin))
-            utils.fileio.merge_ligand_cif(libin, mcif)
-            cmd.extend(["libin", mcif])
-        else:
-            cmd.extend(["libin", libin[0]])
-
-    return cmd
-# make_cmd()
-
-def make_keywords(lab_f, lab_sigf, lab_phi, ncycle, hydrogen="all", hout=False, bfactor=None, jellybody=True,
-                  resolution=None, weight_fixed=None, weight_auto_scale=None, ncsr=None,
-                  keyword_files=None, keywords=None):
-    ret = ""
-    labin = []
-    if lab_f: labin.append("FP={}".format(lab_f))
-    if lab_sigf: labin.append("SIGFP={}".format(lab_sigf))
-    if lab_phi: labin.append("PHIB={}".format(lab_phi))
-    ret += "labin {}\n".format(" ".join(labin))
-
-    
-    ret += "make hydr {}\n".format(hydrogen)
-    ret += "make hout {}\n".format("yes" if hout else "no")
-    ret += "solvent no\n"
-    ret += "source em mb\n"
-    ret += "ncycle {}\n".format(ncycle)
-    if resolution is not None:
-        ret += "reso {}\n".format(resolution)
-    if weight_fixed is not None:
-        ret += "weight matrix {}\n".format(weight_fixed)
-    elif weight_auto_scale is not None:
-        ret += "weight auto {}\n".format(weight_auto_scale)
-    else:
-        ret += "weight auto\n"
-
-    if bfactor is not None:
-        ret += "bfactor set {}\n".format(bfactor)
-    if jellybody:
-        ret += "ridge dist sigma 0.01\n"
-        ret += "ridge dist dmax 4.2\n"
-    if ncsr:
-        ret += "ncsr {}\n".format(ncsr)
-    
-    if keyword_files:
-        for f in keyword_files:
-            ret += "@{}\n".format(f)
-
-    if keywords:
-        ret += keywords
-
-    return ret
-# make_keywords()
-
-def run_refmac(mtz_in, model_in, ncycle, lab_f, lab_phi, lab_sigf=None, hydrogen="auto", hout=False,
-               libin=None, bfactor=None, jellybody=None, resolution=None, weight_auto_scale=None,
-               ncsr=None, keyword_files=None, keywords=None,
-               prefix="refined", exe="refmac5"):
-    cmd = make_cmd(model_in, mtz_in, libin=libin, prefix=prefix, exe=exe)
-    
-    logger.write("Running REFMAC5..")
-    log = open(prefix+".log", "w")
-    p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=log, stderr=log)
-    stdin = make_keywords(lab_f=lab_f, lab_phi=lab_phi, lab_sigf=lab_sigf,
-                          ncycle=ncycle, resolution=resolution,
-                          hydrogen=hydrogen, hout=hout, ncsr=ncsr,
-                          bfactor=bfactor, jellybody=jellybody,
-                          weight_auto_scale=weight_auto_scale,
-                          keyword_files=keyword_files,
-                          keywords=keywords)
-    open(prefix+".inp", "w").write(stdin)
-    p.stdin.write(stdin.encode("utf-8"))
-    p.stdin.close()
-    ret = p.wait()
-    logger.write("REFMAC5 finished with {}".format(ret))
-
-# run_refmac()
-
 def main(args):
     if not args.model:
         logger.write("Error: give --model.")
         return
-    
+
+    if not (args.map or args.halfmaps) and not args.mtz:
+        logger.write("Error: give --map | --halfmaps | --mtz.")
+        return
+
+    if args.ligand:
+        args.ligand = sum(args.ligand, [])
+        if len(args.ligand) > 1:
+            mcif = "merged_ligands.cif"
+            logger.write("Merging ligand cif inputs: {}".format(args.ligand))
+            utils.fileio.merge_ligand_cif(libin, mcif)
+            args.ligand = "merged_ligands.cif"
+        else:
+            args.ligand = args.ligand[0]
+
     model_format = utils.fileio.check_model_format(args.model)
+    
     if args.map or args.halfmaps:
         args.output_model_prefix = "shifted_local"
         args.output_masked_prefix = "masked_fs"
@@ -169,43 +98,29 @@ def main(args):
         else:
             args.model = "starting_model" + model_format
 
-    keyword_files = []
     if args.keyword_file:
+        args.keyword_file = sum(args.keyword_file, [])
         for f in args.keyword_file:
             logger.write("Keyword file: {}".format(f))
             assert os.path.exists(f)
-            keyword_files.append(f)
-        
-    keywords = ""
+    else:
+        args.keyword_file = []
+            
     if args.keywords:
-        keywords = "\n".join(args.keywords)
+        args.keywords = sum(args.keywords, [])
 
-    # FIXME danger
+    # FIXME if mtz is given and sfcalc() not ran?
     if not args.no_shift:
-        refmac_prefix = args.output_prefix + "_local"
+        refmac_prefix = "local_" + args.output_prefix
         if os.path.isfile("ncsc_local.txt"):
-            keyword_files.append("ncsc_local.txt")
+            args.keyword_file.append("ncsc_local.txt")
     else:
         refmac_prefix = args.output_prefix
         if os.path.isfile("ncsc_global.txt"):
-            keyword_files.append("ncsc_global.txt")
+            args.keyword_file.append("ncsc_global.txt")
 
-
-    run_refmac(mtz_in=args.mtz,
-               model_in=args.model,
-               ncycle=args.ncycle,
-               lab_f=args.lab_f, lab_phi=args.lab_phi, lab_sigf=args.lab_sigf,
-               hydrogen=args.hydrogen, hout=args.hout,
-               ncsr=args.ncsr,
-               libin=args.ligand,
-               bfactor=args.bfactor,
-               jellybody=args.jellybody,
-               resolution=args.resolution,
-               prefix=refmac_prefix,
-               weight_auto_scale=args.weight_auto_scale,
-               keyword_files=keyword_files,
-               keywords=keywords,
-               exe=args.exe)
+    refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
+    refmac.run_refmac()
 
     """
     # Calc diffmaps
@@ -237,28 +152,29 @@ def main(args):
         utils.fileio.write_model(st, file_name=args.output_prefix+"_expanded"+model_format,
                                  cif_ref=cif_ref)
 
-
     if args.cross_validation:
+        logger.write("Cross validation is requested.")
         st = gemmi.read_structure(refmac_prefix+model_format)
+        logger.write("  Shaking atomic coordinates with rms={}".format(args.shake_radius))
         st = utils.model.shake_structure(st, args.shake_radius)
         shaken_file = refmac_prefix+"_shaken"+model_format
         utils.fileio.write_model(st, file_name=shaken_file)
-        if not args.no_shift:
-            refmac_prefix_shaken = refmac_prefix+"_shaken_refined_local"
-        else:
-            refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
+        refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
+        refmac_prefix_hm2 = refmac_prefix+"_shaken_refined_statshm2"
 
-        run_refmac(mtz_in=args.mtz_half[0],
-                   model_in=shaken_file,
-                   ncycle=args.ncycle,
-                   lab_f=args.lab_f, lab_phi=args.lab_phi, lab_sigf=args.lab_sigf,
-                   hydrogen=args.hydrogen, hout=args.hout,
-                   bfactor=args.bfactor,
-                   jellybody=args.jellybody,
-                   resolution=args.resolution,
-                   prefix=refmac_prefix_shaken,
-                   keyword_files=keyword_files,
-                   keywords=keywords)
+        logger.write("  Starting refinement using half map 1")
+        refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
+                                 xyzin=shaken_file,
+                                 prefix=refmac_prefix_shaken)
+        refmac_hm1.run_refmac()
+
+        # TODO replace this part later
+        logger.write("  Calculating stats using half map 2")
+        refmac_hm2 = refmac.copy(hklin=args.mtz_half[1],
+                                 xyzin=refmac_prefix_shaken+model_format,
+                                 prefix=refmac_prefix_hm2,
+                                 ncycle=0, bfactor=None)
+        refmac_hm2.run_refmac()
 
         # TODO calc FSC
 
@@ -268,7 +184,7 @@ def main(args):
                                  refine_mtz=refmac_prefix_shaken+".mtz",
                                  shifts_json="shifts.json",
                                  ncsc_in=ncsc_in,
-                                 out_prefix=refmac_prefix+"_shaken_refined")
+                                 out_prefix=args.output_prefix+"_shaken_refined")
         
         
 if __name__ == "__main__":
