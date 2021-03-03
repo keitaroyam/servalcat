@@ -98,6 +98,10 @@ def calc_noise_var(asu1, asu2, fc_asu):
         sel1 = F_map1[sel]
         sel2 = F_map2[sel]
 
+        if sel1.size < 3:
+            logger.write("WARNING: skipping bin {} with size= {}".format(i_bin, sel1.size))
+            continue
+
         fsc = numpy.real(numpy.corrcoef(sel1, sel2)[1,0])
         varn = numpy.var(sel1-sel2)/4
         logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e} {}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
@@ -158,7 +162,6 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
         S = hkldata.binned_df.S[i_bin]
         FSCfull = hkldata.binned_df.FSCfull[i_bin]
         varn = hkldata.binned_df.var_noise[i_bin]
-        FSCfull = max(1e-6, FSCfull)
 
         delfwt = (Fo-D*Fc)*S/(S+varn)
         fwt = (Fo*S+varn*D*Fc)/(S+varn)
@@ -169,6 +172,9 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
         #sig_fo = numpy.sqrt(var_cmpl(Fo))
         sig_fo = numpy.std(Fo)
         n_fo = sig_fo * numpy.sqrt(FSCfull)
+        if n_fo < 1e-10 or n_fo != n_fo:
+            logger.write("WARNING: skipping bin {} sig_fo={} FSCfull={}".format(i_bin, sig_fo, FSCfull))
+            continue
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"

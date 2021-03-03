@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 import numpy
 import pandas
 import gemmi
+from servalcat.utils import logger
 
 class Binner:
     def __init__(self, asu, style="relion"):
@@ -95,8 +96,22 @@ class HklData:
         self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
                                           columns=["bin"])
         self._bin_and_limits = []
+        bin_numbers = set(self.df.bin)
+
+        # Merge inner shells if too few
+        while True:
+            min_bin = min(bin_numbers)
+            min_bin_sel = min_bin == self.df.bin
+            n_min_bin = sum(min_bin_sel)
+            if n_min_bin < 10:
+                logger.write("Bin {} only has {} data. Merging with next bin.".format(min_bin, n_min_bin))
+                self.df.loc[min_bin_sel, "bin"] = min_bin+1
+                bin_numbers.remove(min_bin)
+            else:
+                break
+                
         # TODO very slow
-        for i_bin in set(self.df.bin):
+        for i_bin in bin_numbers:
             sel = self.df.bin == i_bin # selection may be kept, but df size may change later..?
             d_sel = self.df.d[sel]
             self._bin_and_limits.append((i_bin, max(d_sel), min(d_sel)))
