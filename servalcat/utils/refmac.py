@@ -10,7 +10,11 @@ import subprocess
 import pipes
 import json
 import copy
+import re
 from servalcat.utils import logger
+
+re_version = re.compile("#.* Refmac *version ([^ ]+) ")
+re_error = re.compile('(warn|error *[:]|error *==|^error)', re.IGNORECASE)
 
 def external_restraints_json_to_keywords(json_in):
     ret = []
@@ -137,7 +141,7 @@ class Refmac:
                 ret += "@{}\n".format(f)
 
         if self.keywords:
-            ret += "\n".join(self.keywords)
+            ret += "\n".join(self.keywords).strip() + "\n"
 
         return ret
     # make_keywords()
@@ -159,18 +163,47 @@ class Refmac:
     def run_refmac(self):
         cmd = self.make_cmd()
         stdin = self.make_keywords()
+        open(self.prefix+".inp", "w").write(stdin)
 
         logger.write("Running REFMAC5..")
-        logger.write("{} <<__eof__".format(" ".join(cmd)))
-        logger.write(stdin)
+        logger.write("{} <<__eof__ > {}".format(" ".join(cmd), self.prefix+".log"))
+        logger.write(stdin, end="")
         logger.write("__eof__")
 
-        log = open(self.prefix+".log", "w")
-        p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=log, stderr=log)
-        open(self.prefix+".inp", "w").write(stdin)
-        p.stdin.write(stdin.encode("utf-8"))
+        p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             universal_newlines=True)
+        p.stdin.write(stdin)
         p.stdin.close()
+
+        log = open(self.prefix+".log", "w")
+        cycle = 0
+        for l in iter(p.stdout.readline, ""):
+            log.write(l)
+
+            r_ver = re_version.search(l)
+            if r_ver:
+                logger.write("Starting Refmac {}".format(r_ver.group(1)))
+
+            r_err = re_error.search(l)
+            if r_err:
+                if self.global_mode == "spa":
+                    if "Figure of merit of phases has not been assigned" in l:
+                        continue
+                    elif "They will be assumed to be equal to 1.0" in l:
+                        continue
+                logger.write(l, end="")
+            
+            if self.global_mode == "spa":
+                if "CGMAT cycle number =" in l:
+                    cycle = int(l[l.index("=")+1:])
+                    if cycle == 1:
+                        logger.write("cycle FSCaverage")
+                elif "Average Fourier shell correlation    =" in l and cycle > 0:
+                    fsc = l[l.index("=")+1:].strip()
+                    logger.write("{:5d} {}".format(cycle, fsc))
+                    cycle = 0
+        
         ret = p.wait()
-        logger.write("REFMAC5 finished with {}".format(ret))
+        logger.write("REFMAC5 finished with exit code= {}".format(ret))
     # run_refmac()
 # class Refmac
