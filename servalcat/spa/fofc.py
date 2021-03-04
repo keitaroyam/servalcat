@@ -16,8 +16,9 @@ import argparse
 
 def add_arguments(parser):
     parser.description = 'Fo-Fc map calculation based on model and data errors'
-    parser.add_argument("--halfmaps", required=True, nargs=2)
-    #parser.add_argument('--mapref', help='Reference map file')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--halfmaps", nargs=2)
+    group.add_argument("--map", help="Use only if you really do not have half maps.")
     parser.add_argument('--model', required=True,
                         help='Input atomic model file (PDB or mmCIF/PDBx')
     parser.add_argument("-d", '--resolution', type=float, required=True)
@@ -44,30 +45,29 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def read_maps(halfmaps, d_min, mask=None):
-    assert len(halfmaps) == 2
-    map1 = utils.fileio.read_ccp4_map(halfmaps[0])
-    map2 = utils.fileio.read_ccp4_map(halfmaps[1])
-    
-    if mask is not None:
-        map1.grid = gemmi.FloatGrid(numpy.array(map1.grid)*mask,
-                                    map1.grid.unit_cell, map1.grid.spacegroup)
-        map2.grid = gemmi.FloatGrid(numpy.array(map2.grid)*mask,
-                                    map2.grid.unit_cell, map2.grid.spacegroup)
+def mask_and_fft_maps(maps, d_min, mask=None):
+    assert len(maps) <= 2
+    asus = []
+    for m in maps:
+        if mask is not None:
+            m.grid = gemmi.FloatGrid(numpy.array(m.grid)*mask,
+                                     m.grid.unit_cell, m.grid.spacegroup)
 
-    asu1 = gemmi.transform_map_to_f_phi(map1.grid).prepare_asu_data(dmin=d_min)
-    asu2 = gemmi.transform_map_to_f_phi(map2.grid).prepare_asu_data(dmin=d_min)
+        asus.append(gemmi.transform_map_to_f_phi(m.grid).prepare_asu_data(dmin=d_min))
 
-    return asu1, asu2
-# read_maps()
+    if len(maps) == 2:
+        df = utils.hkl.df_from_asu_data(asus[0], "F_map1")
+        hkldata = utils.hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        hkldata.merge_asu_data(asus[1], "F_map2")
+        hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
+    else:
+        df = utils.hkl.df_from_asu_data(asus[0], "FP")
+        hkldata = utils.hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        
+    return hkldata
+# mask_and_fft_maps()
     
-def calc_noise_var(asu1, asu2, fc_asu):
-    df = utils.hkl.df_from_asu_data(asu1, "F_map1")
-    hkldata = utils.hkl.HklData(asu1.unit_cell, asu1.spacegroup, False, df)
-    hkldata.merge_asu_data(asu2, "F_map2")
-    hkldata.merge_asu_data(fc_asu, "FC")
-    hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
-    hkldata.setup_relion_binning()
+def calc_noise_var(hkldata):
     # Scale
     #iniscale = utils.scaling.InitialScaler(fo_asu, fc_asu, aniso=True)
     #iniscale.run()
@@ -86,10 +86,6 @@ def calc_noise_var(asu1, asu2, fc_asu):
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         # scale
-        #fo = numpy.array(hkldata.df.FP[sel])
-        #fc = numpy.array(hkldata.df.FC[sel])
-        #fo = hkldata.df.FP[sel]
-        #fc = hkldata.df.FC[sel]
         scale = 1. #numpy.sqrt(var_cmpl(fc)/var_cmpl(fo))
         #hkldata.df.loc[sel, "FP"] *= scale
         #hkldata.df.loc[sel, "F_map1"] *= scale
@@ -108,11 +104,9 @@ def calc_noise_var(asu1, asu2, fc_asu):
                                                                          fsc, varn, scale))
         hkldata.binned_df.loc[i_bin, "var_noise"] = varn
         hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
-
-    return hkldata
 # calc_noise_var()
 
-def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes):
+def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True):#fo_asu, fc_asu, varn, bins, bin_idxes):
     bdf = hkldata.binned_df
     bdf["D"] = 0.
     bdf["S"] = 0.
@@ -125,15 +119,18 @@ def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes)
         sel = i_bin == hkldata.df.bin
         Fo = FP[sel]
         Fc = FC[sel]
-        varn = hkldata.binned_df.var_noise[i_bin]
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
-        fsc_full = hkldata.binned_df.FSCfull
         bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
-        bdf.loc[i_bin, "S"] = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
+        if has_halfmaps:
+            varn = hkldata.binned_df.var_noise[i_bin]
+            fsc_full = hkldata.binned_df.FSCfull[i_bin]
+            bdf.loc[i_bin, "S"] = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
+        else:
+            varn = fsc_full = 0
         ofs.write(tmpl.format(i_bin, Fo.size, bin_d_max, bin_d_min,
                               numpy.average(numpy.abs(Fo)),
                               numpy.average(numpy.abs(Fc)),
-                              fsc, fsc_full[i_bin], bdf.D[i_bin], bdf.S[i_bin], varn))
+                              fsc, fsc_full, bdf.D[i_bin], bdf.S[i_bin], varn))
 # calc_D_and_S()
 
 #import line_profiler
@@ -141,9 +138,13 @@ def calc_D_and_S(hkldata, output_prefix):#fo_asu, fc_asu, varn, bins, bin_idxes)
 #import atexit
 #atexit.register(profile.print_stats)
 #@profile
-def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
-    labs = ["DELFWT", "FWT", "DELFWT_noscale", "FWT_noscale"]
-    if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
+def calc_maps(hkldata, B=None, has_halfmaps=True):
+    if has_halfmaps:
+        labs = ["DELFWT", "FWT", "DELFWT_noscale", "FWT_noscale"]
+        if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
+    else:
+        labs = ["DELFWT"]
+        
     tmp = {}
     for l in labs:
         tmp[l] = numpy.zeros(len(hkldata.df.index), numpy.complex128)
@@ -159,6 +160,11 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
         Fo = FP[sel]
         Fc = FC[sel]
         D = hkldata.binned_df.D[i_bin]
+        if not has_halfmaps:
+            delfwt = (Fo-D*Fc)
+            tmp["DELFWT"][sel] = delfwt
+            continue
+
         S = hkldata.binned_df.S[i_bin]
         FSCfull = hkldata.binned_df.FSCfull[i_bin]
         varn = hkldata.binned_df.var_noise[i_bin]
@@ -169,7 +175,6 @@ def calc_maps(hkldata, B=None):#fo_asu, fc_asu, D, S, varn, bins, bin_idxes):
         tmp["DELFWT_noscale"][sel] = delfwt
         tmp["FWT_noscale"][sel] = fwt
 
-        #sig_fo = numpy.sqrt(var_cmpl(Fo))
         sig_fo = numpy.std(Fo)
         n_fo = sig_fo * numpy.sqrt(FSCfull)
         if n_fo < 1e-10 or n_fo != n_fo:
@@ -231,16 +236,34 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
 # dump_to_mtz()
         
 def main(args):
-    st = gemmi.read_structure(args.model)
-    st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+    if not args.halfmaps and not args.map:
+        logger.write("Error: give --halfmaps or --map")
+        return
 
-    g = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
-    st.spacegroup_hm = "P1"
-    st.cell = g.unit_cell
+    if not args.halfmaps and args.B is not None:
+        logger.write("Error: -B only works for half maps")
+        return
 
     if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
         logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
         return
+
+    if not args.halfmaps:
+        logger.write("Warning: using --halfmaps is strongly recommended!")
+
+    st = gemmi.read_structure(args.model)
+    st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+
+    if args.halfmaps:
+        maps = [utils.fileio.read_ccp4_map(f) for f in args.halfmaps]
+        has_halfmaps = True
+    else:
+        maps = [utils.fileio.read_ccp4_map(args.map)]
+        has_halfmaps = False
+
+    g = maps[0].grid
+    st.spacegroup_hm = "P1"
+    st.cell = g.unit_cell
 
     if st[0].count_hydrogen_sites() > 0:
         monlib = utils.model.load_monomer_library(st[0].get_all_residue_names(),
@@ -267,9 +290,13 @@ def main(args):
 
     utils.model.normalize_it92(st)
     fc_asu = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron")
-    asu1, asu2 = read_maps(args.halfmaps, args.resolution, mask)
-    hkldata = calc_noise_var(asu1, asu2, fc_asu)
-    #dump_to_mtz(fo_asu, "Fo.mtz")
+
+    hkldata = mask_and_fft_maps(maps, args.resolution, mask)
+    hkldata.merge_asu_data(fc_asu, "FC")
+    hkldata.setup_relion_binning()
+    
+    if args.halfmaps:
+        calc_noise_var(hkldata)
 
     if args.B is not None:
         Bave = numpy.average(utils.model.all_B(st))
@@ -280,7 +307,7 @@ def main(args):
     else:
         B = None
         
-    calc_D_and_S(hkldata, args.output_prefix)
+    calc_D_and_S(hkldata, args.output_prefix, has_halfmaps=has_halfmaps)
 
     if args.omit_proton or args.omit_h_electron:
         fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron",
@@ -288,7 +315,7 @@ def main(args):
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
     
-    map_labs = calc_maps(hkldata, B=B)
+    map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps)
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(args.output_prefix))
 
     if args.normalized_map and mask is not None:
