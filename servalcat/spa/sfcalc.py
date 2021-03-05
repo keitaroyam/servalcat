@@ -157,22 +157,25 @@ def main(args):
 
     if args.map:
         logger.write("Input map: {}".format(args.map))
-        map_obs = utils.fileio.read_ccp4_map(args.map).grid
+        map_obs, start_obs = utils.fileio.read_ccp4_map(args.map)
         input_maps.append(map_obs)
         input_map_labels.append("obs")
     else:
         map_obs = None
+        start_obs = None
         
     if args.halfmaps:
         logger.write("Half map 1: {}".format(args.halfmaps[0]))
-        map_h1 = utils.fileio.read_ccp4_map(args.halfmaps[0]).grid
+        map_h1, start_h1 = utils.fileio.read_ccp4_map(args.halfmaps[0])
         logger.write("Half map 2: {}".format(args.halfmaps[1]))
-        map_h2 = utils.fileio.read_ccp4_map(args.halfmaps[1]).grid
+        map_h2, start_h2 = utils.fileio.read_ccp4_map(args.halfmaps[1])
         assert map_h1.shape == map_h2.shape
         assert map_h1.unit_cell == map_h2.unit_cell
+        assert start_h1 == start_h2
 
         if map_obs is None:
             map_obs = utils.maps.half2full(map_h1, map_h2)
+            start_obs = start_h1
             input_maps.append(map_obs)
             input_map_labels.append("obs")
             logger.write("Grid spacings: {} {} {}".format(*map_obs.spacing))
@@ -198,7 +201,7 @@ def main(args):
             logger.write("Using input map as a reference")
         else:
             logger.write("Reference map: {}".format(args.mapref))
-            map_ref = utils.fileio.read_ccp4_map(args.mapref).grid
+            map_ref = utils.fileio.read_ccp4_map(args.mapref)[0]
             assert unit_cell == map_ref.unit_cell
             assert map_obs.shape == map_ref.shape
 
@@ -210,7 +213,7 @@ def main(args):
     mask = None
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask).grid)
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
     
     st_new = None
     if args.model: # and 
@@ -286,7 +289,8 @@ def main(args):
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
-            new_cell, new_shape, slices, shifts = shift_maps.determine_shape_and_shift(mask=mask,
+            new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
+                                                                                       grid_start=start_obs,
                                                                                        padding=args.mask_radius,
                                                                                        mask_cutoff=0.1,
                                                                                        noncentered=True,
@@ -315,9 +319,7 @@ def main(args):
             logger.write(" Saving masked and shifted maps as mtz files..")
             for ma, lab in zip(input_maps, input_map_labels):
                 logger.write("  Processing {} map".format(lab))
-                org_grid = numpy.array(ma)
-                new_grid = org_grid[slices[0], slices[1], slices[2]]
-
+                new_grid = ma.get_subarray(*(list(starts)+list(new_shape)))
                 new_grid = gemmi.FloatGrid(new_grid, new_cell, spacegroup)
                 asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=resolution)
                 write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)

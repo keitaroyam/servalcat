@@ -90,20 +90,25 @@ def read_shifts_txt(shifts_txt):
 def read_ccp4_map(filename, setup=True):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
+    grid_start = [m.header_i32(x) for x in (5,6,7)]
+    axis_pos = m.axis_positions()
+    spacings = [1./g.unit_cell.reciprocal().parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
+    
     logger.write("Reading CCP4/MRC map file {}".format(filename))
-    logger.write("        Grid: {}".format(g.shape))
+    logger.write("        Grid: {:4d} {:4d} {:4d}".format(*g.shape))
     logger.write("    Map mode: {}".format(m.header_i32(4)))
-    logger.write("       Start: {}".format([m.header_i32(x) for x in (5,6,7)]))
-    logger.write("        Cell: {}".format(g.unit_cell.parameters))
-    logger.write("  Axis order: {}".format(g.axis_order))
+    logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
+    logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
+    logger.write("  Axis order: {}".format(" ".join(["XYZ"[i] for i in axis_pos])))
     logger.write(" Space group: {}".format(g.spacegroup.hm))
-    logger.write("     Spacing: {}".format(g.spacing)) # XXX invalid if setup() is needed
-    logger.write("")
+    logger.write("     Spacing: {:.3f} {:.3f} {:.3f}".format(*spacings))
+    logger.write("       Label: {}".format(m.header_str(57, 80)))
     # Labels, Title, 
     if setup:
         m.setup()
+        grid_start = [grid_start[i] for i in axis_pos]
         
-    return m # should return original headers?
+    return m.grid, grid_start # should return original headers?
 # read_ccp4_map()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):

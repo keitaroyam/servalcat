@@ -49,11 +49,12 @@ def mask_and_fft_maps(maps, d_min, mask=None):
     assert len(maps) <= 2
     asus = []
     for m in maps:
+        g = m[0]
         if mask is not None:
-            m.grid = gemmi.FloatGrid(numpy.array(m.grid)*mask,
-                                     m.grid.unit_cell, m.grid.spacegroup)
+            g = gemmi.FloatGrid(numpy.array(g)*mask,
+                                g.unit_cell, g.spacegroup)
 
-        asus.append(gemmi.transform_map_to_f_phi(m.grid).prepare_asu_data(dmin=d_min))
+        asus.append(gemmi.transform_map_to_f_phi(g).prepare_asu_data(dmin=d_min))
 
     if len(maps) == 2:
         df = utils.hkl.df_from_asu_data(asus[0], "F_map1")
@@ -261,7 +262,8 @@ def main(args):
         maps = [utils.fileio.read_ccp4_map(args.map)]
         has_halfmaps = False
 
-    g = maps[0].grid
+    grid_start = maps[0][1]
+    g = maps[0][0]
     st.spacegroup_hm = "P1"
     st.cell = g.unit_cell
 
@@ -272,7 +274,7 @@ def main(args):
         monlib = None
 
     if args.mask:
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask).grid)
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
     elif args.mask_radius:
         mask = gemmi.FloatGrid(*g.shape)
         mask.set_unit_cell(g.unit_cell)
@@ -286,7 +288,8 @@ def main(args):
     else:
         mask = None
         if args.normalized_map:
-            logger.write("WARNING: Mask is not available. --normalized-map will have no effect.")
+            logger.write("Error: Provide --mask or --mask_radius if you want --normalized-map.")
+            return
 
     utils.model.normalize_it92(st)
     fc_asu = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron")
@@ -338,7 +341,8 @@ def main(args):
         filename = "{}_normalized_fofc.mrc".format(args.output_prefix)
         logger.write("  Writing {}".format(filename))
         utils.maps.write_ccp4_map(filename, scaled, cell=st.cell,
-                                  mask_for_extent=mask if args.crop else None)
+                                  mask_for_extent=mask if args.crop else None,
+                                  grid_start=grid_start)
 
 # main()
 

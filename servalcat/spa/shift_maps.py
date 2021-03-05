@@ -49,14 +49,17 @@ def check_maps(map_files, disable_cell_check=False):
     logger.write("Input map files:")
     params = []
     for f in map_files:
-        m = utils.fileio.read_ccp4_map(f)
-        g = m.grid
-        params.append((g.unit_cell.parameters, g.shape, g.spacing))
+        g, gs = utils.fileio.read_ccp4_map(f)
+        params.append((g.unit_cell.parameters, g.shape, g.spacing, gs))
 
     shapes = set([x[1] for x in params])
     if len(shapes) > 1:
         raise RuntimeError("Error: different grid size included")
 
+    starts = set([tuple(x[3]) for x in params])
+    if len(starts) > 1:
+        raise RuntimeError("Error: different origins included")
+    
     cells = set([x[0] for x in params])
     if len(cells) > 1:
         if disable_cell_check:
@@ -76,42 +79,52 @@ def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
               open(filename, "w"), indent=2)
 # write_shifts_json()
 
-def determine_shape_and_shift(mask, padding, mask_cutoff=1e-5, noncentered=False, noncubic=False,
+def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, noncentered=False, noncubic=False,
                               json_out="trim_shifts.json"):
-    grid_shape = mask.shape
+    grid_shape = numpy.array(mask.shape)
     spacing = numpy.array(mask.spacing)
+    grid_start = numpy.array(grid_start)
+    grid_end = grid_start + grid_shape # for indexing grid_end-1 is the end
     cell = mask.unit_cell
-    tmp = numpy.where(numpy.array(mask)>mask_cutoff)
+    logger.write("Original grid start: {:4d} {:4d} {:4d}".format(*grid_start))
+    logger.write("         grid   end: {:4d} {:4d} {:4d}".format(*(grid_end-1)))
+    tmp = numpy.where(numpy.array(mask)>mask_cutoff) - grid_start[:,None]
+    tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
     limits = [(min(x), max(x)) for x in tmp]
     p = numpy.ceil(padding / spacing).astype(int)
-    logger.write("Limits: {}".format(limits))
-    logger.write("Padding: {}".format(p))
+    logger.write("Limits: {} {} {}".format(*limits))
+    logger.write("Padding: {} {} {}".format(*p))
     if noncentered:
         logger.write("Non-centered trimming will be performed.")
-        slices = [slice(max(0, limits[i][0]-p[i]),
-                        min(limits[i][1]+p[i]+1, grid_shape[i])) for i in range(3)]
+        slices = [slice(max(grid_start[i], limits[i][0]-p[i]),
+                        min(limits[i][1]+p[i]+1, grid_end[i])) for i in range(3)]
     else:
         logger.write("Centered trimming will be performed.")
         slices = [0, 0, 0]
         for i in range(3):
-            ctr = (grid_shape[i]-1)/2 
+            ctr = (grid_shape[i]-1)/2 + grid_start[i]
             rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
             logger.write("Rad{}= {}".format(i, rad))
             if rad < grid_shape[i]/2:
                 slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
             else:
-                slices[i] = slice(0, grid_shape[i], None)
+                slices[i] = slice(grid_start[i], grid_end[i], None)
             
     logger.write("Slices: {}".format(slices))
-    if not noncubic: # XXX this only works for cubic input
+    if not noncubic:
+        # only works when input grid is cubic; otherwise need to expand
+        if len(set(mask.shape)) > 1:
+            raise RuntimeError("Input grid is not cubic. Try --noncubic")
         min_s = min([slices[i].start for i in range(3)])
         max_s = max([slices[i].stop for i in range(3)])
         slices = [slice(min_s, max_s, None) for i in range(3)]
         logger.write("Cubic Slices: {}".format(slices))
 
+    starts = [slices[i].start for i in range(3)]
+        
     # Shifts for model
     shifts = -mask.get_position(slices[0].start, slices[1].start, slices[2].start)
-    logger.write("Shift for model: {}".format(shifts))
+    logger.write("Shift for model: {} {} {}".format(*shifts.tolist()))
 
     new_shape = [slices[0].stop-slices[0].start,
                  slices[1].stop-slices[1].start,
@@ -128,12 +141,12 @@ def determine_shape_and_shift(mask, padding, mask_cutoff=1e-5, noncentered=False
                           new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
                           shifts=shifts.tolist())
 
-    return new_cell, new_shape, slices, shifts
+    return new_cell, new_shape, starts, shifts
 # determine_shape_and_shift()    
         
 def main(args):
     args.maps = sum(args.maps, [])
-    cell, grid_shape, spacing = check_maps(args.maps, args.disable_cell_check)
+    cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.disable_cell_check)
     if args.force_cell:
         cell = args.force_cell
 
@@ -150,7 +163,7 @@ def main(args):
         
     if args.mask:
         logger.write("Using mask to decide border: {}".format(args.mask))
-        mask = utils.fileio.read_ccp4_map(args.mask).grid
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
         assert mask.shape == grid_shape
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
@@ -165,7 +178,8 @@ def main(args):
         raise RuntimeError("Give mask or model")
 
     # call func
-    new_cell, new_shape, slices, shifts = determine_shape_and_shift(mask=mask, padding=args.padding,
+    new_cell, new_shape, starts, shifts = determine_shape_and_shift(mask=mask, grid_start=grid_start,
+                                                                    padding=args.padding,
                                                                     mask_cutoff=args.mask_cutoff,
                                                                     noncentered=args.noncentered,
                                                                     noncubic=args.noncubic)
@@ -191,8 +205,8 @@ def main(args):
     
     for f in args.maps:
         logger.write("Slicing {}".format(f))
-        g = numpy.array(utils.fileio.read_ccp4_map(f).grid)
-        newg = g[slices[0], slices[1], slices[2]]
+        g = utils.fileio.read_ccp4_map(f)[0]
+        newg = g.get_subarray(*(list(starts)+list(new_shape)))
         ccp4 = gemmi.Ccp4Map()
         ccp4.grid = gemmi.FloatGrid(newg, new_cell, mask.spacegroup)
         ccp4.update_ccp4_header(2, True) # float, update stats
