@@ -93,7 +93,8 @@ def read_ccp4_map(filename, setup=True):
     grid_start = [m.header_i32(x) for x in (5,6,7)]
     axis_pos = m.axis_positions()
     spacings = [1./g.unit_cell.reciprocal().parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
-    
+    label = m.header_str(57, 80)
+    label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
     logger.write("        Grid: {:4d} {:4d} {:4d}".format(*g.shape))
     logger.write("    Map mode: {}".format(m.header_i32(4)))
@@ -102,7 +103,8 @@ def read_ccp4_map(filename, setup=True):
     logger.write("  Axis order: {}".format(" ".join(["XYZ"[i] for i in axis_pos])))
     logger.write(" Space group: {}".format(g.spacegroup.hm))
     logger.write("     Spacing: {:.3f} {:.3f} {:.3f}".format(*spacings))
-    logger.write("       Label: {}".format(m.header_str(57, 80)))
+    logger.write("       Label: {}".format(label))
+    logger.write("")
     # Labels, Title, 
     if setup:
         m.setup()
