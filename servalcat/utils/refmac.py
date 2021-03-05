@@ -11,6 +11,7 @@ import pipes
 import json
 import copy
 import re
+import os
 from servalcat.utils import logger
 
 re_version = re.compile("#.* Refmac *version ([^ ]+) ")
@@ -146,14 +147,15 @@ class Refmac:
         return ret
     # make_keywords()
 
+    def xyzout(self): return self.prefix + ".pdb"
+    def hklout(self): return self.prefix + ".mtz"
+
     def make_cmd(self):
         cmd = [self.exe]
-        xyzout = self.prefix + ".pdb"
-        hklout = self.prefix + ".mtz"
         cmd.extend(["hklin", pipes.quote(self.hklin)])
-        cmd.extend(["hklout", pipes.quote(hklout)])
+        cmd.extend(["hklout", pipes.quote(self.hklout())])
         cmd.extend(["xyzin", pipes.quote(self.xyzin)])
-        cmd.extend(["xyzout", pipes.quote(xyzout)])
+        cmd.extend(["xyzout", pipes.quote(self.xyzout())])
         if self.libin:
             cmd.extend(["libin", self.libin])
 
@@ -205,5 +207,9 @@ class Refmac:
         
         ret = p.wait()
         logger.write("REFMAC5 finished with exit code= {}".format(ret))
+
+        if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
+            raise RuntimeError("REFMAC5 did not produce output files.")
+        
     # run_refmac()
 # class Refmac
