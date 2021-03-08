@@ -8,7 +8,9 @@ Mozilla Public License, version 2.0; see LICENSE.
 import gemmi
 import subprocess
 import numpy
+import re
 from servalcat.utils import fileio
+from servalcat.utils import generate_operators
 
 def get_matrices_using_relion(sym):
     ps = subprocess.check_output(["relion_refine", "--sym", sym.strip(), "--print_symmetry_ops"])
@@ -27,6 +29,40 @@ def get_matrices_using_relion(sym):
 
     return ret
 # get_matrices_using_relion()
+
+def operators_from_symbol(op):
+    r = re.search("^((?P<a>I|T|O)|(?P<b>C|D)(?P<n>[0-9]+))$", op.upper())
+    if not r:
+        raise RuntimeError("Invalid point group symbol: {}".format(op))
+    a, b, n = r.group("a"), r.group("b"), r.group("n")
+    if n is not None and int(n) <= 0:
+        raise RuntimeError("Non positive order given: {}".format(op))
+
+    # RELION's conventions
+    if a == "I":
+        order1 = order2 = 5
+        axis1 = numpy.array([0, 0.85065, 0.52573])
+        axis2 = numpy.array([0.52573, 0, 0.85065])
+    elif a == "O":
+        order1 = order2 = 4
+        axis1 = numpy.array([0,0,1.0])
+        axis2 = numpy.array([0,1.0,0])
+    elif a == "T":
+        order1 = order2 = 3
+        axis1 = numpy.array([0.0,0.0,1.0])
+        axis2 = numpy.array([0.0,0.94280904,-0.33333333])
+    elif b == "D":
+        order1 = int(n)
+        axis1 = numpy.array([0,0,1.0])
+        order2 = 2
+        axis2 = numpy.array([1.,0.,0.])
+    elif b == "C":
+        order1 = int(n)
+        axis1 = numpy.array([0,0,1.0])
+        order2 = 0
+        axis2 = None
+    return generate_operators.generate_all_elements(axis1, order1, axis2, order2)
+# operators_from_symbol()
 
 """
 def write_ncsc_for_refmac(file_name, matrices, xyz_in=None, map_in=None):

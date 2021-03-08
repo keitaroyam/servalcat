@@ -41,8 +41,8 @@ def add_sfcalc_args(parser):
                         nargs="+", # XXX probably no need to be multiple
                         type=float,
                         help='Sharpening or blurring B')
-    parser.add_argument('--relion_pg',
-                        help='RELION point group symbol for strict symmetry')
+    parser.add_argument('--pg',
+                        help="Point group symbol for strict symmetry. The coordinate system is consitent with RELION.")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models',
@@ -231,12 +231,12 @@ def main(args):
             logger.write("Removing symmetry information from model.")
             st.ncs.clear()
 
-        if args.relion_pg:
-            logger.write("Point group symmetry given as RELION symbol: {}".format(args.relion_pg))
+        if args.pg:
+            logger.write("Point group symmetry: {}".format(args.pg))
             if len(st.ncs) > 0:
                 logger.write(" WARNING: NCS information in model file will be ignored")
 
-            ops = utils.symmetry.get_matrices_using_relion(args.relion_pg)
+            _, _, ops = utils.symmetry.operators_from_symbol(args.pg)
             if ops:
                 logger.write(" {} operators found".format(len(ops)))
                 ops = utils.symmetry.make_NcsOps_from_matrices(ops, cell=unit_cell)
