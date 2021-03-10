@@ -42,7 +42,14 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.ncs = True
         groups.atoms = True
         groups.cell = True
-        doc = gemmi.cif.read(cif_ref)
+        try:
+            doc = gemmi.cif.read(cif_ref)
+        except RuntimeError as e:
+            # Sometimes refmac writes a broken mmcif file..
+            logger.write("Error in mmCIF reading: {}".format(e))
+            logger.write("  Give up using cif reference.")
+            return write_mmcif(st, cif_out)
+            
         block = doc.find_block(st_new.info["_entry.id"])
         st_new.update_mmcif_block(block, groups)
         st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
