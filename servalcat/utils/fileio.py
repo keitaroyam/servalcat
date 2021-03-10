@@ -101,8 +101,8 @@ def read_ccp4_map(filename, setup=True):
     logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
     logger.write("  Axis order: {}".format(" ".join(["XYZ"[i] for i in axis_pos])))
-    logger.write(" Space group: {}".format(g.spacegroup.hm))
-    logger.write("     Spacing: {:.3f} {:.3f} {:.3f}".format(*spacings))
+    logger.write(" Space group: {}".format(m.header_i32(23)))
+    logger.write("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
     logger.write("       Label: {}".format(label))
     logger.write("")
     # Labels, Title, 
@@ -110,7 +110,7 @@ def read_ccp4_map(filename, setup=True):
         m.setup()
         grid_start = [grid_start[i] for i in axis_pos]
         
-    return m.grid, grid_start # should return original headers?
+    return [m.grid, grid_start] # should return original headers?
 # read_ccp4_map()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):

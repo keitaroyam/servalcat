@@ -14,11 +14,9 @@ from servalcat import utils
 from servalcat.spa import shift_maps
 
 def add_sfcalc_args(parser):
-    parser.add_argument('--map',
-                        help='Input map file')
-    parser.add_argument('--halfmaps',
-                        nargs=2,
-                        help='Input half map files')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--halfmaps", nargs=2, help="Input half map files")
+    group.add_argument("--map", help="Use only if you really do not have half maps.")
     parser.add_argument('--mapref',
                         help='Reference map file')
     parser.add_argument('--mask',
@@ -69,45 +67,56 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def write_map_mtz(asu_data, mtz_out, blurs=None):
+def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None):
     if not blurs: blurs = []
-    if 0 not in blurs:
-        blurs = [0.] + blurs
+    if 0 not in blurs: blurs = [0.] + blurs
     
+    nblur = len(blurs)
+    ncol = 3+len(map_labs)*(1+nblur)
+    if sig_lab: ncol += nblur
+    data = numpy.empty((len(hkldata.df.index), ncol))
+    data[:,:3] = hkldata.df[["H","K","L"]]
+    s2 = 1./hkldata.d_spacings()**2
+    for i, lab in enumerate(map_labs):
+        for j, b in enumerate(blurs):
+            f = numpy.abs(hkldata.df[lab])
+            if b != 0: f *= numpy.exp(-b*s2/4.)
+            data[:,3+i*(1+nblur)+j] = f
+        data[:,3+i*(1+nblur)+nblur] = numpy.angle(hkldata.df[lab], deg=True)
+        
+    if sig_lab:
+        for j, b in enumerate(blurs):
+            sigf = hkldata.df[sig_lab]
+            if b != 0: sigf *= numpy.exp(-b*s2/4.)
+            data[:,3+len(map_labs)*(1+nblur)+j] = sigf
+
     mtz = gemmi.Mtz()
-    mtz.spacegroup = asu_data.spacegroup
-    mtz.cell = asu_data.unit_cell
+    mtz.spacegroup = hkldata.sg
+    mtz.cell = hkldata.cell
     mtz.add_dataset('HKL_base')
     for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
-    for b in blurs:
-        if b == 0:
-            mtz.add_column("Fout0", "F")
-        else:
-            mtz.add_column("FoutBlur_{:.2f}".format(b), "F")
 
-    mtz.add_column("Pout0", "P")
-
-    data = numpy.empty((len(asu_data), 3+len(blurs)+1))
-    data[:,:3] = asu_data.miller_array
-    s2 = asu_data.make_1_d2_array()
-    
-    for i, b in enumerate(blurs):
-        if b == 0:
-            data[:,3+i] = numpy.absolute(asu_data.value_array)
-        else:
-            tempfac = numpy.exp(-b*s2/4.)
-            data[:,3+i] = numpy.absolute(asu_data.value_array * tempfac)
-            
-    data[:,-1] = numpy.angle(asu_data.value_array, deg=True)
-
+    for lab in map_labs:
+        lab_root = lab[1:] if lab[0]=="F" else lab
+        for b in blurs:
+            labf = lab
+            if b != 0: labf = "{}Blur_{:.2f}".format(labf, b).replace("Fout0", "Fout")
+            mtz.add_column(labf, "F")
+        mtz.add_column("P"+lab_root, "P")
+    if sig_lab:
+        for b in blurs:
+            labsigf = sig_lab
+            if b != 0: labsigf = "{}Blur_{:.2f}".format(labsigf, b).replace("Fout0", "Fout")
+            mtz.add_column(labsigf, "Q")
+        
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 # write_map_mtz()
 
 def scale_maps(maps_in, map_ref, d_min):
     fs = []
-    for m in [map_ref]+maps_in:
-        asu = gemmi.transform_map_to_f_phi(m).prepare_asu_data(dmin=d_min)
+    for m in [[map_ref,None]]+maps_in:
+        asu = gemmi.transform_map_to_f_phi(m[0]).prepare_asu_data(dmin=d_min)
         fs.append(asu)
 
     binner = utils.hkl.Binner(fs[0], style="relion")
@@ -138,10 +147,12 @@ def scale_maps(maps_in, map_ref, d_min):
 
     maps_scaled = [gemmi.transform_f_phi_grid_to_map(f.get_f_phi_on_grid(size=map_ref.shape))
                    for f in f_inps_scaled]
-    return maps_scaled
+    return [[x]+y[1:] for x,y in zip(maps_scaled, maps_in)]
 # scale_maps()
 
 def main(args):
+    ret = {} # instructions for refinement
+    
     if args.no_mask:
         args.mask_radius = None
         if not args.no_shift:
@@ -151,63 +162,30 @@ def main(args):
             logger.write("WARNING: Your --mask is ignored because --no_mask is given")
             args.mask = None
         
-    input_maps = []
-    input_map_labels = []
     resolution = args.resolution - 1e-6
 
-    if args.map:
-        logger.write("Input map: {}".format(args.map))
-        map_obs, start_obs = utils.fileio.read_ccp4_map(args.map)
-        input_maps.append(map_obs)
-        input_map_labels.append("obs")
-    else:
-        map_obs = None
-        start_obs = None
-        
     if args.halfmaps:
-        logger.write("Half map 1: {}".format(args.halfmaps[0]))
-        map_h1, start_h1 = utils.fileio.read_ccp4_map(args.halfmaps[0])
-        logger.write("Half map 2: {}".format(args.halfmaps[1]))
-        map_h2, start_h2 = utils.fileio.read_ccp4_map(args.halfmaps[1])
-        assert map_h1.shape == map_h2.shape
-        assert map_h1.unit_cell == map_h2.unit_cell
-        assert start_h1 == start_h2
+        maps = [utils.fileio.read_ccp4_map(f) for f in args.halfmaps]
+        assert maps[0][0].shape == maps[1][0].shape
+        assert maps[0][0].unit_cell == maps[1][0].unit_cell
+        assert maps[0][1] == maps[1][1]
+    else:
+        maps = [utils.fileio.read_ccp4_map(args.map)]
 
-        if map_obs is None:
-            map_obs = utils.maps.half2full(map_h1, map_h2)
-            start_obs = start_h1
-            input_maps.append(map_obs)
-            input_map_labels.append("obs")
-            logger.write("Grid spacings: {} {} {}".format(*map_obs.spacing))
-        else:
-            assert map_obs.shape == map_h1.shape
-            assert map_obs.unit_cell == map_h1.unit_cell
-            
-        input_maps.extend([map_h1, map_h2])
-        input_map_labels.extend(["half1", "half2"])
-        
-    unit_cell = map_obs.unit_cell
+    grid_start = maps[0][1]
+    unit_cell = maps[0][0].unit_cell
     spacegroup = gemmi.SpaceGroup(1)
 
-    #if not args.map:
-    #    map_obs = gemmi.FloatGrid((numpy.array(map_h1) + map_h2)/2, unit_cell, spacegroup)
-
-    logger.write("Extent: {}".format(map_obs.shape))
-    logger.write("Cell: {}".format(unit_cell.parameters))
-
     if args.mapref:
-        if args.mapref == args.map:
-            map_ref = map_obs
-            logger.write("Using input map as a reference")
-        else:
-            logger.write("Reference map: {}".format(args.mapref))
-            map_ref = utils.fileio.read_ccp4_map(args.mapref)[0]
-            assert unit_cell == map_ref.unit_cell
-            assert map_obs.shape == map_ref.shape
+        logger.write("Reference map: {}".format(args.mapref))
+        map_ref, ref_start = utils.fileio.read_ccp4_map(args.mapref)
+        assert unit_cell == map_ref.unit_cell
+        assert maps[0][0].shape == map_ref.shape
+        assert maps[0][1] == ref_start
 
         # Overwrite input_maps
         logger.write("Scaling maps..")
-        input_maps = scale_maps(input_maps, map_ref, resolution)
+        maps = scale_maps(maps, map_ref, resolution)
 
     # Create mask
     mask = None
@@ -218,6 +196,7 @@ def main(args):
     st_new = None
     if args.model: # and 
         logger.write("Input model: {}".format(args.model))
+        model_format = utils.fileio.check_model_format(args.model)
         st = gemmi.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
@@ -249,6 +228,7 @@ def main(args):
         if len(st.ncs) > 0:
             logger.write(" Writing NCS file")
             utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc_global.txt")
+            ret["ncsc_file"] = "ncsc_global.txt"
         
         st_new = st.clone()
         if len(st.ncs) > 0 and not args.no_shift:
@@ -259,7 +239,7 @@ def main(args):
     
         if not mask and args.mask_radius:
             logger.write("Creating mask..")
-            mask = gemmi.FloatGrid(*map_obs.shape)
+            mask = gemmi.FloatGrid(*maps[0][0].shape)
             mask.set_unit_cell(unit_cell)
             mask.spacegroup = spacegroup
             mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
@@ -268,29 +248,24 @@ def main(args):
             ccp4.update_ccp4_header(2, True) # float, update stats
             ccp4.write_ccp4_map("mask_from_model.ccp4")
             logger.write("Mask file written: mask_from_model.ccp4")
-
-    # TODO Apply sharpening/blurring here?
-    # 
-
+    else:
+        model_format = None
+        
     if args.no_shift:
         logger.write(" Saving input model with unit cell information")
         utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
-
-        logger.write("Saving original maps as mtz files..")
-        for ma, lab in zip(input_maps, input_map_labels):
-            asu_obs = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=resolution)
-            write_map_mtz(asu_obs, args.output_mtz_prefix+"_"+lab+".mtz", blurs=args.blur)
+        ret["model_file"] = "starting_model" + model_format
 
     if mask:
         # Mask maps
         logger.write("Applying mask..")
-        input_maps = [gemmi.FloatGrid(numpy.array(ma)*mask, unit_cell, spacegroup)
-                      for ma in input_maps]
+        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, spacegroup)]+ma[1:]
+                for ma in maps]
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
             new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
-                                                                                       grid_start=start_obs,
+                                                                                       grid_start=grid_start,
                                                                                        padding=args.mask_radius,
                                                                                        mask_cutoff=0.1,
                                                                                        noncentered=True,
@@ -309,28 +284,57 @@ def main(args):
                     st_new.ncs.extend(new_ops)
                     logger.write(" Writing NCS file for shifted model")
                     utils.symmetry.write_NcsOps_for_refmac(st_new.ncs, "ncsc_local.txt")
+                    ret["ncsc_file"] = "ncsc_local.txt"
                     logger.write(" Writing symmetry expanded model for shifted model")
                     utils.symmetry.write_symmetry_expanded_model(st_new, "shifted_local_expanded",
                                                                  pdb=True, cif=True)
 
                 logger.write(" Saving shifted model..")
                 utils.fileio.write_model(st_new, "shifted_local", pdb=True, cif=True)
+                ret["model_file"] = "shifted_local" + model_format
 
-            logger.write(" Saving masked and shifted maps as mtz files..")
-            for ma, lab in zip(input_maps, input_map_labels):
-                logger.write("  Processing {} map".format(lab))
-                new_grid = ma.get_subarray(*(list(starts)+list(new_shape)))
-                new_grid = gemmi.FloatGrid(new_grid, new_cell, spacegroup)
-                asu_new = gemmi.transform_map_to_f_phi(new_grid).prepare_asu_data(dmin=resolution)
-                write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)
+            logger.write(" Trimming maps..")
+            for i in range(len(maps)): # Update maps
+                suba = maps[i][0].get_subarray(*(list(starts)+list(new_shape)))
+                new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
+                maps[i][0] = new_grid
 
-        else:
-            logger.write(" Saving masked maps as mtz files..")
-            for ma, lab in zip(input_maps, input_map_labels):
-                logger.write("  Processing {} map".format(lab))
-                asu_new = gemmi.transform_map_to_f_phi(ma).prepare_asu_data(dmin=resolution)
-                write_map_mtz(asu_new, args.output_masked_prefix+"_"+lab+".mtz", blurs=args.blur)
+        
+    hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
+    hkldata.setup_relion_binning()
+    if len(maps) == 2:
+        logger.write(" Calculating noise variances..")
+        map_labs = ["Fmap1", "Fmap2", "Fout0"]
+        sig_lab = "SIGFout0"
+        ret["lab_sigf"] = sig_lab
+        ret["lab_f_half1"] = "Fmap1"
+        # TODO Add SIGF in case of half maps, when refmac is ready
+        ret["lab_phi_half1"] = "Pmap1"
+        ret["lab_f_half2"] = "Fmap2"
+        ret["lab_phi_half2"] = "Pmap2"
+        utils.maps.calc_noise_var_from_halfmaps(hkldata)
+        hkldata.df[sig_lab] = 0.
+        for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
+            sel = i_bin == hkldata.df.bin
+            hkldata.df.loc[sel, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
+    else:
+        map_labs = ["Fout0"]
+        sig_lab = None
 
+    if args.no_shift:
+        logger.write("Saving original maps as mtz files..")
+        mtzout = args.output_mtz_prefix+".mtz"
+    else:
+        logger.write(" Saving masked maps as mtz files..")
+        mtzout = args.output_masked_prefix+"_obs.mtz"
+
+    hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout0"), inplace=True)
+    write_map_mtz(hkldata, mtzout,
+                  map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
+    ret["mtz_file"] = mtzout
+    ret["lab_f"] = "Fout" + ("Blur_{:.2f}".format(args.blur[0]) if args.blur else "0")
+    ret["lab_phi"] = "Pout0"
+    return ret
 # main()
 
 if __name__ == "__main__":

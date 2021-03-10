@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 from servalcat.utils import logger
+from servalcat.utils import hkl
 
 def mask_from_model():
     pass
@@ -20,6 +21,68 @@ def half2full(map_h1, map_h2):
     gr = gemmi.FloatGrid(tmp, map_h1.unit_cell, map_h1.spacegroup)
     return gr
 # half2full()
+
+def mask_and_fft_maps(maps, d_min, mask=None): # TODO add sharpen-unsharpen
+    assert len(maps) <= 2
+    asus = []
+    for m in maps:
+        g = m[0]
+        if mask is not None:
+            g = gemmi.FloatGrid(numpy.array(g)*mask,
+                                g.unit_cell, g.spacegroup)
+
+        asus.append(gemmi.transform_map_to_f_phi(g).prepare_asu_data(dmin=d_min))
+
+    if len(maps) == 2:
+        df = hkl.df_from_asu_data(asus[0], "F_map1")
+        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        hkldata.merge_asu_data(asus[1], "F_map2")
+        hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
+    else:
+        df = hkl.df_from_asu_data(asus[0], "FP")
+        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        
+    return hkldata
+# mask_and_fft_maps()
+    
+def calc_noise_var_from_halfmaps(hkldata):
+    # Scale
+    #iniscale = utils.scaling.InitialScaler(fo_asu, fc_asu, aniso=True)
+    #iniscale.run()
+    #scale_for_fo = iniscale.get_scales()
+    #fo_asu.value_array[:] *= scale_for_fo
+    #asu1.value_array[:] *= scale_for_fo
+    #asu2.value_array[:] *= scale_for_fo
+
+    s_array = 1./hkldata.d_spacings()
+    hkldata.binned_df["var_noise"] = 0.
+    hkldata.binned_df["FSCfull"] = 0.
+    
+    logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
+    F_map1 = numpy.array(hkldata.df.F_map1)
+    F_map2 = numpy.array(hkldata.df.F_map2)
+    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
+        sel = i_bin == hkldata.df.bin
+        # scale
+        scale = 1. #numpy.sqrt(var_cmpl(fc)/var_cmpl(fo))
+        #hkldata.df.loc[sel, "FP"] *= scale
+        #hkldata.df.loc[sel, "F_map1"] *= scale
+        #hkldata.df.loc[sel, "F_map2"] *= scale
+        
+        sel1 = F_map1[sel]
+        sel2 = F_map2[sel]
+
+        if sel1.size < 3:
+            logger.write("WARNING: skipping bin {} with size= {}".format(i_bin, sel1.size))
+            continue
+
+        fsc = numpy.real(numpy.corrcoef(sel1, sel2)[1,0])
+        varn = numpy.var(sel1-sel2)/4
+        logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e} {}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
+                                                                         fsc, varn, scale))
+        hkldata.binned_df.loc[i_bin, "var_noise"] = varn
+        hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
+# calc_noise_var_from_halfmaps()
 
 def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, grid_start=None):
     if type(array) == numpy.ndarray:

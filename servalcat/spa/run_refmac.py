@@ -84,19 +84,16 @@ def main(args):
         args.output_masked_prefix = "masked_fs"
         args.output_mtz_prefix = "starting_map"
         args.remove_multiple_models = True
-        spa.sfcalc.main(args)
-        args.mtz = "starting_map_obs.mtz" if args.no_mask else "masked_fs_obs.mtz"
+        file_info = spa.sfcalc.main(args)
+        args.mtz = file_info["mtz_file"]
         if args.halfmaps: # FIXME if no_mask?
-            args.mtz_half = ["masked_fs_half1.mtz", "masked_fs_half2.mtz"]
-        args.lab_phi = "Pout0"
-        if args.blur:
-            args.lab_f = "FoutBlur_{:.2f}".format(args.blur[0])
-        else:
-            args.lab_f = "Fout0"
-        if not args.no_shift:
-            args.model = "shifted_local" + model_format
-        else:
-            args.model = "starting_model" + model_format
+            args.mtz_half = [file_info["mtz_file"], file_info["mtz_file"]]
+        args.lab_phi = file_info["lab_phi"]  #"Pout0"
+        args.lab_f = file_info["lab_f"]
+        args.model = file_info["model_file"]
+    else:
+        file_info = {}
+        # Not supported actually..
 
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
@@ -110,14 +107,14 @@ def main(args):
         args.keywords = sum(args.keywords, [])
 
     # FIXME if mtz is given and sfcalc() not ran?
+    has_ncsc = "ncsc_file" in file_info
+    if has_ncsc:
+        args.keyword_file.append(file_info["ncsc_file"])
+
     if not args.no_shift:
         refmac_prefix = "local_" + args.output_prefix
-        if os.path.isfile("ncsc_local.txt"):
-            args.keyword_file.append("ncsc_local.txt")
     else:
         refmac_prefix = args.output_prefix
-        if os.path.isfile("ncsc_global.txt"):
-            args.keyword_file.append("ncsc_global.txt")
 
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
     refmac.run_refmac()
@@ -136,7 +133,7 @@ def main(args):
     """
 
     if not args.no_shift:
-        ncsc_in = ("ncsc_global.txt") if os.path.isfile("ncsc_global.txt") else None
+        ncsc_in = ("ncsc_global.txt") if has_ncsc else None
         spa.shiftback.shift_back(xyz_in=refmac_prefix+model_format,
                                  refine_mtz=refmac_prefix+".mtz",
                                  shifts_json="shifts.json",
@@ -144,7 +141,7 @@ def main(args):
                                  out_prefix=args.output_prefix)
 
     # Expand sym here
-    if os.path.isfile("ncsc_global.txt"):
+    if has_ncsc:
         refined_xyz = args.output_prefix+model_format
         logger.write("Expanding {}".format(refined_xyz))
         st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refined_xyz)
@@ -166,6 +163,11 @@ def main(args):
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
                                  xyzin=shaken_file,
                                  prefix=refmac_prefix_shaken)
+        if "lab_f_half1" in file_info:
+            refmac_hm1.lab_f = file_info["lab_f_half1"]
+            refmac_hm1.lab_phi = file_info["lab_phi_half1"]
+            # SIGMA?
+            
         refmac_hm1.run_refmac()
 
         # TODO replace this part later
@@ -174,12 +176,17 @@ def main(args):
                                  xyzin=refmac_prefix_shaken+model_format,
                                  prefix=refmac_prefix_hm2,
                                  ncycle=0, bfactor=None)
+        if "lab_f_half2" in file_info:
+            refmac_hm2.lab_f = file_info["lab_f_half2"]
+            refmac_hm2.lab_phi = file_info["lab_phi_half2"]
+            # SIGMA?
+
         refmac_hm2.run_refmac()
 
         # TODO calc FSC
 
         if not args.no_shift:
-            ncsc_in = ("ncsc_global.txt") if os.path.isfile("ncsc_global.txt") else None
+            ncsc_in = ("ncsc_global.txt") if has_ncsc else None
             spa.shiftback.shift_back(xyz_in=refmac_prefix_shaken+model_format,
                                  refine_mtz=refmac_prefix_shaken+".mtz",
                                  shifts_json="shifts.json",
