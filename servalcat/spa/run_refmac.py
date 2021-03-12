@@ -43,6 +43,7 @@ def add_arguments(parser):
     parser.add_argument('--keywords', nargs='+', action="append")
     parser.add_argument('--keyword_file', nargs='+', action="append")
     parser.add_argument('--external_restraints_json')
+    parser.add_argument('--show_refmac_log', action='store_true')
     parser.add_argument('--output_prefix', default="refined",
                         help='output file name prefix')
     parser.add_argument('--cross_validation', action='store_true',

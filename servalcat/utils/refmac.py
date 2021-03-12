@@ -17,6 +17,20 @@ from servalcat.utils import logger
 re_version = re.compile("#.* Refmac *version ([^ ]+) ")
 re_error = re.compile('(warn|error *[:]|error *==|^error)', re.IGNORECASE)
 
+def check_version(exe="refmac5"):
+    p = subprocess.Popen([exe], shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         universal_newlines=True)
+    p.stdin.write("end\n")
+    p.stdin.close()
+    ver = ()
+    for l in iter(p.stdout.readline, ""):
+        r_ver = re_version.search(l)
+        if r_ver:
+            ver = tuple(map(int, r_ver.group(1).split(".")))
+    p.wait()
+    return ver
+# check_version()
+
 def external_restraints_json_to_keywords(json_in):
     ret = []
     exte_list = json.load(open(json_in))
@@ -56,6 +70,7 @@ class Refmac:
         self.keywords = []
         self.external_restraints_json = None
         self.exe = "refmac5"
+        self.show_log = False # summary only if false
         self.global_mode = kwargs.get("global_mode")
         
         if self.global_mode == "spa":
@@ -93,6 +108,7 @@ class Refmac:
         self.keywords = args.keywords
         self.external_restraints_json = args.external_restraints_json
         self.exe = args.exe
+        self.show_log = args.show_refmac_log
     # init_from_args()
 
     def copy(self, **kwargs):
@@ -179,9 +195,17 @@ class Refmac:
 
         log = open(self.prefix+".log", "w")
         cycle = 0
+        re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+1))
+        rmsbond = ""
+        rmsangle = ""
+        
         for l in iter(p.stdout.readline, ""):
             log.write(l)
 
+            if self.show_log:
+                print(l, end="")
+                continue
+            
             r_ver = re_version.search(l)
             if r_ver:
                 logger.write("Starting Refmac {}".format(r_ver.group(1)))
@@ -200,12 +224,29 @@ class Refmac:
                     cycle = int(l[l.index("=")+1:])
                     if cycle == 1:
                         logger.write("cycle FSCaverage")
+                elif re_lastcycle.search(l):
+                    cycle = self.ncycle + 1
                 elif "Average Fourier shell correlation    =" in l and cycle > 0:
                     fsc = l[l.index("=")+1:].strip()
-                    logger.write("{:5d} {}".format(cycle, fsc))
+                    if cycle == 1:
+                        note = "(initial)"
+                    elif cycle > self.ncycle:
+                        note = "(final)"
+                    else:
+                        note = ""
+                        
+                    logger.write("{:5d} {} {}".format(cycle-1, fsc, note))
                     cycle = 0
+                elif "Rms BondLength" in l:
+                    rmsbond = l
+                elif "Rms BondAngle" in l:
+                    rmsangle = l
         
         ret = p.wait()
+        if rmsbond:
+            logger.write("                      Initial    Final")
+            logger.write(rmsbond.rstrip())
+            logger.write(rmsangle.rstrip())
         logger.write("REFMAC5 finished with exit code= {}".format(ret))
 
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
