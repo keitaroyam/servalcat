@@ -7,24 +7,10 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat.utils import restraints
 import gemmi
 import numpy
 import os
-
-def load_monomer_library(resnames, monomer_dir=None): #TODO add cif_paths
-    if monomer_dir is None:
-        if "CLIBD_MON" not in os.environ:
-            logger.write("ERROR: CLIBD_MON is not set")
-            return
-        monomer_dir = os.environ["CLIBD_MON"]
-        
-    if not os.path.isdir(monomer_dir):
-        logger.write("ERROR: not a directory: {}".format(monomer_dir))
-        return
-        
-    monlib = gemmi.read_monomer_lib(monomer_dir, resnames)
-    return monlib
-# load_monomer_library()
 
 def shake_structure(st, sigma):
     print("Randomizing structure with rmsd of {}".format(sigma))
@@ -60,27 +46,6 @@ def normalize_it92(st=None, all_elements=False, quiet=False):
         coef.set_coefs(new_coef)
 # normalize_it92()
 
-def check_monlib_support_nucleus_distances(monlib, resnames):
-    good = True
-    for resn in resnames:
-        if resn not in monlib.monomers:
-            logger.write("ERROR: monomer information of {} not loaded".format(resn))
-            good = False
-        else:
-            mon = monlib.monomers[resn]
-            no_nuc = False
-            for bond in mon.rt.bonds:
-                is_h = (mon.get_atom(bond.id1.atom).is_hydrogen(), mon.get_atom(bond.id2.atom).is_hydrogen())
-                if any(is_h) and bond.value_nucleus != bond.value_nucleus:
-                    no_nuc = True
-                    break
-            if no_nuc:
-                logger.write("ERROR: nucleus distance is not found for {}".format(resn))
-                good = False
-
-    return good
-# check_monlib_support_nucleus_distances()
-
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
@@ -111,7 +76,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
         st = st.clone()
         topo = gemmi.prepare_topology(st, monlib)
         resnames = st[0].get_all_residue_names()
-        check_monlib_support_nucleus_distances(monlib, resnames)
+        restraints.check_monlib_support_nucleus_distances(monlib, resnames)
     else:
         topo = None
         
@@ -192,7 +157,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
             st = st.clone()
             topo = gemmi.prepare_topology(st, monlib)
             resnames = st[0].get_all_residue_names()
-            check_monlib_support_nucleus_distances(monlib, resnames)
+            restraints.check_monlib_support_nucleus_distances(monlib, resnames)
 
         calc.addends.clear()
         calc.addends.subtract_z(except_hydrogen=True)
