@@ -198,17 +198,18 @@ class Refmac:
         re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+1))
         rmsbond = ""
         rmsangle = ""
+        log_delay = []
+        summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.write
         
         for l in iter(p.stdout.readline, ""):
             log.write(l)
 
             if self.show_log:
                 print(l, end="")
-                continue
             
             r_ver = re_version.search(l)
             if r_ver:
-                logger.write("Starting Refmac {}".format(r_ver.group(1)))
+                summary_write("Starting Refmac {}".format(r_ver.group(1)))
 
             r_err = re_error.search(l)
             if r_err:
@@ -217,13 +218,13 @@ class Refmac:
                         continue
                     elif "They will be assumed to be equal to 1.0" in l:
                         continue
-                logger.write(l, end="")
+                summary_write(l.rstrip())
             
             if self.global_mode == "spa":
                 if "CGMAT cycle number =" in l:
                     cycle = int(l[l.index("=")+1:])
                     if cycle == 1:
-                        logger.write("cycle FSCaverage")
+                        summary_write("cycle FSCaverage")
                 elif re_lastcycle.search(l):
                     cycle = self.ncycle + 1
                 elif "Average Fourier shell correlation    =" in l and cycle > 0:
@@ -235,14 +236,18 @@ class Refmac:
                     else:
                         note = ""
                         
-                    logger.write("{:5d} {} {}".format(cycle-1, fsc, note))
+                    summary_write("{:5d} {} {}".format(cycle-1, fsc, note))
                     cycle = 0
                 elif "Rms BondLength" in l:
                     rmsbond = l
                 elif "Rms BondAngle" in l:
                     rmsangle = l
-        
+
         ret = p.wait()
+        if log_delay:
+            logger.write("== Summary of Refmac ==")
+            logger.write("\n".join(log_delay))
+                         
         if rmsbond:
             logger.write("                      Initial    Final")
             logger.write(rmsbond.rstrip())
