@@ -11,6 +11,7 @@ import numpy
 import os
 import subprocess
 import pipes
+from servalcat.utils import logger
 from servalcat import utils
 from servalcat import spa
 
@@ -24,11 +25,10 @@ def add_arguments(parser):
                         required=True,
                         nargs="+",
                         help='Input map file(s)')
-    parser.add_argument('--mask_radius',
-                        default=3,
+    parser.add_argument('-r', '--mask_radius',
                         type=float,
                         help='')
-    parser.add_argument('--resolution',
+    parser.add_argument('-d', '--resolution',
                         type=float,
                         required=True,
                         help='')
@@ -43,7 +43,7 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def read_and_fft_maps(filenames, d_min, mask, check_consistency=True):
+def read_and_fft_maps(filenames, d_min, mask=None, check_consistency=True):
     hkldata = None
 
     last_cell, last_shape, last_sg = None, None, None
@@ -57,8 +57,9 @@ def read_and_fft_maps(filenames, d_min, mask, check_consistency=True):
                 assert m.spacegroup == last_sg
             last_cell, last_shape, last_sg = m.unit_cell, m.shape, m.spacegroup
 
-
-        m = gemmi.FloatGrid(numpy.array(m) * mask, m.unit_cell, m.spacegroup)
+        if mask is not None:
+            m = gemmi.FloatGrid(numpy.array(m) * mask, m.unit_cell, m.spacegroup)
+            
         asu = gemmi.transform_map_to_f_phi(m).prepare_asu_data(dmin=d_min)
         label = "Fmap{}".format(idx+1)
         if hkldata is None:
@@ -73,29 +74,36 @@ def read_and_fft_maps(filenames, d_min, mask, check_consistency=True):
 
 def main(args):
     st = gemmi.read_structure(args.model)
-
     ref_grid = utils.fileio.read_ccp4_map(args.maps[0])[0]
-    mask = gemmi.FloatGrid(*ref_grid.shape)
-    mask.set_unit_cell(ref_grid.unit_cell)
-    mask.spacegroup = ref_grid.spacegroup
     st.cell = ref_grid.unit_cell
     st.spacegroup_hm = "P1"
-    mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
 
+    if len(st.ncs) > 0:
+        logger.write("Expanding symmetry.")
+        st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+    
+    if args.mask_radius is not None:
+        mask = gemmi.FloatGrid(*ref_grid.shape)
+        mask.set_unit_cell(ref_grid.unit_cell)
+        mask.spacegroup = ref_grid.spacegroup
+        mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)    
+    else:
+        mask = None
     
     fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
-
     hkldata = read_and_fft_maps(args.maps, args.resolution, mask)
     
-
     hkldata.merge_asu_data(fc, "FC")
     hkldata.setup_relion_binning()
     #print(hkldata.df)
 
 
     ofs = open(args.fsc_out, "w")
+    ofs.write("# Mask_radius= {}\n".format(args.mask_radius))
+    for i, f in enumerate(args.maps): ofs.write("# Map{} = {}\n".format(i+1, f))
     ofs.write("bin n d_max d_min {}\n".format(" ".join(["Fmap{}".format(i+1) for i in range(len(args.maps))])))
-    fsc_list, n_list = [], []
+    fsc_list = [[] for i in range(len(args.maps))]
+    n_list = [[] for i in range(len(args.maps))]
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         fc = hkldata.df["FC"][sel]
@@ -104,7 +112,17 @@ def main(args):
             fo = hkldata.df["Fmap{}".format(i_map+1)][sel]
             fsc = numpy.real(numpy.corrcoef(fo, fc)[1,0])
             ofs.write(" {:.4f}".format(fsc))
+            fsc_list[i_map].append(fsc)
+            n_list[i_map].append(fc.size)
         ofs.write("\n")
+    ofs.write("\n")
+    ofs.write("#              FSCaverage =")
+    for i in range(len(args.maps)):
+        fsc = numpy.array(fsc_list[i])
+        n = numpy.array(n_list[i])
+        fsca = sum(fsc*n)/sum(n)
+        ofs.write(" {:.4f}".format(fsca))
+    ofs.write("\n")
 # main()
 
 if __name__ == "__main__":
