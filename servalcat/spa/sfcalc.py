@@ -45,6 +45,8 @@ def add_sfcalc_args(parser):
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models',
                         help='Keep 1st model only')
+    parser.add_argument('--no_sharpen_before_mask',
+                        help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
 # add_sfcalc_args()
 
 def add_arguments(parser):
@@ -258,15 +260,19 @@ def main(args):
 
     if mask:
         # Mask maps
-        logger.write("Applying mask..")
-        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, spacegroup)]+ma[1:]
-                for ma in maps]
+        if args.no_sharpen_before_mask or len(maps) < 2:
+            logger.write("Applying mask..")
+            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, spacegroup)]+ma[1:]
+                    for ma in maps]
+        else:
+            logger.write("Sharpen-mask-unsharpen..")
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution)
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
             new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
                                                                                        grid_start=grid_start,
-                                                                                       padding=args.mask_radius,
+                                                                                       padding=args.mask_radius*2,
                                                                                        mask_cutoff=0.1,
                                                                                        noncentered=True,
                                                                                        noncubic=True,

@@ -22,7 +22,76 @@ def half2full(map_h1, map_h2):
     return gr
 # half2full()
 
-def mask_and_fft_maps(maps, d_min, mask=None): # TODO add sharpen-unsharpen
+def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
+    assert len(maps) < 3
+    assert b is None # currently sharpening by B is not supported
+    if b is None and len(maps) != 2:
+        raise RuntimeError("Cannot determine sharpening")
+
+    hkldata = mask_and_fft_maps(maps, d_min)
+    normalizer = numpy.ones(len(hkldata.df.index))
+    if len(maps) == 2:
+        labs = ["F_map1", "F_map2"]
+    else:
+        labs = ["FP"]
+        
+    # 1. Sharpen
+    if b is None:
+        hkldata.setup_relion_binning()
+        calc_noise_var_from_halfmaps(hkldata)
+        FP = numpy.array(hkldata.df.FP)
+        logger.write("""$TABLE: Normalizing before masking:
+$GRAPHS: ln(Mn(|F|)) :A:1,2:
+: Normalizer :A:1,3:
+: FSC(full) :A:1,4:
+$$ 1/resol^2 ln(Mn(|F|)) normalizer FSC $$
+$$""")
+        for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
+            sel = i_bin == hkldata.df.bin
+            Fo = FP[sel]
+            FSCfull = hkldata.binned_df.FSCfull[i_bin]
+            sig_fo = numpy.std(Fo)
+            if FSCfull > 0:
+                n_fo = sig_fo * numpy.sqrt(FSCfull)
+            else:
+                n_fo = sig_fo # XXX not a right way
+                
+            normalizer[sel] = n_fo
+            hkldata.df.loc[sel, "F_map1"] /= n_fo
+            hkldata.df.loc[sel, "F_map2"] /= n_fo
+            hkldata.df.loc[sel, "FP"] /= n_fo
+            logger.write("{:.4f} {:.2f} {:.3f} {:.4f}".format(1/bin_d_min**2,
+                                                              numpy.log(numpy.average(numpy.abs(Fo))),
+                                                              n_fo, FSCfull))
+
+        logger.write("$$")
+
+    else:
+        pass # sharpen by B
+
+    # 2. Mask
+    new_maps = []
+    for lab in labs:
+        m = hkldata.fft_map(lab, grid_size=mask.shape)
+        new_maps.append([gemmi.FloatGrid(numpy.array(m)*mask, hkldata.cell, hkldata.sg), None])
+
+    # 3. Unsharpen
+    hkldata = mask_and_fft_maps(new_maps, d_min)
+    if b is None:
+        hkldata.df.F_map1 *= normalizer
+        hkldata.df.F_map2 *= normalizer
+    else:
+        pass # unsharpen by B
+    
+    new_maps = []
+    for i, lab in enumerate(labs):
+        m = hkldata.fft_map(lab, grid_size=mask.shape)
+        new_maps.append([m]+maps[i][1:])
+
+    return new_maps
+# sharpen_mask_unsharpen()
+
+def mask_and_fft_maps(maps, d_min, mask=None, sharpen=True): # TODO add sharpen-unsharpen
     assert len(maps) <= 2
     asus = []
     for m in maps:

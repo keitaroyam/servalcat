@@ -120,19 +120,6 @@ def main(args):
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
     refmac.run_refmac()
 
-    """
-    # Calc diffmaps
-    if 0:
-        st = gemmi.read_structure(refmac_prefix+model_format)
-        st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
-        grid_shape = 
-        mask = gemmi.FloatGrid(*grid_shape)
-        mask.set_unit_cell(st.cell)
-        mask.spacegroup = gemmi.SpaceGroup(st.spacegroup_hm)
-        mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
-        spa.fofc.
-    """
-
     if not args.no_shift:
         ncsc_in = ("ncsc_global.txt") if has_ncsc else None
         spa.shiftback.shift_back(xyz_in=refmac_prefix+model_format,
