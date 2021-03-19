@@ -175,28 +175,40 @@ def read_structure_from_pdb_and_mmcif(xyz_in):
 # read_structure_from_pdb_and_mmcif()
 
 def merge_ligand_cif(cifs_in, cif_out):
+    # TODO Check duplication?
+    
     docs = [gemmi.cif.read(x) for x in cifs_in]
-    tags = ["_chem_comp.id"]
+    tags = dict(comp=["_chem_comp.id"],
+                link=["_chem_link.id"],
+                mod=["_chem_mod.id"])
+    found = dict(comp=0, link=0, mod=0)
     for d in docs:
-        b = d.find_block("comp_list")
-        l = b.find_loop("_chem_comp.id").get_loop()
-        for t in l.tags:
-            if t not in tags: tags.append(t)
+        for k in tags:
+            b = d.find_block("{}_list".format(k))
+            if not b: continue
+            found[k] += 1
+            l = b.find_loop(tags[k][0]).get_loop()
+            for t in l.tags:
+                if t not in tags[k]: tags[k].append(t)
   
     doc = gemmi.cif.Document()
-    comp_list = doc.add_new_block("comp_list")
-    loop = comp_list.init_loop("", tags)
-    tags_for_find = [tags[0]] + ["?"+x for x in tags[1:]]
-    for d in docs:
-        b = d.find_block("comp_list")
-        vals = b.find(tags_for_find)
-        for v in vals:
-            rl = [v.get(x) if v.has(x) else "." for x in range(len(tags))]
-            loop.add_row(rl)
+    for k in tags:
+        if not found[k]: continue
+        lst = doc.add_new_block("{}_list".format(k))
+        loop = lst.init_loop("", tags[k])
+        tags_for_find = [tags[k][0]] + ["?"+x for x in tags[k][1:]]
+        
+        for d in docs:
+            b = d.find_block("{}_list".format(k))
+            if not b: continue
+            vals = b.find(tags_for_find)
+            for v in vals:
+                rl = [v.get(x) if v.has(x) else "." for x in range(len(tags[k]))]
+                loop.add_row(rl)
 
     for d in docs:
         for b in d:
-            if b.name != "comp_list":
+            if not b.name.endswith("_list"):
                 doc.add_copied_block(b)
 
     doc.write_file(cif_out)
