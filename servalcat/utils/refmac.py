@@ -16,6 +16,7 @@ from servalcat.utils import logger
 
 re_version = re.compile("#.* Refmac *version ([^ ]+) ")
 re_error = re.compile('(warn|error *[:]|error *==|^error)', re.IGNORECASE)
+re_outlier_start = re.compile("\*\*\*\*.*outliers")
 
 def check_version(exe="refmac5"):
     p = subprocess.Popen([exe], shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -200,6 +201,7 @@ class Refmac:
         rmsangle = ""
         log_delay = []
         summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.write
+        outlier_flag = False
         
         for l in iter(p.stdout.readline, ""):
             log.write(l)
@@ -211,6 +213,7 @@ class Refmac:
             if r_ver:
                 summary_write("Starting Refmac {}".format(r_ver.group(1)))
 
+            # print error/warning
             r_err = re_error.search(l)
             if r_err:
                 if self.global_mode == "spa":
@@ -219,12 +222,21 @@ class Refmac:
                     elif "They will be assumed to be equal to 1.0" in l:
                         continue
                 summary_write(l.rstrip())
-            
+
+            # print outliers
+            r_outl = re_outlier_start.search(l)
+            if r_outl:
+                outlier_flag = True
+                summary_write(l.rstrip())
+            elif outlier_flag:
+                if l.strip() == "" or "monitored" in l or "dev=" in l or "sigma=" in l.lower() or "sigma.=" in l:
+                    summary_write(l.rstrip())
+                else:
+                    outlier_flag = False
+                    
             if self.global_mode == "spa":
                 if "CGMAT cycle number =" in l:
                     cycle = int(l[l.index("=")+1:])
-                    if cycle == 1:
-                        summary_write("cycle FSCaverage")
                 elif re_lastcycle.search(l):
                     cycle = self.ncycle + 1
                 elif "Average Fourier shell correlation    =" in l and cycle > 0:
@@ -236,7 +248,7 @@ class Refmac:
                     else:
                         note = ""
                         
-                    summary_write("{:5d} {} {}".format(cycle-1, fsc, note))
+                    summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
                     cycle = 0
                 elif "Rms BondLength" in l:
                     rmsbond = l
