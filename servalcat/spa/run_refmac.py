@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 import os
+import argparse
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import spa
@@ -50,6 +51,7 @@ def add_arguments(parser):
                         help='Run cross validation')
     parser.add_argument('--shake_radius', default=0.5,
                         help='Shake rmsd')
+    parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
 
 # add_arguments()
                         
@@ -180,7 +182,24 @@ def main(args):
                                  shifts_json="shifts.json",
                                  ncsc_in=ncsc_in,
                                  out_prefix=args.output_prefix+"_shaken_refined")
-        
+
+    # Calc updated and Fo-Fc maps
+    if args.halfmaps:
+        logger.write("Starting Fo-Fc calculation..")
+        logger.write(" model: {}".format(args.output_prefix+model_format))
+        args2 = spa.fofc.parse_args(["--halfmaps", args.halfmaps[0], args.halfmaps[1],
+                                     "--model", args.output_prefix+model_format,
+                                     "--resolution", "1"])
+        args2.resolution = args.resolution # dirty hack
+        if args.mask_for_fofc:
+            logger.write(" maskl: {}".format(args.mask_for_fofc))
+            args2.mask = args.mask_for_fofc
+            args2.normalized_map = True
+            args2.crop = True
+            
+        spa.fofc.main(args2)
+    else:
+        logger.write("Will not calculate Fo-Fc map because half maps were not provided")
         
 if __name__ == "__main__":
     import sys
