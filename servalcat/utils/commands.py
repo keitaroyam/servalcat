@@ -111,7 +111,6 @@ def symmodel(args):
 
 def h_add(args):
     st = gemmi.read_structure(args.model)
-    st.setup_entities()
     resnames = st[0].get_all_residue_names()
     model_format = fileio.check_model_format(args.model)
     
@@ -120,18 +119,11 @@ def h_add(args):
         args.output = tmp + "_h" + model_format
         logger.write("Output file: {}".format(args.output))
         
-        
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(resnames,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
-
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
-    if args.pos == "nucl":
-        logger.write("Adjusting distance to nucleus")
-        restraints.check_monlib_support_nucleus_distances(monlib, resnames)
-        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
-
+    restraints.add_hydrogens(st, monlib, args.pos)
     fileio.write_model(st, file_name=args.output)
 # h_add()
 

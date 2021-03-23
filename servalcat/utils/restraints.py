@@ -72,3 +72,16 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
+def add_hydrogens(st, monlib, pos="elec"):
+    assert pos in ("elec", "nucl")
+    
+    st.setup_entities()   
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
+    if pos == "nucl":
+        logger.write("Generating hydrogens at nucleus positions")
+        restraints.check_monlib_support_nucleus_distances(monlib, resnames)
+        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+    else:
+        logger.write("Generating hydrogens at electron positions")
+# add_hydrogens()
+
