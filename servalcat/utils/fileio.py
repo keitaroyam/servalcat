@@ -61,7 +61,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
 # write_mmcif()
 
 def write_pdb(st, pdb_out):
-    print("Writing shifted PDB:", pdb_out)
+    logger.write("Writing PDB file: {}".format(pdb_out))
     st_new = st.clone()
     st_new.shorten_chain_names()
     st_new.write_pdb(pdb_out, use_linkr=True)

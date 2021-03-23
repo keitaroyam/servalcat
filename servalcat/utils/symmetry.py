@@ -9,6 +9,7 @@ import gemmi
 import subprocess
 import numpy
 import re
+from servalcat.utils import logger
 from servalcat.utils import fileio
 from servalcat.utils import generate_operators
 
@@ -63,6 +64,12 @@ def operators_from_symbol(op):
         axis2 = None
     return generate_operators.generate_all_elements(axis1, order1, axis2, order2)
 # operators_from_symbol()
+
+def show_operators_axis_angle(ops):
+    for i, op in enumerate(ops):
+        ax, ang = generate_operators.Rotation2AxisAngle_general(op)
+        logger.write(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
+# show_operators_axis_angle()
 
 """
 def write_ncsc_for_refmac(file_name, matrices, xyz_in=None, map_in=None):

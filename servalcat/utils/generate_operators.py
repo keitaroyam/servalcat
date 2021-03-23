@@ -153,6 +153,76 @@ def AngleAxis2rotatin(axis, angle):
     return m_l
 # AngleAxis2rotatin()
 
+def Rotation2AxisAngle_cyclic(m_in, eps_l=1.0e-5):
+    #
+    # Here we assume that rotation matrix is an element of a cyclic group
+    # This routine gives the smallest angle for this cyclic group. 
+    # To find axis of the rotation we use the fact that if we define 
+    # A = 1/n sum_i-0^(n-1) (R^i) then this operator is a projector to the axis of rotation
+    # i.e. for Ax will be on hte axis for any x. IT could be equal 0, in this case we select another x
+    A = m_in
+    m1 = m_in
+    id_matr = numpy.identity(3)
+    cycle_number = 1
+    ended = False
+    while not ended and cycle_number < 200:
+        if numpy.sum(numpy.abs(m1-id_matr)) < eps_l:
+            ended = True
+            break
+        m1 = numpy.dot(m1,m_in)
+        A = A + m1
+        cycle_number = cycle_number + 1
+    # take a ranom vector
+    if cycle_number >= 150 :
+        print("matrix ",m_in)
+        print("Try to change the tolerance: eps_l = XXX")
+        raise RuntimeError("The matrix does not seem to be producing a finite cyclic group")
+    A = A/cycle_number
+    axis = numpy.zeros(3)
+    for xin in ((0,0,1.), (0,1.,0), (1.,0,0,)):
+        axis = numpy.dot(A,xin)
+        if numpy.dot(axis,axis) > eps_l:
+            axis = axis/numpy.sqrt(numpy.dot(axis,axis))
+        if numpy.dot(axis,axis) >= eps_l:
+            break
+
+    if axis[2] < 0.0:
+        axis = -axis
+    elif axis[2] == 0.0 and axis[1] < 0.0:
+        axis = -axis
+    angle = 2.0*numpy.pi/cycle_number
+    axis[axis==0.]=0.
+    return axis,angle,cycle_number
+# Rotation2AxisAngle_cyclic()
+
+def Rotation2AxisAngle_general(m_in, eps_l=1.0e-5):
+    #
+    #  This routine shuld work for any rotation matrix
+    axis = numpy.array([1, 0.0, 0.0])
+    angle = numpy.arccos(max(-1.0, numpy.min((numpy.trace(m_in)-1)/2.0)))
+    if numpy.sum(numpy.abs(m_in-numpy.transpose(m_in))) < eps_l:
+        # 
+        # It is a symmetric matrix. so I and m_in form a cyclic group
+        A = (numpy.identity(3) + m_in)/2.0
+        axis = numpy.zeros(3)
+        for a in ((0,0,1.), (0,1.,0), (1.,0,0,)):
+            axis = numpy.dot(A, a)
+            if numpy.linalg.norm(axis) >= eps_l: break
+    else:
+        axis[0] = m_in[1,2] - m_in[2,1]
+        axis[1] = m_in[0,2] - m_in[2,0]
+        axis[2] = m_in[0,1] - m_in[1,0]
+    if axis[2] < 0.0:
+        axis = -axis
+        angle = 2.0*numpy.pi - angle
+    elif axis[2] < eps_l and axis[1] < 0.0:
+        axis = -axis
+        angle = 2.0*numpy.pi - angle
+    axis = axis/numpy.linalg.norm(axis)
+    axis[axis==0.]=0.
+    return axis, angle
+# Rotation2AxisAngle_general()
+
 def is_in_the_list_rotation(m_in, m_list, toler = 1.0e-3):
     id_matr = numpy.identity(3)
     return numpy.any(numpy.abs(numpy.trace(numpy.dot(numpy.transpose(m_in), m_list)-id_matr[:,None], axis1=0,axis2=2)) < toler)
