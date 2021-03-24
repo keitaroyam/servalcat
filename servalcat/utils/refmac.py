@@ -71,6 +71,7 @@ class Refmac:
         self.keywords = []
         self.external_restraints_json = None
         self.exe = "refmac5"
+        self.monlib_path = None
         self.show_log = False # summary only if false
         self.global_mode = kwargs.get("global_mode")
         
@@ -110,6 +111,7 @@ class Refmac:
         self.external_restraints_json = args.external_restraints_json
         self.exe = args.exe
         self.show_log = args.show_refmac_log
+        self.monlib_path = args.monlib
     # init_from_args()
 
     def copy(self, **kwargs):
@@ -189,8 +191,11 @@ class Refmac:
         logger.write(stdin, end="")
         logger.write("__eof__")
 
+        env = os.environ
+        if self.monlib_path: env["CLIBD_MON"] = os.path.join(self.monlib_path, "") # should end with /
+        
         p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             universal_newlines=True)
+                             universal_newlines=True, env=env)
         p.stdin.write(stdin)
         p.stdin.close()
 

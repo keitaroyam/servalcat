@@ -77,6 +77,8 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
         topo = gemmi.prepare_topology(st, monlib)
         resnames = st[0].get_all_residue_names()
         restraints.check_monlib_support_nucleus_distances(monlib, resnames)
+        # Shift electron positions
+        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
     else:
         topo = None
         
@@ -135,7 +137,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
         
     return asu_data
 
-# calc_fc_em()
+# calc_fc_fft()
 
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     assert source in ("xray", "electron")
@@ -180,6 +182,26 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
                                miller_array, vals)
     return asu
 # calc_fc_direct()
+
+def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0.01):
+    if len(st.ncs) == 0: return
+
+    if special_pos_threshold >= 0:
+        st.setup_cell_images()
+        ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
+        cs = gemmi.ContactSearch(special_pos_threshold)
+        cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+        cs.special_pos_cutoff_sq = 0.0
+        results = cs.find_contacts(ns)
+        for r in results:
+            print(r.partner1, r.partner2, r.partner1.atom.pos==r.partner2.atom.pos, r.image_idx, r.dist)
+
+    
+    st.expand_ncs(how)
+    
+    
+# expand_ncs()
+
 
 def all_B(st):
     ret = []

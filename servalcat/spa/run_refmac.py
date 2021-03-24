@@ -49,9 +49,12 @@ def add_arguments(parser):
                         help='output file name prefix')
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation')
+    parser.add_argument('--cross_validation_method', default="shake", choices=["throughout", "shake"])
     parser.add_argument('--shake_radius', default=0.5,
                         help='Shake rmsd')
     parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
 
 # add_arguments()
                         
@@ -60,6 +63,97 @@ def parse_args(arg_list):
     add_arguments(parser)
     return parser.parse_args(arg_list)
 # parse_args()
+
+def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib_path, ligands):
+    logger.write("Calculating map-model FSC..")
+    
+    maps = [utils.fileio.read_ccp4_map(f) for f in maps_in]
+    st, _ = utils.fileio.read_structure_from_pdb_and_mmcif(model_in)
+    st.cell = maps[0][0].unit_cell
+    st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+
+    resnames = st[0].get_all_residue_names()
+    monlib = utils.restraints.load_monomer_library(resnames,
+                                                   monomer_dir=monlib_path,
+                                                   cif_files=ligands)
+    if make_hydrogen == "all":
+        utils.restraints.add_hydrogens(st, monlib)
+
+    if mask_radius is not None:
+        mask = gemmi.FloatGrid(*maps[0][0].shape)
+        mask.set_unit_cell(st.cell)
+        mask.spacegroup = st.find_spacegroup()
+        mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
+        if no_sharpen_before_mask or len(maps) < 2:
+            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, mask.unit_cell, mask.spacegroup)]+ma[1:]
+                    for ma in maps]
+        else:
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min)
+        
+    hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
+    fc_asu = utils.model.calc_fc_fft(st, d_min, r_cut=1e-7, monlib=monlib, source="electron")
+    hkldata.merge_asu_data(fc_asu, "FC")
+    #logger.write("DEBUG:: applying B=3.2556")
+    #hkldata.df.FC *= numpy.exp(-3.2556/hkldata.d_spacings()**2/4)
+    hkldata.setup_relion_binning()
+
+    if len(maps) == 2:
+        logger.write("""$TABLE: Map-model FSC after refinement:
+$GRAPHS: FSC :A:1,5,6,7,8,9:
+: number of Fourier coeffs :A:1,2:
+: ln(Mn(|F|)) :A:1,3,4:
+$$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) FSC(half1,model) FSC(half2,model) FSC_full FSC_full_sqrt$$
+$$""")
+        F_map1 = numpy.array(hkldata.df.F_map1)
+        F_map2 = numpy.array(hkldata.df.F_map2)
+    else:
+        logger.write("""$TABLE: Map-model FSC after refinement:
+$GRAPHS: FSC :A:1,5:
+: number of Fourier coeffs :A:1,2:
+: ln(Mn(|F|)) :A:1,3,4:
+$$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) $$
+$$""")
+
+    FP = numpy.array(hkldata.df.FP)
+    FC = numpy.array(hkldata.df.FC)
+    fscvals = [[], [], []]
+    ncoeffs = []
+
+    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
+        sel = i_bin == hkldata.df.bin
+        Fo = FP[sel]
+        Fc = FC[sel]
+        fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
+        ncoeffs.append(Fo.size)
+        fscvals[0].append(fsc_model)
+        logger.write("{:.4f} {:6d} {:.3f} {:.3f} {: .4f}".format(1/bin_d_min**2, Fo.size,
+                                                                 numpy.log(numpy.average(numpy.abs(Fo))),
+                                                                 numpy.log(numpy.average(numpy.abs(Fc))),
+                                                                 fsc_model), end="")
+        
+        if len(maps) == 2:
+            F1, F2 = F_map1[sel], F_map2[sel]
+            fsc_half = numpy.real(numpy.corrcoef(F1, F2)[1,0])
+            fsc_full = 2*fsc_half/(1+fsc_half)
+            fsc1 = numpy.real(numpy.corrcoef(F1, Fc)[1,0])
+            fsc2 = numpy.real(numpy.corrcoef(F2, Fc)[1,0])
+            fscvals[1].append(fsc1)
+            fscvals[2].append(fsc2)
+            logger.write(" {: .4f} {: .4f} {: .4f} {: .4f}".format(fsc1, fsc2, fsc_full,
+                                                                   numpy.sqrt(fsc_full) if fsc_full >= 0 else numpy.nan ))
+        else:
+            logger.write("")
+
+    logger.write("$$")
+
+    ncoeffs = numpy.array(ncoeffs)
+    sum_n = sum(ncoeffs)
+    logger.write("Map-model FSCaverages:")
+    logger.write(" FSCaverage(full) = {: .4f}".format(sum(ncoeffs*fscvals[0])/sum_n))
+    if len(maps) == 2:
+        logger.write(" FSCaverage(half1)= {: .4f}".format(sum(ncoeffs*fscvals[1])/sum_n))
+        logger.write(" FSCaverage(half2)= {: .4f}".format(sum(ncoeffs*fscvals[2])/sum_n))
+# calc_fsc()
 
 def main(args):
     if not args.model:
@@ -97,6 +191,11 @@ def main(args):
     else:
         file_info = {}
         # Not supported actually..
+
+    if args.cross_validation and args.cross_validation_method == "throughout":
+        args.lab_f = file_info["lab_f_half1"]
+        args.lab_phi = file_info["lab_phi_half1"]
+        # XXX args.lab_sigf?
 
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
@@ -139,7 +238,7 @@ def main(args):
         utils.fileio.write_model(st, file_name=args.output_prefix+"_expanded"+model_format,
                                  cif_ref=cif_ref)
 
-    if args.cross_validation:
+    if args.cross_validation and args.cross_validation_method == "shake":
         logger.write("Cross validation is requested.")
         st = gemmi.read_structure(refmac_prefix+model_format)
         logger.write("  Shaking atomic coordinates with rms={}".format(args.shake_radius))
@@ -173,15 +272,13 @@ def main(args):
 
         refmac_hm2.run_refmac()
 
-        # TODO calc FSC
-
         if not args.no_shift:
             ncsc_in = ("ncsc_global.txt") if has_ncsc else None
             spa.shiftback.shift_back(xyz_in=refmac_prefix_shaken+model_format,
-                                 refine_mtz=refmac_prefix_shaken+".mtz",
-                                 shifts_json="shifts.json",
-                                 ncsc_in=ncsc_in,
-                                 out_prefix=args.output_prefix+"_shaken_refined")
+                                     refine_mtz=refmac_prefix_shaken+".mtz",
+                                     shifts_json="shifts.json",
+                                     ncsc_in=ncsc_in,
+                                     out_prefix=args.output_prefix+"_shaken_refined")
 
     # Calc updated and Fo-Fc maps
     if args.halfmaps:
@@ -196,10 +293,23 @@ def main(args):
             args2.mask = args.mask_for_fofc
             args2.normalized_map = True
             args2.crop = True
+
+        if args.cross_validation and args.cross_validation_method == "throughout":
+            args2.half1_only = True
             
         spa.fofc.main(args2)
     else:
         logger.write("Will not calculate Fo-Fc map because half maps were not provided")
+
+
+    # Calc FSC
+    calc_fsc(args.output_prefix+model_format,
+             args.halfmaps if args.halfmaps else [args.map],
+             args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
+             no_sharpen_before_mask=args.no_sharpen_before_mask,
+             make_hydrogen=args.hydrogen,
+             monlib_path=args.monlib, ligands=args.ligand)
+# main()
         
 if __name__ == "__main__":
     import sys

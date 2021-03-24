@@ -25,6 +25,7 @@ def add_arguments(parser):
     parser.add_argument('-m', '--mask', help="mask file")
     parser.add_argument('-r', '--mask_radius', type=float, help="mask radius")
     parser.add_argument("-B", type=float, help="Estimated blurring.")
+    parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map (use half 2 only for noise estimation)")
     parser.add_argument("--normalized_map", action='store_true',
                         help="Write normalized map in the masked region")
     parser.add_argument("--crop", action='store_true',
@@ -45,14 +46,22 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True):#fo_asu, fc_asu, varn, bins, bin_idxes):
+def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#fo_asu, fc_asu, varn, bins, bin_idxes):
     bdf = hkldata.binned_df
     bdf["D"] = 0.
     bdf["S"] = 0.
     ofs = open("{}_Fstats.dat".format(output_prefix), "w")
     ofs.write("bin       n   d_max   d_min         Fo         Fc FSC.model FSC.full      D          S          N\n")
     tmpl = "{:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {: .4f}   {: .4f} {: .4e} {:.4e} {:.4e}\n"
+
+    var_noise = None
     FP = numpy.array(hkldata.df.FP)
+    if half1_only:
+        FP = numpy.array(hkldata.df.F_map1)
+        var_noise = hkldata.binned_df.var_noise * 2
+    elif has_halfmaps:
+        var_noise = hkldata.binned_df.var_noise
+        
     FC = numpy.array(hkldata.df.FC)
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
@@ -61,7 +70,7 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True):#fo_asu, fc_asu, var
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
         if has_halfmaps:
-            varn = hkldata.binned_df.var_noise[i_bin]
+            varn = var_noise[i_bin]
             fsc_full = hkldata.binned_df.FSCfull[i_bin]
             bdf.loc[i_bin, "S"] = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
         else:
@@ -77,7 +86,7 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True):#fo_asu, fc_asu, var
 #import atexit
 #atexit.register(profile.print_stats)
 #@profile
-def calc_maps(hkldata, B=None, has_halfmaps=True):
+def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     if has_halfmaps:
         labs = ["DELFWT", "FWT", "DELFWT_noscale", "FWT_noscale"]
         if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
@@ -91,7 +100,11 @@ def calc_maps(hkldata, B=None, has_halfmaps=True):
     logger.write("Calculating maps..")
     time_t = time.time()
 
-    FP = numpy.array(hkldata.df.FP)
+    if half1_only:
+        FP = numpy.array(hkldata.df.F_map1)
+    else:
+        FP = numpy.array(hkldata.df.FP)
+        
     FC = numpy.array(hkldata.df.FC)
     
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
@@ -106,7 +119,10 @@ def calc_maps(hkldata, B=None, has_halfmaps=True):
 
         S = hkldata.binned_df.S[i_bin]
         FSCfull = hkldata.binned_df.FSCfull[i_bin]
-        varn = hkldata.binned_df.var_noise[i_bin]
+        if half1_only:
+            varn = hkldata.binned_df.var_noise[i_bin] * 2
+        else:
+            varn = hkldata.binned_df.var_noise[i_bin]
 
         delfwt = (Fo-D*Fc)*S/(S+varn)
         fwt = (Fo*S+varn*D*Fc)/(S+varn)
@@ -187,6 +203,12 @@ def main(args):
         logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
         return
 
+    if args.half1_only:
+        if not args.halfmaps:
+            logger.write("--half1_only requires half maps")
+            return
+        logger.write("--half1_only specified. Half map 2 is used only for noise estimation")
+
     if not args.halfmaps:
         logger.write("Warning: using --halfmaps is strongly recommended!")
 
@@ -248,7 +270,7 @@ def main(args):
     else:
         B = None
         
-    calc_D_and_S(hkldata, args.output_prefix, has_halfmaps=has_halfmaps)
+    calc_D_and_S(hkldata, args.output_prefix, has_halfmaps=has_halfmaps, half1_only=args.half1_only)
 
     if args.omit_proton or args.omit_h_electron:
         fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron",
@@ -256,7 +278,7 @@ def main(args):
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
     
-    map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps)
+    map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps, half1_only=args.half1_only)
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(args.output_prefix))
 
     if args.normalized_map and mask is not None:
