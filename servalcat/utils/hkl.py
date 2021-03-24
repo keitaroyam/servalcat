@@ -87,6 +87,36 @@ class HklData:
         return min(d), max(d)
     # d_min_max()
 
+    def setup_binning(self, n_bins, s_power=2):
+        sp = self.d_spacings()**(-s_power)
+        spmin, spmax = min(sp), max(sp)
+        spstep = (spmax-spmin)/n_bins
+        bin_limit_ds = numpy.arange(spmin, spmax, spstep)
+        
+        #bin_limit_ds = [sprange...] # left ends, and right end.
+        if len(bin_limit_ds)==n_bins:
+            bin_limit_ds = numpy.append(bin_limit_ds, bin_limit_ds[-1]+spstep)
+        if bin_limit_ds[-1] < spmax:
+            bin_limit_ds[-1] == spmax # difference should be very small..
+        bin_limit_ds = bin_limit_ds**(-1/s_power)
+        assert len(bin_limit_ds) == n_bins + 1
+
+        bin_centers = [(bin_limit_ds[i]**(-s_power)+bin_limit_ds[i+1]**(-s_power))/2 for i in range(n_bins)]
+        sprange = bin_limit_ds**(-s_power)
+
+        self._bin_and_limits = []
+        bin_number = numpy.zeros(len(sp), dtype=numpy.int)
+        
+        for i in range(1, len(sprange)):
+            sel = numpy.where(numpy.logical_and(sprange[i-1]<=sp, sp <sprange[i]))[0]
+            bin_number[sel] = i
+            self._bin_and_limits.append((i, bin_limit_ds[i-1], bin_limit_ds[i]))
+
+        self.df["bin"] = bin_number
+        self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
+                                          columns=["bin"])
+    # setup_binning()
+        
     def setup_relion_binning(self):
         max_edge = max(self.cell.parameters[:3])
         if "d" not in self.df or self.df.d.isnull().values.any():
