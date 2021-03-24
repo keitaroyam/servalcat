@@ -88,7 +88,7 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#f
 #@profile
 def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     if has_halfmaps:
-        labs = ["DELFWT", "FWT", "DELFWT_noscale", "FWT_noscale"]
+        labs = ["DELFWT", "FWT", "Fupdate", "DELFWT_noscale", "Fupdate_noscale"]
         if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
     else:
         labs = ["DELFWT"]
@@ -118,48 +118,51 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
             continue
 
         S = hkldata.binned_df.S[i_bin]
-        FSCfull = hkldata.binned_df.FSCfull[i_bin]
+        fsc = hkldata.binned_df.FSCfull[i_bin]
         if half1_only:
             varn = hkldata.binned_df.var_noise[i_bin] * 2
+            fsc = fsc/(2-fsc) # to FSChalf
         else:
             varn = hkldata.binned_df.var_noise[i_bin]
 
         delfwt = (Fo-D*Fc)*S/(S+varn)
-        fwt = (Fo*S+varn*D*Fc)/(S+varn)
+        fup = (Fo*S+varn*D*Fc)/(S+varn)
 
         tmp["DELFWT_noscale"][sel] = delfwt
-        tmp["FWT_noscale"][sel] = fwt
+        tmp["Fupdate_noscale"][sel] = fup
 
         sig_fo = numpy.std(Fo)
-        n_fo = sig_fo * numpy.sqrt(FSCfull)
+        tmp["FWT"][sel] = numpy.sqrt(fsc)*Fo/sig_fo
+        
+        n_fo = sig_fo * numpy.sqrt(fsc)
         if n_fo < 1e-10 or n_fo != n_fo:
-            logger.write("WARNING: skipping bin {} sig_fo={} FSCfull={}".format(i_bin, sig_fo, FSCfull))
+            logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
             continue
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"
         tmp["DELFWT"+lab_suf][sel] = delfwt/n_fo
-        tmp["FWT"+lab_suf][sel] = fwt/n_fo
+        tmp["Fupdate"+lab_suf][sel] = fup/n_fo
 
         if B is not None:
             s2 = 1./hkldata.d_spacings()[sel]**2
             k = numpy.exp(-B*s2/4.)
             k2 = numpy.exp(-B*s2/2.)
-            fsc_l = k2*FSCfull/(1+(k2-1)*FSCfull)
+            fsc_l = k2*fsc/(1+(k2-1)*fsc)
             #n_fo = sig_fo * numpy.sqrt(fsc_l) * k
             S_l = S * k2
             
             delfwt = (Fo-D*Fc)*S*k/(S_l+varn)/n_fo # S_l/k = S*k
-            fwt = (Fo*S_l+varn*D*Fc)/(S_l+varn)/n_fo/k
+            fup = (Fo*S_l+varn*D*Fc)/(S_l+varn)/n_fo/k
             logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
                                                                            numpy.average(n_fo),
                                                                            numpy.average(sig_fo),
                                                                            numpy.average(fsc_l),
                                                                            numpy.average(k),
-                                                                           numpy.average(abs(fwt)),
+                                                                           numpy.average(abs(fup)),
                                                                            numpy.average(abs(delfwt))))
             tmp["DELFWT"][sel] = delfwt
-            tmp["FWT"][sel] = fwt
+            tmp["Fupdate"][sel] = fup
 
     for l in labs:
         hkldata.df[l] = tmp[l]
