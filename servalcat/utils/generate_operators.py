@@ -5,11 +5,12 @@ MRC Laboratory of Molecular Biology
 This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
+from __future__ import absolute_import, division, print_function, generators
 import numpy
 import copy
 eps_l = 1.0e-5
 
-def generate_all_elements(axis1, order1, axis2=None, order2=0, toler=1.0e-6):
+def generate_all_elements(axis1, order1, axis2=None, order2=0, toler=1.0e-6, toler2=1.e-3):
     # 
     # Generate all group elements. Output will be as a list of cyclic groups.
     #
@@ -27,7 +28,7 @@ def generate_all_elements(axis1, order1, axis2=None, order2=0, toler=1.0e-6):
     order_out.append(order1)
     axes_out.append(axis1)
     grp1 = generate_cyclic(axis2,order2)
-    grp_out = add_groups_together(grp_out,grp1)
+    grp_out = add_groups_together(grp_out,grp1,toler2)
     order_out.append(order2)
     axes_out.append(axis2)
     
@@ -39,19 +40,19 @@ def generate_all_elements(axis1, order1, axis2=None, order2=0, toler=1.0e-6):
             for j, rj in enumerate(grp_out):
                 if i !=0 and j!=0 and i != j:
                     r3 = numpy.dot(ri,rj)
-                    if not is_in_the_list_rotation(r3, grp_out):
+                    if not is_in_the_list_rotation(r3, grp_out, toler2):
                         things_to_do = True
-                        order3, axis3 = find_order(r3)
+                        order3, axis3 = find_order(r3, toler2)
                         grp3 = generate_cyclic(axis3, order3)
-                        grp_out_new = add_groups_together(grp_out_new, grp3)
+                        grp_out_new = add_groups_together(grp_out_new, grp3,toler2)
                         order_out.append(order3)
                         axes_out.append(axis3)
                     r3 = numpy.dot(rj, ri)
-                    if not is_in_the_list_rotation(r3, grp_out):
+                    if not is_in_the_list_rotation(r3, grp_out, toler2):
                         things_to_do = True
-                        order3, axis3 = find_order(r3)
+                        order3, axis3 = find_order(r3, toler2)
                         grp3 = generate_cyclic(axis3,order3)
-                        grp_out_new = add_groups_together(grp_out_new, grp3)
+                        grp_out_new = add_groups_together(grp_out_new, grp3,toler2)
                         order_out.append(order3)
                         axes_out.append(axis3)
         grp_out = copy.copy(grp_out_new)
@@ -100,9 +101,9 @@ def find_order(r, toler=1.0e-3):
     return order, axis_l
 # find_order()
             
-def add_groups_together(grp_in, grp_add):
+def add_groups_together(grp_in, grp_add, toler=1.e-3):
     grp_out = copy.copy(grp_in)
-    grp_out.extend(filter(lambda r: not is_in_the_list_rotation(r, grp_out), grp_add))
+    grp_out.extend(filter(lambda r: not is_in_the_list_rotation(r, grp_out, toler), grp_add))
     #for r in grp_add:
     #    if not is_in_the_list_rotation(r, grp_out):
     #        grp_out.append(r)

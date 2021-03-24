@@ -91,7 +91,7 @@ $$""")
     return new_maps
 # sharpen_mask_unsharpen()
 
-def mask_and_fft_maps(maps, d_min, mask=None, sharpen=True): # TODO add sharpen-unsharpen
+def mask_and_fft_maps(maps, d_min, mask=None):
     assert len(maps) <= 2
     asus = []
     for m in maps:

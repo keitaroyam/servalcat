@@ -45,7 +45,7 @@ def add_sfcalc_args(parser):
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models',
                         help='Keep 1st model only')
-    parser.add_argument('--no_sharpen_before_mask',
+    parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
 # add_sfcalc_args()
 
