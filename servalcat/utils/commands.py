@@ -39,6 +39,9 @@ def add_arguments(p):
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
+    parser = subparsers.add_parser("merge_models", description = 'Merge multiple model files')
+    parser.add_argument('models', nargs="+")
+    parser.add_argument('-o','--output', required=True)
 # add_arguments()
 
 def parse_args(arg_list):
@@ -127,6 +130,26 @@ def h_add(args):
     fileio.write_model(st, file_name=args.output)
 # h_add()
 
+def merge_models(args):
+    #sts = [gemmi.read_structure(f) for f in args.models]
+    logger.write("Reading file   1: {}".format(args.models[0]))
+    st = gemmi.read_structure(args.models[0])
+    logger.write("                  chains {}".format(" ".join([c.name for c in st[0]])))
+
+    for i, f in enumerate(args.models[1:]):
+        logger.write("Reading file {:3d}: {}".format(i+2, f))
+        st2 = gemmi.read_structure(f)
+        for c in st2[0]:
+            org_id = c.name
+            c2 = st[0].add_chain(c, unique_name=True)
+            if c.name != c2.name:
+                logger.write("                  chain {} merged (ID changed to {})".format(c.name, c2.name))
+            else:
+                logger.write("                  chain {} merged".format(c.name))
+
+    fileio.write_model(st, file_name=args.output)
+# merge_models()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -143,6 +166,8 @@ def main(args):
         symmodel(args)
     elif com == "h_add":
         h_add(args)
+    elif com == "merge_models":
+        merge_models(args)
 # main()
 
 if __name__ == "__main__":
