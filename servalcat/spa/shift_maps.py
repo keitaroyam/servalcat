@@ -26,7 +26,7 @@ def add_arguments(parser):
                         help='Input atomic model file(s)')
     parser.add_argument('--padding', type=float, default=10.0,
                         help='in angstrom unit')
-    parser.add_argument('--mask_cutoff', type=float, default=1e-5,
+    parser.add_argument('--mask_cutoff', type=float, default=0.5,
                         help='Mask value cutoff to define boundary')
     parser.add_argument('--noncubic',
                         action='store_true')

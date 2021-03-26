@@ -287,7 +287,7 @@ def main(args):
     if args.normalized_map and mask is not None:
         logger.write("Normalized Fo-Fc map requested.")
         delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
-        cutoff = 1. - 1e-6
+        cutoff = 0.5
         masked = numpy.array(delfwt_map)[mask>cutoff]
         logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
         logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
