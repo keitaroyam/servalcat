@@ -202,14 +202,31 @@ def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0
     
 # expand_ncs()
 
+def adp_analysis(st):
+    logger.write("= ADP analysis =")
+    all_B = []
+    for i, mol in enumerate(st):
+        logger.write("Model {}:".format(i))
+        logger.write("            min    Q1   med    Q3   max")
+        bs = []
+        for chain in mol:
+            for res in chain:
+                for atom in res:
+                    bs.append(atom.b_iso)
+            qs = numpy.quantile(bs, [0,0.25,0.5,0.75,1])
+            logger.write("Chain {:3s}".format(chain.name) + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
+            all_B.extend(bs)
+
+    qs = numpy.quantile(all_B, [0,0.25,0.5,0.75,1])
+    logger.write("All       {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
+    logger.write("")
+# adp_analysis()        
 
 def all_B(st):
     ret = []
     for mol in st:
-        for chain in mol: # TODO use all()!
-            for res in chain:
-                for at in res:
-                    ret.append(at.b_iso)
+        for cra in mol.all():
+            ret.append(cra.atom.b_iso)
 
     return ret
 # all_B()
