@@ -166,16 +166,7 @@ def main(args):
         logger.write("Error: give --map | --halfmaps | --mtz.")
         return
 
-    if args.ligand:
-        args.ligand = sum(args.ligand, [])
-        if len(args.ligand) > 1:
-            mcif = "merged_ligands.cif"
-            logger.write("Merging ligand cif inputs: {}".format(args.ligand))
-            utils.fileio.merge_ligand_cif(libin, mcif)
-            args.ligand = "merged_ligands.cif"
-        else:
-            args.ligand = args.ligand[0]
-
+    if args.ligand: args.ligand = sum(args.ligand, [])
     model_format = utils.fileio.check_model_format(args.model)
     
     if args.map or args.halfmaps:
@@ -221,6 +212,7 @@ def main(args):
         refmac_prefix = args.output_prefix
 
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
+    refmac.set_libin(args.ligand)
     refmac.run_refmac()
 
     if not args.no_shift:
@@ -310,7 +302,7 @@ def main(args):
              args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
              no_sharpen_before_mask=args.no_sharpen_before_mask,
              make_hydrogen=args.hydrogen,
-             monlib_path=args.monlib, ligands=[args.ligand])
+             monlib_path=args.monlib, ligands=args.ligand)
 # main()
         
 if __name__ == "__main__":

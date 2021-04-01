@@ -121,6 +121,18 @@ class Refmac:
             
         return ret
     # copy()
+
+    def set_libin(self, ligands):
+        if not ligands: return
+        if len(ligands) > 1:
+            mcif = "merged_ligands.cif" # XXX directory!
+            logger.write("Merging ligand cif files: {}".format(ligands))
+            utils.fileio.merge_ligand_cif(ligands, mcif)
+            self.libin = mcif
+        else:
+            self.libin = ligands[0]
+    # set_libin()
+            
     
     def make_keywords(self):
         ret = ""
