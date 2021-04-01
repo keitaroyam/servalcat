@@ -89,7 +89,7 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#f
 def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     if has_halfmaps:
         labs = ["DELFWT", "FWT", "Fupdate", "DELFWT_noscale", "Fupdate_noscale"]
-        if B is not None: labs.extend(["DELFWT_b0", "FWT_b0"])
+        if B is not None: labs.extend(["DELFWT_b0", "Fupdate_b0"])
     else:
         labs = ["DELFWT"]
         
