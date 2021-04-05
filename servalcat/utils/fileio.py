@@ -171,6 +171,9 @@ def read_structure_from_pdb_and_mmcif(xyz_in):
             tmp = gemmi.read_structure(pdb_in)
             st.raw_remarks = tmp.raw_remarks
 
+    if cif_ref is None and xyz_in.endswith("cif"):
+        cif_ref = xyz_in
+            
     return st, cif_ref
 # read_structure_from_pdb_and_mmcif()
 
