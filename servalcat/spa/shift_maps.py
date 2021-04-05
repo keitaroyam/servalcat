@@ -18,7 +18,7 @@ from servalcat import utils
 def add_arguments(parser):
     parser.description = 'Trim maps and shift models into a small new box.'
     parser.epilog = 'If --mask is provided, a boundary is decided using the mask and --padding. Otherwise the model is used.'
-    parser.add_argument('--maps', required=True, nargs="+", action="append",
+    parser.add_argument('--maps', nargs="+", action="append",
                         help='Input map file(s)')
     parser.add_argument('--mask',
                         help='Mask file')    
@@ -37,6 +37,7 @@ def add_arguments(parser):
                         help='Force cell')
     parser.add_argument('--disable_cell_check',
                         action='store_true')
+    parser.add_argument("--shifts", help="Specify shifts.json to use precalculated parameters")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -70,11 +71,12 @@ def check_maps(map_files, disable_cell_check=False):
     return params[0]
 # check_maps()
 
-def write_shifts_json(filename, cell, shape, new_cell, new_shape, shifts):
+def write_shifts_json(filename, cell, shape, new_cell, new_shape, starts, shifts):
     json.dump(dict(cell=cell,
                    grid=shape,
                    new_cell=new_cell,
                    new_grid=new_shape,
+                   starts=starts,
                    shifts=shifts),
               open(filename, "w"), indent=2)
 # write_shifts_json()
@@ -139,14 +141,29 @@ def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, nonce
         write_shifts_json(json_out,
                           cell=mask.unit_cell.parameters, shape=mask.shape,
                           new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
+                          starts=starts,
                           shifts=shifts.tolist())
 
     return new_cell, new_shape, starts, shifts
 # determine_shape_and_shift()    
         
 def main(args):
-    args.maps = sum(args.maps, [])
-    cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.disable_cell_check)
+    if not args.maps and not args.shifts:
+        raise RuntimeError("Give --maps or --shifts")
+
+    if args.shifts:
+        if args.noncubic or args.noncentered or args.mask:
+            raise RuntimeError("You cannot specify --noncubic/--noncentered/--mask if --shifts given")
+        if not args.maps and not args.model:
+            raise RuntimeError("Give --maps or --model")
+        info = json.load(open(args.shifts))
+        cell = info["cell"]
+        args.maps = []
+    elif args.maps:
+        args.maps = sum(args.maps, [])
+        cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.disable_cell_check)
+    
+        
     if args.force_cell:
         cell = args.force_cell
 
@@ -167,22 +184,27 @@ def main(args):
         assert mask.shape == grid_shape
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
-    elif args.model:
+    elif args.model and not args.shifts:
         logger.write("Using model to decide border: {}".format(args.model))
         mask = gemmi.FloatGrid(*grid_shape)
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         for st in sts:
             mask.mask_points_in_constant_radius(st[0], args.padding, 1.)
-    else:
+    elif not args.shifts:
         raise RuntimeError("Give mask or model")
 
-    # call func
-    new_cell, new_shape, starts, shifts = determine_shape_and_shift(mask=mask, grid_start=grid_start,
-                                                                    padding=args.padding,
-                                                                    mask_cutoff=args.mask_cutoff,
-                                                                    noncentered=args.noncentered,
-                                                                    noncubic=args.noncubic)
+    if not args.shifts:
+        new_cell, new_shape, starts, shifts = determine_shape_and_shift(mask=mask, grid_start=grid_start,
+                                                                        padding=args.padding,
+                                                                        mask_cutoff=args.mask_cutoff,
+                                                                        noncentered=args.noncentered,
+                                                                        noncubic=args.noncubic)
+    else:
+        new_cell = gemmi.UnitCell(*info["new_cell"])
+        new_shape, starts = info["new_grid"], info["starts"]
+        shifts = gemmi.Position(*info["shifts"])
+        
     if args.model:
         for i, st in enumerate(sts):
             st.cell = new_cell
