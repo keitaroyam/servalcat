@@ -42,6 +42,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.ncs = True
         groups.atoms = True
         groups.cell = True
+        groups.scale = True
         try:
             doc = gemmi.cif.read(cif_ref)
         except RuntimeError as e:
@@ -51,6 +52,9 @@ def write_mmcif(st, cif_out, cif_ref=None):
             return write_mmcif(st, cif_out)
             
         block = doc.find_block(st_new.info["_entry.id"])
+        # to remove fract_transf_matrix. maybe we should keep some (like _atom_sites.solution_hydrogens)?
+        # we do not want this because cell may be updated
+        block.find_mmcif_category("_atom_sites.").erase()
         st_new.update_mmcif_block(block, groups)
         st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
         doc.write_file(cif_out)
