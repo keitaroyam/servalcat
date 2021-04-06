@@ -141,7 +141,7 @@ def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, nonce
         write_shifts_json(json_out,
                           cell=mask.unit_cell.parameters, shape=mask.shape,
                           new_cell=new_cell.parameters, new_shape=list(map(int, new_shape)),
-                          starts=starts,
+                          starts=list(map(int, starts)),
                           shifts=shifts.tolist())
 
     return new_cell, new_shape, starts, shifts
