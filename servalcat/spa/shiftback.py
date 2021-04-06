@@ -27,7 +27,6 @@ def add_arguments(parser):
     parser.add_argument('--ncsc_file',
                         help='')
     parser.add_argument('--output_prefix',
-                        default="refined",
                         help='output file prefix')
 # add_arguments()
 
@@ -71,7 +70,7 @@ def refmac_mtz_in_original_cell(org_cell, org_grid_size, new_grid_size, shifts, 
     mtz.write_to_file(mtz_out)
 # refmac_mtz_in_original_cell()
 
-def shift_back(xyz_in, refine_mtz, shifts_json, ncsc_in, out_prefix):
+def shift_back(xyz_in, shifts_json, ncsc_in=None, refine_mtz=None, out_prefix=None):
     logger.write("Reading shifts info from {}".format(shifts_json))
     info = json.load(open(shifts_json))
     for k in info:
@@ -82,12 +81,17 @@ def shift_back(xyz_in, refine_mtz, shifts_json, ncsc_in, out_prefix):
 
     if refine_mtz:
         logger.write("Transforming MTZ: {}".format(refine_mtz))
+        if out_prefix:
+            mtz_out = out_prefix+".mtz"
+        else:
+            mtz_out = utils.fileio.splitext(os.path.basename(refine_mtz))[0] + "_shiftback.mtz"
+            
         refmac_mtz_in_original_cell(org_cell,
                                     info["grid"],
                                     info["new_grid"],
                                     info["shifts"],
                                     refine_mtz,
-                                    out_prefix+".mtz")
+                                    mtz_out)
 
     if xyz_in:
         logger.write("Shifting back model: {}".format(xyz_in))
@@ -104,7 +108,8 @@ def shift_back(xyz_in, refine_mtz, shifts_json, ncsc_in, out_prefix):
             st.ncs.clear()
             st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
 
-        utils.fileio.write_model(st, out_prefix,
+        prefix = out_prefix if out_prefix else utils.fileio.splitext(os.path.basename(xyz_in))[0] + "_shiftback"
+        utils.fileio.write_model(st, prefix,
                                  pdb=True, cif=True, cif_ref=cif_ref)
         
 

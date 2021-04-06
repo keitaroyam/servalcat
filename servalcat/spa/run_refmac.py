@@ -218,7 +218,6 @@ def main(args):
     if not args.no_shift:
         ncsc_in = ("ncsc_global.txt") if has_ncsc else None
         spa.shiftback.shift_back(xyz_in=refmac_prefix+model_format,
-                                 refine_mtz=refmac_prefix+".mtz",
                                  shifts_json="shifts.json",
                                  ncsc_in=ncsc_in,
                                  out_prefix=args.output_prefix)
@@ -269,7 +268,6 @@ def main(args):
         if not args.no_shift:
             ncsc_in = ("ncsc_global.txt") if has_ncsc else None
             spa.shiftback.shift_back(xyz_in=refmac_prefix_shaken+model_format,
-                                     refine_mtz=refmac_prefix_shaken+".mtz",
                                      shifts_json="shifts.json",
                                      ncsc_in=ncsc_in,
                                      out_prefix=args.output_prefix+"_shaken_refined")
