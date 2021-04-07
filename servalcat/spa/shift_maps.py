@@ -151,6 +151,11 @@ def main(args):
     if not args.maps and not args.shifts:
         raise RuntimeError("Give --maps or --shifts")
 
+    if args.maps:
+        args.maps = sum(args.maps, [])
+    else:
+        args.maps = []
+    
     if args.shifts:
         if args.noncubic or args.noncentered or args.mask:
             raise RuntimeError("You cannot specify --noncubic/--noncentered/--mask if --shifts given")
@@ -158,12 +163,9 @@ def main(args):
             raise RuntimeError("Give --maps or --model")
         info = json.load(open(args.shifts))
         cell = info["cell"]
-        args.maps = []
     elif args.maps:
-        args.maps = sum(args.maps, [])
         cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.disable_cell_check)
-    
-        
+      
     if args.force_cell:
         cell = args.force_cell
 
@@ -184,6 +186,8 @@ def main(args):
         assert mask.shape == grid_shape
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
+        if args.mask not in args.maps: # need to check with normalized paths?
+            args.maps.append(args.mask)
     elif args.model and not args.shifts:
         logger.write("Using model to decide border: {}".format(args.model))
         mask = gemmi.FloatGrid(*grid_shape)
@@ -230,7 +234,7 @@ def main(args):
         g = utils.fileio.read_ccp4_map(f)[0]
         newg = g.get_subarray(*(list(starts)+list(new_shape)))
         ccp4 = gemmi.Ccp4Map()
-        ccp4.grid = gemmi.FloatGrid(newg, new_cell, mask.spacegroup)
+        ccp4.grid = gemmi.FloatGrid(newg, new_cell, g.spacegroup)
         ccp4.update_ccp4_header(2, True) # float, update stats
         ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc")
 
