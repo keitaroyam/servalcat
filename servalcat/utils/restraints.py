@@ -13,6 +13,9 @@ import numpy
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
+def filename_in_monlib(monomer_dir, name):
+    return os.path.join(monomer_dir, name[0].lower(), name+".cif")
+
 def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     if monomer_dir is None:
         if "CLIBD_MON" not in os.environ:
@@ -28,7 +31,8 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
         return
 
     if monomer_dir:
-        monlib = gemmi.read_monomer_lib(monomer_dir, resnames)
+        resinlib = list(filter(lambda x: os.path.exists(filename_in_monlib(monomer_dir, x)), resnames))
+        monlib = gemmi.read_monomer_lib(monomer_dir, resinlib)
     else:
         monlib = gemmi.MonLib()
 
