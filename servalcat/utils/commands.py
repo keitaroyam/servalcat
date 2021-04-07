@@ -65,7 +65,8 @@ def symmodel(args):
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
     elif not st.cell.is_crystal():
-        logger.write("**WARNING** Unit cell parameters look wrong. Please use --map or --cell")
+        logger.write("Error: Unit cell parameters look wrong. Please use --map or --cell")
+        return
 
     if args.chains:
         logger.write("Keep {} chains only".format(" ".join(args.chains)))
@@ -95,7 +96,7 @@ def symmodel(args):
         st.assemblies.append(a)
 
     if not args.output_prfix:
-        args.output_prfix = fileio.splitext(args.model)[0] + "_asu"
+        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_asu"
 
     if args.pdb or args.cif:
         fileio.write_model(st, args.output_prfix, pdb=args.pdb, cif=args.cif)
