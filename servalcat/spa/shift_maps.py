@@ -96,13 +96,18 @@ def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, nonce
     p = numpy.ceil(padding / spacing).astype(int)
     logger.write("Limits: {} {} {}".format(*limits))
     logger.write("Padding: {} {} {}".format(*p))
+    slices = [0, 0, 0]
     if noncentered:
         logger.write("Non-centered trimming will be performed.")
-        slices = [slice(max(grid_start[i], limits[i][0]-p[i]),
-                        min(limits[i][1]+p[i]+1, grid_end[i])) for i in range(3)]
+        for i in range(3):
+            start = max(grid_start[i], limits[i][0]-p[i])
+            stop = min(limits[i][1]+p[i]+1, grid_end[i])
+            if (stop-start)%2 == 1:
+                if start > 0: start -= 1
+                elif stop < grid_end[i]: stop += 1
+            slices[i] = slice(start, stop)
     else:
         logger.write("Centered trimming will be performed.")
-        slices = [0, 0, 0]
         for i in range(3):
             ctr = (grid_shape[i]-1)/2 + grid_start[i]
             rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
