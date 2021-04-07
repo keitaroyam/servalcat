@@ -122,7 +122,8 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
         if not omit_proton and st[0].count_hydrogen_sites() > 0:
             if topo is not None:
                 # Shift proton positions
-                topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+                topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
+                                               default_scale=restraints.default_proton_scale)
             for cra in st[0].all():
                 if cra.atom.is_hydrogen():
                     dc.add_c_contribution_to_grid(cra.atom, -1)
@@ -171,7 +172,8 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
         vals.append(sf)
 
     if topo is not None:
-        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
+                                       default_scale=restraints.default_proton_scale)
 
         for i, hkl in enumerate(miller_array):
             sf = calc.calculate_mb_z(st[0], hkl, only_h=True)

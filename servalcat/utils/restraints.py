@@ -11,6 +11,8 @@ import os
 import gemmi
 import numpy
 
+default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
+
 def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     if monomer_dir is None:
         if "CLIBD_MON" not in os.environ:
@@ -30,7 +32,7 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     else:
         monlib = gemmi.MonLib()
 
-    for f in cif_files: # Support link!!
+    for f in cif_files: # TODO Support link!!
         logger.write("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
         for b in doc:
@@ -53,6 +55,7 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True
+    nucl_not_found = []
     for resn in resnames:
         if resn not in monlib.monomers:
             logger.write("ERROR: monomer information of {} not loaded".format(resn))
@@ -66,9 +69,12 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
                     no_nuc = True
                     break
             if no_nuc:
-                logger.write("ERROR: nucleus distance is not found for {}".format(resn))
+                nucl_not_found.append(resn)
                 good = False
 
+    if nucl_not_found:
+        logger.write("WARNING: nucleus distance is not found for: {}".format(" ".join(nucl_not_found)))
+        logger.write("         default scale ({}) is used for nucleus distances.".format(default_proton_scale))
     return good
 # check_monlib_support_nucleus_distances()
 
@@ -80,7 +86,7 @@ def add_hydrogens(st, monlib, pos="elec"):
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")
         restraints.check_monlib_support_nucleus_distances(monlib, resnames)
-        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+        topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=default_proton_scale)
     else:
         logger.write("Generating hydrogens at electron positions")
 # add_hydrogens()
