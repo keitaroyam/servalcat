@@ -68,9 +68,9 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
             st.remove_hydrogens()
             omit_proton = omit_h_electron = False
     
-    if blur is None:
-        blur = determine_blur_for_dencalc(st, d_min/2/rate)
-        logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+    if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
+    blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
+    logger.write("Setting blur= {:.2f} in density calculation".format(blur))
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
