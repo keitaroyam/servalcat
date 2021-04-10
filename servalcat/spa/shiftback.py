@@ -121,8 +121,7 @@ def main(args):
         logger.write("ERROR: give --model and/or --refine_mtz")
         return
     
-    shift_back(args.model, args.refine_mtz, args.shifts,
-               args.ncsc_file, args.output_prefix)
+    shift_back(args.model, args.shifts, args.ncsc_file, args.refine_mtz, args.output_prefix)
 
 if __name__ == "__main__":
     import sys
