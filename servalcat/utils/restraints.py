@@ -95,3 +95,72 @@ def add_hydrogens(st, monlib, pos="elec"):
         logger.write("Generating hydrogens at electron positions")
 # add_hydrogens()
 
+def plane_deviations(atoms):
+    pp = gemmi.find_best_plane(atoms)
+    return [gemmi.get_distance_from_plane(a.pos, pp) for a in atoms]
+# plane_deviations()
+
+def show_all(st, monlib):
+    st.setup_entities() # entity information is needed for links
+    topo = gemmi.prepare_topology(st, monlib)
+    
+    lookup = dict([(x.atom, (x.chain, x.residue, x.atom)) for x in st[0].all()])
+    label = lambda c, r, a: "{:4s}{:1s}{:3s}{:>2s}{:4d}{:1s}".format(a.name, a.altloc if a.altloc!="\x00" else " ",
+                                                                     c.name,
+                                                                     r.name, r.seqid.num, r.seqid.icode)
+
+    topo_d = dict(bond=topo.bonds, angle=topo.angles, torsion=topo.torsions,)#, chir=topo.chirs)
+    for k in topo_d:
+        topo_k = topo_d[k]
+        all_z = [b.calculate_z() for b in topo_k]
+        all_d = [b.calculate() for b in topo_k]
+        if k in ("angle", "torsion"): all_d = numpy.rad2deg(all_d)
+        all_i = [b.restr.value for b in topo_k]
+        perm = range(len(all_z))
+        perm = numpy.argsort(all_z)
+        if k == "torsion":
+            tmp = [all_z[i] * topo_k[i].restr.esd for i in range(len(topo_k))]
+            #print("TORSION_DEV=", tmp)
+            rmsd = numpy.sqrt(numpy.average(numpy.array(tmp)**2))
+        else:
+            rmsd = numpy.sqrt(numpy.average((numpy.array(all_d)-all_i)**2))
+        print("# {}_rmsd= {:.5f}".format(k, rmsd))
+        for i in reversed(perm):
+            t = topo_k[i]
+            labs = " ".join([label(*lookup[x]) for x in t.atoms])
+            b_ave = sum([x.b_iso for x in t.atoms])/len(t.atoms)
+            print("{} {:.4f} {:.4f} {:.2f}".format(labs, all_d[i], all_z[i], b_ave))
+            #if k=="torsion": print(t.restr.value, t.restr.esd, t.restr.period)
+            #if all_z[i] < 10: break
+
+
+    # Plane
+    topo_k = topo.planes
+    all_d = [numpy.sqrt(numpy.average(numpy.square(plane_deviations(t.atoms)))) for t in topo_k]
+    perm = numpy.argsort(all_d)
+    print("# planes_meandev= {:.4f}".format(numpy.average(all_d)))
+    for i in reversed(perm):
+        t = topo_k[i]
+        labs = " ".join([label(*lookup[x]) for x in t.atoms])
+        print("{} {:.4f}".format(labs, all_d[i]))
+
+    # Chir
+    topo_k = topo.chirs
+    all_d = [b.calculate() for b in topo_k]
+    all_i = [b.restr.sign for b in topo_k]
+    all_c = [b.check() for b in topo_k]
+    perm = numpy.argsort(all_c)
+    print("# chirs")
+    for i in reversed(perm):
+        t = topo_k[i]
+        labs = " ".join([label(*lookup[x]) for x in t.atoms])
+        if not all_c[i]:
+            print("{} {:.4f} {} {}".format(labs, all_d[i], all_i[i], all_c[i]))
+
+if __name__ == "__main__":
+    import sys
+    model_in = sys.argv[1]
+    st = gemmi.read_structure(model_in)
+    monlib = load_monomer_library(st[0].get_all_residue_names(),
+                                  cif_files=sys.argv[2:] if len(sys.argv)>2 else None)
+    show_all(st, monlib)
