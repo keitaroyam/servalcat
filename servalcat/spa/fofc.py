@@ -132,13 +132,12 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
         tmp["Fupdate_noscale"][sel] = fup
 
         sig_fo = numpy.std(Fo)
-        tmp["FWT"][sel] = numpy.sqrt(fsc)*Fo/sig_fo
-        
         n_fo = sig_fo * numpy.sqrt(fsc)
         if n_fo < 1e-10 or n_fo != n_fo:
             logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
             continue
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
+        tmp["FWT"][sel] = numpy.sqrt(fsc)*Fo/sig_fo
 
         lab_suf = "" if B is None else "_b0"
         tmp["DELFWT"+lab_suf][sel] = delfwt/n_fo
