@@ -29,7 +29,6 @@ def add_sfcalc_args(parser):
     parser.add_argument('--no_mask',
                         action='store_true')
     parser.add_argument('--resolution',
-                        required=True,
                         type=float,
                         help='')
     parser.add_argument('--no_shift',
@@ -43,7 +42,7 @@ def add_sfcalc_args(parser):
                         help="Point group symbol for strict symmetry. The coordinate system is consitent with RELION.")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information in the model file')
-    parser.add_argument('--remove_multiple_models',
+    parser.add_argument('--remove_multiple_models', action='store_true', 
                         help='Keep 1st model only')
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
@@ -163,6 +162,16 @@ def main(args):
         if args.mask:
             logger.write("WARNING: Your --mask is ignored because --no_mask is given")
             args.mask = None
+
+    if args.resolution is None and args.model and utils.fileio.splitext(args.model)[1].endswith("cif"):
+        doc = gemmi.cif.read(args.model)
+        block = doc.sole_block()
+        reso_str = block.find_value("_em_3d_reconstruction.resolution")
+        logger.write("WARNING: --resolution not given. Using _em_3d_reconstruction.resolution = {}".format(reso_str))
+        args.resolution = float(reso_str)
+
+    if args.resolution is None:
+        raise RuntimeError("ERROR: --resolution is needed.")
         
     resolution = args.resolution - 1e-6
 
@@ -277,7 +286,11 @@ def main(args):
                                                                                        noncentered=True,
                                                                                        noncubic=True,
                                                                                        json_out="shifts.json")
-
+            vol_mask = numpy.count_nonzero(numpy.array(mask)>0.5)
+            vol_map = new_shape[0] * new_shape[1] * new_shape[2]
+            ret["vol_ratio"] = vol_mask/vol_map
+            logger.write(" Vol_mask/Vol_map= {:.2e}".format(ret["vol_ratio"]))
+            
             if st_new:
                 for cra in st_new[0].all():
                     cra.atom.pos += shifts
