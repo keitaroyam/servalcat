@@ -26,6 +26,9 @@ def add_sfcalc_args(parser):
     parser.add_argument('--mask_radius',
                         type=float, default=3,
                         help='')
+    parser.add_argument('--padding',
+                        type=float, 
+                        help='Default: 2*mask_radius')
     parser.add_argument('--no_mask',
                         action='store_true')
     parser.add_argument('--resolution',
@@ -279,9 +282,10 @@ def main(args):
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")
+            if args.padding is None: args.padding = args.mask_radius * 2
             new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
                                                                                        grid_start=grid_start,
-                                                                                       padding=args.mask_radius*2,
+                                                                                       padding=args.padding,
                                                                                        mask_cutoff=0.1,
                                                                                        noncentered=True,
                                                                                        noncubic=True,
