@@ -185,7 +185,82 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     return asu
 # calc_fc_direct()
 
+def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+    # Very crude implementation to find peak from calculated map
+    # TODO Need to implement peak finding function that involves interpolation
+    assert st[0].count_hydrogen_sites() > 0
+    if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
+    blur = max(0, blur)
+    logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+
+    st = st.clone()
+    topo = gemmi.prepare_topology(st, monlib)
+    resnames = st[0].get_all_residue_names()
+    restraints.check_monlib_support_nucleus_distances(monlib, resnames)
+
+    topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
+    st_e = st.clone()
+    topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus)
+    st_n = st.clone()
+    
+    dc = gemmi.DensityCalculatorX()
+    dc.d_min = d_min
+    dc.blur = blur
+    dc.r_cut = r_cut
+    dc.rate = rate
+    box_size = 10.
+    mode_all = False #True
+    if mode_all:
+        dc.set_grid_cell_and_spacegroup(st)
+    else:
+        dc.grid.unit_cell = gemmi.UnitCell(box_size, box_size, box_size, 90, 90, 90)
+        dc.grid.spacegroup = gemmi.SpaceGroup("P1")
+        cbox = gemmi.Position(box_size/2, box_size/2, box_size/2)
+    
+    if mode_all: dc.initialize_grid()
+
+    for ichain in range(len(st[0])):
+        chain = st[0][ichain]
+        for ires in range(len(chain)):
+            residue = chain[ires]
+            for iatom in range(len(residue)):
+                atom = residue[iatom]
+                if not atom.is_hydrogen(): continue
+                #if atom.occ == 0: continue
+                h_n = st_n[0][ichain][ires][iatom]
+                h_e = st_e[0][ichain][ires][iatom]
+                if not mode_all:
+                    dc.initialize_grid()
+                    h_n.occ = 1.
+                    h_e.occ = 1.
+                    n_pos = gemmi.Position(h_n.pos)
+                    h_n.pos = cbox
+                    h_e.pos = cbox + h_e.pos - n_pos
+                dc.add_atom_density_to_grid(h_e)
+                dc.add_c_contribution_to_grid(h_n, -1)
+                if not mode_all:
+                    grid = gemmi.transform_map_to_f_phi(dc.grid)
+                    asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
+                    denmap = asu_data.transform_f_phi_to_map(exact_size=(int(box_size*10), int(box_size*10), int(box_size*10)))
+                    m = numpy.unravel_index(numpy.argmax(denmap), denmap.shape)
+                    peakpos = denmap.get_position(m[0], m[1], m[2]) - cbox + n_pos
+                    atom.pos = peakpos
+
+    if mode_all:
+        grid = gemmi.transform_map_to_f_phi(dc.grid)
+        asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
+        denmap = asu_data.transform_f_phi_to_map(sample_rate=3)
+        ccp4 = gemmi.Ccp4Map()
+        ccp4.grid = denmap
+        ccp4.update_ccp4_header(2, True) # float, update stats
+        ccp4.write_ccp4_map("debug.ccp4")
+
+    return st
+
+# get_em_expected_hydrogen()
+
 def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0.01):
+    # DOES NOT WORK!!
     if len(st.ncs) == 0: return
 
     if special_pos_threshold >= 0:
