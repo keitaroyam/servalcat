@@ -211,6 +211,20 @@ def main(args):
     else:
         refmac_prefix = args.output_prefix
 
+    # Weight auto scale
+    if args.weight is None and args.weight_auto_scale is None:
+        if "vol_ratio" in file_info:
+            rlmc = (-11.456330,    4.858204,   20.645659)
+            logger.write("Estimating weight auto scale using resolution and volume ratio")
+            ws = rlmc[0] + args.resolution*rlmc[1] +file_info["vol_ratio"]*rlmc[2]
+        else:
+            rlmc = (-5.611284, 4.120118)
+            logger.write("Estimating weight auto scale using resolution")
+            ws =  rlmc[0] + args.resolution*rlmc[1]
+        args.weight_auto_scale = max(0.2, min(18.0, ws))
+        logger.write(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
+
+
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
     refmac.set_libin(args.ligand)
     refmac.run_refmac()

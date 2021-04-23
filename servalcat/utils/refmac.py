@@ -153,7 +153,7 @@ class Refmac:
         if self.weight_fixed is not None:
             ret += "weight matrix {}\n".format(self.weight_fixed)
         elif self.weight_auto_scale is not None:
-            ret += "weight auto {}\n".format(self.weight_auto_scale)
+            ret += "weight auto {:.2f}\n".format(self.weight_auto_scale)
         else:
             ret += "weight auto\n"
 
