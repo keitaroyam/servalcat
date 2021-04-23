@@ -24,7 +24,6 @@ def half2full(map_h1, map_h2):
 
 def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
     assert len(maps) < 3
-    assert b is None # currently sharpening by B is not supported
     if b is None and len(maps) != 2:
         raise RuntimeError("Cannot determine sharpening")
 
@@ -67,7 +66,12 @@ $$""")
         logger.write("$$")
 
     else:
-        pass # sharpen by B
+        logger.write("Sharpening B before masking= {}".format(b))
+        s2 = 1./hkldata.d_spacings()**2
+        normalizer[:] = numpy.exp(-b*s2/4.)
+        hkldata.df.loc[:, "F_map1"] /= normalizer
+        hkldata.df.loc[:, "F_map2"] /= normalizer
+        hkldata.df.loc[:, "FP"] /= normalizer
 
     # 2. Mask
     new_maps = []
@@ -77,11 +81,8 @@ $$""")
 
     # 3. Unsharpen
     hkldata = mask_and_fft_maps(new_maps, d_min)
-    if b is None:
-        hkldata.df.F_map1 *= normalizer
-        hkldata.df.F_map2 *= normalizer
-    else:
-        pass # unsharpen by B
+    hkldata.df.F_map1 *= normalizer
+    hkldata.df.F_map2 *= normalizer
     
     new_maps = []
     for i, lab in enumerate(labs):
