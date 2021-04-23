@@ -10,6 +10,8 @@ import argparse
 import sys
 import datetime
 import pipes
+import getpass
+import platform
 import servalcat.spa.sfcalc
 import servalcat.spa.shiftback
 import servalcat.spa.run_refmac
@@ -51,6 +53,7 @@ def main():
     if args.command in modules:
         logger.set_file("servalcat.log")
         logger.write("# Started on {}".format(datetime.datetime.now()))
+        logger.write("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
         logger.write("# Command-line args:")
         logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
         modules[args.command].main(args)
