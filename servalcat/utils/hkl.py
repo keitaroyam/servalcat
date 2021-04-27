@@ -180,3 +180,17 @@ class HklData:
         ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=grid_size)
         return ma
     # fft_map()
+
+    def d_eff(self, label):
+        # Effective resolution definied using FSC
+        fsc = self.binned_df[label]
+        bin_counts = self.df.bin.value_counts()
+        a = 0.
+        for i_bin, bin_d_max, bin_d_min in self.bin_and_limits():
+            a += bin_counts[i_bin] * fsc[i_bin]
+
+        fac = (a/sum(bin_counts))**(1/3.)
+        d_min = self.d_min_max()[0]
+        ret = d_min/fac
+        return ret
+    # d_eff()

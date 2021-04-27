@@ -340,6 +340,8 @@ def main(args):
         for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
             sel = i_bin == hkldata.df.bin
             hkldata.df.loc[sel, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
+
+        logger.write("Effective resolution from FSCfull= {:.2f}".format(hkldata.d_eff("FSCfull")))
     else:
         map_labs = ["Fout0"]
         sig_lab = None
