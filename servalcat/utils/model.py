@@ -259,6 +259,17 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate
 
 # get_em_expected_hydrogen()
 
+def translate_into_box(st):
+    # apply unit cell translations to put model into a box (unit cell)
+    omat = numpy.array(st.cell.orthogonalization_matrix)
+    fmat = numpy.array(st.cell.fractionalization_matrix).transpose()
+    for m in st:
+        com = numpy.array(m.calculate_center_of_mass().tolist())
+        shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
+        tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
+        m.transform(tr)
+# translate_into_box()
+
 def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0.01):
     # DOES NOT WORK!!
     if len(st.ncs) == 0: return
