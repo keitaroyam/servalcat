@@ -47,6 +47,10 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
                     del monlib.monomers[name]
                 monlib.add_monomer_if_present(b)
 
+    not_loaded = set(resnames).difference(monlib.monomers)
+    if not_loaded:
+        print("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
+
     logger.write("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
                                                                                           len(monlib.links),
                                                                                           len(monlib.modifications)))
@@ -85,7 +89,7 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
     
-    st.setup_entities()   
+    st.setup_entities()
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")

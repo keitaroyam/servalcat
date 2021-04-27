@@ -98,7 +98,7 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True):
+def read_ccp4_map(filename, setup=True, default_value=None):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
     grid_start = [m.header_i32(x) for x in (5,6,7)]
@@ -118,7 +118,8 @@ def read_ccp4_map(filename, setup=True):
     logger.write("")
     # Labels, Title, 
     if setup:
-        m.setup()
+        if default_value is None: default_value = float("nan")
+        m.setup(default_value)
         grid_start = [grid_start[i] for i in axis_pos]
         
     return [m.grid, grid_start] # should return original headers?
