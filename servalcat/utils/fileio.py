@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat.utils import model
 import os
 import subprocess
 import gemmi
@@ -66,9 +67,11 @@ def write_mmcif(st, cif_out, cif_ref=None):
 
 def write_pdb(st, pdb_out):
     logger.write("Writing PDB file: {}".format(pdb_out))
-    st_new = st.clone()
-    st_new.shorten_chain_names()
-    st_new.write_pdb(pdb_out, use_linkr=True)
+    chain_id_lens = [len(x) for x in model.all_chain_ids(st)]
+    if max(chain_id_lens) > 2:
+        st = st.clone()
+        st.shorten_chain_names()
+    st.write_pdb(pdb_out, use_linkr=True)
 # write_pdb()
 
 def write_model(st, prefix=None, file_name=None, pdb=False, cif=False, cif_ref=None):

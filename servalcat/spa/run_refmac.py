@@ -167,7 +167,6 @@ def main(args):
         return
 
     if args.ligand: args.ligand = sum(args.ligand, [])
-    model_format = utils.fileio.check_model_format(args.model)
     
     if args.map or args.halfmaps:
         args.output_model_prefix = "shifted_local"
@@ -181,8 +180,10 @@ def main(args):
         args.lab_phi = file_info["lab_phi"]  #"Pout0"
         args.lab_f = file_info["lab_f"]
         args.model = file_info["model_file"]
+        model_format = file_info["model_format"]
     else:
         file_info = {}
+        model_format = utils.fileio.check_model_format(args.model)
         # Not supported actually..
 
     if args.cross_validation and args.cross_validation_method == "throughout":

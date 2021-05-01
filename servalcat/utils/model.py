@@ -310,6 +310,10 @@ def adp_analysis(st):
     logger.write("")
 # adp_analysis()        
 
+def all_chain_ids(st):
+    return [chain.name for model in st for chain in model]
+# all_chain_ids()
+
 def all_B(st):
     ret = []
     for mol in st:

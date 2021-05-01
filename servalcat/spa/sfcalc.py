@@ -210,10 +210,17 @@ def main(args):
     st_new = None
     if args.model: # and 
         logger.write("Input model: {}".format(args.model))
-        model_format = utils.fileio.check_model_format(args.model)
         st = gemmi.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
+
+        model_format = utils.fileio.check_model_format(args.model)
+        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+        if chain_id_len_max > 1 and model_format == ".pdb":
+            logger.write("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+            model_format = ".mmcif"
+
+        ret["model_format"] = model_format
 
         if args.remove_multiple_models and len(st) > 1:
             logger.write(" Removing models 2-{}".format(len(st)))
