@@ -214,12 +214,19 @@ def main(args):
 
     # Weight auto scale
     if args.weight is None and args.weight_auto_scale is None:
+        reso = file_info["d_eff"] if "d_eff" in file_info else args.resolution
         if "vol_ratio" in file_info:
-            rlmc = (-11.456330,    4.858204,   20.645659)
+            if "d_eff" in file_info:
+                rlmc = (-9.503541, 3.129882, 15.439744)
+            else:
+                rlmc = (-8.329418, 3.032409, 14.381907)
             logger.write("Estimating weight auto scale using resolution and volume ratio")
-            ws = rlmc[0] + args.resolution*rlmc[1] +file_info["vol_ratio"]*rlmc[2]
+            ws = rlmc[0] + reso*rlmc[1] +file_info["vol_ratio"]*rlmc[2]
         else:
-            rlmc = (-5.611284, 4.120118)
+            if "d_eff" in file_info:
+                rlmc = (-5.903807, 2.870723)
+            else:
+                rlmc = (-4.891140, 2.746791)
             logger.write("Estimating weight auto scale using resolution")
             ws =  rlmc[0] + args.resolution*rlmc[1]
         args.weight_auto_scale = max(0.2, min(18.0, ws))
