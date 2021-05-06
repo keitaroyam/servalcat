@@ -11,6 +11,8 @@ from servalcat.utils import restraints
 import gemmi
 import numpy
 import os
+import itertools
+import string
 
 def shake_structure(st, sigma):
     print("Randomizing structure with rmsd of {}".format(sigma))
@@ -343,3 +345,120 @@ def all_B(st):
 
     return ret
 # all_B()
+
+def microheterogeneity_for_refmac(st, monlib):
+    st.setup_entities()
+    topo = gemmi.prepare_topology(st, monlib)
+    mh_res = []
+    chains = []
+    icodes = {} # to avoid overlaps
+    modifications = [] # return value
+    
+    # Check if microheterogeneity exists
+    for chain in st[0]:
+        for rg in chain.get_polymer().residue_groups():
+            if len(rg) > 1:
+                ress = [r for r in rg]
+                chains.append(chain.name)
+                mh_res.append(ress)
+                ress_str = "/".join([str(r) for r in ress])
+                logger.write("Microheterogeneity detected in chain {}: {}".format(chain.name, ress_str))
+
+    if not mh_res: return []
+
+    for chain in st[0]:
+        for res in chain:
+            if res.seqid.icode != " ":
+                icodes.setdefault(chain.name, {}).setdefault(res.seqid.num, []).append(res.seqid.icode)
+                
+    def append_links(rinfo, prr, toappend):
+        for pbond in filter(lambda f: (f.provenance==gemmi.Provenance.PrevLink and
+                                       f.rkind==gemmi.RKind.Bond),
+                            rinfo.forces):
+            atoms = topo.bonds[pbond.index].atoms
+            assert len(atoms) == 2
+            found = None
+            for i in range(2):
+                if any(filter(lambda ra: atoms[i]==ra, prr)): found = i
+            if found is not None:
+                toappend.append([atoms[i], atoms[1-i]]) # prev atom, current atom
+    # append_links()
+    
+    mh_res_all = sum(mh_res, [])
+    mh_link = {}
+
+    # Check links
+    for cinfo in topo.chain_infos:
+        for rinfo in cinfo.res_infos:
+            # If this residue is microheterogeneous
+            if rinfo.res in mh_res_all:
+                for pr in rinfo.prev:
+                    prr = pr.get(rinfo).res
+                    mh_link.setdefault(rinfo.res, []).append([prr, "prev", pr.link, []])
+                    append_links(rinfo, prr, mh_link[rinfo.res][-1][-1])
+                    
+            # Check if previous residue(s) is microheterogeneous
+            for pr in rinfo.prev:
+                prr = pr.get(rinfo).res
+                if prr in mh_res_all:
+                    mh_link.setdefault(prr, []).append([rinfo.res, "next", pr.link, []])
+                    append_links(rinfo, prr, mh_link[prr][-1][-1])
+
+    # Change IDs
+    for chain_name, rr in zip(chains, mh_res):
+        chars = string.ascii_uppercase
+        # avoid already used inscodes
+        if chain_name in icodes and rr[0].seqid.num in icodes[chain_name]:
+            used_codes = set(icodes[chain_name][rr[0].seqid.num])
+            chars = list(filter(lambda x: x not in used_codes, chars))
+        for ir, r in enumerate(rr[1:]):
+            modifications.append((chain_name, r.seqid.num, r.seqid.icode, chars[ir]))
+            r.seqid.icode = chars[ir]
+
+    # Update connections (LINKR)
+    for chain_name, rr in zip(chains, mh_res):
+        for r in rr:
+            for p in mh_link.get(r, []):
+                for atoms in p[-1]:
+                    con = gemmi.Connection()
+                    con.asu = gemmi.Asu.Same
+                    con.type = gemmi.ConnectionType.Covale
+                    con.link_id = p[2]
+                    if p[1] == "prev":
+                        p1 = gemmi.AtomAddress(chain_name, p[0].seqid, p[0].name, atoms[1].name, atoms[1].altloc)
+                        p2 = gemmi.AtomAddress(chain_name, r.seqid, r.name, atoms[0].name, atoms[0].altloc)
+                    else:
+                        p1 = gemmi.AtomAddress(chain_name, r.seqid, r.name, atoms[1].name, atoms[1].altloc)
+                        p2 = gemmi.AtomAddress(chain_name, p[0].seqid, p[0].name, atoms[0].name, atoms[0].altloc)
+                        
+                    con.partner1 = p1
+                    con.partner2 = p2
+                    logger.write("Adding link: {}".format(con))
+                    st.connections.append(con)
+        for r1, r2 in itertools.combinations(rr, 2):
+            for a1 in set([a.altloc for a in r1]):
+                for a2 in set([a.altloc for a in r2]):
+                    con = gemmi.Connection()
+                    con.asu = gemmi.Asu.Same
+                    con.link_id = "gap"
+                    # XXX altloc will be ignored when atom does not match.. grrr
+                    con.partner1 = gemmi.AtomAddress(chain_name, r1.seqid, r1.name, "", a1)
+                    con.partner2 = gemmi.AtomAddress(chain_name, r2.seqid, r2.name, "", a2)
+                    st.connections.append(con)
+
+    return modifications
+# microheterogeneity_for_refmac()
+
+def modify_inscodes_back(st, modifications):
+    mods = dict([((cname,num,newcode), icode)for cname,num,icode,newcode in modifications])
+    logger.write("Modifications to be modified back: {}".format(mods))
+    for chain in st[0]:
+        for res in chain:
+            key = (chain.name, res.seqid.num, res.seqid.icode)
+            if key in mods:
+                logger.write(" Changing inscode '{}' to '{}' for {}/{}".format(res.seqid.icode,
+                                                                           mods[key],
+                                                                           chain.name,
+                                                                           res.seqid.num))
+                res.seqid.icode = mods[key]
+# modify_inscodes_back()

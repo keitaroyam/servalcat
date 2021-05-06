@@ -49,6 +49,9 @@ def add_sfcalc_args(parser):
                         help='Keep 1st model only')
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
+    parser.add_argument('--no_fix_microheterogeneity', action='store_true', 
+                        help='By default it will fix microheterogeneity for Refmac')
+
 # add_sfcalc_args()
 
 def add_arguments(parser):
@@ -214,6 +217,12 @@ def main(args):
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
 
+        if not args.no_fix_microheterogeneity:
+            # TODO need to check external restraints
+            monlib = utils.restraints.load_monomer_library(st[0].get_all_residue_names()) # FIXME should use user provided libraries
+            mhtr_mods = utils.model.microheterogeneity_for_refmac(st, monlib)
+            ret["inscode_mods"] = mhtr_mods
+            
         model_format = utils.fileio.check_model_format(args.model)
         chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
         if chain_id_len_max > 1 and model_format == ".pdb":
