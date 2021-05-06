@@ -208,7 +208,12 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate
     dc.blur = blur
     dc.r_cut = r_cut
     dc.rate = rate
-    box_size = 10.
+
+    # Decide box_size
+    max_r = max([dc.estimate_radius(cra.atom) for cra in st[0].all()])
+    logger.write("max_r= {:.2f}".format(max_r))
+    box_size = max_r*2 + 1 # padding
+    logger.write("box_size= {:.2f}".format(box_size))
     mode_all = False #True
     if mode_all:
         dc.set_grid_cell_and_spacegroup(st)
@@ -226,7 +231,6 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate
             for iatom in range(len(residue)):
                 atom = residue[iatom]
                 if not atom.is_hydrogen(): continue
-                #if atom.occ == 0: continue
                 h_n = st_n[0][ichain][ires][iatom]
                 h_e = st_e[0][ichain][ires][iatom]
                 if not mode_all:
@@ -269,6 +273,23 @@ def translate_into_box(st):
         tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
         m.transform(tr)
 # translate_into_box()
+
+def cra_to_indices(cra, model):
+    ret = [None, None, None]
+    for ic in range(len(model)):
+        chain = model[ic]
+        if cra.chain != chain: continue
+        ret[0] = ic
+        for ir in range(len(chain)):
+            res = chain[ir]
+            if cra.residue != res: continue
+            ret[1] = ir
+            for ia in range(len(res)):
+                if cra.atom == res[ia]:
+                    ret[2] = ia
+
+    return tuple(ret)
+# cra_to_indices()
 
 def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0.01):
     # DOES NOT WORK!!
