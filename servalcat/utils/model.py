@@ -55,7 +55,7 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
-def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cut=1e-5, rate=1.5,
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
@@ -91,7 +91,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, r_cu
 
     dc.d_min = d_min
     dc.blur = blur
-    dc.r_cut = r_cut
+    dc.cutoff = cutoff
     dc.rate = rate
     dc.set_grid_cell_and_spacegroup(st)
 
@@ -187,7 +187,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     return asu
 # calc_fc_direct()
 
-def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate=1.5):
+def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, cutoff=1e-5, rate=1.5):
     # Very crude implementation to find peak from calculated map
     # TODO Need to implement peak finding function that involves interpolation
     assert st[0].count_hydrogen_sites() > 0
@@ -208,7 +208,7 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, r_cut=1e-5, rate
     dc = gemmi.DensityCalculatorX()
     dc.d_min = d_min
     dc.blur = blur
-    dc.r_cut = r_cut
+    dc.cutoff = cutoff
     dc.rate = rate
 
     # Decide box_size

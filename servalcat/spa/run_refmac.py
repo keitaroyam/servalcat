@@ -88,7 +88,7 @@ def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
-    fc_asu = utils.model.calc_fc_fft(st, d_min, r_cut=1e-7, monlib=monlib, source="electron")
+    fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata.merge_asu_data(fc_asu, "FC")
     #logger.write("DEBUG:: applying B=3.2556")
     #hkldata.df.FC *= numpy.exp(-3.2556/hkldata.d_spacings()**2/4)

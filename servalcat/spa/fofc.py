@@ -254,7 +254,7 @@ def main(args):
             return
 
     utils.model.normalize_it92(st)
-    fc_asu = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron")
+    fc_asu = utils.model.calc_fc_fft(st, args.resolution, cutoff=1e-7, monlib=monlib, source="electron")
 
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)
     hkldata.merge_asu_data(fc_asu, "FC")
@@ -275,7 +275,7 @@ def main(args):
     calc_D_and_S(hkldata, args.output_prefix, has_halfmaps=has_halfmaps, half1_only=args.half1_only)
 
     if args.omit_proton or args.omit_h_electron:
-        fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, r_cut=1e-7, monlib=monlib, source="electron",
+        fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, cutoff=1e-7, monlib=monlib, source="electron",
                                            omit_proton=args.omit_proton, omit_h_electron=args.omit_h_electron)
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
