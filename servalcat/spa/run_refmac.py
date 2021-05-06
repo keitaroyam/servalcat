@@ -25,11 +25,6 @@ def add_arguments(parser):
     # run_refmac options
     # TODO use group! like refmac options
     parser.add_argument('--ligand', nargs="*", action="append")
-    parser.add_argument('--mtz', help='Input mtz file')
-    parser.add_argument('--mtz_half', nargs=2, help='Input mtz files for half maps')
-    parser.add_argument('--lab_f')
-    parser.add_argument('--lab_sigf')
-    parser.add_argument('--lab_phi')
     parser.add_argument('--bfactor', type=float)
     parser.add_argument('--ncsr', default="local", choices=["local", "global"])
     parser.add_argument('--ncycle', type=int, default=10)
@@ -171,29 +166,25 @@ def main(args):
         logger.write("Error: give --model.")
         return
 
-    if not (args.map or args.halfmaps) and not args.mtz:
-        logger.write("Error: give --map | --halfmaps | --mtz.")
+    if not (args.map or args.halfmaps):
+        logger.write("Error: give --map | --halfmaps.")
         return
 
     if args.ligand: args.ligand = sum(args.ligand, [])
     
-    if args.map or args.halfmaps:
-        args.output_model_prefix = "shifted_local"
-        args.output_masked_prefix = "masked_fs"
-        args.output_mtz_prefix = "starting_map"
-        args.remove_multiple_models = True
-        file_info = spa.sfcalc.main(args)
-        args.mtz = file_info["mtz_file"]
-        if args.halfmaps: # FIXME if no_mask?
-            args.mtz_half = [file_info["mtz_file"], file_info["mtz_file"]]
-        args.lab_phi = file_info["lab_phi"]  #"Pout0"
-        args.lab_f = file_info["lab_f"]
-        args.model = file_info["model_file"]
-        model_format = file_info["model_format"]
-    else:
-        file_info = {}
-        model_format = utils.fileio.check_model_format(args.model)
-        # Not supported actually..
+    args.output_model_prefix = "shifted_local"
+    args.output_masked_prefix = "masked_fs"
+    args.output_mtz_prefix = "starting_map"
+    args.remove_multiple_models = True
+    file_info = spa.sfcalc.main(args)
+    args.mtz = file_info["mtz_file"]
+    if args.halfmaps: # FIXME if no_mask?
+        args.mtz_half = [file_info["mtz_file"], file_info["mtz_file"]]
+    args.lab_phi = file_info["lab_phi"]  #"Pout0"
+    args.lab_f = file_info["lab_f"]
+    args.lab_sigf = None
+    args.model = file_info["model_file"]
+    model_format = file_info["model_format"]
 
     if args.cross_validation and args.cross_validation_method == "throughout":
         args.lab_f = file_info["lab_f_half1"]
