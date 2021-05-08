@@ -19,6 +19,8 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--halfmaps", nargs=2)
     group.add_argument("--map", help="Use only if you really do not have half maps.")
+    parser.add_argument('--pixel_size', type=float,
+                        help='Override pixel size (A)')
     parser.add_argument('--model', required=True,
                         help='Input atomic model file (PDB or mmCIF/PDBx')
     parser.add_argument("-d", '--resolution', type=float, required=True)
@@ -218,10 +220,10 @@ def main(args):
     st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
 
     if args.halfmaps:
-        maps = [utils.fileio.read_ccp4_map(f) for f in args.halfmaps]
+        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
         has_halfmaps = True
     else:
-        maps = [utils.fileio.read_ccp4_map(args.map)]
+        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         has_halfmaps = False
 
     grid_start = maps[0][1]

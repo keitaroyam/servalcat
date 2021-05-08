@@ -31,6 +31,8 @@ def add_sfcalc_args(parser):
                         help='Default: 2*mask_radius')
     parser.add_argument('--no_mask',
                         action='store_true')
+    parser.add_argument('--pixel_size', type=float,
+                        help='Override pixel size (A)')
     parser.add_argument('--resolution',
                         type=float,
                         help='')
@@ -182,12 +184,12 @@ def main(args):
     resolution = args.resolution - 1e-6
 
     if args.halfmaps:
-        maps = [utils.fileio.read_ccp4_map(f) for f in args.halfmaps]
+        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
         assert maps[0][0].shape == maps[1][0].shape
         assert maps[0][0].unit_cell == maps[1][0].unit_cell
         assert maps[0][1] == maps[1][1]
     else:
-        maps = [utils.fileio.read_ccp4_map(args.map)]
+        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
 
     grid_start = maps[0][1]
     unit_cell = maps[0][0].unit_cell
@@ -195,7 +197,7 @@ def main(args):
 
     if args.mapref:
         logger.write("Reference map: {}".format(args.mapref))
-        map_ref, ref_start = utils.fileio.read_ccp4_map(args.mapref)
+        map_ref, ref_start = utils.fileio.read_ccp4_map(args.mapref, pixel_size=args.pixel_size)
         assert unit_cell == map_ref.unit_cell
         assert maps[0][0].shape == map_ref.shape
         assert maps[0][1] == ref_start

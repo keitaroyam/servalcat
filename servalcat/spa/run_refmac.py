@@ -59,10 +59,10 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib_path, ligands):
+def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib_path, ligands, pixel_size=None):
     logger.write("Calculating map-model FSC..")
     
-    maps = [utils.fileio.read_ccp4_map(f) for f in maps_in]
+    maps = [utils.fileio.read_ccp4_map(f, pixel_size=pixel_size) for f in maps_in]
     st, _ = utils.fileio.read_structure_from_pdb_and_mmcif(model_in)
     st.cell = maps[0][0].unit_cell
 
@@ -304,6 +304,7 @@ def main(args):
                                      "--model", args.output_prefix+model_format,
                                      "--resolution", "1"])
         args2.resolution = args.resolution # dirty hack
+        args2.pixel_size = args.pixel_size
         if args.mask_for_fofc:
             logger.write(" maskl: {}".format(args.mask_for_fofc))
             args2.mask = args.mask_for_fofc
@@ -324,7 +325,8 @@ def main(args):
              args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
              no_sharpen_before_mask=args.no_sharpen_before_mask,
              make_hydrogen=args.hydrogen,
-             monlib_path=args.monlib, ligands=args.ligand)
+             monlib_path=args.monlib, ligands=args.ligand,
+             pixel_size=args.pixel_size)
 # main()
         
 if __name__ == "__main__":

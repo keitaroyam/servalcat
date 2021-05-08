@@ -106,12 +106,15 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True, default_value=None):
+def read_ccp4_map(filename, setup=True, default_value=None, pixel_size=None):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
     grid_start = [m.header_i32(x) for x in (5,6,7)]
     axis_pos = m.axis_positions()
+    axis_letters = ["","",""]
+    for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
     spacings = [1./g.unit_cell.reciprocal().parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
+    voxel_size = [g.unit_cell.parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
@@ -119,9 +122,10 @@ def read_ccp4_map(filename, setup=True, default_value=None):
     logger.write("    Map mode: {}".format(m.header_i32(4)))
     logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
-    logger.write("  Axis order: {}".format(" ".join(["XYZ"[i] for i in axis_pos])))
+    logger.write("  Axis order: {}".format(" ".join(axis_letters)))
     logger.write(" Space group: {}".format(m.header_i32(23)))
     logger.write("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
+    logger.write("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
     logger.write("       Label: {}".format(label))
     logger.write("")
     # Labels, Title, 
@@ -130,6 +134,19 @@ def read_ccp4_map(filename, setup=True, default_value=None):
         m.setup(default_value)
         grid_start = [grid_start[i] for i in axis_pos]
         
+    if pixel_size is not None:
+        try:
+            len(pixel_size)
+        except TypeError:
+            pixel_size = [pixel_size, pixel_size, pixel_size]
+            
+        logger.write("Overriding pixel size with {:.6f} {:.6f} {:.6f}".format(*pixel_size))
+        orgc = m.grid.unit_cell.parameters
+        new_abc = [orgc[i]*pixel_size[i]/voxel_size[i] for i in (0,1,2)]
+        m.grid.unit_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2],
+                                          orgc[3], orgc[4], orgc[5])
+        logger.write(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
+
     return [m.grid, grid_start] # should return original headers?
 # read_ccp4_map()
 

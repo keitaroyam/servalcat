@@ -25,6 +25,8 @@ def add_arguments(parser):
                         required=True,
                         nargs="+",
                         help='Input map file(s)')
+    parser.add_argument('--pixel_size', type=float,
+                        help='Override pixel size (A)')
     parser.add_argument('-r', '--mask_radius',
                         type=float,
                         help='')
@@ -43,13 +45,13 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def read_and_fft_maps(filenames, d_min, mask=None, check_consistency=True):
+def read_and_fft_maps(filenames, d_min, mask=None, pixel_size=None, check_consistency=True):
     hkldata = None
 
     last_cell, last_shape, last_sg = None, None, None
     
     for idx, mapin in enumerate(filenames):
-        m = utils.fileio.read_ccp4_map(mapin)[0]
+        m = utils.fileio.read_ccp4_map(mapin, pixel_size=pixel_size)[0]
         if check_consistency:
             if last_cell is not None:
                 assert m.unit_cell == last_cell
@@ -74,7 +76,7 @@ def read_and_fft_maps(filenames, d_min, mask=None, check_consistency=True):
 
 def main(args):
     st = gemmi.read_structure(args.model)
-    ref_grid = utils.fileio.read_ccp4_map(args.maps[0])[0]
+    ref_grid = utils.fileio.read_ccp4_map(args.maps[0], pixel_size=args.pixel_size)[0]
     st.cell = ref_grid.unit_cell
     st.spacegroup_hm = "P1"
 
@@ -91,7 +93,7 @@ def main(args):
         mask = None
     
     fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
-    hkldata = read_and_fft_maps(args.maps, args.resolution, mask)
+    hkldata = read_and_fft_maps(args.maps, args.resolution, mask, pixel_size=args.pixel_size)
     
     hkldata.merge_asu_data(fc, "FC")
     hkldata.setup_relion_binning()
