@@ -52,7 +52,12 @@ def write_mmcif(st, cif_out, cif_ref=None):
             logger.write("  Give up using cif reference.")
             return write_mmcif(st, cif_out)
             
-        block = doc.find_block(st_new.info["_entry.id"])
+        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
+        if len(blocks) == 0:
+            logger.write("No _atom_site found in {}".format(e))
+            logger.write("  Give up using cif reference.")
+            return write_mmcif(st, cif_out)
+        block = blocks[0]
         # to remove fract_transf_matrix. maybe we should keep some (like _atom_sites.solution_hydrogens)?
         # we do not want this because cell may be updated
         block.find_mmcif_category("_atom_sites.").erase()

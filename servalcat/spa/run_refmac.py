@@ -153,7 +153,7 @@ $$""")
 # calc_fsc()
 
 def modify_output(filename, inscode_mods=None):
-    if inscode_mods is None: return
+    if not inscode_mods: return
     
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(filename)
     utils.model.modify_inscodes_back(st, inscode_mods)

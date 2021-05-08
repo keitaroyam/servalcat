@@ -451,7 +451,7 @@ def microheterogeneity_for_refmac(st, monlib):
 
 def modify_inscodes_back(st, modifications):
     mods = dict([((cname,num,newcode), icode)for cname,num,icode,newcode in modifications])
-    logger.write("Modifications to be modified back: {}".format(mods))
+    logger.write("Insertion codes to be modified back: {}".format(mods))
     for chain in st[0]:
         for res in chain:
             key = (chain.name, res.seqid.num, res.seqid.icode)
