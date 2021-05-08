@@ -5,9 +5,10 @@ Currently we focus on development for single particle analysis and there are onl
 
 ## Installation
 ```
+pip install git+https://github.com/project-gemmi/gemmi.git
 pip install git+https://github.com/keitaroyam/servalcat.git
 ```
-Add `-U` option for updating. Servalcat somtimes requires the latest gemmi feature. So please update gemmi as well if it does not work.
+Add `-U` option for updating. Servalcat somtimes requires the latest gemmi feature (not the latest from pypi, but from github). So please update gemmi as well if it does not work.
 
 ## Usage
 
@@ -28,6 +29,7 @@ Useful options:
 - `--jellybody` : turn on jelly body refinment
 - `--weight_auto_scale value` : specify weight auto scale. by default Servalcat determines it from resolution and mask/box ratio
 - `--keyword_file file` : specify any refmac keyword file(s) (e.g. prosmart restraint file)
+- `--pixel_size value` : override pixel size of map
 - `--exe refmac5` : specify REFMAC5 binary
 
 Output files:
