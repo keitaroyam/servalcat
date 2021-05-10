@@ -109,16 +109,17 @@ def read_shifts_txt(shifts_txt):
 def read_ccp4_map(filename, setup=True, default_value=None, pixel_size=None):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
+    grid_cell = [m.header_i32(x) for x in (8,9,10)]
     grid_start = [m.header_i32(x) for x in (5,6,7)]
     axis_pos = m.axis_positions()
     axis_letters = ["","",""]
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
-    spacings = [1./g.unit_cell.reciprocal().parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
-    voxel_size = [g.unit_cell.parameters[i]/g.shape[axis_pos[i]] for i in (0,1,2)]
+    spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[axis_pos[i]] for i in (0,1,2)]
+    voxel_size = [g.unit_cell.parameters[i]/grid_cell[axis_pos[i]] for i in (0,1,2)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
-    logger.write("        Grid: {:4d} {:4d} {:4d}".format(*g.shape))
+    logger.write("        Grid: {:4d} {:4d} {:4d}".format(*grid_cell))
     logger.write("    Map mode: {}".format(m.header_i32(4)))
     logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
@@ -128,7 +129,7 @@ def read_ccp4_map(filename, setup=True, default_value=None, pixel_size=None):
     logger.write("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
     logger.write("       Label: {}".format(label))
     logger.write("")
-    # Labels, Title, 
+
     if setup:
         if default_value is None: default_value = float("nan")
         m.setup(default_value)
