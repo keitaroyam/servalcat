@@ -52,9 +52,18 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#f
     bdf = hkldata.binned_df
     bdf["D"] = 0.
     bdf["S"] = 0.
-    ofs = open("{}_Fstats.dat".format(output_prefix), "w")
-    ofs.write("bin       n   d_max   d_min         Fo         Fc FSC.model FSC.full      D          S          N\n")
-    tmpl = "{:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {: .4f}   {: .4f} {: .4e} {:.4e} {:.4e}\n"
+    ofs = open("{}_Fstats.log".format(output_prefix), "w")
+    ofs.write("""$TABLE: Statistics :
+$GRAPHS
+: log(Mn(|F|^2)) and variances :A:1,6,7,8,13,14:
+: FSC :A:1,9,10,11:
+: weights :A:1,12,15,16:
+$$
+1/resol^2 bin n d_max d_min log(var(Fo)) log(var(Fc)) log(var(DFc)) FSC.model FSC.full sqrt(FSC.full) D log(var_U,T) log(var_noise) wFo wFc
+$$
+$$
+""")
+    tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f}\n"
 
     var_noise = None
     FP = numpy.array(hkldata.df.FP)
@@ -74,13 +83,19 @@ def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#f
         if has_halfmaps:
             varn = var_noise[i_bin]
             fsc_full = hkldata.binned_df.FSCfull[i_bin]
-            bdf.loc[i_bin, "S"] = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
+            S = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
+            bdf.loc[i_bin, "S"] = S
+            w = S/(S+varn)
         else:
             varn = fsc_full = 0
-        ofs.write(tmpl.format(i_bin, Fo.size, bin_d_max, bin_d_min,
-                              numpy.average(numpy.abs(Fo)),
-                              numpy.average(numpy.abs(Fc)),
-                              fsc, fsc_full, bdf.D[i_bin], bdf.S[i_bin], varn))
+            w = 1
+        ofs.write(tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
+                              numpy.log(numpy.average(numpy.abs(Fo)**2)),
+                              numpy.log(numpy.average(numpy.abs(Fc)**2)),
+                              numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
+                              fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
+                              numpy.log(bdf.S[i_bin]), numpy.log(varn),
+                              w, 1-w))
 # calc_D_and_S()
 
 #import line_profiler
@@ -203,10 +218,6 @@ def main(args):
         logger.write("Error: -B only works for half maps")
         return
 
-    if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
-        logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
-        return
-
     if args.half1_only:
         if not args.halfmaps:
             logger.write("--half1_only requires half maps")
@@ -218,6 +229,10 @@ def main(args):
 
     st = gemmi.read_structure(args.model)
     st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+
+    if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
+        logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
+        return
 
     if args.halfmaps:
         maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
