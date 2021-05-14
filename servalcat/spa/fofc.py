@@ -227,7 +227,7 @@ def main(args):
     if not args.halfmaps:
         logger.write("Warning: using --halfmaps is strongly recommended!")
 
-    st = gemmi.read_structure(args.model)
+    st = utils.fileio.read_structure(args.model)
     st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
 
     if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:

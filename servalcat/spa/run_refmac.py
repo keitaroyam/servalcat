@@ -257,7 +257,7 @@ def main(args):
 
     if args.cross_validation and args.cross_validation_method == "shake":
         logger.write("Cross validation is requested.")
-        st = gemmi.read_structure(refmac_prefix+model_format)
+        st = utils.fileio.read_structure(refmac_prefix+model_format)
         logger.write("  Shaking atomic coordinates with rms={}".format(args.shake_radius))
         st = utils.model.shake_structure(st, args.shake_radius)
         shaken_file = refmac_prefix+"_shaken"+model_format

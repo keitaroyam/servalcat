@@ -12,7 +12,7 @@ import os
 import subprocess
 import gemmi
 import numpy
-import argparse
+import gzip
 
 def splitext(path):
     if path.endswith((".bz2",".gz")):
@@ -45,7 +45,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.cell = True
         groups.scale = True
         try:
-            doc = gemmi.cif.read(cif_ref)
+            doc = read_cif_safe(cif_ref)
         except RuntimeError as e:
             # Sometimes refmac writes a broken mmcif file..
             logger.write("Error in mmCIF reading: {}".format(e))
@@ -186,17 +186,46 @@ def read_asu_data_from_mtz(mtz_in, cols):
         return asu
 # read_asu_data_from_mtz()
 
+def read_cif_safe(cif_in):
+    ifs = gzip.open(cif_in) if cif_in.endswith(".gz") else open(cif_in)
+    s = ifs.read()
+    if "\0" in s: # Refmac occasionally writes \0 in some fileds..
+        logger.write(" WARNING: null character detected. Replacing with '.'")
+        s = s.replace("\0", ".")
+    doc = gemmi.cif.read_string(s)
+    return doc
+# read_cif_safe()
+
+def read_structure(xyz_in):
+    spext = splitext(xyz_in)
+    if spext[1].lower() in (".pdb", ".ent"):
+        logger.write("Reading PDB file: {}".format(xyz_in))
+        return gemmi.read_pdb(xyz_in)
+    elif spext[1].lower() in (".cif", ".mmcif"):
+        logger.write("Reading mmCIF file: {}".format(xyz_in))
+        doc = read_cif_safe(xyz_in)
+        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
+        if len(blocks) == 0:
+            raise RuntimeError("No block having _atom_site found")
+        if len(blocks) > 1:
+            logger.write(" WARNING: more than one block having _atom_site found. Will use first one.")
+        return gemmi.make_structure_from_block(blocks[0])
+    else:
+        raise RuntimeError("Unsupported file type: {}".format(spext[1]))
+# read_structure()
+
 def read_structure_from_pdb_and_mmcif(xyz_in):
-    st = gemmi.read_structure(xyz_in)
+    st = read_structure(xyz_in)
     cif_ref = None
-    if xyz_in.endswith(".pdb"):
-        cif_in = xyz_in[:-4] + ".mmcif"
+    spext = splitext(xyz_in)
+    if spext[1] in (".pdb", ".ent"):
+        cif_in = spext[0] + ".mmcif"
         if os.path.isfile(cif_in):
             print(" Will use mmcif metadata from {}".format(cif_in))
             cif_ref = cif_in
-    elif xyz_in.endswith(".mmcif"):
+    elif spext[1] in (".cif", ".mmcif"):
         cif_ref = xyz_in
-        pdb_in = xyz_in[:-6] + ".pdb"
+        pdb_in = spext[0] + ".pdb"
         if os.path.isfile(pdb_in):
             print(" Reading PDB REMARKS from {}".format(pdb_in))
             tmp = gemmi.read_structure(pdb_in)

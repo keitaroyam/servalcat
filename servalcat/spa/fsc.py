@@ -75,7 +75,7 @@ def read_and_fft_maps(filenames, d_min, mask=None, pixel_size=None, check_consis
 
 
 def main(args):
-    st = gemmi.read_structure(args.model)
+    st = utils.fileio.read_structure(args.model)
     ref_grid = utils.fileio.read_ccp4_map(args.maps[0], pixel_size=args.pixel_size)[0]
     st.cell = ref_grid.unit_cell
     st.spacegroup_hm = "P1"

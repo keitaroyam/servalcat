@@ -56,7 +56,7 @@ def symmodel(args):
     _, _, ops = symmetry.operators_from_symbol(args.pg)
     logger.write("{} operators found for {}".format(len(ops), args.pg))
     symmetry.show_operators_axis_angle(ops)
-    st = gemmi.read_structure(args.model)
+    st = fileio.read_structure(args.model)
     st.spacegroup_hm = "P 1"
     if args.map:
         logger.write("Reading cell from map")
@@ -114,7 +114,7 @@ def symmodel(args):
 # symmodel()
 
 def h_add(args):
-    st = gemmi.read_structure(args.model)
+    st = fileio.read_structure(args.model)
     resnames = st[0].get_all_residue_names()
     model_format = fileio.check_model_format(args.model)
     
@@ -132,14 +132,13 @@ def h_add(args):
 # h_add()
 
 def merge_models(args):
-    #sts = [gemmi.read_structure(f) for f in args.models]
     logger.write("Reading file   1: {}".format(args.models[0]))
-    st = gemmi.read_structure(args.models[0])
+    st = fileio.read_structure(args.models[0])
     logger.write("                  chains {}".format(" ".join([c.name for c in st[0]])))
 
     for i, f in enumerate(args.models[1:]):
         logger.write("Reading file {:3d}: {}".format(i+2, f))
-        st2 = gemmi.read_structure(f)
+        st2 = fileio.read_structure(f)
         for c in st2[0]:
             org_id = c.name
             c2 = st[0].add_chain(c, unique_name=True)

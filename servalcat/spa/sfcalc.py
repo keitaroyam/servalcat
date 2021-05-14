@@ -215,7 +215,7 @@ def main(args):
     st_new = None
     if args.model: # and 
         logger.write("Input model: {}".format(args.model))
-        st = gemmi.read_structure(args.model)
+        st = utils.fileio.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
 
