@@ -12,6 +12,7 @@ import numpy
 import re
 from servalcat.utils import logger
 from servalcat.utils import fileio
+from servalcat.utils import model
 from servalcat.utils import generate_operators
 
 def get_matrices_using_relion(sym):
@@ -169,6 +170,6 @@ def apply_shift_for_ncsops(ncsops, shift):
 
 def write_symmetry_expanded_model(st, prefix, pdb=False, cif=False, cif_ref=None):
     st_new = st.clone()
-    st_new.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+    model.expand_ncs(st_new)
     fileio.write_model(st_new, prefix=prefix, pdb=pdb, cif=cif, cif_ref=cif_ref)
 # write_symmetry_expanded_model()

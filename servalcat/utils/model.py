@@ -10,6 +10,7 @@ from servalcat.utils import logger
 from servalcat.utils import restraints
 import gemmi
 import numpy
+import scipy.sparse
 import os
 import itertools
 import string
@@ -293,24 +294,76 @@ def cra_to_indices(cra, model):
     return tuple(ret)
 # cra_to_indices()
 
-def expand_ncs(st, how=gemmi.HowToNameCopiedChain.Short, special_pos_threshold=0.01):
-    # DOES NOT WORK!!
+def expand_ncs(st, special_pos_threshold=0.01):
     if len(st.ncs) == 0: return
+    logger.write("Expanding symmetry..")
+    st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
 
+    # Take care of special positions
     if special_pos_threshold >= 0:
-        st.setup_cell_images()
+        cra2key = lambda x: (x.chain.name, x.residue.seqid.num, x.residue.seqid.icode,
+                             x.atom.name, x.atom.element.name, x.atom.altloc.replace("\0"," "))
         ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
         cs = gemmi.ContactSearch(special_pos_threshold)
-        cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
-        cs.special_pos_cutoff_sq = 0.0
+        #cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+        #cs.special_pos_cutoff_sq = special_pos_threshold
         results = cs.find_contacts(ns)
-        for r in results:
-            print(r.partner1, r.partner2, r.partner1.atom.pos==r.partner2.atom.pos, r.image_idx, r.dist)
 
-    
-    st.expand_ncs(how)
-    
-    
+        # find overlaps between different segments
+        pairs = {}
+        cra_dict = {}
+        for r in results:
+            if r.partner1.residue.segment == r.partner2.residue.segment: continue
+            key1, key2 = cra2key(r.partner1), cra2key(r.partner2)
+            if key1 == key2:
+                segi1, segi2 = int(r.partner1.residue.segment), int(r.partner2.residue.segment)
+                pairs.setdefault(key1, []).append([segi1, segi2])
+                cra_dict[key1+(segi1,)] = r.partner1
+                cra_dict[key1+(segi2,)] = r.partner2
+
+        if pairs: logger.write("Atoms on special position detected.")
+        res_to_be_removed = []
+        for key in sorted(pairs):
+            logger.write(" Site: chain='{}' seq='{}{}' atom='{}' elem='{}' altloc='{}'".format(*key))
+            # use graph to find connected components
+            segs = sorted(set(sum(pairs[key], []))) # index->segid
+            segd = dict([(s,i) for i,s in enumerate(segs)]) # reverse lookup
+            g = numpy.zeros((len(segs),len(segs)), dtype=numpy.int)
+            for p in pairs[key]:
+                i, j = segd[p[0]], segd[p[1]]
+                g[i,j] = g[j,i] = 1
+            nc, labs = scipy.sparse.csgraph.connected_components(g, directed=False)
+            groups = [[] for i in range(nc)] # list of segids
+            for i, l in enumerate(labs): groups[l].append(segs[i])
+            for group in groups:
+                group.sort() # first segid will be kept
+                sum_occ = sum([cra_dict[key+(i,)].atom.occ for i in group])
+                logger.write("  multiplicity= {} occupancies_total= {:.2f} segids= {}".format(len(group), sum_occ, group))
+                sum_pos = sum([cra_dict[key+(i,)].atom.pos for i in group], gemmi.Position(0,0,0))
+                if len(group) < 2: continue # should never happen
+                # modify first atom
+                cra0 = cra_dict[key+(group[0],)]
+                cra0.atom.occ = max(1, sum_occ)
+                cra0.atom.pos = sum_pos/len(group)
+                # remove remaining atoms
+                for g in group[1:]:
+                    cra = cra_dict[key+(g,)]
+                    cra.residue.remove_atom(cra.atom.name, cra.atom.altloc, cra.atom.element)
+                    if len(cra.residue) == 0: # empty residue needs to be removed
+                        r_idx = [i for i, r in enumerate(cra.chain) if r==cra.residue]
+                        res_to_be_removed.append((cra.chain, r_idx[0]))
+                        
+        chain_to_be_removed = []
+        res_to_be_removed.sort(key=lambda x:([x[0].name, x[1]]))
+        for chain, idx in reversed(res_to_be_removed):
+            del chain[idx]
+            if len(chain) == 0: # empty chain needs to be removed..
+                c_idx = [i for i, c in enumerate(st[0]) if c==chain]
+                chain_to_be_removed.append(c_idx[0])
+        chain_to_be_removed.sort()
+        for idx in reversed(chain_to_be_removed): #
+            del st[0][idx] # we cannot use remove_chain() because ID may be duplicated
+            
 # expand_ncs()
 
 def adp_analysis(st):

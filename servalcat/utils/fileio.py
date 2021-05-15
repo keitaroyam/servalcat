@@ -73,7 +73,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
 def write_pdb(st, pdb_out):
     logger.write("Writing PDB file: {}".format(pdb_out))
     chain_id_lens = [len(x) for x in model.all_chain_ids(st)]
-    if max(chain_id_lens) > 2:
+    if chain_id_lens and max(chain_id_lens) > 2:
         st = st.clone()
         st.shorten_chain_names()
     st.write_pdb(pdb_out, use_linkr=True)

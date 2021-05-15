@@ -81,8 +81,7 @@ def main(args):
     st.spacegroup_hm = "P1"
 
     if len(st.ncs) > 0:
-        logger.write("Expanding symmetry.")
-        st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+        utils.model.expand_ncs(st)
     
     if args.mask_radius is not None:
         mask = gemmi.FloatGrid(*ref_grid.shape)

@@ -264,8 +264,7 @@ def main(args):
         
         st_new = st.clone()
         if len(st.ncs) > 0 and not args.no_shift:
-            logger.write("Expanding symmetry.")
-            st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+            utils.model.expand_ncs(st)
             logger.write(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
     

@@ -67,7 +67,7 @@ def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make
     st.cell = maps[0][0].unit_cell
 
     utils.model.adp_analysis(st)
-    st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+    utils.model.expand_ncs(st)
 
     resnames = st[0].get_all_residue_names()
     monlib = utils.restraints.load_monomer_library(resnames,
@@ -249,9 +249,8 @@ def main(args):
     
     # Expand sym here
     if has_ncsc:
-        logger.write("Expanding {}".format(refined_xyz))
         st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refined_xyz)
-        st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+        utils.model.expand_ncs(st)
         utils.fileio.write_model(st, file_name=args.output_prefix+"_expanded"+model_format,
                                  cif_ref=cif_ref)
 

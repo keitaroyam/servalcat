@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import fileio
 from servalcat.utils import symmetry
+from servalcat.utils import model
 from servalcat.utils import restraints
 import os
 import gemmi
@@ -104,7 +105,7 @@ def symmodel(args):
         fileio.write_model(st, file_name=args.output_prfix+model_format)
 
     # Sym expand
-    st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+    model.expand_ncs(st)
     st.assemblies.clear()
     args.output_prfix += "_expanded"
     if args.pdb or args.cif:
