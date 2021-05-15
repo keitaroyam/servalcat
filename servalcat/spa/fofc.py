@@ -105,8 +105,8 @@ $$
 #@profile
 def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     if has_halfmaps:
-        labs = ["DELFWT", "FWT", "Fupdate", "DELFWT_noscale", "Fupdate_noscale"]
-        if B is not None: labs.extend(["DELFWT_b0", "Fupdate_b0"])
+        labs = ["Fupdate", "DELFWT", "FWT", "DELFWT_noscale", "Fupdate_noscale"]
+        if B is not None: labs.extend(["Fupdate_b0", "DELFWT_b0", "FWT_b0"])
     else:
         labs = ["DELFWT"]
         
@@ -154,9 +154,9 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
             logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
             continue
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
-        tmp["FWT"][sel] = numpy.sqrt(fsc)*Fo/sig_fo
 
         lab_suf = "" if B is None else "_b0"
+        tmp["FWT"+lab_suf][sel] = numpy.sqrt(fsc)*Fo/sig_fo
         tmp["DELFWT"+lab_suf][sel] = delfwt/n_fo
         tmp["Fupdate"+lab_suf][sel] = fup/n_fo
 
@@ -170,6 +170,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
             
             delfwt = (Fo-D*Fc)*S*k/(S_l+varn)/n_fo # S_l/k = S*k
             fup = (Fo*S_l+varn*D*Fc)/(S_l+varn)/n_fo/k
+            fwt = Fo*fsc_l/n_fo
             logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
                                                                            numpy.average(n_fo),
                                                                            numpy.average(sig_fo),
@@ -177,6 +178,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
                                                                            numpy.average(k),
                                                                            numpy.average(abs(fup)),
                                                                            numpy.average(abs(delfwt))))
+            tmp["FWT"][sel] = fwt
             tmp["DELFWT"][sel] = delfwt
             tmp["Fupdate"][sel] = fup
 
