@@ -114,8 +114,8 @@ def read_ccp4_map(filename, setup=True, default_value=None, pixel_size=None):
     axis_pos = m.axis_positions()
     axis_letters = ["","",""]
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
-    spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[axis_pos[i]] for i in (0,1,2)]
-    voxel_size = [g.unit_cell.parameters[i]/grid_cell[axis_pos[i]] for i in (0,1,2)]
+    spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
+    voxel_size = [g.unit_cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
