@@ -22,6 +22,8 @@ def add_arguments(parser):
                         help='Input map file(s)')
     parser.add_argument('--mask',
                         help='Mask file')    
+    parser.add_argument('--pixel_size', type=float,
+                        help='Override pixel size (A)')
     parser.add_argument('--model', nargs="+", action="append",
                         help='Input atomic model file(s)')
     parser.add_argument('--padding', type=float, default=10.0,
@@ -46,11 +48,11 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def check_maps(map_files, disable_cell_check=False):
+def check_maps(map_files, pixel_size=None, disable_cell_check=False):
     logger.write("Input map files:")
     params = []
     for f in map_files:
-        g, gs = utils.fileio.read_ccp4_map(f)
+        g, gs = utils.fileio.read_ccp4_map(f, pixel_size=pixel_size)
         params.append((g.unit_cell.parameters, g.shape, g.spacing, gs))
 
     shapes = set([x[1] for x in params])
@@ -169,7 +171,7 @@ def main(args):
         info = json.load(open(args.shifts))
         cell = info["cell"]
     elif args.maps:
-        cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.disable_cell_check)
+        cell, grid_shape, spacing, grid_start = check_maps(args.maps, args.pixel_size, args.disable_cell_check)
       
     if args.force_cell:
         cell = args.force_cell
@@ -236,7 +238,7 @@ def main(args):
     
     for f in args.maps:
         logger.write("Slicing {}".format(f))
-        g = utils.fileio.read_ccp4_map(f)[0]
+        g = utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size)[0]
         newg = g.get_subarray(*(list(starts)+list(new_shape)))
         ccp4 = gemmi.Ccp4Map()
         ccp4.grid = gemmi.FloatGrid(newg, new_cell, g.spacegroup)
