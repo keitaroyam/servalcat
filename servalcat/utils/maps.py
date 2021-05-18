@@ -81,8 +81,7 @@ $$""")
 
     # 3. Unsharpen
     hkldata = mask_and_fft_maps(new_maps, d_min)
-    hkldata.df.F_map1 *= normalizer
-    hkldata.df.F_map2 *= normalizer
+    for lab in labs: hkldata.df[lab] *= normalizer
     
     new_maps = []
     for i, lab in enumerate(labs):
