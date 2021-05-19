@@ -13,6 +13,7 @@ from servalcat.utils import model
 from servalcat.utils import restraints
 import os
 import gemmi
+import numpy
 
 def add_arguments(p):
     subparsers = p.add_subparsers(dest="subcommand")
@@ -26,6 +27,8 @@ def add_arguments(p):
     group.add_argument('--map', help="Take box size from the map")
     group.add_argument('--cell', type=float, nargs=6, help="Box size")
     parser.add_argument('--pg', required=True, help="Point group symbol")
+    parser.add_argument('--twist', type=float, help="Helical twist (degree)")
+    parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
     parser.add_argument('--biomt', action="store_true", help="Add BIOMT also")
     parser.add_argument('-o', '--output_prfix')
@@ -54,15 +57,21 @@ def parse_args(arg_list):
 def symmodel(args):
     if args.chains: args.chains = sum(args.chains, [])
     model_format = fileio.check_model_format(args.model)
-    _, _, ops = symmetry.operators_from_symbol(args.pg)
-    logger.write("{} operators found for {}".format(len(ops), args.pg))
-    symmetry.show_operators_axis_angle(ops)
+
+    if (args.twist, args.rise).count(None) == 1:
+        logger.write("ERROR: give both helical paramters --twist and --rise")
+        return
+
+    is_helical = args.twist is not None
+
     st = fileio.read_structure(args.model)
     st.spacegroup_hm = "P 1"
+    start_xyz = numpy.zeros(3)
     if args.map:
         logger.write("Reading cell from map")
-        g, _ = fileio.read_ccp4_map(args.map)
+        g, grid_start = fileio.read_ccp4_map(args.map)
         st.cell = g.unit_cell
+        start_xyz = numpy.array(g.get_position(*grid_start).tolist())
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
     elif not st.cell.is_crystal():
@@ -77,7 +86,20 @@ def symmodel(args):
             for c in to_del: m.remove_chain(c)
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
-    ncsops = symmetry.make_NcsOps_from_matrices(ops, cell=st.cell)
+
+    A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+    center = numpy.sum(A, axis=1) / 2 + start_xyz
+
+    if is_helical:
+        ncsops = symmetry.generate_helical_operators(st, start_xyz, center,
+                                                  args.pg, args.twist, args.rise)
+        logger.write("{} helical operators found".format(len(ncsops)))
+    else:
+        _, _, ops = symmetry.operators_from_symbol(args.pg)
+        logger.write("{} operators found for {}".format(len(ops), args.pg))
+        symmetry.show_operators_axis_angle(ops)
+        ncsops = symmetry.make_NcsOps_from_matrices(ops, cell=st.cell, center=center)
+
     st.ncs.clear()
     st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
 

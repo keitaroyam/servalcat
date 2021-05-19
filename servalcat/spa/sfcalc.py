@@ -45,6 +45,8 @@ def add_sfcalc_args(parser):
                         help='Sharpening or blurring B')
     parser.add_argument('--pg',
                         help="Point group symbol for strict symmetry. The coordinate system is consitent with RELION.")
+    parser.add_argument('--twist', type=float, help="Helical twist (degree)")
+    parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models', action='store_true', 
@@ -162,6 +164,11 @@ def scale_maps(maps_in, map_ref, d_min):
 def main(args):
     ret = {} # instructions for refinement
     
+    if (args.twist, args.rise).count(None) == 1:
+        raise RuntimeError("ERROR: give both helical paramters --twist and --rise")
+
+    is_helical = args.twist is not None
+
     if args.no_mask:
         args.mask_radius = None
         if not args.no_shift:
@@ -194,6 +201,9 @@ def main(args):
     grid_start = maps[0][1]
     unit_cell = maps[0][0].unit_cell
     spacegroup = gemmi.SpaceGroup(1)
+    start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
+    A = numpy.array(unit_cell.orthogonalization_matrix.tolist())
+    center = numpy.sum(A, axis=1) / 2 + start_xyz
 
     if args.mapref:
         logger.write("Reference map: {}".format(args.mapref))
@@ -242,7 +252,15 @@ def main(args):
             logger.write("Removing symmetry information from model.")
             st.ncs.clear()
 
-        if args.pg:
+        if is_helical:
+            ops = utils.symmetry.generate_helical_operators(st, start_xyz, center,
+                                                            args.pg, args.twist, args.rise)
+            logger.write("{} helical operators found".format(len(ops)))
+            st.ncs.clear()
+            st.ncs.extend([x for x in ops if not x.tr.is_identity()])
+            #ret["helical"] = ops
+            utils.model.filter_helical_contacting(st)
+        elif args.pg:
             logger.write("Point group symmetry: {}".format(args.pg))
             if len(st.ncs) > 0:
                 logger.write(" WARNING: NCS information in model file will be ignored")
@@ -250,7 +268,7 @@ def main(args):
             _, _, ops = utils.symmetry.operators_from_symbol(args.pg)
             if ops:
                 logger.write(" {} operators found".format(len(ops)))
-                ops = utils.symmetry.make_NcsOps_from_matrices(ops, cell=unit_cell)
+                ops = utils.symmetry.make_NcsOps_from_matrices(ops, cell=unit_cell, center=center)
                 st.ncs.clear()
                 st.ncs.extend([x for x in ops if not x.tr.is_identity()])
 

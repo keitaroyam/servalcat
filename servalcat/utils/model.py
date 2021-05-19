@@ -366,6 +366,21 @@ def expand_ncs(st, special_pos_threshold=0.01):
             
 # expand_ncs()
 
+def filter_helical_contacting(st, cutoff=5.):
+    if len(st.ncs) == 0: return
+    logger.write("Filtering out non-contacting helical copies with cutoff={:.2f} A".format(cutoff))
+    st.setup_cell_images()
+    ns = gemmi.NeighborSearch(st[0], st.cell, cutoff*2).populate()
+    cs = gemmi.ContactSearch(cutoff)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+    results = cs.find_contacts(ns)
+    indices = set([r.image_idx for r in results])
+    logger.write(" contacting helical copies: {}".format(indices))
+    ops = [st.ncs[i-1] for i in indices] # XXX is this correct? maybe yes as long as identity operator is not there
+    st.ncs.clear()
+    st.ncs.extend(ops)
+# filter_helical_contacting()
+
 def adp_analysis(st):
     logger.write("= ADP analysis =")
     all_B = []

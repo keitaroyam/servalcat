@@ -152,11 +152,17 @@ $$""")
         logger.write(" FSCaverage(half2)= {: .4f}".format(sum(ncoeffs*fscvals[2])/sum_n))
 # calc_fsc()
 
-def modify_output(filename, inscode_mods=None):
-    if not inscode_mods: return
+def modify_output(filename, inscode_mods=None, helical=None):
+    if not inscode_mods and not helical: return
     
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(filename)
-    utils.model.modify_inscodes_back(st, inscode_mods)
+    if inscode_mods is not None:
+        utils.model.modify_inscodes_back(st, inscode_mods)
+
+    if helical is not None: # XXX probably need to check mask
+        st.ncs.clear()
+        st.ncs.extend(helical)
+
     utils.fileio.write_model(st, prefix=utils.fileio.splitext(filename)[0],
                              pdb=True, cif=True, cif_ref=cif_ref)
 # modify_output()
@@ -245,7 +251,7 @@ def main(args):
                                  out_prefix=args.output_prefix)
 
     refined_xyz = args.output_prefix+model_format
-    modify_output(refined_xyz, file_info.get("inscode_mods"))
+    modify_output(refined_xyz, file_info.get("inscode_mods"), file_info.get("helical"))
     
     # Expand sym here
     if has_ncsc:

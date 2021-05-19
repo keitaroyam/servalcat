@@ -73,6 +73,38 @@ def show_operators_axis_angle(ops):
         logger.write(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
 # show_operators_axis_angle()
 
+def read_helical_parameters_from_mmcif(cif_in):
+    doc = fileio.read_cif_safe(cif_in)
+    b = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))[0]
+    deltaphi = b.find_value("_em_helical_entity.angular_rotation_per_subunit")
+    deltaz = b.find_value("_em_helical_entity.axial_rise_per_subunit")
+    deltaphi, deltaz = float(deltaphi), float(deltaz)
+    axsym = b.find_value("_em_helical_entity.axial_symmetry")
+    return axsym, deltaphi, deltaz
+# read_helical_parameters_from_mmcif()
+
+def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, padding=1):
+    if not axsym: axsym = "C1"
+    _, _, axtrs = operators_from_symbol(axsym)
+    all_z = [cra.atom.pos.z for cra in st[0].all()]
+    min_z, max_z = min(all_z), max(all_z)
+    min_n, max_n = int((min_z-padding-start_xyz[2])/deltaz), int((st.cell.c+start_xyz[2]-max_z-padding)/deltaz)
+    ops = []
+    for i in range(-min_n, max_n+1):
+        deg = deltaphi*i
+        t = numpy.deg2rad(deg)
+        m = generate_operators.AngleAxis2rotatin(numpy.array([0,0,1.]), t)
+        s = numpy.array([0,0,deltaz*i])
+        for a in axtrs:
+            mat = numpy.dot(m, a)
+            news = s + numpy.dot(mat, -center) + center
+            tr = gemmi.Transform(gemmi.Mat33(mat), gemmi.Vec3(*news))
+            newop = gemmi.NcsOp(tr, str(len(ops)+1), tr.is_identity())
+            ops.append(newop)
+
+    return ops
+# generate_helical_operators()
+
 """
 def write_ncsc_for_refmac(file_name, matrices, xyz_in=None, map_in=None):
     if xyz_in:
