@@ -101,8 +101,8 @@ $GRAPHS: FSC :A:1,5,6,7,8,9:
 : ln(Mn(|F|)) :A:1,3,4:
 $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) FSC(half1,model) FSC(half2,model) FSC_full FSC_full_sqrt$$
 $$""")
-        F_map1 = numpy.array(hkldata.df.F_map1)
-        F_map2 = numpy.array(hkldata.df.F_map2)
+        F_map1 = hkldata.df.F_map1.to_numpy()
+        F_map2 = hkldata.df.F_map2.to_numpy()
     else:
         logger.write("""$TABLE: Map-model FSC after refinement:
 $GRAPHS: FSC :A:1,5:
@@ -111,8 +111,8 @@ $GRAPHS: FSC :A:1,5:
 $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) $$
 $$""")
 
-    FP = numpy.array(hkldata.df.FP)
-    FC = numpy.array(hkldata.df.FC)
+    FP = hkldata.df.FP.to_numpy()
+    FC = hkldata.df.FC.to_numpy()
     fscvals = [[], [], []]
     ncoeffs = []
 

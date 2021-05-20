@@ -66,14 +66,14 @@ $$
     tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f}\n"
 
     var_noise = None
-    FP = numpy.array(hkldata.df.FP)
+    FP = hkldata.df.FP.to_numpy()
     if half1_only:
-        FP = numpy.array(hkldata.df.F_map1)
+        FP = hkldata.df.F_map1.to_numpy()
         var_noise = hkldata.binned_df.var_noise * 2
     elif has_halfmaps:
         var_noise = hkldata.binned_df.var_noise
         
-    FC = numpy.array(hkldata.df.FC)
+    FC = hkldata.df.FC.to_numpy()
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         Fo = FP[sel]
@@ -118,11 +118,11 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     time_t = time.time()
 
     if half1_only:
-        FP = numpy.array(hkldata.df.F_map1)
+        FP = hkldata.df.F_map1.to_numpy()
     else:
-        FP = numpy.array(hkldata.df.FP)
+        FP = hkldata.df.FP.to_numpy()
         
-    FC = numpy.array(hkldata.df.FC)
+    FC = hkldata.df.FC.to_numpy()
     
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin

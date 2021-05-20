@@ -38,7 +38,7 @@ def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
     if b is None:
         hkldata.setup_relion_binning()
         calc_noise_var_from_halfmaps(hkldata)
-        FP = numpy.array(hkldata.df.FP)
+        FP = hkldata.df.FP.to_numpy()
         logger.write("""$TABLE: Normalizing before masking:
 $GRAPHS: ln(Mn(|F|)) :A:1,2:
 : Normalizer :A:1,3:
@@ -125,11 +125,12 @@ def calc_noise_var_from_halfmaps(hkldata):
 
     s_array = 1./hkldata.d_spacings()
     hkldata.binned_df["var_noise"] = 0.
+    hkldata.binned_df["var_signal"] = 0.
     hkldata.binned_df["FSCfull"] = 0.
     
     logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
-    F_map1 = numpy.array(hkldata.df.F_map1)
-    F_map2 = numpy.array(hkldata.df.F_map2)
+    F_map1 = hkldata.df.F_map1.to_numpy()
+    F_map2 = hkldata.df.F_map2.to_numpy()
     for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
         sel = i_bin == hkldata.df.bin
         # scale
@@ -147,9 +148,11 @@ def calc_noise_var_from_halfmaps(hkldata):
 
         fsc = numpy.real(numpy.corrcoef(sel1, sel2)[1,0])
         varn = numpy.var(sel1-sel2)/4
+        vart = numpy.var(sel1+sel2)/4
         logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e} {}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
                                                                          fsc, varn, scale))
         hkldata.binned_df.loc[i_bin, "var_noise"] = varn
+        hkldata.binned_df.loc[i_bin, "var_signal"] = vart-varn
         hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
 # calc_noise_var_from_halfmaps()
 
