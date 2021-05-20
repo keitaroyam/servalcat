@@ -8,7 +8,9 @@ Currently we focus on development for single particle analysis and there are onl
 pip install git+https://github.com/project-gemmi/gemmi.git
 pip install git+https://github.com/keitaroyam/servalcat.git
 ```
-Add `-U` option for updating. Servalcat somtimes requires the latest gemmi feature (not the latest from pypi, but from github). So please update gemmi as well if it does not work.
+Add `-U` option for updating. Servalcat often requires new [GEMMI](https://github.com/project-gemmi/gemmi) features (not the latest from pypi, but from github).
+
+The required GEMMI version is now [v0.4.6-2-g58e6395c](https://github.com/project-gemmi/gemmi/commit/58e6395c95f92a565d039074ecdd862331a50ef8). Please update GEMMI as well if it is old.
 
 ## Usage
 

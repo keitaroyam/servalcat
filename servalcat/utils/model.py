@@ -363,7 +363,11 @@ def expand_ncs(st, special_pos_threshold=0.01):
         chain_to_be_removed.sort()
         for idx in reversed(chain_to_be_removed): #
             del st[0][idx] # we cannot use remove_chain() because ID may be duplicated
-            
+
+    # copy segment to subchain, as segment is not written to mmCIF file
+    for chain in st[0]:
+        for res in chain:
+            res.subchain = res.segment
 # expand_ncs()
 
 def filter_helical_contacting(st, cutoff=5.):
