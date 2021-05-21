@@ -11,6 +11,9 @@ import pandas
 import gemmi
 from servalcat.utils import logger
 
+dtypes64 = dict(i=numpy.int64, u=numpy.uint64, f=numpy.float64, c=numpy.complex128)
+to64 = lambda x: x.astype(dtypes64.get(x.dtype.kind, x.dtype))
+
 class Binner:
     def __init__(self, asu, style="relion"):
         if style == "relion":
@@ -27,13 +30,17 @@ class Binner:
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,
                           columns=["H","K","L"])
-    df[label] = asu_data.value_array
+    if asu_data.value_array.dtype.names == ('value', 'sigma'):
+        df[label] = to64(asu_data.value_array["value"])
+        df["SIG"+label] = to64(asu_data.value_array["sigma"])
+    else:
+        df[label] = to64(asu_data.value_array)
     return df
 
 def df_from_raw(miller_array, value_array, label):
     df = pandas.DataFrame(data=miller_array,
                           columns=["H","K","L"])
-    df[label] = value_array
+    df[label] = to64(value_array)
     return df
 
 class HklData:
@@ -76,6 +83,14 @@ class HklData:
         self.df["d"] = self.cell.calculate_d_array(self.miller_array())
     # calc_d()
 
+    def calc_epsilon(self):
+        self.df["epsilon"] = self.sg.operations().epsilon_factor_without_centering_array(self.miller_array())
+    # calc_epsilon()
+
+    def calc_centric(self):
+        self.df["centric"] = self.sg.operations().centric_flag_array(self.miller_array()).astype(int)
+    # calc_centric()
+        
     def d_spacings(self):
         if "d" not in self.df or self.df.d.isnull().values.any():
             self.calc_d()
@@ -150,6 +165,14 @@ class HklData:
     def bin_and_limits(self):
         return self._bin_and_limits
     # bin_and_limits()
+
+    def binned_data_as_array(self, lab):
+        vals = numpy.zeros(len(self.df.index), dtype=self.binned_df[lab].dtype)
+        grouped = self.df.groupby("bin", sort=False)
+        for b, g in grouped:
+            vals[g.index] = self.binned_df[lab][b]
+        return vals
+    # binned_data_as_array()
     
     def merge(self, other, common_only=True):
         self.merge_df(other, common_only)
