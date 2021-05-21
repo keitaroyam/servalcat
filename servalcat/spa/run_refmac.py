@@ -123,10 +123,11 @@ $$""")
         fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         ncoeffs.append(Fo.size)
         fscvals[0].append(fsc_model)
-        logger.write("{:.4f} {:6d} {:.3f} {:.3f} {: .4f}".format(1/bin_d_min**2, Fo.size,
-                                                                 numpy.log(numpy.average(numpy.abs(Fo))),
-                                                                 numpy.log(numpy.average(numpy.abs(Fc))),
-                                                                 fsc_model), end="")
+        with numpy.errstate(divide="ignore"):
+            logger.write("{:.4f} {:6d} {:.3f} {:.3f} {: .4f}".format(1/bin_d_min**2, Fo.size,
+                                                                     numpy.log(numpy.average(numpy.abs(Fo))),
+                                                                     numpy.log(numpy.average(numpy.abs(Fc))),
+                                                                     fsc_model), end="")
         
         if len(maps) == 2:
             F1, F2 = F_map1[sel], F_map2[sel]

@@ -89,13 +89,15 @@ $$
         else:
             varn = fsc_full = 0
             w = 1
-        ofs.write(tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
-                              numpy.log(numpy.average(numpy.abs(Fo)**2)),
-                              numpy.log(numpy.average(numpy.abs(Fc)**2)),
-                              numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
-                              fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
-                              numpy.log(bdf.S[i_bin]), numpy.log(varn),
-                              w, 1-w))
+
+        with numpy.errstate(divide="ignore"):
+            ofs.write(tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
+                                  numpy.log(numpy.average(numpy.abs(Fo)**2)),
+                                  numpy.log(numpy.average(numpy.abs(Fc)**2)),
+                                  numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
+                                  fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
+                                  numpy.log(bdf.S[i_bin]), numpy.log(varn),
+                                  w, 1-w))
 # calc_D_and_S()
 
 #import line_profiler
