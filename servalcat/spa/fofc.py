@@ -274,7 +274,6 @@ def main(args):
             logger.write("Error: Provide --mask or --mask_radius if you want --normalized-map.")
             return
 
-    utils.model.normalize_it92(st)
     fc_asu = utils.model.calc_fc_fft(st, args.resolution, cutoff=1e-7, monlib=monlib, source="electron")
 
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)

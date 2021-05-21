@@ -27,6 +27,8 @@ def shake_structure(st, sigma):
     return st2
 # shake_structure()
 
+_normalized_it92_elems = set()
+
 def normalize_it92(st=None, all_elements=False, quiet=False):
     elements = set()
         
@@ -41,12 +43,17 @@ def normalize_it92(st=None, all_elements=False, quiet=False):
 
     for el in elements:
         elem = gemmi.Element(el)
+        if elem.name in _normalized_it92_elems: continue
         z = elem.atomic_number
         coef = elem.it92
+        if coef is None:
+            logger.write("IT92 table not found for {}".format(elem.name))
+            continue
         norm = z/(sum(coef.a)+coef.c)
         if not quiet: logger.write("Normalizing atomic scattering factor of {} by {}".format(el, norm))
         new_coef = [x*norm for x in coef.a] + coef.b + [coef.c*norm]
         coef.set_coefs(new_coef)
+        _normalized_it92_elems.add(elem.name)
 # normalize_it92()
 
 def determine_blur_for_dencalc(st, grid):
@@ -59,6 +66,7 @@ def determine_blur_for_dencalc(st, grid):
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False):
     assert source in ("xray", "electron")
+    normalize_it92(st)
     if source != "electron": assert not mott_bethe
     if omit_proton or omit_h_electron:
         assert mott_bethe
@@ -146,7 +154,8 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
-    
+    normalize_it92(st)
+
     unit_cell = st.cell
     spacegroup = gemmi.SpaceGroup(st.spacegroup_hm)
     miller_array = gemmi.make_miller_array(unit_cell, spacegroup, d_min)
