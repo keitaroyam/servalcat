@@ -50,8 +50,11 @@ def main():
 
     args = parser.parse_args()
     
-    if args.command in modules:
+    if args.command == "util" and not args.subcommand:
+        print("specify subcommand.")    
+    elif args.command in modules:
         logger.set_file("servalcat.log")
+        logger.write("# Servalcat ver. {}".format(servalcat.__version__))
         logger.write("# Started on {}".format(datetime.datetime.now()))
         logger.write("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
         logger.write("# Command-line args:")
