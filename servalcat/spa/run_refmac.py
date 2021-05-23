@@ -59,20 +59,11 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib_path, ligands, pixel_size=None):
+def calc_fsc(st, output_prefix, maps, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib):
     logger.write("Calculating map-model FSC..")
-    
-    maps = [utils.fileio.read_ccp4_map(f, pixel_size=pixel_size) for f in maps_in]
-    st, _ = utils.fileio.read_structure_from_pdb_and_mmcif(model_in)
-    st.cell = maps[0][0].unit_cell
 
-    utils.model.adp_analysis(st)
-    utils.model.expand_ncs(st)
+    st = st.clone()
 
-    resnames = st[0].get_all_residue_names()
-    monlib = utils.restraints.load_monomer_library(resnames,
-                                                   monomer_dir=monlib_path,
-                                                   cif_files=ligands)
     if make_hydrogen == "all":
         utils.restraints.add_hydrogens(st, monlib)
 
@@ -90,26 +81,28 @@ def calc_fsc(model_in, maps_in, d_min, mask_radius, no_sharpen_before_mask, make
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
     fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata.merge_asu_data(fc_asu, "FC")
-    #logger.write("DEBUG:: applying B=3.2556")
-    #hkldata.df.FC *= numpy.exp(-3.2556/hkldata.d_spacings()**2/4)
     hkldata.setup_relion_binning()
 
+    fsc_logfile = "{}_fsc.log".format(output_prefix)
+    ofs = open(fsc_logfile, "w")
     if len(maps) == 2:
-        logger.write("""$TABLE: Map-model FSC after refinement:
+        ofs.write("""$TABLE: Map-model FSC after refinement:
 $GRAPHS: FSC :A:1,5,6,7,8,9:
 : number of Fourier coeffs :A:1,2:
 : ln(Mn(|F|)) :A:1,3,4:
 $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) FSC(half1,model) FSC(half2,model) FSC_full FSC_full_sqrt$$
-$$""")
+$$
+""")
         F_map1 = hkldata.df.F_map1.to_numpy()
         F_map2 = hkldata.df.F_map2.to_numpy()
     else:
-        logger.write("""$TABLE: Map-model FSC after refinement:
+        ofs.write("""$TABLE: Map-model FSC after refinement:
 $GRAPHS: FSC :A:1,5:
 : number of Fourier coeffs :A:1,2:
 : ln(Mn(|F|)) :A:1,3,4:
 $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) $$
-$$""")
+$$
+""")
 
     FP = hkldata.df.FP.to_numpy()
     FC = hkldata.df.FC.to_numpy()
@@ -124,10 +117,10 @@ $$""")
         ncoeffs.append(Fo.size)
         fscvals[0].append(fsc_model)
         with numpy.errstate(divide="ignore"):
-            logger.write("{:.4f} {:6d} {:.3f} {:.3f} {: .4f}".format(1/bin_d_min**2, Fo.size,
-                                                                     numpy.log(numpy.average(numpy.abs(Fo))),
-                                                                     numpy.log(numpy.average(numpy.abs(Fc))),
-                                                                     fsc_model), end="")
+            ofs.write("{:.4f} {:6d} {:.3f} {:.3f} {: .4f}".format(1/bin_d_min**2, Fo.size,
+                                                                  numpy.log(numpy.average(numpy.abs(Fo))),
+                                                                  numpy.log(numpy.average(numpy.abs(Fc))),
+                                                                  fsc_model))
         
         if len(maps) == 2:
             F1, F2 = F_map1[sel], F_map2[sel]
@@ -137,13 +130,14 @@ $$""")
             fsc2 = numpy.real(numpy.corrcoef(F2, Fc)[1,0])
             fscvals[1].append(fsc1)
             fscvals[2].append(fsc2)
-            logger.write(" {: .4f} {: .4f} {: .4f} {: .4f}".format(fsc1, fsc2, fsc_full,
-                                                                   numpy.sqrt(fsc_full) if fsc_full >= 0 else numpy.nan ))
+            ofs.write(" {: .4f} {: .4f} {: .4f} {: .4f}\n".format(fsc1, fsc2, fsc_full,
+                                                                numpy.sqrt(fsc_full) if fsc_full >= 0 else numpy.nan ))
         else:
-            logger.write("")
+            ofs.write("\n")
 
-    logger.write("$$")
-
+    ofs.write("$$\n")
+    ofs.close()
+    
     ncoeffs = numpy.array(ncoeffs)
     sum_n = sum(ncoeffs)
     logger.write("Map-model FSCaverages:")
@@ -151,21 +145,14 @@ $$""")
     if len(maps) == 2:
         logger.write(" FSCaverage(half1)= {: .4f}".format(sum(ncoeffs*fscvals[1])/sum_n))
         logger.write(" FSCaverage(half2)= {: .4f}".format(sum(ncoeffs*fscvals[2])/sum_n))
+    logger.write(" Run loggraph {} to see plots.".format(fsc_logfile))
 # calc_fsc()
 
-def modify_output(filename, inscode_mods=None, helical=None):
-    if not inscode_mods and not helical: return
+def modify_output(st, inscode_mods=None):
+    if not inscode_mods: return
     
-    st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(filename)
     if inscode_mods is not None:
         utils.model.modify_inscodes_back(st, inscode_mods)
-
-    if helical is not None: # XXX probably need to check mask
-        st.ncs.clear()
-        st.ncs.extend(helical)
-
-    utils.fileio.write_model(st, prefix=utils.fileio.splitext(filename)[0],
-                             pdb=True, cif=True, cif_ref=cif_ref)
 # modify_output()
 
 def main(args):
@@ -178,12 +165,19 @@ def main(args):
         return
 
     if args.ligand: args.ligand = sum(args.ligand, [])
+
+    st = utils.fileio.read_structure(args.model)
+    resnames = st[0].get_all_residue_names()
+    monlib = utils.restraints.load_monomer_library(resnames,
+                                                   monomer_dir=args.monlib,
+                                                   cif_files=args.ligand)
+    # TODO exit if there are unknown residues
     
     args.output_model_prefix = "shifted_local"
     args.output_masked_prefix = "masked_fs"
     args.output_mtz_prefix = "starting_map"
     args.remove_multiple_models = True
-    file_info = spa.sfcalc.main(args)
+    file_info = spa.sfcalc.main(args, monlib=monlib)
     args.mtz = file_info["mtz_file"]
     if args.halfmaps: # FIXME if no_mask?
         args.mtz_half = [file_info["mtz_file"], file_info["mtz_file"]]
@@ -239,26 +233,33 @@ def main(args):
         args.weight_auto_scale = max(0.2, min(18.0, ws))
         logger.write(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
 
-
+    # Run Refmac
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
     refmac.set_libin(args.ligand)
     refmac.run_refmac()
 
-    if not args.no_shift:
-        ncsc_in = ("ncsc_global.txt") if has_ncsc else None
-        spa.shiftback.shift_back(xyz_in=refmac_prefix+model_format,
-                                 shifts_json="shifts.json",
-                                 ncsc_in=ncsc_in,
-                                 out_prefix=args.output_prefix)
+    if args.halfmaps:
+        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    else:
+        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
 
-    refined_xyz = args.output_prefix+model_format
-    modify_output(refined_xyz, file_info.get("inscode_mods"), file_info.get("helical"))
+    # Modify output
+    st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
+    utils.model.adp_analysis(st)
     
+    if not args.no_shift:
+        st.cell = maps[0][0].unit_cell
+        spa.shiftback.shift_back_model(st, file_info["shifts"]) # st is modified
+    
+    modify_output(st, file_info.get("inscode_mods"))
+    utils.fileio.write_model(st, prefix=args.output_prefix,
+                             pdb=True, cif=True, cif_ref=cif_ref)
+
     # Expand sym here
+    st_expanded = st.clone()
     if has_ncsc:
-        st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refined_xyz)
-        utils.model.expand_ncs(st)
-        utils.fileio.write_model(st, file_name=args.output_prefix+"_expanded"+model_format,
+        utils.model.expand_ncs(st_expanded)
+        utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded"+model_format,
                                  cif_ref=cif_ref)
 
     if args.cross_validation and args.cross_validation_method == "shake":
@@ -296,43 +297,40 @@ def main(args):
         refmac_hm2.run_refmac()
 
         if not args.no_shift:
-            ncsc_in = ("ncsc_global.txt") if has_ncsc else None
             spa.shiftback.shift_back(xyz_in=refmac_prefix_shaken+model_format,
                                      shifts_json="shifts.json",
-                                     ncsc_in=ncsc_in,
                                      out_prefix=args.output_prefix+"_shaken_refined")
+        
+    if args.halfmaps:
+        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    else:
+        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
+
+    # Calc FSC
+    calc_fsc(st_expanded, args.output_prefix, maps,
+             args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
+             no_sharpen_before_mask=args.no_sharpen_before_mask,
+             make_hydrogen=args.hydrogen,
+             monlib=monlib)
 
     # Calc updated and Fo-Fc maps
     if args.halfmaps:
         logger.write("Starting Fo-Fc calculation..")
         logger.write(" model: {}".format(args.output_prefix+model_format))
-        args2 = spa.fofc.parse_args(["--halfmaps", args.halfmaps[0], args.halfmaps[1],
-                                     "--model", args.output_prefix+model_format,
-                                     "--resolution", "1"])
-        args2.resolution = args.resolution # dirty hack
-        args2.pixel_size = args.pixel_size
-        if args.mask_for_fofc:
-            logger.write(" maskl: {}".format(args.mask_for_fofc))
-            args2.mask = args.mask_for_fofc
-            args2.normalized_map = True
-            args2.crop = True
 
-        if args.cross_validation and args.cross_validation_method == "throughout":
-            args2.half1_only = True
-            
-        spa.fofc.main(args2)
+        if args.mask_for_fofc:
+            mask = numpy.array(utils.fileio.read_ccp4_map(args.mask_for_fofc)[0])
+        else:
+            mask = None
+
+        hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
+                                                          half1_only=(args.cross_validation and args.cross_validation_method == "throughout"))
+        spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
+                             mask=mask, output_prefix="diffmap",
+                             crop=mask is not None, normalize_map=mask is not None)
     else:
         logger.write("Will not calculate Fo-Fc map because half maps were not provided")
-
-
-    # Calc FSC
-    calc_fsc(args.output_prefix+model_format,
-             args.halfmaps if args.halfmaps else [args.map],
-             args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
-             no_sharpen_before_mask=args.no_sharpen_before_mask,
-             make_hydrogen=args.hydrogen,
-             monlib_path=args.monlib, ligands=args.ligand,
-             pixel_size=args.pixel_size)
+        
 # main()
         
 if __name__ == "__main__":

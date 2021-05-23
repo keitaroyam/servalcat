@@ -161,7 +161,7 @@ def scale_maps(maps_in, map_ref, d_min):
     return [[x]+y[1:] for x,y in zip(maps_scaled, maps_in)]
 # scale_maps()
 
-def main(args):
+def main(args, monlib=None):
     ret = {} # instructions for refinement
     
     if (args.twist, args.rise).count(None) == 1:
@@ -231,7 +231,10 @@ def main(args):
 
         if not args.no_fix_microheterogeneity:
             # TODO need to check external restraints
-            monlib = utils.restraints.load_monomer_library(st[0].get_all_residue_names()) # FIXME should use user provided libraries
+
+            if monlib is None:
+                # FIXME should use user provided libraries
+                monlib = utils.restraints.load_monomer_library(st[0].get_all_residue_names())
             mhtr_mods = utils.model.microheterogeneity_for_refmac(st, monlib)
             ret["inscode_mods"] = mhtr_mods
             
@@ -325,6 +328,7 @@ def main(args):
                                                                                        noncentered=True,
                                                                                        noncubic=True,
                                                                                        json_out="shifts.json")
+            ret["shifts"] = shifts
             vol_mask = numpy.count_nonzero(numpy.array(mask)>0.5)
             vol_map = new_shape[0] * new_shape[1] * new_shape[2]
             ret["vol_ratio"] = vol_mask/vol_map

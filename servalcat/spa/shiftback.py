@@ -24,8 +24,6 @@ def add_arguments(parser):
                         required=True,
                         default="shifts.json",
                         help='Shift information file')
-    parser.add_argument('--ncsc_file',
-                        help='')
     parser.add_argument('--output_prefix',
                         help='output file prefix')
 # add_arguments()
@@ -70,7 +68,20 @@ def refmac_mtz_in_original_cell(org_cell, org_grid_size, new_grid_size, shifts, 
     mtz.write_to_file(mtz_out)
 # refmac_mtz_in_original_cell()
 
-def shift_back(xyz_in, shifts_json, ncsc_in=None, refine_mtz=None, out_prefix=None):
+def shift_back_model(st, shifts):
+    # shifts must be Vec3 object
+    
+    for model in st:
+        for cra in model.all():
+            cra.atom.pos -= shifts
+
+    if len(st.ncs) > 0:
+        for n in st.ncs:
+            newv = n.tr.vec - shifts + n.tr.mat.multiply(shifts)
+            n.tr.vec.fromlist(newv.tolist())
+# shift_back_model()
+
+def shift_back(xyz_in, shifts_json, refine_mtz=None, out_prefix=None):
     logger.write("Reading shifts info from {}".format(shifts_json))
     info = json.load(open(shifts_json))
     for k in info:
@@ -98,16 +109,7 @@ def shift_back(xyz_in, shifts_json, ncsc_in=None, refine_mtz=None, out_prefix=No
         st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(xyz_in)
 
         st.cell = org_cell
-        for model in st:
-            for cra in model.all():
-                cra.atom.pos -= shifts
-
-        if ncsc_in:
-            logger.write("Original NCSC: {}".format(ncsc_in))
-            ncsops = utils.keywords.parse_ncsc_keywords(open(ncsc_in).read())
-            st.ncs.clear()
-            st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
-
+        shift_back_model(st, shifts)
         prefix = out_prefix if out_prefix else utils.fileio.splitext(os.path.basename(xyz_in))[0] + "_shiftback"
         utils.fileio.write_model(st, prefix,
                                  pdb=True, cif=True, cif_ref=cif_ref)
@@ -121,7 +123,7 @@ def main(args):
         logger.write("ERROR: give --model and/or --refine_mtz")
         return
     
-    shift_back(args.model, args.shifts, args.ncsc_file, args.refine_mtz, args.output_prefix)
+    shift_back(args.model, args.shifts, args.refine_mtz, args.output_prefix)
 
 if __name__ == "__main__":
     import sys

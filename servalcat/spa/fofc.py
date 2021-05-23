@@ -48,12 +48,11 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_D_and_S(hkldata, output_prefix, has_halfmaps=True, half1_only=False):#fo_asu, fc_asu, varn, bins, bin_idxes):
+def calc_D_and_S(hkldata, has_halfmaps=True, half1_only=False):#fo_asu, fc_asu, varn, bins, bin_idxes):
     bdf = hkldata.binned_df
     bdf["D"] = 0.
     bdf["S"] = 0.
-    ofs = open("{}_Fstats.log".format(output_prefix), "w")
-    ofs.write("""$TABLE: Statistics :
+    stats_str = """$TABLE: Statistics :
 $GRAPHS
 : log(Mn(|F|^2)) and variances :A:1,6,7,8,13,14:
 : FSC :A:1,9,10,11:
@@ -62,7 +61,7 @@ $$
 1/resol^2 bin n d_max d_min log(var(Fo)) log(var(Fc)) log(var(DFc)) FSC.model FSC.full sqrt(FSC.full) D log(var_U,T) log(var_noise) wFo wFc
 $$
 $$
-""")
+"""
     tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f}\n"
 
     var_noise = None
@@ -91,13 +90,14 @@ $$
             w = 1
 
         with numpy.errstate(divide="ignore"):
-            ofs.write(tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
-                                  numpy.log(numpy.average(numpy.abs(Fo)**2)),
-                                  numpy.log(numpy.average(numpy.abs(Fc)**2)),
-                                  numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
-                                  fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
-                                  numpy.log(bdf.S[i_bin]), numpy.log(varn),
-                                  w, 1-w))
+            stats_str += tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
+                                     numpy.log(numpy.average(numpy.abs(Fo)**2)),
+                                     numpy.log(numpy.average(numpy.abs(Fc)**2)),
+                                     numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
+                                     fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
+                                     numpy.log(bdf.S[i_bin]), numpy.log(varn),
+                                     w, 1-w)
+    return stats_str
 # calc_D_and_S()
 
 #import line_profiler
@@ -212,7 +212,82 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 # dump_to_mtz()
+
+def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False, omit_proton=False, omit_h_electron=False):
+    fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
+    hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
+    hkldata.merge_asu_data(fc_asu, "FC")
+    hkldata.setup_relion_binning()
+
+    has_halfmaps = (len(maps) == 2)
+    if has_halfmaps:
+        utils.maps.calc_noise_var_from_halfmaps(hkldata)
+
+    if B is not None:
+        Bave = numpy.average(utils.model.all_B(st))
+        logger.write("Using user-specified B: {}".format(B))
+        logger.write("    Average B of model= {:.2f}".format(Bave))
+        b_local = B - Bave
+        logger.write("    Relative B for map= {:.2f}".format(b_local))
+    else:
+        b_local = None
         
+    stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
+
+    if omit_proton or omit_h_electron:
+        fc_asu_2 = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron",
+                                           omit_proton=omit_proton, omit_h_electron=omit_h_electron)
+        del hkldata.df["FC"]
+        hkldata.merge_asu_data(fc_asu_2, "FC")
+    
+    map_labs = calc_maps(hkldata, B=b_local, has_halfmaps=has_halfmaps, half1_only=half1_only)
+    return hkldata, map_labs, stats_str
+# calc_fofc()
+
+def write_files(hkldata, map_labs, grid_start, stats_str,
+                mask=None, output_prefix="diffmap", crop=False, normalize_map=False, omit_h_electron=False):
+    dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
+    open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
+    
+    # DEBUG
+    if mask is not None:
+        utils.maps.write_ccp4_map("fc_map.mrc",  hkldata.fft_map("FC", grid_size=mask.shape), cell=hkldata.cell,
+                                  mask_for_extent=mask if crop else None,
+                                  grid_start=grid_start)
+        hkldata.df["DFC"] = hkldata.df["FC"] * hkldata.binned_data_as_array("D")
+        utils.maps.write_ccp4_map("dfc_map.mrc",  hkldata.fft_map("DFC", grid_size=mask.shape), cell=hkldata.cell,
+                                  mask_for_extent=mask if crop else None,
+                                  grid_start=grid_start)
+
+    
+    if normalize_map and mask is not None:
+        logger.write("Normalized Fo-Fc map requested.")
+        delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
+        cutoff = 0.5
+        masked = numpy.array(delfwt_map)[mask>cutoff]
+        logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
+        logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
+        global_mean = numpy.average(delfwt_map)
+        global_std = numpy.std(delfwt_map)
+        logger.write("    Global mean: {:.3e}".format(global_mean))
+        logger.write("     Global std: {:.3e}".format(global_std))
+        masked_mean = numpy.average(masked)
+        masked_std = numpy.std(masked)
+        logger.write("    Masked mean: {:.3e}".format(masked_mean))
+        logger.write("     Masked std: {:.3e}".format(masked_std))
+        #logger.write(" If you want to scale manually: {}".format())
+        scaled = (delfwt_map - masked_mean)/masked_std
+        if omit_h_electron:
+            scaled *= -1
+            filename = "{}_normalized_fofc_flipsign.mrc".format(output_prefix)
+        else:
+            filename = "{}_normalized_fofc.mrc".format(output_prefix)
+        logger.write("  Writing {}".format(filename))
+        utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
+                                  mask_for_extent=mask if crop else None,
+                                  grid_start=grid_start)
+# write_files()
+
 def main(args):
     if not args.halfmaps and not args.map:
         logger.write("Error: give --halfmaps or --map")
@@ -274,62 +349,13 @@ def main(args):
             logger.write("Error: Provide --mask or --mask_radius if you want --normalized-map.")
             return
 
-    fc_asu = utils.model.calc_fc_fft(st, args.resolution, cutoff=1e-7, monlib=monlib, source="electron")
-
-    hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)
-    hkldata.merge_asu_data(fc_asu, "FC")
-    hkldata.setup_relion_binning()
+    hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
+                                             half1_only=args.half1_only, omit_proton=args.omit_proton,
+                                             omit_h_electron=args.omit_h_electron)
+    write_files(hkldata, map_labs, grid_start, stats_str,
+                mask=mask, output_prefix=args.output_prefix,
+                crop=args.crop, normalize_map=args.normalized_map, omit_h_electron=args.omit_h_electron)
     
-    if args.halfmaps:
-        utils.maps.calc_noise_var_from_halfmaps(hkldata)
-
-    if args.B is not None:
-        Bave = numpy.average(utils.model.all_B(st))
-        logger.write("Using user-specified B: {}".format(args.B))
-        logger.write("    Average B of model= {:.2f}".format(Bave))
-        B = args.B - Bave
-        logger.write("    Relative B for map= {:.2f}".format(B))
-    else:
-        B = None
-        
-    calc_D_and_S(hkldata, args.output_prefix, has_halfmaps=has_halfmaps, half1_only=args.half1_only)
-
-    if args.omit_proton or args.omit_h_electron:
-        fc_asu_2 = utils.model.calc_fc_fft(st, args.resolution, cutoff=1e-7, monlib=monlib, source="electron",
-                                           omit_proton=args.omit_proton, omit_h_electron=args.omit_h_electron)
-        del hkldata.df["FC"]
-        hkldata.merge_asu_data(fc_asu_2, "FC")
-    
-    map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps, half1_only=args.half1_only)
-    dump_to_mtz(hkldata, map_labs, "{}.mtz".format(args.output_prefix))
-
-    if args.normalized_map and mask is not None:
-        logger.write("Normalized Fo-Fc map requested.")
-        delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
-        cutoff = 0.5
-        masked = numpy.array(delfwt_map)[mask>cutoff]
-        logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
-        logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
-        global_mean = numpy.average(delfwt_map)
-        global_std = numpy.std(delfwt_map)
-        logger.write("    Global mean: {}".format(global_mean))
-        logger.write("     Global std: {}".format(global_std))
-        masked_mean = numpy.average(masked)
-        masked_std = numpy.std(masked)
-        logger.write("    Masked mean: {}".format(masked_mean))
-        logger.write("     Masked std: {}".format(masked_std))
-        #logger.write(" If you want to scale manually: {}".format())
-        scaled = (delfwt_map - masked_mean)/masked_std
-        if args.omit_h_electron:
-            scaled *= -1
-            filename = "{}_normalized_fofc_flipsign.mrc".format(args.output_prefix)
-        else:
-            filename = "{}_normalized_fofc.mrc".format(args.output_prefix)
-        logger.write("  Writing {}".format(filename))
-        utils.maps.write_ccp4_map(filename, scaled, cell=st.cell,
-                                  mask_for_extent=mask if args.crop else None,
-                                  grid_start=grid_start)
-
 # main()
 
 if __name__ == "__main__":
