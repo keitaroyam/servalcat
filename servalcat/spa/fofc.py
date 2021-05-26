@@ -286,6 +286,19 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
                                   mask_for_extent=mask if crop else None,
                                   grid_start=grid_start)
+
+        # Write Fo map as well
+        fwt_map = hkldata.fft_map("FWT", grid_size=mask.shape)
+        masked = numpy.array(fwt_map)[mask>cutoff]
+        masked_mean = numpy.average(masked)
+        masked_std = numpy.std(masked)
+        scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
+        filename = "{}_normalized_fo.mrc".format(output_prefix)
+        logger.write("  Writing {}".format(filename))
+        utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
+                                  mask_for_extent=mask if crop else None,
+                                  grid_start=grid_start)
+
 # write_files()
 
 def main(args):
