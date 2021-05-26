@@ -51,6 +51,7 @@ def add_sfcalc_args(parser):
                         help='Ignore symmetry information in the model file')
     parser.add_argument('--remove_multiple_models', action='store_true', 
                         help='Keep 1st model only')
+    parser.add_argument("--b_before_mask", type=float)
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
     parser.add_argument('--no_fix_microheterogeneity', action='store_true', 
@@ -316,7 +317,7 @@ def main(args, monlib=None):
                     for ma in maps]
         else:
             logger.write("Sharpen-mask-unsharpen..")
-            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution)
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution, b=args.b_before_mask)
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")

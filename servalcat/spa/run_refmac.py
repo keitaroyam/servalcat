@@ -59,7 +59,7 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_fsc(st, output_prefix, maps, d_min, mask_radius, no_sharpen_before_mask, make_hydrogen, monlib):
+def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib):
     logger.write("Calculating map-model FSC..")
 
     st = st.clone()
@@ -76,7 +76,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, no_sharpen_before_mask
             maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, mask.unit_cell, mask.spacegroup)]+ma[1:]
                     for ma in maps]
         else:
-            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min)
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
     fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
@@ -309,6 +309,7 @@ def main(args):
     # Calc FSC
     calc_fsc(st_expanded, args.output_prefix, maps,
              args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
+             b_before_mask=args.b_before_mask,
              no_sharpen_before_mask=args.no_sharpen_before_mask,
              make_hydrogen=args.hydrogen,
              monlib=monlib)

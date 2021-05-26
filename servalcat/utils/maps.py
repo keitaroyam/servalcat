@@ -56,9 +56,7 @@ $$""")
                 n_fo = sig_fo # XXX not a right way
                 
             normalizer[sel] = n_fo
-            hkldata.df.loc[sel, "F_map1"] /= n_fo
-            hkldata.df.loc[sel, "F_map2"] /= n_fo
-            hkldata.df.loc[sel, "FP"] /= n_fo
+            for lab in labs: hkldata.df.loc[sel, lab] /= n_fo
             logger.write("{:.4f} {:.2f} {:.3f} {:.4f}".format(1/bin_d_min**2,
                                                               numpy.log(numpy.average(numpy.abs(Fo))),
                                                               n_fo, FSCfull))
@@ -69,9 +67,7 @@ $$""")
         logger.write("Sharpening B before masking= {}".format(b))
         s2 = 1./hkldata.d_spacings()**2
         normalizer[:] = numpy.exp(-b*s2/4.)
-        hkldata.df.loc[:, "F_map1"] /= normalizer
-        hkldata.df.loc[:, "F_map2"] /= normalizer
-        hkldata.df.loc[:, "FP"] /= normalizer
+        for lab in labs: hkldata.df.loc[:, lab] /= normalizer
 
     # 2. Mask
     new_maps = []
