@@ -118,6 +118,7 @@ class HklData:
 
         bin_centers = [(bin_limit_ds[i]**(-s_power)+bin_limit_ds[i+1]**(-s_power))/2 for i in range(n_bins)]
         sprange = bin_limit_ds**(-s_power)
+        sprange[-1] += 1.e-6
 
         self._bin_and_limits = []
         bin_number = numpy.zeros(len(sp), dtype=numpy.int)
