@@ -10,6 +10,7 @@ from servalcat.utils import logger
 from servalcat.utils import restraints
 import gemmi
 import numpy
+import pandas
 import scipy.sparse
 import os
 import itertools
@@ -427,6 +428,90 @@ def all_B(st):
     return ret
 # all_B()
 
+def to_dataframe(st):
+    keys = ("model", "chain", "resn", "subchain", "segment", "seqnum", "icode", "altloc",
+            "u11", "u22", "u33", "u12", "u13", "u23",
+            "b_iso", "charge", "elem", "atom", "occ",
+            "x", "y", "z", "tlsgroup")
+    d = dict([(x,[]) for x in keys])
+    app = lambda k, v: d[k].append(v)
+    
+    for m in st:
+        for cra in m.all():
+            c,r,a = cra.chain, cra.residue, cra.atom
+            # TODO need support r.het_flag, r.flag, a.calc_flag, a.flag, a.serial?
+            app("model", m.name)
+            app("chain", c.name)
+            app("resn", r.name)
+            app("subchain", r.subchain)
+            app("segment", r.segment)
+            app("seqnum", r.seqid.num)
+            app("icode", r.seqid.icode)
+            app("altloc", a.altloc)
+            app("u11", a.aniso.u11)
+            app("u22", a.aniso.u22)
+            app("u33", a.aniso.u33)
+            app("u12", a.aniso.u12)
+            app("u13", a.aniso.u13)
+            app("u23", a.aniso.u23)
+            app("b_iso", a.b_iso)
+            app("charge", a.charge)
+            app("elem", a.element.name)
+            app("atom", a.name)
+            app("occ", a.occ)
+            app("x", a.pos.x)
+            app("y", a.pos.y)
+            app("z", a.pos.z)
+            app("tlsgroup", a.tls_group_id)
+
+    return pandas.DataFrame(data=d)
+# to_dataframe()
+
+def from_dataframe(df, st=None): # Slow!
+    if st is None:
+        st = gemmi.Structure()
+    else:
+        st = st.clone()
+        for i in range(len(st)):
+            del st[0]
+        
+    for m_name, dm in df.groupby("model"):
+        st.add_model(gemmi.Model(m_name))
+        m = st[-1]
+        for c_name, dc in dm.groupby("chain"):
+            m.add_chain(gemmi.Chain(c_name))
+            c = m[-1]
+            for rkey, dr in dc.groupby(["seqnum","icode","resn","segment","subchain"]):
+                c.add_residue(gemmi.Residue())
+                r = c[-1]
+                r.seqid.num = rkey[0]
+                r.seqid.icode = rkey[1]
+                r.name = rkey[2]
+                r.segment = rkey[3]
+                r.subchain = rkey[4]
+                for _, row in dr.iterrows():
+                    r.add_atom(gemmi.Atom())
+                    a = r[-1]
+                    a.altloc = row["altloc"]
+                    a.name = row["atom"]
+                    a.aniso.u11 = row["u11"]
+                    a.aniso.u22 = row["u22"]
+                    a.aniso.u33 = row["u33"]
+                    a.aniso.u12 = row["u12"]
+                    a.aniso.u13 = row["u13"]
+                    a.aniso.u23 = row["u23"]
+                    a.b_iso = row["b_iso"]
+                    a.charge = row["charge"]
+                    a.element = gemmi.Element(row["elem"])
+                    a.occ = row["occ"]
+                    a.pos.x = row["x"]
+                    a.pos.y = row["y"]
+                    a.pos.z = row["z"]
+                    a.tls_group_id = row["tlsgroup"]
+                    
+    return st
+# from_dataframe()
+            
 def microheterogeneity_for_refmac(st, monlib):
     st.setup_entities()
     topo = gemmi.prepare_topology(st, monlib)
