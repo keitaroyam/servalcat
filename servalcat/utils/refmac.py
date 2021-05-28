@@ -13,6 +13,7 @@ import copy
 import re
 import os
 from servalcat.utils import logger
+from servalcat.utils import fileio
 
 re_version = re.compile("#.* Refmac *version ([^ ]+) ")
 re_error = re.compile('(warn|error *[:]|error *==|^error)', re.IGNORECASE)
@@ -127,7 +128,7 @@ class Refmac:
         if len(ligands) > 1:
             mcif = "merged_ligands.cif" # XXX directory!
             logger.write("Merging ligand cif files: {}".format(ligands))
-            utils.fileio.merge_ligand_cif(ligands, mcif)
+            fileio.merge_ligand_cif(ligands, mcif)
             self.libin = mcif
         else:
             self.libin = ligands[0]
@@ -283,6 +284,7 @@ class Refmac:
             logger.write(rmsangle.rstrip())
         logger.write("REFMAC5 finished with exit code= {}".format(ret))
 
+        # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
             raise RuntimeError("REFMAC5 did not produce output files.")
         
