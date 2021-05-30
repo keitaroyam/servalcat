@@ -249,17 +249,6 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
     open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
     
-    # DEBUG
-    if mask is not None:
-        utils.maps.write_ccp4_map("fc_map.mrc",  hkldata.fft_map("FC", grid_size=mask.shape), cell=hkldata.cell,
-                                  mask_for_extent=mask if crop else None,
-                                  grid_start=grid_start)
-        hkldata.df["DFC"] = hkldata.df["FC"] * hkldata.binned_data_as_array("D")
-        utils.maps.write_ccp4_map("dfc_map.mrc",  hkldata.fft_map("DFC", grid_size=mask.shape), cell=hkldata.cell,
-                                  mask_for_extent=mask if crop else None,
-                                  grid_start=grid_start)
-
-    
     if normalize_map and mask is not None:
         logger.write("Normalized Fo-Fc map requested.")
         delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
