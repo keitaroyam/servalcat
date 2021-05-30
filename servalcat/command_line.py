@@ -25,12 +25,8 @@ from servalcat.utils import logger
 
 def main():
     
-    parser = argparse.ArgumentParser(description="")
-#Some useful commands:
-#  trim        Trim maps and shift models to reduce file size
-#  refina_spa  Refine CryoEM SPA structure using REFMAC5
-#  fofc        Calculate updated map and Fo-Fc map using error estimates from half maps and model
-
+    parser = argparse.ArgumentParser(prog="servalcat",
+                                     description="A tool for model refinement and map calculation for cryo-EM SPA.")
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(sfcalc=servalcat.spa.sfcalc,

@@ -25,28 +25,37 @@ def add_arguments(parser):
     # run_refmac options
     # TODO use group! like refmac options
     parser.add_argument('--ligand', nargs="*", action="append")
-    parser.add_argument('--bfactor', type=float)
-    parser.add_argument('--ncsr', default="local", choices=["local", "global"])
+    parser.add_argument('--bfactor', type=float,
+                        help="reset all atomic B values to specified value")
+    parser.add_argument('--ncsr', default="local", choices=["local", "global"],
+                        help="local or global NCS restrained")
     parser.add_argument('--ncycle', type=int, default=10)
-    parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"])
+    parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
+                        help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input")
     parser.add_argument('--jellybody', action='store_true')
     parser.add_argument('--jellybody_params', nargs=2, type=float,
                         metavar=("sigma", "dmax"), default=[0.01, 4.2])
-    parser.add_argument('--hout', action='store_true')
+    parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--weight_auto_scale', type=float)
-    group.add_argument('--weight', type=float)
-    parser.add_argument('--keywords', nargs='+', action="append")
-    parser.add_argument('--keyword_file', nargs='+', action="append")
+    group.add_argument('--weight_auto_scale', type=float,
+                       help="'weight auto' scale value. automatically determined from resolution and mask/box volume ratio if unspecified")
+    group.add_argument('--weight', type=float,
+                       help="weight matrix value")
+    parser.add_argument('--keywords', nargs='+', action="append",
+                        help="refmac keyword(s)")
+    parser.add_argument('--keyword_file', nargs='+', action="append",
+                        help="refmac keyword file(s)")
     parser.add_argument('--external_restraints_json')
     parser.add_argument('--show_refmac_log', action='store_true')
     parser.add_argument('--output_prefix', default="refined",
                         help='output file name prefix')
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation')
-    parser.add_argument('--cross_validation_method', default="shake", choices=["throughout", "shake"])
+    parser.add_argument('--cross_validation_method', default="shake", choices=["throughout", "shake"],
+                        help="shake: randomize a model refined against a full map and then refine it against a half map, "
+                        "throughout: use only a half map for refinement (another half map is used for error estimation)")
     parser.add_argument('--shake_radius', default=0.5,
-                        help='Shake rmsd')
+                        help='Shake rmsd in case of --cross_validation_method=shake')
     parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
@@ -176,7 +185,6 @@ def main(args):
     args.output_model_prefix = "shifted_local"
     args.output_masked_prefix = "masked_fs"
     args.output_mtz_prefix = "starting_map"
-    args.remove_multiple_models = True
     file_info = spa.sfcalc.main(args, monlib=monlib)
     args.mtz = file_info["mtz_file"]
     if args.halfmaps: # FIXME if no_mask?

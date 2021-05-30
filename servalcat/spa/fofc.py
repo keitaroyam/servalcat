@@ -22,12 +22,12 @@ def add_arguments(parser):
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--model', required=True,
-                        help='Input atomic model file (PDB or mmCIF/PDBx')
+                        help='Input atomic model file')
     parser.add_argument("-d", '--resolution', type=float, required=True)
     parser.add_argument('-m', '--mask', help="mask file")
-    parser.add_argument('-r', '--mask_radius', type=float, help="mask radius")
-    parser.add_argument("-B", type=float, help="Estimated blurring.")
-    parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map (use half 2 only for noise estimation)")
+    parser.add_argument('-r', '--mask_radius', type=float, help="mask radius (not used if --mask is given)")
+    parser.add_argument("-B", type=float, help="Estimated blurring")
+    parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map calculation (use half 2 only for noise estimation)")
     parser.add_argument("--normalized_map", action='store_true',
                         help="Write normalized map in the masked region")
     parser.add_argument("--crop", action='store_true',

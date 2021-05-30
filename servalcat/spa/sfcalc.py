@@ -16,7 +16,7 @@ from servalcat.spa import shift_maps
 def add_sfcalc_args(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
-    group.add_argument("--map", help="Use only if you really do not have half maps.")
+    group.add_argument("--map", help="Use this only if you really do not have half maps.")
     parser.add_argument('--mapref',
                         help='Reference map file')
     parser.add_argument('--mask',
@@ -29,8 +29,7 @@ def add_sfcalc_args(parser):
     parser.add_argument('--padding',
                         type=float, 
                         help='Default: 2*mask_radius')
-    parser.add_argument('--no_mask',
-                        action='store_true')
+    parser.add_argument('--no_mask', action='store_true')
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--resolution',
@@ -38,7 +37,7 @@ def add_sfcalc_args(parser):
                         help='')
     parser.add_argument('--no_shift',
                         action='store_true',
-                        help='')
+                        help='Use original box (not recommended)')
     parser.add_argument('--blur',
                         nargs="+", # XXX probably no need to be multiple
                         type=float,
@@ -48,9 +47,9 @@ def add_sfcalc_args(parser):
     parser.add_argument('--twist', type=float, help="Helical twist (degree)")
     parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
     parser.add_argument('--ignore_symmetry',
-                        help='Ignore symmetry information in the model file')
-    parser.add_argument('--remove_multiple_models', action='store_true', 
-                        help='Keep 1st model only')
+                        help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
+    parser.add_argument('--keep_multiple_models', action='store_true', 
+                        help='Multi-models will be kept; by default only 1st model is kept because REFMAC5 does not support it')
     parser.add_argument("--b_before_mask", type=float)
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
@@ -247,7 +246,7 @@ def main(args, monlib=None):
 
         ret["model_format"] = model_format
 
-        if args.remove_multiple_models and len(st) > 1:
+        if not args.keep_multiple_models and len(st) > 1:
             logger.write(" Removing models 2-{}".format(len(st)))
             for i in reversed(range(1, len(st))):
                 del st[i]

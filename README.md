@@ -10,23 +10,34 @@ pip install git+https://github.com/keitaroyam/servalcat.git
 ```
 Add `-U` option for updating. Servalcat often requires new [GEMMI](https://github.com/project-gemmi/gemmi) features (not the latest from pypi, but from github).
 
-The required GEMMI version is now [v0.4.6-2-g58e6395c](https://github.com/project-gemmi/gemmi/commit/58e6395c95f92a565d039074ecdd862331a50ef8). Please update GEMMI as well if it is old.
+The required GEMMI version is now [v0.4.6-26-g8baaa067](https://github.com/project-gemmi/gemmi/commit/8baaa067d53954d3799d35e78307a17e247f4890). Please update GEMMI as well if it is old.
 
 ## Usage
+```
+servalcat <command> <args>
+```
+The most useful `command`s are shown below. To see all arguments for each `command` please run
+```
+servalcat <command> -h
+```
 
 ### Refinement using REFMAC5
 Servalcat makes refinement by REFMAC5 easy for single particle analysis. The weighted and sharpened Fo-Fc map is calculated after the refinement. For details please see the reference.
 
 Make a new directory and run:
 ```
-servalcat refine_spa --model input.pdb --resolution 2.5 --halfmaps ../half_map_1.map ../half_map_2.map --ncycle 10 [--pg C2]
+servalcat refine_spa \
+ --model input.pdb --resolution 2.5 \
+ --halfmaps ../half_map_1.map ../half_map_2.map \
+ --ncycle 10 [--pg C2]
 ```
 Specify unsharpened and unweighted half maps (e.g. those after Refine3D of RELION) after `--halfmaps`.
 
 If map has been symmetrised with a point group, asymmetric unit model should be given together with `--pg` to specify a point group symbol.
 It assumes the center of the box is the origin of the symmetry and the axis convention follows RELION.
 
-Useful options:
+Other useful options:
+- `--ligand lig.cif` : specify restraint dictionary (.cif) file(s)
 - `--mask_for_fofc mask.mrc` : speify mask file for Fo-Fc map calculation
 - `--jellybody` : turn on jelly body refinment
 - `--weight_auto_scale value` : specify weight auto scale. by default Servalcat determines it from resolution and mask/box ratio
@@ -40,6 +51,18 @@ Output files:
 - `diffmap.mtz`: can be auto-opened with coot. sharpened and weighted Fo map and Fo-Fc map
 - `diffmap_normalized_fofc.mrc`: Fo-Fc map normalized within a mask. Look at raw values
 - `local_refined.log`: refmac log file
+
+### Fo-Fc map calculation
+It is important to refine individual atomic B values with electron scattering factors to calculate meaningful Fo-Fc map.
+Fo-Fc map is calculated in `refine_spa` command (explained above) so usually you do not need to run `fofc` command manually, but you may want to calculate e.g. omit maps.
+```
+servalcat fofc \
+ --model input.pdb --resolution 2.5 \
+ --halfmaps ../half_map_1.map ../half_map_2.map \
+ [--mask mask.mrc] [-o output_prefix] [-B B value]
+```
+
+`-B` is to calculate weighted maps based on local B estimate. It may be useful for model building in noisy region.
 
 ### Map trimming
 Maps from single particle analysis often have very large size due to unnccesary region outside the molecule. You can save disk space by trimming the unnccesary region.

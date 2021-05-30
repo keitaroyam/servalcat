@@ -5,6 +5,8 @@ import servalcat
 
 setup(name='servalcat',
     version=servalcat.__version__,
+    author='Keitaro Yamashita and Garib N. Murshudov',
+    url='https://github.com/keitaroyam/servalcat',
     description= 'Structure refinement and validation for crystallography and single particle analysis',
     license='MPL-2.0',
     packages=setuptools.find_packages(),
