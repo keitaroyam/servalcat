@@ -304,13 +304,14 @@ def cra_to_indices(cra, model):
     return tuple(ret)
 # cra_to_indices()
 
-def expand_ncs(st, special_pos_threshold=0.01):
+def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     if len(st.ncs) == 0: return
+    
     logger.write("Expanding symmetry..")
-    st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
-
     # Take care of special positions
     if special_pos_threshold >= 0:
+        # First expand ncs with Dup regardless of the choice
+        st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
         cra2key = lambda x: (x.chain.name, x.residue.seqid.num, x.residue.seqid.icode,
                              x.atom.name, x.atom.element.name, x.atom.altloc.replace("\0"," "))
         ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
@@ -374,10 +375,25 @@ def expand_ncs(st, special_pos_threshold=0.01):
         for idx in reversed(chain_to_be_removed): #
             del st[0][idx] # we cannot use remove_chain() because ID may be duplicated
 
-    # copy segment to subchain, as segment is not written to mmCIF file
-    for chain in st[0]:
-        for res in chain:
-            res.subchain = res.segment
+        # copy segment to subchain, as segment is not written to mmCIF file
+        for chain in st[0]:
+            for res in chain:
+                res.subchain = res.segment
+                
+        # rename chain IDs
+        if howtoname != gemmi.HowToNameCopiedChain.Dup:
+            # want to keep original chain IDs
+            for chain in st[0]:
+                for res in chain:
+                    if res.segment == "0": res.segment = ""
+
+            # new id = original id + ncs id
+            st[0].split_chains_by_segments(gemmi.HowToNameCopiedChain.Dup)
+            if howtoname == gemmi.HowToNameCopiedChain.Short:
+                st.shorten_chain_names()
+    else:
+        st.expand_ncs(howtoname)
+
 # expand_ncs()
 
 def filter_helical_contacting(st, cutoff=5.):

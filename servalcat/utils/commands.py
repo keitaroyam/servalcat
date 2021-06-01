@@ -30,6 +30,11 @@ def add_arguments(p):
     parser.add_argument('--twist', type=float, help="Helical twist (degree)")
     parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
+    parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
+                        help="How to decide new chain IDs in expanded model (default: short); "
+                        "dup: use original chain IDs (with different segment IDs), "
+                        "short: use unique new IDs, "
+                        "number: add number to original chain ID")
     parser.add_argument('--biomt', action="store_true", help="Add BIOMT also")
     parser.add_argument('-o', '--output_prfix')
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
@@ -57,6 +62,10 @@ def parse_args(arg_list):
 def symmodel(args):
     if args.chains: args.chains = sum(args.chains, [])
     model_format = fileio.check_model_format(args.model)
+
+    howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
+                     short=gemmi.HowToNameCopiedChain.Short,
+                     number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
 
     if (args.twist, args.rise).count(None) == 1:
         logger.write("ERROR: give both helical paramters --twist and --rise")
@@ -127,7 +136,7 @@ def symmodel(args):
         fileio.write_model(st, file_name=args.output_prfix+model_format)
 
     # Sym expand
-    model.expand_ncs(st)
+    model.expand_ncs(st, howtoname=howtoname)
     st.assemblies.clear()
     args.output_prfix += "_expanded"
     if args.pdb or args.cif:
