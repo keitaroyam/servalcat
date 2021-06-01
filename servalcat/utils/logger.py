@@ -18,7 +18,10 @@ class Logger(object):
     # __init__()
     
     def set_file(self, file_out, append=True):
-        self.ofs = open(file_out, "a" if append else "w")
+        try:
+            self.ofs = open(file_out, "a" if append else "w")
+        except:
+            print("Error: Cannot open log file to write")
     # set_file()
 
     def write(self, l, end="\n", flush=True):
