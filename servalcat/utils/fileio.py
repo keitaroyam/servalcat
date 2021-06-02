@@ -187,7 +187,7 @@ def read_asu_data_from_mtz(mtz_in, cols):
 # read_asu_data_from_mtz()
 
 def read_cif_safe(cif_in):
-    ifs = gzip.open(cif_in) if cif_in.endswith(".gz") else open(cif_in)
+    ifs = gzip.open(cif_in, "rt") if cif_in.endswith(".gz") else open(cif_in)
     s = ifs.read()
     if "\0" in s: # Refmac occasionally writes \0 in some fileds..
         logger.write(" WARNING: null character detected. Replacing with '.'")
