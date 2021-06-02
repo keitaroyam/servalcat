@@ -229,7 +229,7 @@ class Refmac:
             
             r_ver = re_version.search(l)
             if r_ver:
-                summary_write("Starting Refmac {}".format(r_ver.group(1)))
+                summary_write("Starting Refmac {} (PID: {})".format(r_ver.group(1), p.pid))
 
             # print error/warning
             r_err = re_error.search(l)
