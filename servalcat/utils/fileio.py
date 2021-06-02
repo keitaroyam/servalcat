@@ -54,7 +54,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
             
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
         if len(blocks) == 0:
-            logger.write("No _atom_site found in {}".format(e))
+            logger.write("No _atom_site found in {}".format(cif_ref))
             logger.write("  Give up using cif reference.")
             return write_mmcif(st, cif_out)
         block = blocks[0]
