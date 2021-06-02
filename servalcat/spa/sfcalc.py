@@ -251,9 +251,14 @@ def main(args, monlib=None):
             for i in reversed(range(1, len(st))):
                 del st[i]
 
-        if args.ignore_symmetry and len(st.ncs) > 0:
-            logger.write("Removing symmetry information from model.")
-            st.ncs.clear()
+        if len(st.ncs) > 0:
+            if args.ignore_symmetry:
+                logger.write("Removing symmetry information from model.")
+                st.ncs.clear()
+            else:
+                # remove already-applied symmetries, which can confuse refmac
+                for i in reversed(range(len(st.ncs))):
+                    if st.ncs[i].given: del st.ncs[i]
 
         if is_helical:
             ops = utils.symmetry.generate_helical_operators(st, start_xyz, center,

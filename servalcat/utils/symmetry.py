@@ -156,7 +156,8 @@ def write_NcsOps_for_refmac(ncs_ops, file_name):
     if not any([x.tr.is_identity() for x in ncs_ops]):
         ofs.write(make_line(gemmi.Transform()))
 
-    for op in ncs_ops: ofs.write(make_line(op.tr))
+    for op in ncs_ops:
+        if not op.given: ofs.write(make_line(op.tr))
     ofs.close()
 # write_NcsOps_for_refmac()
 
