@@ -304,6 +304,12 @@ def cra_to_indices(cra, model):
     return tuple(ret)
 # cra_to_indices()
 
+def cra_to_atomaddress(cra):
+    return gemmi.AtomAddress(cra.chain.name,
+                             cra.residue.seqid, cra.residue.name,
+                             cra.atom.name, cra.atom.altloc)
+# cra_to_atomaddress()
+
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     if len(st.ncs) == 0: return
     

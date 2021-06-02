@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat.utils import model
 import os
 import gemmi
 import numpy
@@ -36,7 +37,7 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     else:
         monlib = gemmi.MonLib()
 
-    for f in cif_files: # TODO Support link!!
+    for f in cif_files:
         logger.write("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
         for b in doc:
@@ -46,6 +47,10 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
                     logger.write("WARNING:: updating {} using {}".format(name, f))
                     del monlib.monomers[name]
                 monlib.add_monomer_if_present(b)
+            
+            monlib.insert_chemlinks(doc)
+            monlib.insert_chemmods(doc)
+            monlib.insert_comp_list(doc)
 
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
@@ -57,7 +62,8 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     logger.write("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
     logger.write("          Links: {}".format(" ".join([x for x in monlib.links])))
     logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
-        
+    logger.write("")
+    
     return monlib
 # load_monomer_library()
 
@@ -86,10 +92,38 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
+def find_links(st, monlib):
+    # Find links not registered in st.connections
+
+    hunt = gemmi.LinkHunt()
+    hunt.index_chem_links(monlib)
+    matches = hunt.find_possible_links(st, 1.5, 0)
+    known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p")
+    matches = [x for x in matches if x.chem_link and not x.conn and x.chem_link.id not in known_links]
+    connections = []
+    for m in matches:
+        logger.write("New link detected: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+                                                                                                   m.cra1, m.cra2,
+                                                                                                   m.bond_length,
+                                                                                                   m.chem_link.rt.bonds[0].value))
+        con = gemmi.Connection()
+        con.type = gemmi.ConnectionType.Covale # XXX may be others
+        con.link_id = m.chem_link.id
+        con.partner1 = model.cra_to_atomaddress(m.cra1)
+        con.partner2 = model.cra_to_atomaddress(m.cra2)
+        connections.append(con)
+
+    return connections
+# find_links()
+
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
-    
     st.setup_entities()
+
+    # Check links. XXX Is it ok to update st?
+    connections = find_links(st, monlib)
+    st.connections.extend(connections)
+    
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")
