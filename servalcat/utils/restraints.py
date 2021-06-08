@@ -7,7 +7,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
-from servalcat.utils import model
 import os
 import gemmi
 import numpy
@@ -93,6 +92,7 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
 # check_monlib_support_nucleus_distances()
 
 def find_links(st, monlib):
+    from servalcat.utils import model
     # Find links not registered in st.connections
 
     hunt = gemmi.LinkHunt()
