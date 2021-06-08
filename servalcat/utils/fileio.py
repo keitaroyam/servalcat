@@ -178,7 +178,7 @@ def read_asu_data_from_mtz(mtz_in, cols):
         return asu
     else:
         if f.is_integer():
-            gr_t = gemmi.Int8AsuData # Why Int8?? XXX
+            gr_t = gemmi.IntAsuData
         else:
             gr_t = gemmi.FloatAsuData
         
