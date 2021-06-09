@@ -72,11 +72,11 @@ $$
     elif has_halfmaps:
         var_noise = hkldata.binned_df.var_noise
         
-    FC = hkldata.df.FC.to_numpy()
-    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-        sel = i_bin == hkldata.df.bin
-        Fo = FP[sel]
-        Fc = FC[sel]
+    bin_limits = dict(hkldata.bin_and_limits())
+    for i_bin, g in hkldata.binned():
+        bin_d_max, bin_d_min = bin_limits[i_bin]
+        Fo = FP[g.index]
+        Fc = g.FC.to_numpy()
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
         if has_halfmaps:
@@ -124,16 +124,13 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
     else:
         FP = hkldata.df.FP.to_numpy()
         
-    FC = hkldata.df.FC.to_numpy()
-    
-    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-        sel = i_bin == hkldata.df.bin
-        Fo = FP[sel]
-        Fc = FC[sel]
+    for i_bin, g in hkldata.binned():
+        Fo = FP[g.index]
+        Fc = g.FC.to_numpy()
         D = hkldata.binned_df.D[i_bin]
         if not has_halfmaps:
             delfwt = (Fo-D*Fc)
-            tmp["DELFWT"][sel] = delfwt
+            tmp["DELFWT"][g.index] = delfwt
             continue
 
         S = hkldata.binned_df.S[i_bin]
@@ -147,8 +144,8 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
         delfwt = (Fo-D*Fc)*S/(S+varn)
         fup = (Fo*S+varn*D*Fc)/(S+varn)
 
-        tmp["DELFWT_noscale"][sel] = delfwt
-        tmp["Fupdate_noscale"][sel] = fup
+        tmp["DELFWT_noscale"][g.index] = delfwt
+        tmp["Fupdate_noscale"][g.index] = fup
 
         sig_fo = numpy.std(Fo)
         n_fo = sig_fo * numpy.sqrt(fsc)
@@ -158,12 +155,12 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"
-        tmp["FWT"+lab_suf][sel] = numpy.sqrt(fsc)*Fo/sig_fo
-        tmp["DELFWT"+lab_suf][sel] = delfwt/n_fo
-        tmp["Fupdate"+lab_suf][sel] = fup/n_fo
+        tmp["FWT"+lab_suf][g.index] = numpy.sqrt(fsc)*Fo/sig_fo
+        tmp["DELFWT"+lab_suf][g.index] = delfwt/n_fo
+        tmp["Fupdate"+lab_suf][g.index] = fup/n_fo
 
         if B is not None:
-            s2 = 1./hkldata.d_spacings()[sel]**2
+            s2 = 1./hkldata.d_spacings()[g.index]**2
             k = numpy.exp(-B*s2/4.)
             k2 = numpy.exp(-B*s2/2.)
             fsc_l = k2*fsc/(1+(k2-1)*fsc)
@@ -180,9 +177,9 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
                                                                            numpy.average(k),
                                                                            numpy.average(abs(fup)),
                                                                            numpy.average(abs(delfwt))))
-            tmp["FWT"][sel] = fwt
-            tmp["DELFWT"][sel] = delfwt
-            tmp["Fupdate"][sel] = fup
+            tmp["FWT"][g.index] = fwt
+            tmp["DELFWT"][g.index] = delfwt
+            tmp["Fupdate"][g.index] = fup
 
     for l in labs:
         hkldata.df[l] = tmp[l]

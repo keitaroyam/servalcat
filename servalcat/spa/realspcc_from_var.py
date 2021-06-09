@@ -27,6 +27,7 @@ def add_arguments(parser):
     parser.add_argument('--sharpen_signal', action="store_true", help="")
     parser.add_argument('--x_max', type=float, default=20)
     parser.add_argument("-B", type=float, help="Sharpening (negative)/blurring (positive) B value")
+    parser.add_argument('--find_B_at', type=float, help="")
     parser.add_argument('-o','--output_prefix', default="cc",
                         help='output file name prefix')
 # add_arguments()
@@ -41,13 +42,7 @@ def f_noise(s, x, s_list, w_list, B):
     tinv = numpy.exp(-B*s**2/2) if B is not None else 1.
     return s**2 * tinv * numpy.interp(s, s_list, w_list) * numpy.sinc(2*numpy.abs(s)*numpy.abs(x))
 
-def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_signal=False, weight=None, B=None):
-    assert 1./hkldata.bin_and_limits()[-1][2] <= smax
-    bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,dmax,dmin in hkldata.bin_and_limits()])
-    bin_start = hkldata.bin_and_limits()[0][0] # grr
-
-    logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
-
+def calc_var(hkldata, bin_start, kind="noise", sharpen_signal=False, weight=None):
     wsq = None
     if kind == "noise":
         wsq = hkldata.binned_df.var_noise[bin_start:].to_numpy(copy=True)
@@ -68,6 +63,27 @@ def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_
     else:
         raise RuntimeError("unknown weight")
         
+    return wsq
+# calc_var()
+
+def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): # XXX unfinished
+    bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
+    bin_start = hkldata.bin_and_limits()[0][0] # grr
+    logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
+    wsq = calc_var(hkldata, bin_start, kind, sharpen_signal, weight)
+    for B in -numpy.arange(0,100,5):
+        cov_xx = scipy.integrate.quad(f_noise, 0, smax, args=(0, bin_s, wsq, B))[0]
+        cov_xy = scipy.integrate.quad(f_noise, 0, smax, args=(x, bin_s, wsq, B))[0]
+        print(B, cov_xy/cov_xx)
+# find_b()        
+
+def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_signal=False, weight=None, B=None):
+    assert 1./hkldata.bin_and_limits()[-1][1][1] <= smax
+    bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
+    bin_start = hkldata.bin_and_limits()[0][0] # grr
+
+    logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
+    wsq = calc_var(hkldata, bin_start, kind, sharpen_signal, weight)
     cov_xx = scipy.integrate.quad(f_noise, 0, smax, args=(0, bin_s, wsq, B))[0]
     x_all = numpy.arange(0, x_max, x_step)
     cc_all = []
@@ -91,21 +107,25 @@ def main(args):
     utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
     smax = 1. / args.resolution
-    x_all, cc_all = calc_cc_from_var(hkldata, smax, x_max=args.x_max, kind=args.f,
-                                     sharpen_signal=args.sharpen_signal, weight=args.weight,
-                                     B=args.B)
+    if args.find_B_at is not None:
+        find_b(hkldata, smax, args.find_B_at,
+               kind=args.f, sharpen_signal=args.sharpen_signal, weight=args.weight)
+    else:
+        x_all, cc_all = calc_cc_from_var(hkldata, smax, x_max=args.x_max, kind=args.f,
+                                         sharpen_signal=args.sharpen_signal, weight=args.weight,
+                                         B=args.B)
 
-    ofs = open("{}.dat".format(args.output_prefix), "w")
-    ofs.write("# smax= {}\n".format(smax))
-    ofs.write("# halfmaps= {}\n".format(*args.halfmaps))
-    ofs.write("# mask= {}\n".format(args.mask))
-    ofs.write("# weight= {}\n".format(args.weight))
-    ofs.write("# f= {}\n".format(args.f))
-    ofs.write("x cc dmin weight f sharpen b\n")
-    for x, cc in zip(x_all, cc_all):
-        ofs.write("{:.2f} {:.4f} {:.2f} {} {} {} {}\n".format(x, cc, args.resolution, args.weight, args.f,
-                                                              "TRUE" if args.sharpen_signal else "FALSE",
-                                                              args.B))
+        ofs = open("{}.dat".format(args.output_prefix), "w")
+        ofs.write("# smax= {}\n".format(smax))
+        ofs.write("# halfmaps= {}\n".format(*args.halfmaps))
+        ofs.write("# mask= {}\n".format(args.mask))
+        ofs.write("# weight= {}\n".format(args.weight))
+        ofs.write("# f= {}\n".format(args.f))
+        ofs.write("x cc dmin weight f sharpen b\n")
+        for x, cc in zip(x_all, cc_all):
+            ofs.write("{:.2f} {:.4f} {:.2f} {} {} {} {}\n".format(x, cc, args.resolution, args.weight, args.f,
+                                                                  "TRUE" if args.sharpen_signal else "FALSE",
+                                                                  args.B))
 # main()
 
 if __name__ == "__main__":

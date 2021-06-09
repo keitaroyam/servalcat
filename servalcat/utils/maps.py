@@ -38,16 +38,16 @@ def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
     if b is None:
         hkldata.setup_relion_binning()
         calc_noise_var_from_halfmaps(hkldata)
-        FP = hkldata.df.FP.to_numpy()
         logger.write("""$TABLE: Normalizing before masking:
 $GRAPHS: ln(Mn(|F|)) :A:1,2:
 : Normalizer :A:1,3:
 : FSC(full) :A:1,4:
 $$ 1/resol^2 ln(Mn(|F|)) normalizer FSC $$
 $$""")
-        for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-            sel = i_bin == hkldata.df.bin
-            Fo = FP[sel]
+        bin_limits = dict(hkldata.bin_and_limits())
+        for i_bin, g in hkldata.binned():
+            bin_d_max, bin_d_min = bin_limits[i_bin]
+            Fo = g.FP.to_numpy()
             FSCfull = hkldata.binned_df.FSCfull[i_bin]
             sig_fo = numpy.std(Fo)
             if FSCfull > 0:
@@ -55,8 +55,8 @@ $$""")
             else:
                 n_fo = sig_fo # XXX not a right way
                 
-            normalizer[sel] = n_fo
-            for lab in labs: hkldata.df.loc[sel, lab] /= n_fo
+            normalizer[g.index] = n_fo
+            for lab in labs: hkldata.df.loc[g.index, lab] /= n_fo
             logger.write("{:.4f} {:.2f} {:.3f} {:.4f}".format(1/bin_d_min**2,
                                                               numpy.log(numpy.average(numpy.abs(Fo))),
                                                               n_fo, FSCfull))
@@ -125,18 +125,17 @@ def calc_noise_var_from_halfmaps(hkldata):
     hkldata.binned_df["FSCfull"] = 0.
     
     logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
-    F_map1 = hkldata.df.F_map1.to_numpy()
-    F_map2 = hkldata.df.F_map2.to_numpy()
-    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-        sel = i_bin == hkldata.df.bin
+    bin_limits = dict(hkldata.bin_and_limits())
+    for i_bin, g in hkldata.binned():
+        bin_d_max, bin_d_min = bin_limits[i_bin]
         # scale
         scale = 1. #numpy.sqrt(var_cmpl(fc)/var_cmpl(fo))
         #hkldata.df.loc[sel, "FP"] *= scale
         #hkldata.df.loc[sel, "F_map1"] *= scale
         #hkldata.df.loc[sel, "F_map2"] *= scale
         
-        sel1 = F_map1[sel]
-        sel2 = F_map2[sel]
+        sel1 = g.F_map1.to_numpy()
+        sel2 = g.F_map2.to_numpy()
 
         if sel1.size < 3:
             logger.write("WARNING: skipping bin {} with size= {}".format(i_bin, sel1.size))

@@ -126,7 +126,7 @@ class HklData:
         for i in range(1, len(sprange)):
             sel = numpy.where(numpy.logical_and(sprange[i-1]<=sp, sp <sprange[i]))[0]
             bin_number[sel] = i
-            self._bin_and_limits.append((i, bin_limit_ds[i-1], bin_limit_ds[i]))
+            self._bin_and_limits.append((i, (bin_limit_ds[i-1], bin_limit_ds[i])))
 
         self.df["bin"] = bin_number
         self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
@@ -160,7 +160,7 @@ class HklData:
         for i_bin in bin_numbers:
             sel = self.df.bin == i_bin # selection may be kept, but df size may change later..?
             d_sel = self.df.d[sel]
-            self._bin_and_limits.append((i_bin, max(d_sel), min(d_sel)))
+            self._bin_and_limits.append((i_bin, (max(d_sel), min(d_sel))))
     # setup_relion_binning()
 
     def bin_and_limits(self):
@@ -174,6 +174,9 @@ class HklData:
             vals[g.index] = self.binned_df[lab][b]
         return vals
     # binned_data_as_array()
+
+    def binned(self, sort=True):
+        return self.df.groupby("bin", sort=sort)
     
     def merge(self, other, common_only=True):
         self.merge_df(other, common_only)
@@ -210,7 +213,7 @@ class HklData:
         fsc = self.binned_df[label]
         bin_counts = self.df.bin.value_counts()
         a = 0.
-        for i_bin, bin_d_max, bin_d_min in self.bin_and_limits():
+        for i_bin, (bin_d_max, bin_d_min) in self.bin_and_limits():
             a += bin_counts[i_bin] * fsc[i_bin]
 
         fac = (a/sum(bin_counts))**(1/3.)

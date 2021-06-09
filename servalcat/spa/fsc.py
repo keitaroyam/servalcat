@@ -105,12 +105,13 @@ def main(args):
     ofs.write("bin n d_max d_min {}\n".format(" ".join(["Fmap{}".format(i+1) for i in range(len(args.maps))])))
     fsc_list = [[] for i in range(len(args.maps))]
     n_list = [[] for i in range(len(args.maps))]
-    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-        sel = i_bin == hkldata.df.bin
-        fc = hkldata.df["FC"][sel]
+    bin_limits = dict(hkldata.bin_and_limits())
+    for i_bin, g in hkldata.binned():
+        bin_d_max, bin_d_min = bin_limits[i_bin]
+        fc = g.FC.to_numpy()
         ofs.write("{:3d} {:7d} {:7.3f} {:7.3f}".format(i_bin, fc.size, bin_d_max, bin_d_min))
         for i_map in range(len(args.maps)):
-            fo = hkldata.df["Fmap{}".format(i_map+1)][sel]
+            fo = g["Fmap{}".format(i_map+1)]
             fsc = numpy.real(numpy.corrcoef(fo, fc)[1,0])
             ofs.write(" {:.4f}".format(fsc))
             fsc_list[i_map].append(fsc)

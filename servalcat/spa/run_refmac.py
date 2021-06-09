@@ -102,8 +102,6 @@ $GRAPHS: FSC :A:1,5,6,7,8,9:
 $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) FSC(half1,model) FSC(half2,model) FSC_full FSC_full_sqrt$$
 $$
 """)
-        F_map1 = hkldata.df.F_map1.to_numpy()
-        F_map2 = hkldata.df.F_map2.to_numpy()
     else:
         ofs.write("""$TABLE: Map-model FSC after refinement:
 $GRAPHS: FSC :A:1,5:
@@ -113,15 +111,14 @@ $$ 1/resol^2 ncoef ln(Mn(|F_full|)) ln(Mn(|Fc|)) FSC(full,model) $$
 $$
 """)
 
-    FP = hkldata.df.FP.to_numpy()
-    FC = hkldata.df.FC.to_numpy()
     fscvals = [[], [], []]
     ncoeffs = []
 
-    for i_bin, bin_d_max, bin_d_min in hkldata.bin_and_limits():
-        sel = i_bin == hkldata.df.bin
-        Fo = FP[sel]
-        Fc = FC[sel]
+    bin_limits = dict(hkldata.bin_and_limits())
+    for i_bin, g in hkldata.binned():
+        bin_d_max, bin_d_min = bin_limits[i_bin]
+        Fo = g.FP.to_numpy()
+        Fc = g.FC.to_numpy()
         fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         ncoeffs.append(Fo.size)
         fscvals[0].append(fsc_model)
@@ -132,7 +129,7 @@ $$
                                                                   fsc_model))
         
         if len(maps) == 2:
-            F1, F2 = F_map1[sel], F_map2[sel]
+            F1, F2 = g.F_map1.to_numpy(), g.F_map2.to_numpy()
             fsc_half = numpy.real(numpy.corrcoef(F1, F2)[1,0])
             fsc_full = 2*fsc_half/(1+fsc_half)
             fsc1 = numpy.real(numpy.corrcoef(F1, Fc)[1,0])
