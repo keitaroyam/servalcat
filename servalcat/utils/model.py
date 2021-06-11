@@ -198,7 +198,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     return asu
 # calc_fc_direct()
 
-def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, cutoff=1e-5, rate=1.5):
+def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5):
     # Very crude implementation to find peak from calculated map
     # TODO Need to implement peak finding function that involves interpolation
     assert st[0].count_hydrogen_sites() > 0
@@ -237,6 +237,11 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, cutoff=1e-5, rat
     
     if mode_all: dc.initialize_grid()
 
+    if weights is not None:
+        w_s, w_w = weights # s_list and w_list
+    else:
+        w_s, w_w = None, None
+        
     for ichain in range(len(st[0])):
         chain = st[0][ichain]
         for ires in range(len(chain)):
@@ -258,6 +263,9 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, cutoff=1e-5, rat
                 if not mode_all:
                     grid = gemmi.transform_map_to_f_phi(dc.grid)
                     asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
+                    if w_s is not None:
+                        asu_data.value_array[:] *= numpy.interp(1./asu_data.make_d_array(), w_s, w_w)
+                        
                     denmap = asu_data.transform_f_phi_to_map(exact_size=(int(box_size*10), int(box_size*10), int(box_size*10)))
                     m = numpy.unravel_index(numpy.argmax(denmap), denmap.shape)
                     peakpos = denmap.get_position(m[0], m[1], m[2]) - cbox + n_pos
@@ -266,6 +274,8 @@ def get_em_expected_hydrogen(st, d_min, monlib=None, blur=None, cutoff=1e-5, rat
     if mode_all:
         grid = gemmi.transform_map_to_f_phi(dc.grid)
         asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=True, unblur=dc.blur)
+        if w_s is not None:
+            asu_data.value_array[:] *= numpy.interp(1./asu_data.make_d_array(), w_s, w_w)
         denmap = asu_data.transform_f_phi_to_map(sample_rate=3)
         ccp4 = gemmi.Ccp4Map()
         ccp4.grid = denmap

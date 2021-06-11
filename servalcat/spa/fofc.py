@@ -57,12 +57,13 @@ $GRAPHS
 : log(Mn(|F|^2)) and variances :A:1,6,7,8,13,14:
 : FSC :A:1,9,10,11:
 : weights :A:1,12,15,16:
+: map weights :A:1,17:
 $$
-1/resol^2 bin n d_max d_min log(var(Fo)) log(var(Fc)) log(var(DFc)) FSC.model FSC.full sqrt(FSC.full) D log(var_U,T) log(var_noise) wFo wFc
+1/resol^2 bin n d_max d_min log(var(Fo)) log(var(Fc)) log(var(DFc)) FSC.model FSC.full sqrt(FSC.full) D log(var_U,T) log(var_noise) wFo wFc wFo.sharpen
 $$
 $$
 """
-    tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f}\n"
+    tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f} {:.4e}\n"
 
     var_noise = None
     FP = hkldata.df.FP.to_numpy()
@@ -85,9 +86,11 @@ $$
             S = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
             bdf.loc[i_bin, "S"] = S
             w = S/(S+varn)
+            w_sharpen = w / numpy.sqrt(fsc_full) / numpy.std(Fo)
         else:
             varn = fsc_full = 0
             w = 1
+            w_sharpen = 1
 
         with numpy.errstate(divide="ignore"):
             stats_str += tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
@@ -96,7 +99,7 @@ $$
                                      numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
                                      fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
                                      numpy.log(bdf.S[i_bin]), numpy.log(varn),
-                                     w, 1-w)
+                                     w, 1-w, w_sharpen)
     return stats_str
 # calc_D_and_S()
 
