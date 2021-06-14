@@ -17,10 +17,12 @@ import numpy
 
 def add_arguments(p):
     subparsers = p.add_subparsers(dest="subcommand")
-    
+
+    # show
     parser = subparsers.add_parser("show", description = 'Show file info supported by the program')
     parser.add_argument('files', nargs='+')
 
+    # symmodel
     parser = subparsers.add_parser("symmodel", description="Add symmetry annotation to model")
     parser.add_argument('--model', required=True)
     group = parser.add_mutually_exclusive_group()
@@ -39,7 +41,21 @@ def add_arguments(p):
     parser.add_argument('-o', '--output_prfix')
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
     parser.add_argument('--cif', action="store_true", help="Write a cif file")
-    
+
+    # expand
+    parser = subparsers.add_parser("expand", description="Expand symmetry")
+    parser.add_argument('--model', required=True)
+    parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
+    parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
+                        help="How to decide new chain IDs in expanded model (default: short); "
+                        "dup: use original chain IDs (with different segment IDs), "
+                        "short: use unique new IDs, "
+                        "number: add number to original chain ID")
+    parser.add_argument('-o', '--output_prfix')
+    parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
+    parser.add_argument('--cif', action="store_true", help="Write a cif file")
+
+    # h_add
     parser = subparsers.add_parser("h_add", description = 'Add hydrogen in riding position')
     parser.add_argument('model')
     parser.add_argument('--ligand', nargs="*", action="append")
@@ -48,6 +64,7 @@ def add_arguments(p):
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
+    # merge_models
     parser = subparsers.add_parser("merge_models", description = 'Merge multiple model files')
     parser.add_argument('models', nargs="+")
     parser.add_argument('-o','--output', required=True)
@@ -145,6 +162,48 @@ def symmodel(args):
         fileio.write_model(st, file_name=args.output_prfix+model_format)
 # symmodel()
 
+def symexpand(args):
+    if args.chains: args.chains = sum(args.chains, [])
+    model_format = fileio.check_model_format(args.model)
+
+    howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
+                     short=gemmi.HowToNameCopiedChain.Short,
+                     number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
+
+    st = fileio.read_structure(args.model)
+
+    if args.chains:
+        logger.write("Keep {} chains only".format(" ".join(args.chains)))
+        chains = set(args.chains)
+        for m in st:
+            to_del = [c.name for c in m if c.name not in chains]
+            for c in to_del: m.remove_chain(c)
+
+    all_chains = [c.name for c in st[0] if c.name not in st[0]]
+
+    if not args.output_prfix:
+        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0]
+
+    if len(st.ncs) > 0:
+        symmetry.show_ncs_operators_axis_angle(st.ncs)
+        non_given = [op for op in st.ncs if not op.given]
+        if len(non_given) > 0:
+            st_tmp = st.clone()
+            model.expand_ncs(st_tmp, howtoname=howtoname)
+            output_prfix = args.output_prfix + "_ncs_expanded"
+            if args.pdb or args.cif:
+                fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+            else:
+                fileio.write_model(st_tmp, file_name=output_prfix+model_format)
+        else:
+            logger.write("All operators are already expanded (marked as given). Exiting.")
+    else:
+        logger.write("No NCS operators found. Exiting.")
+    
+    if len(st.assemblies) > 0: # should we support BIOMT?
+        pass
+# symexpand()
+
 def h_add(args):
     st = fileio.read_structure(args.model)
     resnames = st[0].get_all_residue_names()
@@ -196,6 +255,8 @@ def main(args):
         show(args)
     elif com == "symmodel":
         symmodel(args)
+    elif com == "expand":
+        symexpand(args)
     elif com == "h_add":
         h_add(args)
     elif com == "merge_models":

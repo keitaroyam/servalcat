@@ -73,6 +73,18 @@ def show_operators_axis_angle(ops):
         logger.write(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
 # show_operators_axis_angle()
 
+def show_ncs_operators_axis_angle(ops):
+    # ops: List of gemmi.NcsOp
+    for i, op in enumerate(ops):
+        op2 = numpy.array(op.tr.mat.tolist())
+        ax, ang = generate_operators.Rotation2AxisAngle_general(op2)
+        axlab = "[{: .4f}, {: .4f}, {: .4f}]".format(*ax)
+        trlab = "[{: 9.4f}, {: 9.4f}, {: 9.4f}]".format(*op.tr.vec.tolist())
+        logger.write(" operator {:3s} angle= {:7.3f} deg axis= {} trans= {} {}".format(op.id, numpy.rad2deg(ang),
+                                                                                       axlab, trlab,
+                                                                                       "given" if op.given else ""))
+# show_operators_axis_angle()
+
 def read_helical_parameters_from_mmcif(cif_in):
     doc = fileio.read_cif_safe(cif_in)
     b = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))[0]
