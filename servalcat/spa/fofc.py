@@ -30,6 +30,10 @@ def add_arguments(parser):
     parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map calculation (use half 2 only for noise estimation)")
     parser.add_argument("--normalized_map", action='store_true',
                         help="Write normalized map in the masked region")
+    parser.add_argument("--no_fsc_weights", action='store_true',
+                        help="Just for debugging purpose: turn off FSC-based weighting")
+    parser.add_argument("--sharpening_b", type=float,
+                        help="Use B value (negative value for sharpening) instead of standard deviation of the signal")
     parser.add_argument("--crop", action='store_true',
                         help="Write cropped maps")
     parser.add_argument("--monlib",
@@ -108,7 +112,7 @@ $$
 #import atexit
 #atexit.register(profile.print_stats)
 #@profile
-def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
+def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weights=False, sharpening_b=None):
     if has_halfmaps:
         labs = ["Fupdate", "DELFWT", "FWT", "DELFWT_noscale", "Fupdate_noscale"]
         if B is not None: labs.extend(["Fupdate_b0", "DELFWT_b0", "FWT_b0"])
@@ -136,48 +140,57 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False):
             tmp["DELFWT"][g.index] = delfwt
             continue
 
-        S = hkldata.binned_df.S[i_bin]
-        fsc = hkldata.binned_df.FSCfull[i_bin]
+        S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
+        fsc = hkldata.binned_df.FSCfull[i_bin] # FSCfull
         if half1_only:
             varn = hkldata.binned_df.var_noise[i_bin] * 2
             fsc = fsc/(2-fsc) # to FSChalf
         else:
             varn = hkldata.binned_df.var_noise[i_bin]
 
-        delfwt = (Fo-D*Fc)*S/(S+varn)
-        fup = (Fo*S+varn*D*Fc)/(S+varn)
+        w = 1. if no_fsc_weights else S/(S+varn)
+        w_nomodel = 1. if no_fsc_weights else fsc
+        
+        delfwt = w * (Fo-D*Fc)
+        fup = w * Fo + (1.-w)*D*Fc
 
         tmp["DELFWT_noscale"][g.index] = delfwt
         tmp["Fupdate_noscale"][g.index] = fup
 
         sig_fo = numpy.std(Fo)
-        n_fo = sig_fo * numpy.sqrt(fsc)
-        if n_fo < 1e-10 or n_fo != n_fo:
-            logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
-            continue
+        if sharpening_b is None:
+            k = sig_fo * numpy.sqrt(fsc)
+            if k < 1e-10 or k != k:
+                logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
+                continue
+        else:
+            s2 = 1./hkldata.d_spacings()[g.index]**2
+            k = numpy.exp(-sharpening_b*s2/4)
+            
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"
-        tmp["FWT"+lab_suf][g.index] = numpy.sqrt(fsc)*Fo/sig_fo
-        tmp["DELFWT"+lab_suf][g.index] = delfwt/n_fo
-        tmp["Fupdate"+lab_suf][g.index] = fup/n_fo
+        tmp["FWT"+lab_suf][g.index] = w_nomodel/k*Fo
+        tmp["DELFWT"+lab_suf][g.index] = delfwt/k
+        tmp["Fupdate"+lab_suf][g.index] = fup/k
 
-        if B is not None:
-            s2 = 1./hkldata.d_spacings()[g.index]**2
-            k = numpy.exp(-B*s2/4.)
-            k2 = numpy.exp(-B*s2/2.)
-            fsc_l = k2*fsc/(1+(k2-1)*fsc)
-            #n_fo = sig_fo * numpy.sqrt(fsc_l) * k
-            S_l = S * k2
+        if B is not None: # local B based map
+            s2 = 1./hkldata.d_spacings()[g.index]**2 # TODO fix duplicated calculation
+            k_l = numpy.exp(-B*s2/4.)
+            k2_l = numpy.exp(-B*s2/2.)
+            fsc_l = k2_l*fsc/(1+(k2_l-1)*fsc)
+            S_l = S * k2_l
+            w = 1. if no_fsc_weights else S_l/(S_l+varn)            
+            w_nomodel = 1. if no_fsc_weights else fsc_l
             
-            delfwt = (Fo-D*Fc)*S*k/(S_l+varn)/n_fo # S_l/k = S*k
-            fup = (Fo*S_l+varn*D*Fc)/(S_l+varn)/n_fo/k
-            fwt = Fo*fsc_l/n_fo
+            delfwt = (Fo-D*Fc)*w/k/k_l
+            fup = (w*Fo+(1.-w)*D*Fc)/k/k_l
+            fwt = Fo*w_nomodel/k/k_l
             logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
-                                                                           numpy.average(n_fo),
+                                                                           numpy.average(k),
                                                                            numpy.average(sig_fo),
                                                                            numpy.average(fsc_l),
-                                                                           numpy.average(k),
+                                                                           numpy.average(k_l),
                                                                            numpy.average(abs(fup)),
                                                                            numpy.average(abs(delfwt))))
             tmp["FWT"][g.index] = fwt
@@ -213,7 +226,13 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
     mtz.write_to_file(mtz_out)
 # dump_to_mtz()
 
-def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False, omit_proton=False, omit_h_electron=False):
+def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
+              no_fsc_weights=False, sharpening_b=None, omit_proton=False, omit_h_electron=False):
+    if no_fsc_weights:
+        logger.write("WARNING: --no_fsc_weights is requested.")
+    if sharpening_b is not None:
+        logger.write("WARNING: --sharpening_b={} is given".format(sharpening_b))
+    
     fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
     hkldata.merge_asu_data(fc_asu, "FC")
@@ -240,7 +259,8 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
     
-    map_labs = calc_maps(hkldata, B=b_local, has_halfmaps=has_halfmaps, half1_only=half1_only)
+    map_labs = calc_maps(hkldata, B=b_local, has_halfmaps=has_halfmaps, half1_only=half1_only,
+                         no_fsc_weights=no_fsc_weights, sharpening_b=sharpening_b)
     return hkldata, map_labs, stats_str
 # calc_fofc()
 
@@ -277,16 +297,17 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
                                   grid_start=grid_start)
 
         # Write Fo map as well
-        fwt_map = hkldata.fft_map("FWT", grid_size=mask.shape)
-        masked = numpy.array(fwt_map)[mask>cutoff]
-        masked_mean = numpy.average(masked)
-        masked_std = numpy.std(masked)
-        scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
-        filename = "{}_normalized_fo.mrc".format(output_prefix)
-        logger.write("  Writing {}".format(filename))
-        utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                  mask_for_extent=mask if crop else None,
-                                  grid_start=grid_start)
+        if "FWT" in hkldata.df:
+            fwt_map = hkldata.fft_map("FWT", grid_size=mask.shape)
+            masked = numpy.array(fwt_map)[mask>cutoff]
+            masked_mean = numpy.average(masked)
+            masked_std = numpy.std(masked)
+            scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
+            filename = "{}_normalized_fo.mrc".format(output_prefix)
+            logger.write("  Writing {}".format(filename))
+            utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
+                                      mask_for_extent=mask if crop else None,
+                                      grid_start=grid_start)
 
 # write_files()
 
@@ -352,7 +373,8 @@ def main(args):
             return
 
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
-                                             half1_only=args.half1_only, omit_proton=args.omit_proton,
+                                             half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,
+                                             sharpening_b=args.sharpening_b, omit_proton=args.omit_proton,
                                              omit_h_electron=args.omit_h_electron)
     write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=mask, output_prefix=args.output_prefix,
