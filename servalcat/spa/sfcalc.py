@@ -67,9 +67,9 @@ def add_arguments(parser):
     parser.add_argument('--output_mtz_prefix',
                         default="starting_map",
                         help='output MTZ file name for original F')
-    parser.add_argument('--output_model_prefix',
-                        default="shifted_local",
-                        help='output model file name')
+    parser.add_argument('--shifted_model_prefix',
+                        default="shifted",
+                        help='output (shifted) model file name')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -182,6 +182,10 @@ def main(args, monlib=None):
         doc = gemmi.cif.read(args.model)
         block = doc.sole_block()
         reso_str = block.find_value("_em_3d_reconstruction.resolution")
+        try:
+            float(reso_str)
+        except:
+            raise RuntimeError("ERROR: _em_3d_reconstruction.resolution is invalid. Give --resolution")
         logger.write("WARNING: --resolution not given. Using _em_3d_reconstruction.resolution = {}".format(reso_str))
         args.resolution = float(reso_str)
 
@@ -285,8 +289,8 @@ def main(args, monlib=None):
 
         if len(st.ncs) > 0:
             logger.write(" Writing NCS file")
-            utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc_global.txt")
-            ret["ncsc_file"] = "ncsc_global.txt"
+            utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc.txt")
+            ret["ncsc_file"] = "ncsc.txt"
         
         st_new = st.clone()
         if len(st.ncs) > 0 and not args.no_shift:
@@ -350,15 +354,15 @@ def main(args, monlib=None):
                     st_new.ncs.clear()
                     st_new.ncs.extend(new_ops)
                     logger.write(" Writing NCS file for shifted model")
-                    utils.symmetry.write_NcsOps_for_refmac(st_new.ncs, "ncsc_local.txt")
-                    ret["ncsc_file"] = "ncsc_local.txt"
+                    utils.symmetry.write_NcsOps_for_refmac(st_new.ncs, "ncsc_{}.txt".format(args.shifted_model_prefix))
+                    ret["ncsc_file"] = "ncsc_{}.txt".format(args.shifted_model_prefix)
                     logger.write(" Writing symmetry expanded model for shifted model")
-                    utils.symmetry.write_symmetry_expanded_model(st_new, "shifted_local_expanded",
+                    utils.symmetry.write_symmetry_expanded_model(st_new, "{}_expanded".format(args.shifted_model_prefix),
                                                                  pdb=True, cif=True)
 
                 logger.write(" Saving shifted model..")
-                utils.fileio.write_model(st_new, "shifted_local", pdb=True, cif=True)
-                ret["model_file"] = "shifted_local" + model_format
+                utils.fileio.write_model(st_new, args.shifted_model_prefix, pdb=True, cif=True)
+                ret["model_file"] = args.shifted_model_prefix + model_format
 
             logger.write(" Trimming maps..")
             for i in range(len(maps)): # Update maps

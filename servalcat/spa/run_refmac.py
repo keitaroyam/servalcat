@@ -179,7 +179,7 @@ def main(args):
                                                    cif_files=args.ligand)
     # TODO exit if there are unknown residues
     
-    args.output_model_prefix = "shifted_local"
+    args.shifted_model_prefix = "shifted"
     args.output_masked_prefix = "masked_fs"
     args.output_mtz_prefix = "starting_map"
     file_info = spa.sfcalc.main(args, monlib=monlib)
@@ -214,7 +214,7 @@ def main(args):
         args.keyword_file.append(file_info["ncsc_file"])
 
     if not args.no_shift:
-        refmac_prefix = "local_" + args.output_prefix
+        refmac_prefix = "{}_{}".format(args.shifted_model_prefix, args.output_prefix)
     else:
         refmac_prefix = args.output_prefix
 
