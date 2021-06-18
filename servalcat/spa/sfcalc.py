@@ -370,18 +370,19 @@ def main(args, monlib=None):
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-        
+    lab_f_suffix = "Blur_{:.2f}".format(args.blur[0]) if args.blur else "0"
+    
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
         logger.write(" Calculating noise variances..")
         map_labs = ["Fmap1", "Fmap2", "Fout0"]
         sig_lab = "SIGFout0"
-        ret["lab_sigf"] = sig_lab
-        ret["lab_f_half1"] = "Fmap1"
+        ret["lab_sigf"] = sig_lab + lab_f_suffix
+        ret["lab_f_half1"] = "Fmap1" + lab_f_suffix
         # TODO Add SIGF in case of half maps, when refmac is ready
         ret["lab_phi_half1"] = "Pmap1"
-        ret["lab_f_half2"] = "Fmap2"
+        ret["lab_f_half2"] = "Fmap2" + lab_f_suffix
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
         hkldata.df[sig_lab] = 0.
@@ -406,7 +407,7 @@ def main(args, monlib=None):
     write_map_mtz(hkldata, mtzout,
                   map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
     ret["mtz_file"] = mtzout
-    ret["lab_f"] = "Fout" + ("Blur_{:.2f}".format(args.blur[0]) if args.blur else "0")
+    ret["lab_f"] = "Fout" + lab_f_suffix
     ret["lab_phi"] = "Pout0"
     return ret
 # main()
