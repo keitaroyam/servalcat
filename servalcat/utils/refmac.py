@@ -76,13 +76,6 @@ class Refmac:
         self.show_log = False # summary only if false
         self.global_mode = kwargs.get("global_mode")
         
-        if self.global_mode == "spa":
-            self.source = "em mb"
-            self.solvent = "no"
-        else:
-            self.source = "xray"
-            self.solvent = "yes"
-            
         for k in kwargs:
             if k == "args":
                 self.init_from_args(kwargs["args"])
@@ -146,8 +139,12 @@ class Refmac:
 
         ret += "make hydr {}\n".format(self.hydrogen)
         ret += "make hout {}\n".format("yes" if self.hout else "no")
-        ret += "solvent {}\n".format(self.solvent)
-        ret += "source {}\n".format(self.source)
+        
+        if self.global_mode == "spa":
+            ret += "solvent no\n"
+            ret += "source em mb\n"
+            ret += "scale lssc isot\n"
+
         ret += "ncycle {}\n".format(self.ncycle)
         if self.resolution is not None:
             ret += "reso {}\n".format(self.resolution)
