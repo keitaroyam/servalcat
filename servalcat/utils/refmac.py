@@ -151,15 +151,15 @@ class Refmac:
         if self.weight_fixed is not None:
             ret += "weight matrix {}\n".format(self.weight_fixed)
         elif self.weight_auto_scale is not None:
-            ret += "weight auto {:.2f}\n".format(self.weight_auto_scale)
+            ret += "weight auto {:.2e}\n".format(self.weight_auto_scale)
         else:
             ret += "weight auto\n"
 
         if self.bfactor is not None:
             ret += "bfactor set {}\n".format(self.bfactor)
         if self.jellybody:
-            ret += "ridge dist sigma {:.3f}\n".format(self.jellybody_sigma)
-            ret += "ridge dist dmax {:.2f}\n".format(self.jellybody_dmax)
+            ret += "ridge dist sigma {:.3e}\n".format(self.jellybody_sigma)
+            ret += "ridge dist dmax {:.2e}\n".format(self.jellybody_dmax)
         if self.ncsr:
             ret += "ncsr {}\n".format(self.ncsr)
 
