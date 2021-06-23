@@ -111,13 +111,13 @@ def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None):
         lab_root = lab[1:] if lab[0]=="F" else lab
         for b in blurs:
             labf = lab
-            if b != 0: labf = "{}Blur_{:.2f}".format(labf, b).replace("Fout0", "Fout")
+            if b != 0: labf = "{}Blur_{:.2f}".format(labf, b).replace("Fout", "Fout")
             mtz.add_column(labf, "F")
         mtz.add_column("P"+lab_root, "P")
     if sig_lab:
         for b in blurs:
             labsigf = sig_lab
-            if b != 0: labsigf = "{}Blur_{:.2f}".format(labsigf, b).replace("Fout0", "Fout")
+            if b != 0: labsigf = "{}Blur_{:.2f}".format(labsigf, b).replace("Fout", "Fout")
             mtz.add_column(labsigf, "Q")
         
     mtz.set_data(data)
@@ -370,14 +370,14 @@ def main(args, monlib=None):
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    lab_f_suffix = "Blur_{:.2f}".format(args.blur[0]) if args.blur else "0"
+    lab_f_suffix = "Blur_{:.2f}".format(args.blur[0]) if args.blur else ""
     
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
         logger.write(" Calculating noise variances..")
-        map_labs = ["Fmap1", "Fmap2", "Fout0"]
-        sig_lab = "SIGFout0"
+        map_labs = ["Fmap1", "Fmap2", "Fout"]
+        sig_lab = "SIGFout"
         ret["lab_sigf"] = sig_lab + lab_f_suffix
         ret["lab_f_half1"] = "Fmap1" + lab_f_suffix
         # TODO Add SIGF in case of half maps, when refmac is ready
@@ -393,7 +393,7 @@ def main(args, monlib=None):
         logger.write("Effective resolution from FSCfull= {:.2f}".format(d_eff_full))
         ret["d_eff"] = d_eff_full
     else:
-        map_labs = ["Fout0"]
+        map_labs = ["Fout"]
         sig_lab = None
 
     if args.no_shift:
@@ -403,12 +403,12 @@ def main(args, monlib=None):
         logger.write(" Saving masked maps as mtz files..")
         mtzout = args.output_masked_prefix+"_obs.mtz"
 
-    hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout0"), inplace=True)
+    hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
     write_map_mtz(hkldata, mtzout,
                   map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
     ret["mtz_file"] = mtzout
     ret["lab_f"] = "Fout" + lab_f_suffix
-    ret["lab_phi"] = "Pout0"
+    ret["lab_phi"] = "Pout"
     return ret
 # main()
 
