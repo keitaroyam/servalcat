@@ -43,6 +43,11 @@ def df_from_raw(miller_array, value_array, label):
     df[label] = to64(value_array)
     return df
 
+def hkldata_from_asu_data(asu_data, label):
+    df = df_from_asu_data(asu_data, label)
+    return HklData(asu_data.unit_cell, asu_data.spacegroup, None, df)
+# hkldata_from_asu_data()
+
 class HklData:
     def __init__(self, cell, sg, anomalous, df, binned_df=None):
         self.cell = cell
@@ -144,23 +149,45 @@ class HklData:
         self._bin_and_limits = []
         bin_numbers = set(self.df.bin)
 
-        # Merge inner shells if too few
+        # Merge inner/outer shells if too few # TODO smarter way
+        bin_counts = []
+        modify_table = {}
+        for i_bin, g in self.df.groupby("bin", sort=True):
+            bin_counts.append([i_bin, len(g.index)])
+
+        for i in range(len(bin_counts)):
+            if bin_counts[i][1] < 10 and i < len(bin_counts)-1:
+                bin_counts[i+1][1] += bin_counts[i][1]
+                modify_table[bin_counts[i][0]] = bin_counts[i+1][0]
+                logger.write("Bin {} only has {} data. Merging with next bin.".format(bin_counts[i][0],
+                                                                                      bin_counts[i][1]))
+            else: break
+
+        for i in reversed(range(len(bin_counts))):
+            if bin_counts[i][1] < 10 and i > 0:
+                bin_counts[i-1][1] += bin_counts[i][1]
+                modify_table[bin_counts[i][0]] = bin_counts[i-1][0]
+                logger.write("Bin {} only has {} data. Merging with previous bin.".format(bin_counts[i][0],
+                                                                                          bin_counts[i][1]))
+            else: break
+
         while True:
-            min_bin = min(bin_numbers)
-            min_bin_sel = min_bin == self.df.bin
-            n_min_bin = sum(min_bin_sel)
-            if n_min_bin < 10:
-                logger.write("Bin {} only has {} data. Merging with next bin.".format(min_bin, n_min_bin))
-                self.df.loc[min_bin_sel, "bin"] = min_bin+1
-                bin_numbers.remove(min_bin)
-            else:
-                break
-                
-        # TODO very slow
-        for i_bin in bin_numbers:
-            sel = self.df.bin == i_bin # selection may be kept, but df size may change later..?
-            d_sel = self.df.d[sel]
-            self._bin_and_limits.append((i_bin, (max(d_sel), min(d_sel))))
+            flag = True
+            for i_bin in modify_table:
+                if modify_table[i_bin] in modify_table:
+                    modify_table[i_bin] = modify_table[modify_table[i_bin]]
+                    flag = False
+            if flag: break
+
+        if modify_table:
+            for i_bin, g in self.df.groupby("bin", sort=True):
+                if i_bin in modify_table:
+                    self.df.loc[g.index, "bin"] = modify_table[i_bin]
+
+        # set bin_and_limits
+        for i_bin, g in self.df.groupby("bin", sort=True):
+            self._bin_and_limits.append((i_bin, (max(g.d), min(g.d))))
+
     # setup_relion_binning()
 
     def bin_and_limits(self):
