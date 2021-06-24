@@ -24,12 +24,13 @@ class Logger(object):
             print("Error: Cannot open log file to write")
     # set_file()
 
-    def write(self, l, end="\n", flush=True):
+    def write(self, l, end="\n", flush=True, fs=None):
         print(l, end=end)
-        if self.ofs is not None:
-            self.ofs.write(l)
-            self.ofs.write(end)
-            if flush: self.ofs.flush()
+        for f in (self.ofs, fs):
+            if f is not None:
+                f.write(l)
+                f.write(end)
+                if flush: f.flush()
     # write()
 
     def close(self):

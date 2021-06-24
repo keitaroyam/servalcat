@@ -8,7 +8,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
-import pandas
 import json
 import os
 import argparse
@@ -74,9 +73,13 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
              cross_validation=False, cross_validation_method=None, st_sr=None):
     # XXX blur is not considered
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
-    if cross_validation and cross_validation_method == "shake": assert st_sr is not None
-    if cross_validation: assert len(maps) == 2
-    if cross_validation: assert cross_validation_method in ("shake", "throughout")
+    if cross_validation:
+        assert len(maps) == 2
+        assert cross_validation_method in ("shake", "throughout")
+    if cross_validation and cross_validation_method == "shake":
+        assert st_sr is not None
+    else:
+        assert st_sr is None
     
     logger.write("Calculating map-model FSC..")
 
@@ -101,79 +104,63 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
     fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata.merge_asu_data(fc_asu, "FC")
+    labs_fc = ["FC"]
 
     if st_sr is not None:
         fc_sr_asu = utils.model.calc_fc_fft(st_sr, d_min, cutoff=1e-7, monlib=monlib, source="electron")
         hkldata.merge_asu_data(fc_sr_asu, "FC_sr")
+        labs_fc.append("FC_sr")
     
     hkldata.setup_relion_binning()
-
-    stats_columns = ["d_max", "d_min", "ncoeffs", "Fo_power", "Fc_power", "fsc_model"]
-    if len(maps) == 2: stats_columns.extend(["fsc_half", "fsc_full_sqrt"])
-    if cross_validation:
-        # if cross_validation_method=="throughout", they are st vs half1/2,
-        # otherwise st_sr vs half1/2
-        stats_columns.extend(["fsc_model_half1", "fsc_model_half2"])
-        
-    stats = pandas.DataFrame(index=[x[0] for x in hkldata.bin_and_limits()],
-                             columns=stats_columns, dtype=numpy.float)
-    stats.ncoeffs = 0 # to int
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
-        stats.loc[i_bin, "d_min"] = bin_d_min
-        stats.loc[i_bin, "d_max"] = bin_d_max
-        Fo = g.FP.to_numpy()
-        Fc = g.FC.to_numpy()
-        fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
-        stats.loc[i_bin, "ncoeffs"] = Fo.size
-        stats.loc[i_bin, "fsc_model"] = fsc_model
-        stats.loc[i_bin, "Fo_power"] = numpy.average(numpy.abs(Fo)**2)
-        stats.loc[i_bin, "Fc_power"] = numpy.average(numpy.abs(Fc)**2)
-        
-        if len(maps) == 2:
-            F1, F2 = g.F_map1.to_numpy(), g.F_map2.to_numpy()
-            stats.loc[i_bin, "fsc_half"] = numpy.real(numpy.corrcoef(F1, F2)[1,0])
-            if cross_validation:
-                if cross_validation_method == "throughout":
-                    Fc_tmp = Fc
-                else: # shake
-                    Fc_tmp = g.FC_sr.to_numpy()
-                
-                stats.loc[i_bin, "fsc_model_half1"] = numpy.real(numpy.corrcoef(F1, Fc_tmp)[1,0])
-                stats.loc[i_bin, "fsc_model_half2"] = numpy.real(numpy.corrcoef(F2, Fc_tmp)[1,0])
-
+    stats = spa.fsc.calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP",
+                             labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
+    
     if "fsc_half" in stats:
         with numpy.errstate(invalid="ignore"): # XXX negative fsc results in nan!
             stats["fsc_full_sqrt"] = numpy.sqrt(2*stats.fsc_half/(1+stats.fsc_half))
 
-    sum_n = sum(stats.ncoeffs)
+    logger.write(stats.to_string()+"\n")
+
+    # remove and rename columns
+    stats.rename(columns=dict(fsc_FC_full="fsc_model"), inplace=True)
+    if cross_validation:
+        if cross_validation_method == "shake":
+            stats.drop(columns=["fsc_FC_half1", "fsc_FC_half2", "fsc_FC_sr_full"], inplace=True)
+            stats.rename(columns=dict(fsc_FC_sr_half1="fsc_model_half1",
+                                      fsc_FC_sr_half2="fsc_model_half2"), inplace=True)
+        else:
+            stats.rename(columns=dict(fsc_FC_half1="fsc_model_half1",
+                                      fsc_FC_half2="fsc_model_half2"), inplace=True)
+    else:
+        stats.drop(columns=[x for x in stats if x.startswith("fsc_FC") and x.endswith(("half1","half2"))], inplace=True)
+
+    # FSCaverages
     fscavg_text  = "Map-model FSCaverages:\n"
-    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(sum(stats.ncoeffs*stats.fsc_model)/sum_n)
+    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model))
     if cross_validation:
         fscavg_text += "Cross-validated map-model FSCaverages:\n"
-        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(sum(stats.ncoeffs*stats.fsc_model_half1)/sum_n)
-        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(sum(stats.ncoeffs*stats.fsc_model_half2)/sum_n)
-                
+        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model_half1))
+        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model_half2))
+    
+    # for loggraph
     fsc_logfile = "{}_fsc.log".format(output_prefix)
     with open(fsc_logfile, "w") as ofs:
         columns = "1/resol^2 ncoef ln(Mn(|Fo|^2)) ln(Mn(|Fc|^2)) FSC(full,model) FSC_half FSC_full_sqrt FSC(half1,model) FSC(half2,model)".split()
         
         ofs.write("$TABLE: Map-model FSC after refinement:\n")
         if len(maps) == 2:
-            if cross_validation:
-                fsc_cols = [5,6,7,8,9]
-            else:
-                fsc_cols = [5,6,7]
-        else:
-            fsc_cols = [5]
-        ofs.write("$GRAPHS: FSC :A:1,{}:\n".format(",".join(map(str,fsc_cols))))
+            if cross_validation: fsc_cols = [5,6,7,8,9]
+            else:                fsc_cols = [5,6,7]
+        else: fsc_cols = [5]
+        if len(maps) == 2: ofs.write("$GRAPHS: FSC :A:1,5,6,7:\n")
+        else:              ofs.write("$GRAPHS: FSC :A:1,5:\n")
+        if cross_validation: ofs.write(": cross-validated FSC :A:1,8,9:\n".format(",".join(map(str,fsc_cols))))
         ofs.write(": ln(Mn(|F|^2)) :A:1,3,4:\n")
         ofs.write(": number of Fourier coeffs :A:1,2:\n")
         ofs.write("$$ {}$$\n".format(" ".join(columns[:4]+[columns[i-1] for i in fsc_cols])))
         ofs.write("$$\n")
 
-        plot_columns = ["d_min", "ncoeffs", "Fo_power", "Fc_power", "fsc_model"]
+        plot_columns = ["d_min", "ncoeffs", "power_FP", "power_FC", "fsc_model"]
         if len(maps) == 2:
             plot_columns.extend(["fsc_half", "fsc_full_sqrt"])
             if cross_validation:
@@ -183,7 +170,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
             log_format = lambda x: "{:.3f}".format(numpy.log(x))
             ofs.write(stats.to_string(header=False, index=False, index_names=False, columns=plot_columns,
                                       formatters=dict(d_min=lambda x: "{:.4f}".format(1/x**2),
-                                                      Fo_power=log_format, Fc_power=log_format)))
+                                                      power_FP=log_format, power_FC=log_format)))
         ofs.write("\n")
         ofs.write("$$\n\n")
         ofs.write(fscavg_text)
@@ -191,6 +178,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
     logger.write(fscavg_text, end="")
     logger.write("Run loggraph {} to see plots.".format(fsc_logfile))
     
+    # write json
     json.dump(stats.to_dict("records"),
               open("{}_fsc.json".format(output_prefix), "w"),
               indent=True)
