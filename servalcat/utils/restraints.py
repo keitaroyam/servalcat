@@ -16,7 +16,9 @@ default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 def filename_in_monlib(monomer_dir, name):
     return os.path.join(monomer_dir, name[0].lower(), name+".cif")
 
-def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
+def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False):
+    resnames = st[0].get_all_residue_names()
+
     if monomer_dir is None:
         if "CLIBD_MON" not in os.environ:
             logger.write("ERROR: CLIBD_MON is not set")
@@ -54,6 +56,28 @@ def load_monomer_library(resnames, monomer_dir=None, cif_files=None):
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
         print("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
+        
+    if stop_for_unknowns:
+        logger.write("Checking if unknown atoms exist..")
+        topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange(0)) # .None is not allowed..
+        unknowns = set()
+        for cinfo in topo.chain_infos:
+            for rinfo in cinfo.res_infos:
+                if rinfo.chemcomp.name == "": # safer check?
+                    logger.write(" Unknown residue found: {}/{} {}".format(cinfo.name, rinfo.res.name,
+                                                                           rinfo.res.seqid))
+                    unknowns.add(rinfo.res.name)
+                    continue
+
+                cc_atoms = set((a.id for a in rinfo.chemcomp.atoms)) # TODO keep it for speedup?
+                atoms = set((a.name for a in rinfo.res))
+                if not cc_atoms.issuperset(atoms):
+                    logger.write(" Unknown atom(s) found: {}/{} {}/{}".format(cinfo.name, rinfo.res.name,
+                                                                              rinfo.res.seqid,
+                                                                              ",".join(atoms.difference(cc_atoms))))
+                    unknowns.add(rinfo.res.name)
+        if unknowns:
+            raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknowns)))
 
     logger.write("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
                                                                                           len(monlib.links),
@@ -199,6 +223,6 @@ if __name__ == "__main__":
     import sys
     model_in = sys.argv[1]
     st = gemmi.read_structure(model_in)
-    monlib = load_monomer_library(st[0].get_all_residue_names(),
+    monlib = load_monomer_library(st,
                                   cif_files=sys.argv[2:] if len(sys.argv)>2 else None)
     show_all(st, monlib)

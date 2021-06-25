@@ -206,7 +206,6 @@ def symexpand(args):
 
 def h_add(args):
     st = fileio.read_structure(args.model)
-    resnames = st[0].get_all_residue_names()
     model_format = fileio.check_model_format(args.model)
     
     if not args.output:
@@ -215,7 +214,7 @@ def h_add(args):
         logger.write("Output file: {}".format(args.output))
         
     args.ligand = sum(args.ligand, []) if args.ligand else []
-    monlib = restraints.load_monomer_library(resnames,
+    monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
     restraints.add_hydrogens(st, monlib, args.pos)

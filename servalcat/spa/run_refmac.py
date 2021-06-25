@@ -203,12 +203,8 @@ def main(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
 
     st = utils.fileio.read_structure(args.model)
-    resnames = st[0].get_all_residue_names()
-    monlib = utils.restraints.load_monomer_library(resnames,
-                                                   monomer_dir=args.monlib,
-                                                   cif_files=args.ligand)
-    # TODO exit if there are unknown residues
-    
+    monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                   stop_for_unknowns=True)
     args.shifted_model_prefix = "shifted"
     args.output_masked_prefix = "masked_fs"
     args.output_mtz_prefix = "starting_map"

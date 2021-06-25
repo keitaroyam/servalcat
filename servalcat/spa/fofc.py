@@ -349,8 +349,7 @@ def main(args):
     st.cell = g.unit_cell
 
     if st[0].count_hydrogen_sites() > 0:
-        monlib = utils.restraints.load_monomer_library(st[0].get_all_residue_names(),
-                                                       monomer_dir=args.monlib)
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib)
     else:
         monlib = None
 

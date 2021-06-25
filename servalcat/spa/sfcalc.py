@@ -238,7 +238,7 @@ def main(args, monlib=None):
 
             if monlib is None:
                 # FIXME should use user provided libraries
-                monlib = utils.restraints.load_monomer_library(st[0].get_all_residue_names())
+                monlib = utils.restraints.load_monomer_library(st)
             mhtr_mods = utils.model.microheterogeneity_for_refmac(st, monlib)
             ret["inscode_mods"] = mhtr_mods
             
