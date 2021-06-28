@@ -21,7 +21,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
     if monomer_dir is None:
         if "CLIBD_MON" not in os.environ:
-            logger.write("ERROR: CLIBD_MON is not set")
+            logger.error("ERROR: CLIBD_MON is not set")
         else:
             monomer_dir = os.environ["CLIBD_MON"]
 
@@ -29,7 +29,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         cif_files = []
         
     if not os.path.isdir(monomer_dir):
-        logger.write("ERROR: not a directory: {}".format(monomer_dir))
+        logger.error("ERROR: not a directory: {}".format(monomer_dir))
         return
 
     if monomer_dir:
@@ -55,7 +55,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
-        print("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
+        logger.write("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
         
     if stop_for_unknowns:
         logger.write("Checking if unknown atoms exist..")
@@ -95,7 +95,7 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     nucl_not_found = []
     for resn in resnames:
         if resn not in monlib.monomers:
-            logger.write("ERROR: monomer information of {} not loaded".format(resn))
+            logger.error("ERROR: monomer information of {} not loaded".format(resn))
             good = False
         else:
             mon = monlib.monomers[resn]

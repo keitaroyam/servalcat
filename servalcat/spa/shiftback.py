@@ -120,7 +120,7 @@ def shift_back(xyz_in, shifts_json, refine_mtz=None, out_prefix=None):
 
 def main(args):
     if not args.model and not args.refine_mtz:
-        logger.write("ERROR: give --model and/or --refine_mtz")
+        logger.error("ERROR: give --model and/or --refine_mtz")
         return
     
     shift_back(args.model, args.shifts, args.refine_mtz, args.output_prefix)

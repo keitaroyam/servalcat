@@ -313,27 +313,27 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
 
 def main(args):
     if not args.halfmaps and not args.map:
-        logger.write("Error: give --halfmaps or --map")
+        logger.error("Error: give --halfmaps or --map")
         return
 
     if not args.halfmaps and args.B is not None:
-        logger.write("Error: -B only works for half maps")
+        logger.error("Error: -B only works for half maps")
         return
 
     if args.half1_only:
         if not args.halfmaps:
-            logger.write("--half1_only requires half maps")
+            logger.error("--half1_only requires half maps")
             return
-        logger.write("--half1_only specified. Half map 2 is used only for noise estimation")
+        logger.error("--half1_only specified. Half map 2 is used only for noise estimation")
 
     if not args.halfmaps:
-        logger.write("Warning: using --halfmaps is strongly recommended!")
+        logger.error("Warning: using --halfmaps is strongly recommended!")
 
     st = utils.fileio.read_structure(args.model)
     utils.model.expand_ncs(st)
 
     if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
-        logger.write("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
+        logger.error("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
         return
 
     if args.halfmaps:
@@ -368,7 +368,7 @@ def main(args):
     else:
         mask = None
         if args.normalized_map:
-            logger.write("Error: Provide --mask or --mask_radius if you want --normalized-map.")
+            logger.error("Error: Provide --mask or --mask_radius if you want --normalized-map.")
             return
 
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,

@@ -193,11 +193,11 @@ def modify_output(st, inscode_mods=None):
 
 def main(args):
     if not args.model:
-        logger.write("Error: give --model.")
+        logger.error("Error: give --model.")
         return
 
     if not (args.map or args.halfmaps):
-        logger.write("Error: give --map | --halfmaps.")
+        logger.error("Error: give --map | --halfmaps.")
         return
 
     if args.ligand: args.ligand = sum(args.ligand, [])

@@ -48,7 +48,7 @@ def normalize_it92(st=None, all_elements=False, quiet=False):
         z = elem.atomic_number
         coef = elem.it92
         if coef is None:
-            logger.write("IT92 table not found for {}".format(elem.name))
+            logger.error("IT92 table not found for {}".format(elem.name))
             continue
         norm = z/(sum(coef.a)+coef.c)
         if not quiet: logger.write("Normalizing atomic scattering factor of {} by {}".format(el, norm))

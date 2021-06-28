@@ -85,7 +85,7 @@ def symmodel(args):
                      number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
 
     if (args.twist, args.rise).count(None) == 1:
-        logger.write("ERROR: give both helical paramters --twist and --rise")
+        logger.error("ERROR: give both helical paramters --twist and --rise")
         return
 
     is_helical = args.twist is not None
@@ -101,7 +101,7 @@ def symmodel(args):
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
     elif not st.cell.is_crystal():
-        logger.write("Error: Unit cell parameters look wrong. Please use --map or --cell")
+        logger.error("Error: Unit cell parameters look wrong. Please use --map or --cell")
         return
 
     if args.chains:

@@ -24,14 +24,18 @@ class Logger(object):
             print("Error: Cannot open log file to write")
     # set_file()
 
-    def write(self, l, end="\n", flush=True, fs=None):
-        print(l, end=end)
+    def write(self, l, end="\n", flush=True, fs=None, print_fs=sys.stdout):
+        print(l, end=end, file=print_fs)
         for f in (self.ofs, fs):
             if f is not None:
                 f.write(l)
                 f.write(end)
                 if flush: f.flush()
     # write()
+
+    def error(self, l, end="\n", flush=True, fs=None):
+        self.write(l, end, flush, fs, print_fs=sys.stderr)
+    # error()
 
     def close(self):
         self.ofs.close()
@@ -42,6 +46,7 @@ class Logger(object):
 _logger = Logger() # singleton
 set_file = _logger.set_file
 write = _logger.write
+error = _logger.error
 close = _logger.close
 
 
@@ -52,7 +57,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
     name = type(exc_value).__name__ if hasattr(type(exc_value), "__name__") else "(unknown)"
     #_logger.write("Uncaught exception: {}: {}".format(name, exc_value))
-    _logger.write("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+    _logger.error("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
     _logger.write("# Abnormally finished on {}\n".format(datetime.datetime.now()))
 
 # handle_exception()
