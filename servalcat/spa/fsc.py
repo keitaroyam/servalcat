@@ -119,7 +119,7 @@ def main(args):
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)
     hkldata.merge_asu_data(fc, "FC")
     hkldata.setup_relion_binning()
-    stats = calc_fsc(hkldata, labs_fc=["FC"], lab_f="FP", labs_half=["F_map1","F_map2"])
+    stats = calc_fsc(hkldata, labs_fc=["FC"], lab_f="FP", labs_half=["F_map1","F_map2"] if len(maps)==2 else None)
     with open(args.fsc_out, "w") as ofs:
         if args.mask:
             ofs.write("# Mask= {}\n".format(args.mask))
