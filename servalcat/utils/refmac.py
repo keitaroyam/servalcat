@@ -62,7 +62,7 @@ class Refmac:
         self.hout = "no"
         self.ncycle = 10
         self.resolution = None
-        self.weight_fixed = None
+        self.weight_matrix = None
         self.weight_auto_scale = None
         self.bfactor = None
         self.jellybody = None
@@ -99,7 +99,7 @@ class Refmac:
         self.jellybody_sigma, self.jellybody_dmax = args.jellybody_params
         self.resolution = args.resolution
         self.weight_auto_scale = args.weight_auto_scale
-        self.weight_fixed = args.weight
+        self.weight_matrix = args.weight_matrix
         self.keyword_files = args.keyword_file
         self.keywords = args.keywords
         self.external_restraints_json = args.external_restraints_json
@@ -148,8 +148,8 @@ class Refmac:
         ret += "ncycle {}\n".format(self.ncycle)
         if self.resolution is not None:
             ret += "reso {}\n".format(self.resolution)
-        if self.weight_fixed is not None:
-            ret += "weight matrix {}\n".format(self.weight_fixed)
+        if self.weight_matrix is not None:
+            ret += "weight matrix {}\n".format(self.weight_matrix)
         elif self.weight_auto_scale is not None:
             ret += "weight auto {:.2e}\n".format(self.weight_auto_scale)
         else:

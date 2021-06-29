@@ -40,7 +40,7 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--weight_auto_scale', type=float,
                        help="'weight auto' scale value. automatically determined from resolution and mask/box volume ratio if unspecified")
-    group.add_argument('--weight', type=float,
+    group.add_argument('--weight_matrix', type=float,
                        help="weight matrix value")
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
@@ -245,7 +245,7 @@ def main(args):
         refmac_prefix = args.output_prefix
 
     # Weight auto scale
-    if args.weight is None and args.weight_auto_scale is None:
+    if args.weight_matrix is None and args.weight_auto_scale is None:
         reso = file_info["d_eff"] if "d_eff" in file_info else args.resolution
         if "vol_ratio" in file_info:
             if "d_eff" in file_info:
