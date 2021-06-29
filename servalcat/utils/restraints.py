@@ -16,7 +16,7 @@ default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 def filename_in_monlib(monomer_dir, name):
     return os.path.join(monomer_dir, name[0].lower(), name+".cif")
 
-def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False):
+def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None:
@@ -70,7 +70,11 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                     continue
 
                 cc_atoms = set((a.id for a in rinfo.chemcomp.atoms)) # TODO keep it for speedup?
-                atoms = set((a.name for a in rinfo.res))
+                if check_hydrogen:
+                    atoms = set((a.name for a in rinfo.res))
+                else:
+                    atoms = set((a.name for a in rinfo.res if not a.is_hydrogen()))
+                    
                 if not cc_atoms.issuperset(atoms):
                     logger.write(" Unknown atom(s) found: {}/{} {}/{}".format(cinfo.name, rinfo.res.name,
                                                                               rinfo.res.seqid,
