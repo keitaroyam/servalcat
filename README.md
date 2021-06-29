@@ -28,7 +28,7 @@ Make a new directory and run:
 ```
 servalcat refine_spa \
  --model input.pdb --resolution 2.5 \
- --halfmaps ../half_map_1.map ../half_map_2.map \
+ --halfmaps ../half_map_1.mrc ../half_map_2.mrc \
  --ncycle 10 [--pg C2]
 ```
 Specify unsharpened and unweighted half maps (e.g. those after Refine3D of RELION) after `--halfmaps`.
@@ -58,7 +58,7 @@ Fo-Fc map is calculated in `refine_spa` command (explained above) so usually you
 ```
 servalcat fofc \
  --model input.pdb --resolution 2.5 \
- --halfmaps ../half_map_1.map ../half_map_2.map \
+ --halfmaps ../half_map_1.mrc ../half_map_2.mrc \
  [--mask mask.mrc] [-o output_prefix] [-B B value]
 ```
 
