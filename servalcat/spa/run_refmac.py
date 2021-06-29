@@ -303,10 +303,12 @@ def main(args):
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         refmac_prefix_hm2 = refmac_prefix+"_shaken_refined_statshm2"
 
-        logger.write("  Starting refinement using half map 1")
+        logger.write("Starting refinement using half map 1")
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
                                  xyzin=shaken_file,
-                                 prefix=refmac_prefix_shaken)
+                                 prefix=refmac_prefix_shaken,
+                                 jellybody=False) # makes no sense to use jelly body after shaking
+        if args.jellybody: logger.write("  Turning off jelly body")
         if "lab_f_half1" in file_info:
             refmac_hm1.lab_f = file_info["lab_f_half1"]
             refmac_hm1.lab_phi = file_info["lab_phi_half1"]
