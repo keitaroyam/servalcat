@@ -431,21 +431,32 @@ def adp_analysis(st):
     logger.write("= ADP analysis =")
     all_B = []
     for i, mol in enumerate(st):
-        logger.write("Model {}:".format(i))
+        if len(st) > 1: logger.write("Model {}:".format(i))
         logger.write("            min    Q1   med    Q3   max")
-        bs = []
-        for chain in mol:
-            for res in chain:
-                for atom in res:
-                    bs.append(atom.b_iso)
-            qs = numpy.quantile(bs, [0,0.25,0.5,0.75,1])
-            logger.write("Chain {:3s}".format(chain.name) + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
-            all_B.extend(bs)
-
-    qs = numpy.quantile(all_B, [0,0.25,0.5,0.75,1])
-    logger.write("All       {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
+        stats = adp_stats_per_chain(mol)
+        for chain, natoms, qs in stats:
+            logger.write(("Chain {:3s}".format(chain) if chain!="*" else "All    ") + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
     logger.write("")
-# adp_analysis()        
+# adp_analysis()
+
+def adp_stats_per_chain(model):
+    bs = {}
+    for cra in model.all():
+        bs.setdefault(cra.chain.name, []).append(cra.atom.b_iso)
+
+    ret = []
+    for chain in model:
+        if chain.name in [x[0] for x in ret]: continue
+        qs = numpy.quantile(bs[chain.name], [0,0.25,0.5,0.75,1])
+        ret.append((chain.name, len(bs[chain.name]), qs))
+
+    if len(bs) > 1:
+        all_bs = sum(bs.values(), [])
+        qs = numpy.quantile(all_bs, [0,0.25,0.5,0.75,1])
+        ret.append(("*", len(all_bs), qs))
+        
+    return ret
+# adp_stats_per_chain()
 
 def all_chain_ids(st):
     return [chain.name for model in st for chain in model]

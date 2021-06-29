@@ -81,6 +81,9 @@ class Refmac:
                 self.init_from_args(kwargs["args"])
             else:
                 setattr(self, k, kwargs[k])
+
+        self.actual_weights = []
+        self.final_stats = {}
     # __init__()
 
     def init_from_args(self, args):
@@ -109,7 +112,7 @@ class Refmac:
     # init_from_args()
 
     def copy(self, **kwargs):
-        ret = copy.copy(self)
+        ret = copy.deepcopy(self)
         for k in kwargs:
             setattr(ret, k, kwargs[k])
             
@@ -212,11 +215,13 @@ class Refmac:
         log = open(self.prefix+".log", "w")
         cycle = 0
         re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+1))
+        re_actual_weight = re.compile("Actual weight *([\.0-9]+) *is applied to the X-ray term")
         rmsbond = ""
         rmsangle = ""
         log_delay = []
         summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.write
         outlier_flag = False
+        self.actual_weights = []
         
         for l in iter(p.stdout.readline, ""):
             log.write(l)
@@ -248,28 +253,31 @@ class Refmac:
                     summary_write(l.rstrip())
                 else:
                     outlier_flag = False
-                    
-            if self.global_mode == "spa":
-                if "CGMAT cycle number =" in l:
-                    cycle = int(l[l.index("=")+1:])
-                elif re_lastcycle.search(l):
-                    cycle = self.ncycle + 1
-                elif "Average Fourier shell correlation    =" in l and cycle > 0:
-                    fsc = l[l.index("=")+1:].strip()
-                    if cycle == 1:
-                        note = "(initial)"
-                    elif cycle > self.ncycle:
-                        note = "(final)"
-                    else:
-                        note = ""
-                        
-                    summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
-                    cycle = 0
-                elif "Rms BondLength" in l:
-                    rmsbond = l
-                elif "Rms BondAngle" in l:
-                    rmsangle = l
 
+            if "CGMAT cycle number =" in l:
+                cycle = int(l[l.index("=")+1:])
+            elif re_lastcycle.search(l):
+                cycle = self.ncycle + 1
+            elif "Average Fourier shell correlation    =" in l and cycle > 0:
+                fsc = l[l.index("=")+1:].strip()
+                if cycle == 1:
+                    note = "(initial)"
+                elif cycle > self.ncycle:
+                    note = "(final)"
+                else:
+                    note = ""
+
+                if self.global_mode == "spa":
+                    summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
+            elif "Rms BondLength" in l:
+                rmsbond = l
+            elif "Rms BondAngle" in l:
+                rmsangle = l
+
+            r_actual_weight = re_actual_weight.search(l)
+            if r_actual_weight:
+                self.actual_weights.append((cycle, r_actual_weight.group(1)))
+                    
         ret = p.wait()
         if log_delay:
             logger.write("== Summary of Refmac ==")
@@ -279,6 +287,9 @@ class Refmac:
             logger.write("                      Initial    Final")
             logger.write(rmsbond.rstrip())
             logger.write(rmsangle.rstrip())
+            self.final_stats["rms_bond"] = rmsbond.split()[-1]
+            self.final_stats["rms_angle"] = rmsangle.split()[-1]
+            
         logger.write("REFMAC5 finished with exit code= {}".format(ret))
 
         # TODO check timestamp

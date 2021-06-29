@@ -182,6 +182,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
     json.dump(stats.to_dict("records"),
               open("{}_fsc.json".format(output_prefix), "w"),
               indent=True)
+
+    return fscavg_text
 # calc_fsc()
 
 def modify_output(st, inscode_mods=None):
@@ -295,11 +297,11 @@ def main(args):
 
     if args.cross_validation and args.cross_validation_method == "shake":
         logger.write("Cross validation is requested.")
-        st = utils.fileio.read_structure(refmac_prefix+model_format)
+        st_shake = utils.fileio.read_structure(refmac_prefix+model_format)
         logger.write("  Shaking atomic coordinates with rms={}".format(args.shake_radius))
-        st = utils.model.shake_structure(st, args.shake_radius)
+        st_shake = utils.model.shake_structure(st_shake, args.shake_radius)
         shaken_file = refmac_prefix+"_shaken"+model_format
-        utils.fileio.write_model(st, file_name=shaken_file)
+        utils.fileio.write_model(st_shake, file_name=shaken_file)
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         refmac_prefix_hm2 = refmac_prefix+"_shaken_refined_statshm2"
 
@@ -337,13 +339,13 @@ def main(args):
         st_sr_expanded = None
         
     # Calc FSC
-    calc_fsc(st_expanded, args.output_prefix, maps,
-             args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
-             b_before_mask=args.b_before_mask,
-             no_sharpen_before_mask=args.no_sharpen_before_mask,
-             make_hydrogen=args.hydrogen,
-             monlib=monlib, cross_validation=args.cross_validation,
-             cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
+    fscavg_text = calc_fsc(st_expanded, args.output_prefix, maps,
+                           args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
+                           b_before_mask=args.b_before_mask,
+                           no_sharpen_before_mask=args.no_sharpen_before_mask,
+                           make_hydrogen=args.hydrogen,
+                           monlib=monlib, cross_validation=args.cross_validation,
+                           cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
     # Calc updated and Fo-Fc maps
     if args.halfmaps:
@@ -362,7 +364,48 @@ def main(args):
                              crop=mask is not None, normalize_map=mask is not None)
     else:
         logger.write("Will not calculate Fo-Fc map because half maps were not provided")
+
+    # Final summary
+    if refmac.actual_weights:
+        final_weight = refmac.actual_weights[-1][1]
+    else:
+        final_weight = "???"
+
+    adpstats_txt = ""
+    adp_stats = utils.model.adp_stats_per_chain(st[0])
+    max_chain_len = max([len(x[0]) for x in adp_stats])
+    max_num_len = max([len(str(x[1])) for x in adp_stats])
+    for chain, natoms, qs in adp_stats:
+        adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
+        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} mean={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
         
+    logger.write("""
+=============================================================================
+* Final Summary *
+
+Rmsd from ideal
+  bond lengths: {rmsbond} A
+  bond  angles: {rmsangle} deg
+
+{fscavgs}
+ Run loggraph {fsclog} to see plots
+
+ADP statistics
+{adpstats}
+
+Weight used: {final_weight}
+             If you want to change the weight, give larger (looser restraints)
+             or smaller (tighter) value to --weight_auto_scale=.
+             
+Open refined{model_format} and diffmap.mtz with COOT.
+=============================================================================
+""".format(rmsbond=refmac.final_stats.get("rms_bond", "???"),
+           rmsangle=refmac.final_stats.get("rms_angle", "???"),
+           fscavgs=fscavg_text.rstrip(),
+           fsclog="{}_fsc.log".format(args.output_prefix),
+           adpstats=adpstats_txt.rstrip(),
+           final_weight=final_weight,
+           model_format=model_format))
 # main()
         
 if __name__ == "__main__":
