@@ -46,7 +46,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.scale = True
         try:
             doc = read_cif_safe(cif_ref)
-        except RuntimeError as e:
+        except Exception as e:
             # Sometimes refmac writes a broken mmcif file..
             logger.error("Error in mmCIF reading: {}".format(e))
             logger.error("  Give up using cif reference.")
