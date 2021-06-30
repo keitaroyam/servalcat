@@ -68,6 +68,7 @@ class Refmac:
         self.jellybody = None
         self.jellybody_sigma, self.jellybody_dmax = 0.01, 4.2
         self.ncsr = None
+        self.shake = None
         self.keyword_files = []
         self.keywords = []
         self.external_restraints_json = None
@@ -165,6 +166,8 @@ class Refmac:
             ret += "ridge dist dmax {:.2e}\n".format(self.jellybody_dmax)
         if self.ncsr:
             ret += "ncsr {}\n".format(self.ncsr)
+        if self.shake:
+            ret += "rand {}\n".format(self.shake)
 
         if self.external_restraints_json:
             ret += external_restraints_json_to_keywords(self.external_restraints_json)

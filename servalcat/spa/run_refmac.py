@@ -55,7 +55,7 @@ def add_arguments(parser):
     parser.add_argument('--cross_validation_method', default="shake", choices=["throughout", "shake"],
                         help="shake: randomize a model refined against a full map and then refine it against a half map, "
                         "throughout: use only a half map for refinement (another half map is used for error estimation)")
-    parser.add_argument('--shake_radius', default=0.5,
+    parser.add_argument('--shake_radius', default=0.3,
                         help='Shake rmsd in case of --cross_validation_method=shake')
     parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     parser.add_argument("--monlib",
@@ -297,18 +297,12 @@ def main(args):
 
     if args.cross_validation and args.cross_validation_method == "shake":
         logger.write("Cross validation is requested.")
-        st_shake = utils.fileio.read_structure(refmac_prefix+model_format)
-        logger.write("  Shaking atomic coordinates with rms={}".format(args.shake_radius))
-        st_shake = utils.model.shake_structure(st_shake, args.shake_radius)
-        shaken_file = refmac_prefix+"_shaken"+model_format
-        utils.fileio.write_model(st_shake, file_name=shaken_file)
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
-        refmac_prefix_hm2 = refmac_prefix+"_shaken_refined_statshm2"
-
-        logger.write("Starting refinement using half map 1")
+        logger.write("Starting refinement using half map 1 (model is shaken first)")
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
-                                 xyzin=shaken_file,
+                                 xyzin=refmac_prefix+model_format,
                                  prefix=refmac_prefix_shaken,
+                                 shake=args.shake_radius,
                                  jellybody=False) # makes no sense to use jelly body after shaking
         if args.jellybody: logger.write("  Turning off jelly body")
         if "lab_f_half1" in file_info:
