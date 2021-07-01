@@ -18,6 +18,7 @@ import servalcat.spa.run_refmac
 import servalcat.spa.fsc
 import servalcat.spa.fofc
 import servalcat.spa.shift_maps
+import servalcat.spa.translate
 import servalcat.utils.commands
 #import servalcat.spa.bestmap
 
@@ -35,6 +36,7 @@ def main():
                    fsc=servalcat.spa.fsc,
                    fofc=servalcat.spa.fofc,
                    trim=servalcat.spa.shift_maps,
+                   translate=servalcat.spa.translate,
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
                    #bestmap=servalcat.spa.bestmap,

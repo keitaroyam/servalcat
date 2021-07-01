@@ -106,7 +106,7 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True, default_value=None, pixel_size=None):
+def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
     grid_cell = [m.header_i32(x) for x in (8,9,10)]

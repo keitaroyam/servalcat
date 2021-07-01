@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import scipy.optimize
 from servalcat.utils import logger
 from servalcat.utils import hkl
 
@@ -191,3 +192,19 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, gr
 
     ccp4.write_ccp4_map(filename)
 # write_ccp4_map()
+
+def optimize_peak(grid, ini_pos):
+    logger.write("Finding peak using interpolation..")
+    x = grid.unit_cell.fractionalize(ini_pos)
+    logger.write("       x0: [{}, {}, {}]".format(*x.tolist()))
+    logger.write("       f0: {}".format(-grid.tricubic_interpolation(x)))
+
+    res = scipy.optimize.minimize(fun=lambda x:-grid.tricubic_interpolation(gemmi.Fractional(*x)),
+                                  x0=x.tolist(),
+                                  jac=lambda x:-numpy.array(grid.tricubic_interpolation_der(gemmi.Fractional(*x))[1:])
+                                  )
+    logger.write(str(res))
+    final_pos = grid.unit_cell.orthogonalize(gemmi.Fractional(*res.x))
+    logger.write(" Move from initial: [{:.3f}, {:.3f}, {:.3f}] A".format(*(final_pos-ini_pos).tolist()))
+    return final_pos
+# optimize_peak()
