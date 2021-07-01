@@ -15,8 +15,8 @@ from servalcat import utils
 def add_arguments(parser):
     parser.description = 'FSC calculation'
 
-    parser.add_argument('--model',
-                        required=True,
+    parser.add_argument('--model', nargs="+", action="append",
+                        required=True, 
                         help="")
     parser.add_argument('--map',
                         help='Input map file(s)')
@@ -31,9 +31,12 @@ def add_arguments(parser):
                         type=float,
                         required=True,
                         help='')
-    parser.add_argument('--fsc_out',
+    parser.add_argument('-o', '--fsc_out',
                         default="fsc.dat",
                         help='')
+    parser.add_argument("--b_before_mask", type=float)
+    parser.add_argument('--no_sharpen_before_mask', action='store_true',
+                        help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -89,7 +92,7 @@ def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
 # calc_fsc()
 
 def main(args):
-    st = utils.fileio.read_structure(args.model)
+    args.model = sum(args.model, [])
     if args.halfmaps:
         maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
         assert maps[0][0].shape == maps[1][0].shape
@@ -98,33 +101,52 @@ def main(args):
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
 
-    st.cell = maps[0][0].unit_cell
-    st.spacegroup_hm = "P1"
-
-    if len(st.ncs) > 0:
-        utils.model.expand_ncs(st)
+    sts = []
+    for xyzin in args.model:
+        st = utils.fileio.read_structure(xyzin)
+        st.cell = maps[0][0].unit_cell
+        st.spacegroup_hm = "P1"
+        if len(st.ncs) > 0:
+            utils.model.expand_ncs(st)
+            
+        sts.append(st)
     
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
         mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
     elif args.mask_radius is not None:
-        mask = gemmi.FloatGrid(*ref_grid.shape)
-        mask.set_unit_cell(st.cell)
-        mask.spacegroup = st.find_spacegroup()
-        mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)    
+        mask = gemmi.FloatGrid(*maps[0][0].shape)
+        mask.set_unit_cell(sts[0].cell)
+        mask.spacegroup = sts[0].find_spacegroup()
+        mask.mask_points_in_constant_radius(sts[0][0], args.mask_radius, 1.)    
     else:
         mask = None
     
-    fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
-    hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)
-    hkldata.merge_asu_data(fc, "FC")
+    if args.no_sharpen_before_mask or len(maps) < 2:
+        logger.write("Applying mask..")
+        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, ma[0].unit_cell, ma[0].spacegroup)]+ma[1:]
+                for ma in maps]
+    else:
+        logger.write("Sharpen-mask-unsharpen..")
+        maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=args.b_before_mask)
+
+    hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
+
+    labs_fc = []
+    for i, st in enumerate(sts): 
+        labs_fc.append("FC_{}".format(i) if len(sts)>1 else "FC")
+        fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
+        hkldata.merge_asu_data(fc, labs_fc[-1])
+        
     hkldata.setup_relion_binning()
-    stats = calc_fsc(hkldata, labs_fc=["FC"], lab_f="FP", labs_half=["F_map1","F_map2"] if len(maps)==2 else None)
+    stats = calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP", labs_half=["F_map1","F_map2"] if len(maps)==2 else None)
     with open(args.fsc_out, "w") as ofs:
         if args.mask:
             ofs.write("# Mask= {}\n".format(args.mask))
         elif args.mask_radius:
             ofs.write("# Mask_radius= {}\n".format(args.mask_radius))
+        for lab, xyzin in zip(labs_fc, args.model):
+            ofs.write("# {} from {}\n".format(lab, xyzin))
 
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
