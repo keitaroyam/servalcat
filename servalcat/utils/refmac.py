@@ -218,7 +218,7 @@ class Refmac:
         log = open(self.prefix+".log", "w")
         cycle = 0
         re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+1))
-        re_actual_weight = re.compile("Actual weight *([\.0-9]+) *is applied to the X-ray term")
+        re_actual_weight = re.compile("Actual weight *([^ ]+) *is applied to the X-ray term")
         rmsbond = ""
         rmsangle = ""
         log_delay = []
