@@ -28,6 +28,7 @@ def main():
     
     parser = argparse.ArgumentParser(prog="servalcat",
                                      description="A tool for model refinement and map calculation for cryo-EM SPA.")
+    parser.add_argument("-v", "--version", action="version", version='servalcat {}'.format(servalcat.__version__))
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(sfcalc=servalcat.spa.sfcalc,
