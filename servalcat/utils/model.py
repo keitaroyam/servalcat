@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import restraints
+from servalcat.utils import maps
 import gemmi
 import numpy
 import pandas
@@ -198,7 +199,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     return asu
 # calc_fc_direct()
 
-def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5):
+def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5, optimize=False):
     # Very crude implementation to find peak from calculated map
     # TODO Need to implement peak finding function that involves interpolation
     assert st[0].count_hydrogen_sites() > 0
@@ -268,8 +269,9 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
                         
                     denmap = asu_data.transform_f_phi_to_map(exact_size=(int(box_size*10), int(box_size*10), int(box_size*10)))
                     m = numpy.unravel_index(numpy.argmax(denmap), denmap.shape)
-                    peakpos = denmap.get_position(m[0], m[1], m[2]) - cbox + n_pos
-                    atom.pos = peakpos
+                    peakpos = denmap.get_position(m[0], m[1], m[2])
+                    if optimize: peakpos = maps.optimize_peak(denmap, peakpos)
+                    atom.pos = peakpos - cbox + n_pos
 
     if mode_all:
         grid = gemmi.transform_map_to_f_phi(dc.grid)
@@ -554,6 +556,27 @@ def from_dataframe(df, st=None): # Slow!
                     
     return st
 # from_dataframe()
+
+def st_from_positions(positions):
+    st = gemmi.Structure()
+    st.add_model(gemmi.Model("1"))
+    st[0].add_chain(gemmi.Chain("A"))
+    c = st[0][0]
+    for i, pos in enumerate(positions):
+        c.add_residue(gemmi.Residue())
+        r = c[-1]
+        r.seqid.num = i
+        r.name = "HOH"
+        r.add_atom(gemmi.Atom())
+        a = r[-1]
+        a.name = "O"
+        a.element = gemmi.Element("O")
+        a.pos = pos
+        #a.b_iso = 
+        #a.occ = 
+                    
+    return st
+# st_from_positions()
             
 def microheterogeneity_for_refmac(st, monlib):
     st.setup_entities()
