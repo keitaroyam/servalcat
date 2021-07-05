@@ -11,6 +11,7 @@ from servalcat.utils import fileio
 from servalcat.utils import symmetry
 from servalcat.utils import model
 from servalcat.utils import restraints
+from servalcat.utils import maps
 import os
 import gemmi
 import numpy
@@ -68,6 +69,15 @@ def add_arguments(p):
     parser = subparsers.add_parser("merge_models", description = 'Merge multiple model files')
     parser.add_argument('models', nargs="+")
     parser.add_argument('-o','--output', required=True)
+
+    # power
+    parser = subparsers.add_parser("power", description = 'Show power spectrum')
+    parser.add_argument("--map",  nargs="*", action="append")
+    parser.add_argument("--halfmaps",  nargs="*", action="append")
+    parser.add_argument('--mask', help='Mask file')
+    parser.add_argument('-d', '--resolution', type=float, required=True)
+    parser.add_argument('-o', '--output_prefix', default="power")
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -240,6 +250,69 @@ def merge_models(args):
     fileio.write_model(st, file_name=args.output)
 # merge_models()
 
+def show_power(args):
+    maps_in = []
+    if args.map:
+        print(args.map)
+        print(sum(args.map, []))
+        maps_in = [(f,) for f in sum(args.map, [])]
+        
+    if args.halfmaps:
+        args.halfmaps = sum(args.halfmaps, [])
+        if len(args.halfmaps)%2 != 0:
+            raise RuntimeError("Number of half maps is not even.")
+        maps_in.extend([(args.halfmaps[2*i],args.halfmaps[2*i+1]) for i in range(len(args.halfmaps)//2)])
+        
+    if args.mask:
+        mask = numpy.array(fileio.read_ccp4_map(args.mask)[0])
+    else:
+        mask = None
+
+    hkldata = None
+    labs = []
+    for mapin in maps_in:
+        tmp = maps.mask_and_fft_maps([fileio.read_ccp4_map(f) for f in mapin],
+                                     args.resolution, mask)
+        labs.append("F{:02d}".format(len(labs)+1))
+        tmp.df.rename(columns=dict(FP=labs[-1]), inplace=True)
+        if hkldata is None:
+            hkldata = tmp
+        else:
+            if hkldata.cell != tmp.cell: raise RuntimeError("Different unit cell!")
+            hkldata.merge(tmp.df[["H","K","L",labs[-1]]])
+
+    if not labs:
+        logger.write("No map files given. Exiting.")
+        return
+            
+    hkldata.setup_relion_binning()
+    bin_limits = dict(hkldata.bin_and_limits())
+
+    ofs = open(args.output_prefix+".log", "w")
+    ofs.write("Input:\n")
+    for i in range(len(maps_in)):
+        ofs.write("{} from {}\n".format(labs[i], " ".join(maps_in[i])))
+    ofs.write("\n")
+    
+    ofs.write("""$TABLE: Power spectrum :
+$GRAPHS
+: log10(Mn(|F|^2)) :A:1,{}:
+$$
+1/resol^2 n d_max d_min {}
+$$
+$$
+""".format(",".join([str(i+5) for i in range(len(labs))]), " ".join(labs)))
+    print(hkldata.df)
+    for i_bin, g in hkldata.binned():
+        bin_d_max, bin_d_min = bin_limits[i_bin]
+        ofs.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, g[labs[0]].size, bin_d_max, bin_d_min,))
+        for lab in labs:
+            pwr = numpy.log10(numpy.average(numpy.abs(g[lab].to_numpy())**2))
+            ofs.write(" {:.4e}".format(pwr))
+        ofs.write("\n")
+    ofs.write("$$\n")
+# show_power()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -260,6 +333,8 @@ def main(args):
         h_add(args)
     elif com == "merge_models":
         merge_models(args)
+    elif com == "power":
+        show_power(args)
 # main()
 
 if __name__ == "__main__":
