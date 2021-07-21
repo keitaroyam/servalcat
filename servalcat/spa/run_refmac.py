@@ -371,7 +371,7 @@ def main(args):
     max_num_len = max([len(str(x[1])) for x in adp_stats])
     for chain, natoms, qs in adp_stats:
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
-        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} mean={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
+        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
         
     logger.write("""
 =============================================================================

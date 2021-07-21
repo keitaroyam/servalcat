@@ -210,7 +210,7 @@ class Refmac:
         env = os.environ
         if self.monlib_path: env["CLIBD_MON"] = os.path.join(self.monlib_path, "") # should end with /
         
-        p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              universal_newlines=True, env=env)
         p.stdin.write(stdin)
         p.stdin.close()
