@@ -65,7 +65,7 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
-def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
                 omit_proton=False, omit_h_electron=False):
     assert source in ("xray", "electron")
     normalize_it92(st)
@@ -694,3 +694,16 @@ def modify_inscodes_back(st, modifications):
                                                                            res.seqid.num))
                 res.seqid.icode = mods[key]
 # modify_inscodes_back()
+
+def invert_model(st):
+    # invert x-axis
+    A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+    center = numpy.sum(A,axis=1) / 2
+    center = gemmi.Vec3(*center)
+    mat = gemmi.Mat33([[-1,0,0],[0,1,0],[0,0,1]]) 
+    vec = mat.multiply(-center) + center
+    tr = gemmi.Transform(mat, vec)
+    st[0].transform(tr)
+
+    # invert peptides
+# invert_model()
