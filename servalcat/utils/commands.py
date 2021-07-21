@@ -78,6 +78,19 @@ def add_arguments(p):
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument('-o', '--output_prefix', default="power")
 
+    # fcalc
+    parser = subparsers.add_parser("fcalc", description = 'Structure factor from model')
+    parser.add_argument('--model', required=True)
+    parser.add_argument("--source", choices=["electron", "xray"], default="electron")
+    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--cell', type=float, nargs=6, help="Override unit cell")
+    parser.add_argument('--cutoff', type=float, default=1e-7)
+    parser.add_argument('--rate', type=float, default=1.5)
+    parser.add_argument('-d', '--resolution', type=float, required=True)
+    parser.add_argument('-o', '--output_prefix')
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -313,6 +326,31 @@ $$
     ofs.write("$$\n")
 # show_power()
 
+def fcalc(args):
+    if args.ligand: args.ligand = sum(args.ligand, [])
+    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_fcalc"
+
+    st = fileio.read_structure(args.model)
+    if args.cell is not None: st.cell = gemmi.UnitCell(*args.cell)
+    if not st.cell.is_crystal():
+        logger.error("ERROR: No unit cell information. Give --cell.")
+        return
+    monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                   stop_for_unknowns=False, check_hydrogen=True)
+    fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,
+                               monlib=monlib, source=args.source)
+    mtz = gemmi.Mtz()
+    mtz.spacegroup = fc_asu.spacegroup
+    mtz.cell = fc_asu.unit_cell
+    mtz.add_dataset('HKL_base')
+    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
+    mtz.add_column("FC", "F")
+    mtz.add_column("PHIC", "P")
+    mtz.set_data(fc_asu)
+    mtz.write_to_file(args.output_prefix+".mtz")
+    logger.write("{} written.".format(args.output_prefix+".mtz"))
+# fcalc()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -335,6 +373,8 @@ def main(args):
         merge_models(args)
     elif com == "power":
         show_power(args)
+    elif com == "fcalc":
+        fcalc(args)
 # main()
 
 if __name__ == "__main__":
