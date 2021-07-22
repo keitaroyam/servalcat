@@ -27,6 +27,9 @@ class Binner:
     # __init__()
 # class Binner    
 
+def r_factor(fo, fc):
+    return numpy.sum(numpy.abs(fo-fc)) / numpy.sum(fo)
+
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,
                           columns=["H","K","L"])
@@ -248,3 +251,56 @@ class HklData:
         ret = d_min/fac
         return ret
     # d_eff()
+
+    def scale_k_and_b(self, lab_ref, lab_scaled):
+        logger.write("Determining k, B scales between {} and {}".format(lab_ref, lab_scaled))
+        s2 = 1/self.d_spacings().to_numpy()**2
+        # determine scales that minimize (|f1|-|f2|*k*e^(-b*s2/4))^2
+        f1 = self.df[lab_ref].to_numpy()
+        f2 = self.df[lab_scaled].to_numpy()
+        if numpy.iscomplexobj(f1): f1 = numpy.abs(f1)
+        if numpy.iscomplexobj(f2): f2 = numpy.abs(f2)
+
+        sel_pos = numpy.logical_and(f1 > 0, f2 > 0)
+        f1p, f2p, s2p = f1[sel_pos], f2[sel_pos], s2[sel_pos]
+
+        # 1st step: minimize (log(|f1|)-log(|f2|*e^k*e^(-b*s2/4)))^2 starting with k=1, b=0.
+        tmp = numpy.log(f2p) - numpy.log(f1p)
+        # g = [dT/dk, dT/db]
+        g = numpy.array([2 * numpy.sum(tmp), -numpy.sum(tmp*s2p)/2])
+        H = numpy.zeros((2,2))
+        H[0,0] = 2*len(f1p)
+        H[1,1] = numpy.sum(s2**2/8)
+        H[0,1] = H[1,0] = -numpy.sum(s2)/2
+        x = -numpy.dot(numpy.linalg.inv(H), g)
+        k1 = numpy.exp(x[0])
+        B1 = x[1]
+        logger.write(" initial estimate using log: k= {:.2e} B= {:.2e}".format(k1, B1))
+        f2tmp = f2 * k1 * numpy.exp(-B1*s2/4)
+        logger.write(" R= {:.4f} (was: {:.4f})".format(r_factor(f1, f2tmp), r_factor(f1, f2)))
+
+        """
+        self.setup_binning(40)        
+        bin_limits = dict(self.bin_and_limits())
+        x = []
+        y0,y1,y2=[],[],[]
+        for i_bin, g in self.binned():
+            bin_d_max, bin_d_min = bin_limits[i_bin]
+            x.append(1/bin_d_min**2)
+            y0.append(numpy.average(f1[g.index]))
+            y1.append(numpy.average(f2[g.index]))
+            y2.append(numpy.average(f2tmp[g.index]))
+
+        import matplotlib.pyplot as plt
+        plt.plot(x, y0, label="FC")
+        plt.plot(x, y1, label="FP")
+        plt.plot(x, y2, label="FP,scaled")
+        plt.legend()
+        plt.show()
+        """
+        
+        # 2nd step: - minimize (|f1|-|f2|*k*e^(-b*s2/4))^2 with regularisation
+        # not implemented
+        
+        return k1, B1
+    # scale_k_and_b()

@@ -30,6 +30,7 @@ def add_sfcalc_args(parser):
                         type=float, 
                         help='Default: 2*mask_radius')
     parser.add_argument('--no_mask', action='store_true')
+    parser.add_argument('--invert_mask', action='store_true', help='not for refinement.')
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--resolution',
@@ -50,12 +51,12 @@ def add_sfcalc_args(parser):
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--keep_multiple_models', action='store_true', 
                         help='Multi-models will be kept; by default only 1st model is kept because REFMAC5 does not support it')
-    parser.add_argument("--b_before_mask", type=float)
+    parser.add_argument("--b_before_mask", type=float,
+                        help="sharpening B value for sharpen-mask-unsharpen procedure. By default it is determined automatically.")
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
     parser.add_argument('--no_fix_microheterogeneity', action='store_true', 
                         help='By default it will fix microheterogeneity for Refmac')
-
 # add_sfcalc_args()
 
 def add_arguments(parser):
@@ -160,6 +161,40 @@ def scale_maps(maps_in, map_ref, d_min):
                    for f in f_inps_scaled]
     return [[x]+y[1:] for x,y in zip(maps_scaled, maps_in)]
 # scale_maps()
+
+def determine_b_before_mask(st, maps, grid_start, mask, resolution):
+    logger.write("Determining b_before_mask..")
+    # work in masked map for the speed
+    new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
+                                                                               grid_start=grid_start,
+                                                                               padding=5,
+                                                                               mask_cutoff=0.5,
+                                                                               noncentered=True,
+                                                                               noncubic=True,
+                                                                               json_out=None)
+    st = st.clone()
+    st.cell = new_cell
+    st.spacegroup_hm = "P 1"
+    for cra in st[0].all():
+        cra.atom.pos += shifts
+        cra.atom.b_iso = 0
+        cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
+
+    newmaps = []
+    for i in range(len(maps)): # Update maps
+        g = gemmi.FloatGrid(numpy.array(maps[i][0])*mask,
+                            maps[i][0].unit_cell, maps[i][0].spacegroup)
+
+        suba = g.get_subarray(*(list(starts)+list(new_shape)))
+        new_grid = gemmi.FloatGrid(suba, new_cell, st.find_spacegroup())
+        newmaps.append([new_grid]+maps[i][1:])
+
+    hkldata = utils.maps.mask_and_fft_maps(newmaps, resolution)
+    fc = utils.model.calc_fc_fft(st, resolution, source="electron")
+    hkldata.merge_asu_data(fc, "FC")
+    k, b = hkldata.scale_k_and_b("FC", "FP")
+    return -b
+# determine_b_before_mask()
 
 def main(args, monlib=None):
     ret = {} # instructions for refinement
@@ -318,6 +353,12 @@ def main(args, monlib=None):
         ret["model_file"] = "starting_model" + model_format
 
     if mask:
+        if args.invert_mask:
+            logger.write("Inverting mask..")
+            mask_max, mask_min = numpy.max(mask), numpy.min(mask)
+            logger.write("  mask_max, mask_min= {}, {}".format(mask_max, mask_min))
+            mask = mask_max + mask_min - mask
+        
         # Mask maps
         if args.no_sharpen_before_mask or len(maps) < 2:
             logger.write("Applying mask..")
@@ -325,6 +366,9 @@ def main(args, monlib=None):
                     for ma in maps]
         else:
             logger.write("Sharpen-mask-unsharpen..")
+            if args.b_before_mask is None:
+                args.b_before_mask = determine_b_before_mask(st, maps, grid_start, mask, resolution)
+                
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution, b=args.b_before_mask)
 
         if not args.no_shift:
@@ -333,7 +377,7 @@ def main(args, monlib=None):
             new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
                                                                                        grid_start=grid_start,
                                                                                        padding=args.padding,
-                                                                                       mask_cutoff=0.1,
+                                                                                       mask_cutoff=0.5,
                                                                                        noncentered=True,
                                                                                        noncubic=True,
                                                                                        json_out="shifts.json")
@@ -397,10 +441,10 @@ def main(args, monlib=None):
         sig_lab = None
 
     if args.no_shift:
-        logger.write("Saving original maps as mtz files..")
+        logger.write("Saving original maps as mtz files..") # XXX not always original (can be masked!)
         mtzout = args.output_mtz_prefix+".mtz"
     else:
-        logger.write(" Saving masked maps as mtz files..")
+        logger.write(" Saving masked maps as mtz files..") # XXX not always masked (if no mask..)
         mtzout = args.output_masked_prefix+"_obs.mtz"
 
     hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
