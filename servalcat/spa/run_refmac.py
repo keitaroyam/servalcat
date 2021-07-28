@@ -60,6 +60,8 @@ def add_arguments(parser):
     parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument("--fsc_resolution", type=float,
+                        help="High resolution limit for FSC calculation. Default: Nyquist")
 
 # add_arguments()
                         
@@ -70,7 +72,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
-             cross_validation=False, cross_validation_method=None, st_sr=None):
+             d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
     # XXX blur is not considered
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
@@ -83,6 +85,10 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
     
     logger.write("Calculating map-model FSC..")
 
+    if d_min_fsc is None:
+        d_min_fsc = utils.maps.nyquist_resolution(maps[0][0])
+        logger.write("  --fsc_resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min_fsc))
+    
     st = st.clone()
     if st_sr is not None: st_sr = st_sr.clone()
 
@@ -101,46 +107,52 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
         else:
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min, b=b_before_mask)
         
-    hkldata = utils.maps.mask_and_fft_maps(maps, d_min)
-    fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
+    hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
+    fc_asu = utils.model.calc_fc_fft(st, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata.merge_asu_data(fc_asu, "FC")
     labs_fc = ["FC"]
 
     if st_sr is not None:
-        fc_sr_asu = utils.model.calc_fc_fft(st_sr, d_min, cutoff=1e-7, monlib=monlib, source="electron")
+        fc_sr_asu = utils.model.calc_fc_fft(st_sr, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
         hkldata.merge_asu_data(fc_sr_asu, "FC_sr")
         labs_fc.append("FC_sr")
     
     hkldata.setup_relion_binning()
     stats = spa.fsc.calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP",
                              labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
+
+    hkldata2 = hkldata.copy(d_min=d_min) # for FSCaverage at resolution for refinement # XXX more efficient way
+    hkldata2.setup_relion_binning()
+    stats2 = spa.fsc.calc_fsc(hkldata2, labs_fc=labs_fc, lab_f="FP",
+                              labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
     
     if "fsc_half" in stats:
         with numpy.errstate(invalid="ignore"): # XXX negative fsc results in nan!
-            stats["fsc_full_sqrt"] = numpy.sqrt(2*stats.fsc_half/(1+stats.fsc_half))
+            stats.loc[:,"fsc_full_sqrt"] = numpy.sqrt(2*stats.fsc_half/(1+stats.fsc_half))
 
     logger.write(stats.to_string()+"\n")
 
     # remove and rename columns
-    stats.rename(columns=dict(fsc_FC_full="fsc_model"), inplace=True)
-    if cross_validation:
-        if cross_validation_method == "shake":
-            stats.drop(columns=["fsc_FC_half1", "fsc_FC_half2", "fsc_FC_sr_full"], inplace=True)
-            stats.rename(columns=dict(fsc_FC_sr_half1="fsc_model_half1",
-                                      fsc_FC_sr_half2="fsc_model_half2"), inplace=True)
+    for s in (stats, stats2):
+        s.rename(columns=dict(fsc_FC_full="fsc_model"), inplace=True)
+        if cross_validation:
+            if cross_validation_method == "shake":
+                s.drop(columns=["fsc_FC_half1", "fsc_FC_half2", "fsc_FC_sr_full"], inplace=True)
+                s.rename(columns=dict(fsc_FC_sr_half1="fsc_model_half1",
+                                          fsc_FC_sr_half2="fsc_model_half2"), inplace=True)
+            else:
+                s.rename(columns=dict(fsc_FC_half1="fsc_model_half1",
+                                          fsc_FC_half2="fsc_model_half2"), inplace=True)
         else:
-            stats.rename(columns=dict(fsc_FC_half1="fsc_model_half1",
-                                      fsc_FC_half2="fsc_model_half2"), inplace=True)
-    else:
-        stats.drop(columns=[x for x in stats if x.startswith("fsc_FC") and x.endswith(("half1","half2"))], inplace=True)
+            s.drop(columns=[x for x in s if x.startswith("fsc_FC") and x.endswith(("half1","half2"))], inplace=True)
 
     # FSCaverages
-    fscavg_text  = "Map-model FSCaverages:\n"
-    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model))
+    fscavg_text  = "Map-model FSCaverages (at {:.2f} A):\n".format(d_min)
+    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model))
     if cross_validation:
         fscavg_text += "Cross-validated map-model FSCaverages:\n"
-        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model_half1))
-        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(spa.fsc.fsc_average(stats.ncoeffs, stats.fsc_model_half2))
+        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half1))
+        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half2))
     
     # for loggraph
     fsc_logfile = "{}_fsc.log".format(output_prefix)
@@ -339,6 +351,7 @@ def main(args):
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
                            make_hydrogen=args.hydrogen,
                            monlib=monlib, cross_validation=args.cross_validation,
+                           d_min_fsc=args.fsc_resolution,
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
     # Calc updated and Fo-Fc maps

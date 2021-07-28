@@ -23,6 +23,13 @@ def half2full(map_h1, map_h2):
     return gr
 # half2full()
 
+def nyquist_resolution(map_grid):
+    grid_shape = map_grid.shape
+    rec_cell = map_grid.unit_cell.reciprocal().parameters
+    resolutions = [2./rec_cell[i]/grid_shape[i] for i in (0,1,2)]
+    return max(resolutions)
+# nyquist_resolution()
+
 def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
     assert len(maps) < 3
     if b is None and len(maps) != 2:
@@ -75,6 +82,7 @@ $$""")
     for lab in labs:
         m = hkldata.fft_map(lab, grid_size=mask.shape)
         new_maps.append([gemmi.FloatGrid(numpy.array(m)*mask, hkldata.cell, hkldata.sg), None])
+        #write_ccp4_map("debug_{}.ccp4".format(lab), new_maps[-1][0])
 
     # 3. Unsharpen
     hkldata = mask_and_fft_maps(new_maps, d_min)

@@ -68,10 +68,19 @@ class HklData:
         # Need to care phases
         pass
 
-    def copy(self):
-        return HklData(self.cell, self.sg, self.anomalous,
-                       self.df.copy(),
-                       self.binned_df.copy() if self.binned_df is not None else None)
+    def copy(self, d_min=None, d_max=None):
+        if (d_min, d_max).count(None) == 2:
+            df = self.df.copy()
+            binned_df = self.binned_df.copy() if self.binned_df is not None else None
+        else:
+            if d_min is None: d_min = 0
+            if d_max is None: d_max = float("inf")
+            sel = self.d_spacings().between(d_min, d_max, inclusive=True)
+            df = self.df[sel].copy()
+            binned_df = None # no way to keep it
+        
+        return HklData(self.cell, self.sg, self.anomalous, df, binned_df)
+    # copy()
 
     def merge_asu_data(self, asu_data, label, common_only=True):
         if label in self.df:
@@ -88,15 +97,15 @@ class HklData:
         return self.df[["H","K","L"]]
 
     def calc_d(self):
-        self.df["d"] = self.cell.calculate_d_array(self.miller_array())
+        self.df.loc[:,"d"] = self.cell.calculate_d_array(self.miller_array())
     # calc_d()
 
     def calc_epsilon(self):
-        self.df["epsilon"] = self.sg.operations().epsilon_factor_without_centering_array(self.miller_array())
+        self.df.loc[:,"epsilon"] = self.sg.operations().epsilon_factor_without_centering_array(self.miller_array())
     # calc_epsilon()
 
     def calc_centric(self):
-        self.df["centric"] = self.sg.operations().centric_flag_array(self.miller_array()).astype(int)
+        self.df.loc[:,"centric"] = self.sg.operations().centric_flag_array(self.miller_array()).astype(int)
     # calc_centric()
         
     def d_spacings(self):
@@ -145,8 +154,8 @@ class HklData:
         max_edge = max(self.cell.parameters[:3])
         if "d" not in self.df or self.df.d.isnull().values.any():
             self.calc_d()
-            
-        self.df["bin"] = (max_edge/self.df.d).astype(numpy.int)
+
+        self.df.loc[:, "bin"] = (max_edge/self.df.d).astype(numpy.int)
         self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
                                           columns=["bin"])
         self._bin_and_limits = []
