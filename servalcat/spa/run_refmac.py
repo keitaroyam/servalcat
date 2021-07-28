@@ -105,7 +105,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
             maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, mask.unit_cell, mask.spacegroup)]+ma[1:]
                     for ma in maps]
         else:
-            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min, b=b_before_mask)
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
     fc_asu = utils.model.calc_fc_fft(st, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
