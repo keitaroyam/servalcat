@@ -33,35 +33,54 @@ def get_matrices_using_relion(sym):
     return ret
 # get_matrices_using_relion()
 
-def operators_from_symbol(op):
-    r = re.search("^((?P<a>I|T|O)|(?P<b>C|D)(?P<n>[0-9]+))$", op.upper())
+def operators_from_symbol(op, axis1=None, axis2=None):
+    r = re.search("^([CDITO])([0-9]*)$", op.upper())
     if not r:
         raise RuntimeError("Invalid point group symbol: {}".format(op))
-    a, b, n = r.group("a"), r.group("b"), r.group("n")
-    if n is not None and int(n) <= 0:
-        raise RuntimeError("Non positive order given: {}".format(op))
+    a, n = r.groups()
+    if n:
+        n = int(n)
+        if n <= 0:
+            raise RuntimeError("Non positive order given: {}".format(op))
+        elif a in ("T", "O"):
+            raise RuntimeError("You cannot give number after T,O: {}".format(op))
+        elif a == "I" and n > 4:
+            raise RuntimeError("Only I1-4 are supported for I variants: {}".format(op))
+
+    if axis1 is not None: axis1 = numpy.array(axis1)
+    if axis2 is not None: axis2 = numpy.array(axis2)
 
     # RELION's conventions
     if a == "I":
         order1 = order2 = 5
-        axis1 = numpy.array([0, 0.85065, 0.52573])
-        axis2 = numpy.array([0.52573, 0, 0.85065])
+        if not n or n == 2:
+            if axis1 is None: axis1 = numpy.array([0, 0.85065, 0.52573])
+            if axis2 is None: axis2 = numpy.array([0.52573, 0, 0.85065])
+        elif n == 1:
+            if axis1 is None: axis1 = numpy.array([0.85065, 0., 0.52573])
+            if axis2 is None: axis2 = numpy.array([0.52573, 0.85065, 0.])
+        elif n == 3:
+            if axis1 is None: axis1 = numpy.array([0.723606, 0.525732, 0.447214])
+            if axis2 is None: axis2 = numpy.array([-0.276391, -0.850645, 0.447216])
+        elif n == 4:
+            if axis1 is None: axis1 = numpy.array([-0.723606, -0.525732, 0.447214])
+            if axis2 is None: axis2 = numpy.array([0., 0., 1.])
     elif a == "O":
         order1 = order2 = 4
-        axis1 = numpy.array([0,0,1.0])
-        axis2 = numpy.array([0,1.0,0])
+        if axis1 is None: axis1 = numpy.array([0,0,1.0])
+        if axis2 is None: axis2 = numpy.array([0,1.0,0])
     elif a == "T":
         order1 = order2 = 3
-        axis1 = numpy.array([0.0,0.0,1.0])
-        axis2 = numpy.array([0.0,0.94280904,-0.33333333])
-    elif b == "D":
-        order1 = int(n)
-        axis1 = numpy.array([0,0,1.0])
+        if axis1 is None: axis1 = numpy.array([0.0,0.0,1.0])
+        if axis2 is None: axis2 = numpy.array([0.0,0.94280904,-0.33333333])
+    elif a == "D":
+        order1 = n
+        if axis1 is None: axis1 = numpy.array([0,0,1.0])
         order2 = 2
-        axis2 = numpy.array([1.,0.,0.])
-    elif b == "C":
-        order1 = int(n)
-        axis1 = numpy.array([0,0,1.0])
+        if axis2 is None: axis2 = numpy.array([1.,0.,0.])
+    elif a == "C":
+        order1 = n
+        if axis1 is None: axis1 = numpy.array([0,0,1.0])
         order2 = 0
         axis2 = None
     return generate_operators.generate_all_elements(axis1, order1, axis2, order2)
@@ -95,18 +114,20 @@ def read_helical_parameters_from_mmcif(cif_in):
     return axsym, deltaphi, deltaz
 # read_helical_parameters_from_mmcif()
 
-def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, padding=1):
+def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, axis1=None, axis2=None, padding=1):
     if not axsym: axsym = "C1"
-    _, _, axtrs = operators_from_symbol(axsym)
-    all_z = [cra.atom.pos.z for cra in st[0].all()]
-    min_z, max_z = min(all_z), max(all_z)
-    min_n, max_n = int((min_z-padding-start_xyz[2])/deltaz), int((st.cell.c+start_xyz[2]-max_z-padding)/deltaz)
+    if axis1 is None: axis1 = numpy.array([0,0,1.])
+    else: axis1 /= numpy.linalg.norm(axis1)
+    _, _, axtrs = operators_from_symbol(axsym, axis1, axis2)
+    all_z = [cra.atom.pos.z for cra in st[0].all()] # XXX along axis1
+    min_z, max_z = min(all_z), max(all_z) # XXX
+    min_n, max_n = int((min_z-padding-start_xyz[2])/deltaz), int((st.cell.c+start_xyz[2]-max_z-padding)/deltaz) # XXX
     ops = []
     for i in range(-min_n, max_n+1):
         deg = deltaphi*i
         t = numpy.deg2rad(deg)
-        m = generate_operators.AngleAxis2rotatin(numpy.array([0,0,1.]), t)
-        s = numpy.array([0,0,deltaz*i])
+        m = generate_operators.AngleAxis2rotatin(axis1, t)
+        s = numpy.array(axis1 * deltaz*i)
         for a in axtrs:
             mat = numpy.dot(m, a)
             news = s + numpy.dot(mat, -center) + center

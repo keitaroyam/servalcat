@@ -32,6 +32,9 @@ def add_arguments(p):
     parser.add_argument('--pg', required=True, help="Point group symbol")
     parser.add_argument('--twist', type=float, help="Helical twist (degree)")
     parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
+    parser.add_argument('--center', type=float, nargs=3, help="Origin of symmetry. Default: center of the box")
+    parser.add_argument('--axis1', type=float, nargs=3, help="Axis1 (if I: 5-fold, O: 4-fold, T: 3-fold)")
+    parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold)")
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
     parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
                         help="How to decide new chain IDs in expanded model (default: short); "
@@ -136,15 +139,20 @@ def symmodel(args):
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
 
-    A = numpy.array(st.cell.orthogonalization_matrix.tolist())
-    center = numpy.sum(A, axis=1) / 2 + start_xyz
+    if args.center is None:
+        A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+        center = numpy.sum(A, axis=1) / 2 + start_xyz
+        logger.write("Center: {}".format(center))
+    else:
+        center = numpy.array(args.center)
 
     if is_helical:
         ncsops = symmetry.generate_helical_operators(st, start_xyz, center,
-                                                  args.pg, args.twist, args.rise)
+                                                     args.pg, args.twist, args.rise,
+                                                     axis1=args.axis1, axis2=args.axis2)
         logger.write("{} helical operators found".format(len(ncsops)))
     else:
-        _, _, ops = symmetry.operators_from_symbol(args.pg)
+        _, _, ops = symmetry.operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
         logger.write("{} operators found for {}".format(len(ops), args.pg))
         symmetry.show_operators_axis_angle(ops)
         ncsops = symmetry.make_NcsOps_from_matrices(ops, cell=st.cell, center=center)
