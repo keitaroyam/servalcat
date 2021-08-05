@@ -333,7 +333,7 @@ def main(args, monlib=None):
             logger.write(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
     
-        if not mask and args.mask_radius:
+        if mask is None and args.mask_radius:
             logger.write("Creating mask..")
             mask = gemmi.FloatGrid(*maps[0][0].shape)
             mask.set_unit_cell(unit_cell)
@@ -366,10 +366,9 @@ def main(args, monlib=None):
                     for ma in maps]
         else:
             logger.write("Sharpen-mask-unsharpen..")
-            if args.b_before_mask is None:
-                args.b_before_mask = determine_b_before_mask(st, maps, grid_start, mask, resolution)
-                
-            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution, b=args.b_before_mask)
+            b_before_mask = args.b_before_mask
+            if b_before_mask is None: b_before_mask = determine_b_before_mask(st, maps, grid_start, mask, resolution)                
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution, b=b_before_mask)
 
         if not args.no_shift:
             logger.write(" Shifting maps and/or model..")

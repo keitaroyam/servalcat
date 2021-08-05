@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import numpy
+import scipy.optimize
 import pandas
 import gemmi
 from servalcat.utils import logger
@@ -286,30 +287,51 @@ class HklData:
         B1 = x[1]
         logger.write(" initial estimate using log: k= {:.2e} B= {:.2e}".format(k1, B1))
         f2tmp = f2 * k1 * numpy.exp(-B1*s2/4)
-        logger.write(" R= {:.4f} (was: {:.4f})".format(r_factor(f1, f2tmp), r_factor(f1, f2)))
+        r_step0 = r_factor(f1, f2)
+        r_step1 = r_factor(f1, f2tmp)
+        logger.write(" R= {:.4f} (was: {:.4f})".format(r_step1, r_step0))
 
-        """
-        self.setup_binning(40)        
-        bin_limits = dict(self.bin_and_limits())
-        x = []
-        y0,y1,y2=[],[],[]
-        for i_bin, g in self.binned():
-            bin_d_max, bin_d_min = bin_limits[i_bin]
-            x.append(1/bin_d_min**2)
-            y0.append(numpy.average(f1[g.index]))
-            y1.append(numpy.average(f2[g.index]))
-            y2.append(numpy.average(f2tmp[g.index]))
+        # 2nd step: - minimize (|f1|-|f2|*k*e^(-b*s2/4))^2 iteratively (TODO with regularisation)
 
-        import matplotlib.pyplot as plt
-        plt.plot(x, y0, label="FC")
-        plt.plot(x, y1, label="FP")
-        plt.plot(x, y2, label="FP,scaled")
-        plt.legend()
-        plt.show()
-        """
+        def grad2(x):
+            tmp = (f1-f2*x[0]*numpy.exp(-x[1]*s2/4))*f2*numpy.exp(-x[1]*s2/4)
+            return numpy.array([-2.*sum(tmp),
+                                0.5*sum(tmp*x[0]*s2)])
         
-        # 2nd step: - minimize (|f1|-|f2|*k*e^(-b*s2/4))^2 with regularisation
-        # not implemented
-        
-        return k1, B1
+        res = scipy.optimize.minimize(fun=lambda x: sum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
+                                      jac=grad2,
+                                      x0=numpy.array([k1, B1]),
+                                      )
+        logger.write(str(res))
+        k2, B2 = res.x
+        f2tmp2 = f2 * k2 * numpy.exp(-B2*s2/4)
+        r_step2 = r_factor(f1, f2tmp2)
+        logger.write(" Least-square estimate: k= {:.2e} B= {:.2e}".format(k2, B2))
+        logger.write(" R= {:.4f}".format(r_step2))
+
+        if 0:
+            self.setup_binning(40)        
+            bin_limits = dict(self.bin_and_limits())
+            x = []
+            y0,y1,y2,y3=[],[],[],[]
+            for i_bin, g in self.binned():
+                bin_d_max, bin_d_min = bin_limits[i_bin]
+                x.append(1/bin_d_min**2)
+                y0.append(numpy.average(f1[g.index]))
+                y1.append(numpy.average(f2[g.index]))
+                y2.append(numpy.average(f2tmp[g.index]))
+                y3.append(numpy.average(f2tmp2[g.index]))
+
+            import matplotlib.pyplot as plt
+            plt.plot(x, y0, label="FC")
+            plt.plot(x, y1, label="FP")
+            plt.plot(x, y2, label="FP,scaled")
+            plt.plot(x, y3, label="FP,scaled2")
+            plt.legend()
+            plt.show()
+
+        if r_step2 < r_step1:
+            return k2, B2
+        else:
+            return k1, B1
     # scale_k_and_b()

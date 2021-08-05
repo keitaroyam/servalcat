@@ -72,8 +72,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
-             d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
-    # XXX blur is not considered
+             blur=None, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
         assert len(maps) == 2
@@ -105,6 +104,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
             maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, mask.unit_cell, mask.spacegroup)]+ma[1:]
                     for ma in maps]
         else:
+            # It seems we need different B for different resolution limit
+            if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, d_min_fsc)
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
@@ -116,6 +117,12 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
         fc_sr_asu = utils.model.calc_fc_fft(st_sr, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
         hkldata.merge_asu_data(fc_sr_asu, "FC_sr")
         labs_fc.append("FC_sr")
+
+    if blur is not None:
+        logger.write(" Unblurring Fc with B={} for FSC calculation".format(blur))
+        unblur = numpy.exp(blur/hkldata.d_spacings().to_numpy()**2/4.)
+        for lab in labs_fc:
+            hkldata.df[lab] *= unblur
     
     hkldata.setup_relion_binning()
     stats = spa.fsc.calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP",
@@ -351,6 +358,7 @@ def main(args):
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
                            make_hydrogen=args.hydrogen,
                            monlib=monlib, cross_validation=args.cross_validation,
+                           blur=args.blur[0] if args.blur else None,
                            d_min_fsc=args.fsc_resolution,
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
