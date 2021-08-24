@@ -90,13 +90,16 @@ $$
             S = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
             bdf.loc[i_bin, "S"] = S
             w = S/(S+varn)
-            w_sharpen = w / numpy.sqrt(fsc_full) / numpy.std(Fo)
+            if fsc_full < 0: # this should be fixed actually. needs smoothing to zero.
+                w_sharpen = 0
+            else:
+                w_sharpen = w / numpy.sqrt(fsc_full) / numpy.std(Fo)
         else:
             varn = fsc_full = 0
             w = 1
             w_sharpen = 1
 
-        with numpy.errstate(divide="ignore"):
+        with numpy.errstate(divide="ignore", invalid="ignore"):
             stats_str += tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
                                      numpy.log(numpy.average(numpy.abs(Fo)**2)),
                                      numpy.log(numpy.average(numpy.abs(Fc)**2)),
@@ -159,10 +162,10 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
         sig_fo = numpy.std(Fo)
         if sharpening_b is None:
-            k = sig_fo * numpy.sqrt(fsc)
-            if k < 1e-10 or k != k:
+            if fsc < 0 or sig_fo < 1e-10: # FIXME probably we should compare sig_fo with mean(fo)
                 logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
-                continue
+                continue                
+            k = sig_fo * numpy.sqrt(fsc)
         else:
             s2 = 1./hkldata.d_spacings()[g.index]**2
             k = numpy.exp(-sharpening_b*s2/4)
@@ -266,9 +269,8 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
 
 def write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=None, output_prefix="diffmap", crop=False, normalize_map=False, omit_h_electron=False):
-    dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
-    open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
-    
+    # this function may modify the overall scale of FWT/DELFWT.
+
     if normalize_map and mask is not None:
         logger.write("Normalized Fo-Fc map requested.")
         delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
@@ -286,6 +288,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         logger.write("     Masked std: {:.3e}".format(masked_std))
         #logger.write(" If you want to scale manually: {}".format())
         scaled = (delfwt_map - masked_mean)/masked_std
+        hkldata.df["DELFWT"] /= masked_std # it would work if masked_mean~0
         if omit_h_electron:
             scaled *= -1
             filename = "{}_normalized_fofc_flipsign.mrc".format(output_prefix)
@@ -303,12 +306,15 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             masked_mean = numpy.average(masked)
             masked_std = numpy.std(masked)
             scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
+            hkldata.df["FWT"] /= masked_std # it would work if masked_mean~0
             filename = "{}_normalized_fo.mrc".format(output_prefix)
             logger.write("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
                                       mask_for_extent=mask if crop else None,
                                       grid_start=grid_start)
 
+    dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
+    open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
 # write_files()
 
 def main(args):
