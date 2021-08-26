@@ -606,7 +606,7 @@ def microheterogeneity_for_refmac(st, monlib):
     def append_links(rinfo, prr, toappend):
         for pbond in filter(lambda f: (f.provenance==gemmi.Provenance.PrevLink and
                                        f.rkind==gemmi.RKind.Bond),
-                            rinfo.forces):
+                            rinfo.rules):
             atoms = topo.bonds[pbond.index].atoms
             assert len(atoms) == 2
             found = None
