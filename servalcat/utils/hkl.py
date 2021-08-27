@@ -236,11 +236,20 @@ class HklData:
             df_both = df[df._merge=="both"]
     # merge()
 
+    def as_asu_data(self, label): # TODO add label_sigma
+        if numpy.iscomplexobj(self.df[label]):
+            asutype = gemmi.ComplexAsuData
+        elif issubclass(self.df[label].dtype.type, numpy.integer):
+            asutype = gemmi.IntAsuData
+        else:
+            asutype = gemmi.FloatAsuData
+        
+        return asutype(self.cell, self.sg,
+                       self.miller_array(), self.df[label])
+    # as_asu_data()
+
     def fft_map(self, label, grid_size=None, sample_rate=3):
-        asu = gemmi.ComplexAsuData(self.cell,
-                                   self.sg,
-                                   self.miller_array(),
-                                   self.df[label])
+        asu = self.as_asu_data(label)
         if grid_size is None:
             grid_size = (0, 0, 0)
 
@@ -294,12 +303,25 @@ class HklData:
         # 2nd step: - minimize (|f1|-|f2|*k*e^(-b*s2/4))^2 iteratively (TODO with regularisation)
 
         def grad2(x):
-            tmp = (f1-f2*x[0]*numpy.exp(-x[1]*s2/4))*f2*numpy.exp(-x[1]*s2/4)
-            return numpy.array([-2.*sum(tmp),
-                                0.5*sum(tmp*x[0]*s2)])
-        
+            t = numpy.exp(-x[1]*s2/4)
+            tmp = (f1-f2*x[0]*t)*f2*t
+            return numpy.array([-2.*numpy.sum(tmp),
+                                0.5*x[0]*numpy.sum(tmp*s2)])
+
+        def hess2(x):
+            h = numpy.zeros((2, 2))
+            t = numpy.exp(-x[1]*s2/4)
+            t2 = t**2
+            h[0,0] = numpy.sum(f2**2 * t2) * 2
+            h[1,1] = numpy.sum(f2 * s2**2/4 * (-f1/2*t + f2*x[0]*t2)) * x[0]
+            h[1,0] = numpy.sum(f2 * s2 * (f1/2*t - f2*x[0]*t2))
+            h[0,1] = h[1,0]
+            return h
+
         res = scipy.optimize.minimize(fun=lambda x: sum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
                                       jac=grad2,
+                                      hess=hess2,
+                                      method="Newton-CG",
                                       x0=numpy.array([k1, B1]),
                                       )
         logger.write(str(res))
