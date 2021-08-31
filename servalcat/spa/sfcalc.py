@@ -79,6 +79,15 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def lab_f_suffix(blur):
+    if blur is None or blur == 0.:
+        return ""
+    elif blur > 0:
+        return "Blur_{:.2f}".format(blur)
+    else:
+        return "Sharp_{:.2f}".format(-blur)
+# lab_f_suffix()
+
 def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None):
     if not blurs: blurs = []
     if 0 not in blurs: blurs = [0.] + blurs
@@ -112,13 +121,13 @@ def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None):
         lab_root = lab[1:] if lab[0]=="F" else lab
         for b in blurs:
             labf = lab
-            if b != 0: labf = "{}Blur_{:.2f}".format(labf, b).replace("Fout", "Fout")
+            if b != 0: labf = "{}{}".format(labf, lab_f_suffix(b))
             mtz.add_column(labf, "F")
         mtz.add_column("P"+lab_root, "P")
     if sig_lab:
         for b in blurs:
             labsigf = sig_lab
-            if b != 0: labsigf = "{}Blur_{:.2f}".format(labsigf, b).replace("Fout", "Fout")
+            if b != 0: labsigf = "{}{}".format(labsigf, lab_f_suffix(b))
             mtz.add_column(labsigf, "Q")
         
     mtz.set_data(data)
@@ -413,19 +422,18 @@ def main(args, monlib=None):
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    lab_f_suffix = "Blur_{:.2f}".format(args.blur[0]) if args.blur else ""
-    
+    blur0 = args.blur[0] if args.blur else None
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
         logger.write(" Calculating noise variances..")
         map_labs = ["Fmap1", "Fmap2", "Fout"]
         sig_lab = "SIGFout"
-        ret["lab_sigf"] = sig_lab + lab_f_suffix
-        ret["lab_f_half1"] = "Fmap1" + lab_f_suffix
+        ret["lab_sigf"] = sig_lab + lab_f_suffix(blur0)
+        ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(blur0)
         # TODO Add SIGF in case of half maps, when refmac is ready
         ret["lab_phi_half1"] = "Pmap1"
-        ret["lab_f_half2"] = "Fmap2" + lab_f_suffix
+        ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(blur0)
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
         hkldata.df[sig_lab] = 0.
@@ -450,7 +458,7 @@ def main(args, monlib=None):
     write_map_mtz(hkldata, mtzout,
                   map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
     ret["mtz_file"] = mtzout
-    ret["lab_f"] = "Fout" + lab_f_suffix
+    ret["lab_f"] = "Fout" + lab_f_suffix(blur0)
     ret["lab_phi"] = "Pout"
     return ret
 # main()
