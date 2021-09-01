@@ -160,40 +160,55 @@ def calc_noise_var_from_halfmaps(hkldata):
         hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
 # calc_noise_var_from_halfmaps()
 
-def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, grid_start=None):
+def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, mask_threshold=0.5, mask_padding=5,
+                   grid_start=None, grid_end=None):
+    """
+    If mask_for_extent is set: grid_end is ignored
+    grid_end must be specified together with grid_start.
+    mask_padding unit: px
+    """
+    ccp4 = gemmi.Ccp4Map()
+    
     if type(array) == numpy.ndarray:
         # TODO check dtype
         if sg is None: sg = gemmi.SpaceGroup(1)
-        grid = gemmi.FloatGrid(array, cell, sg)
+        ccp4.grid = gemmi.FloatGrid(array, cell, sg)
     else:
         # TODO check type
-        grid = array
-        
-    ccp4 = gemmi.Ccp4Map()
-    ccp4.grid = grid
+        ccp4.grid = array
+        if cell is not None: ccp4.grid.set_unit_cell(cell)
+        if sg is not None: ccp4.grid.spacegroup = sg
+
     ccp4.update_ccp4_header(2, True) # float, update stats
 
-    if mask_for_extent is not None:
-        tmp = numpy.where(numpy.array(mask_for_extent)>0)
+    if mask_for_extent is not None: # want to crop part of map using mask
+        tmp = numpy.where(numpy.array(mask_for_extent)>mask_threshold)
         if grid_start is not None:
             grid_start = numpy.array(grid_start)[:,None]
-            grid_shape = numpy.array(grid.shape)[:,None]
+            grid_shape = numpy.array(ccp4.grid.shape)[:,None]
             tmp -= grid_start
             tmp += (grid_shape*numpy.floor(1-tmp/grid_shape)).astype(int) + grid_start
 
-        l = [(min(x), max(x)) for x in tmp]
+        l = [(min(x)-mask_padding, max(x)+mask_padding) for x in tmp]
         box = gemmi.FractionalBox()
         for i in (0, 1):
-            fm = grid.get_fractional(l[0][i], l[1][i], l[2][i])
+            fm = ccp4.grid.get_fractional(l[0][i], l[1][i], l[2][i])
             box.extend(fm)
 
         logger.write(" setting extent: {} {}".format(box.minimum, box.maximum))
         ccp4.set_extent(box)
-    elif grid_start is not None:
+    elif grid_start is not None and grid_end is not None: # want to crop part of map
+        box = gemmi.FractionalBox()
+        half_offset = gemmi.Fractional(*[0.5/x for x in ccp4.grid.shape])
+        box.extend(ccp4.grid.get_fractional(*grid_start)-half_offset)
+        box.extend(ccp4.grid.get_fractional(*grid_end)+half_offset)
+        logger.write(" setting extent: {} {}".format(box.minimum, box.maximum))
+        ccp4.set_extent(box)
+    elif grid_start is not None: # want to change origin
         logger.write(" setting starting grid: {} {} {}".format(*grid_start))
-        new_grid = gemmi.FloatGrid(grid.get_subarray(*(list(grid_start)+list(grid.shape))),
-                                   cell,
-                                   sg)
+        new_grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(ccp4.grid.shape))),
+                                   ccp4.grid.unit_cell,
+                                   ccp4.grid.spacegroup)
         ccp4.grid = new_grid
         for i in range(3):
             ccp4.set_header_i32(5+i, grid_start[i])
