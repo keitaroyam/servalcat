@@ -35,6 +35,9 @@ def add_arguments(parser):
     parser.add_argument('--noncentered',
                         action='store_true',
                         help='If specified non-centered trimming is performed. Not recommended if having some symmetry')
+    parser.add_argument('--no_shift',
+                        action='store_true',
+                        help='If specified resultant maps will have shifted origin and overlap with the input maps.')
     parser.add_argument('--force_cell', type=float, nargs=6,
                         help='Force cell')
     parser.add_argument('--disable_cell_check',
@@ -158,6 +161,9 @@ def main(args):
     if not args.maps and not args.shifts:
         raise RuntimeError("Give --maps or --shifts")
 
+    if not args.mask and args.model and not args.shifts and args.padding <= 0:
+        raise RuntimeError("--padding must be > 0 if you want to create a mask from the model.")
+
     if args.maps:
         args.maps = sum(args.maps, [])
     else:
@@ -184,6 +190,7 @@ def main(args):
             st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(m)
             st.spacegroup_hm = "P1"
             st.cell = cell
+            utils.model.translate_into_box(st)
             sts.append(st)
             cif_refs.append(cif_ref)
         
@@ -201,6 +208,9 @@ def main(args):
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         for st in sts:
+            if len(st.ncs) > 0:
+                st = st.clone()
+                utils.model.expand_ncs(st)
             mask.mask_points_in_constant_radius(st[0], args.padding, 1.)
     elif not args.shifts:
         raise RuntimeError("Give mask or model")
@@ -216,15 +226,15 @@ def main(args):
         new_shape, starts = info["new_grid"], info["starts"]
         shifts = gemmi.Position(*info["shifts"])
         
-    if args.model:
+    if args.model and not args.no_shift:
         for i, st in enumerate(sts):
             st.cell = new_cell
-            # apply shifts
+            # apply shifts to model
             for mol in st:
                 for cra in mol.all():
                     cra.atom.pos += shifts
 
-            # save files
+            # apply shifts to translations
             spext = utils.fileio.splitext(os.path.basename(args.model[i]))
             if len(st.ncs) > 0:
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
@@ -234,16 +244,19 @@ def main(args):
                 utils.symmetry.write_symmetry_expanded_model(st, spext[0]+"_trimmed_local_expanded",
                                                              pdb=True, cif=True)
 
+            # save files
             utils.fileio.write_model(st, file_name=spext[0]+"_trimmed"+spext[1], cif_ref=cif_refs[i])
     
     for f in args.maps:
         logger.write("Slicing {}".format(f))
+        outf = os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc"
         g = utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size)[0]
-        newg = g.get_subarray(*(list(starts)+list(new_shape)))
-        ccp4 = gemmi.Ccp4Map()
-        ccp4.grid = gemmi.FloatGrid(newg, new_cell, g.spacegroup)
-        ccp4.update_ccp4_header(2, True) # float, update stats
-        ccp4.write_ccp4_map(os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc")
+        if args.no_shift:
+            utils.maps.write_ccp4_map(outf, g, cell=cell, sg=g.spacegroup,
+                                      grid_start=starts, grid_end=[starts[i]+new_shape[i]-1 for i in (0,1,2)])
+        else:
+            newg = g.get_subarray(*(list(starts)+list(new_shape)))
+            utils.maps.write_ccp4_map(outf, newg, cell=new_cell, sg=g.spacegroup)
 
 # main()
 
