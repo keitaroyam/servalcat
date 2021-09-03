@@ -111,6 +111,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     g = m.grid
     grid_cell = [m.header_i32(x) for x in (8,9,10)]
     grid_start = [m.header_i32(x) for x in (5,6,7)]
+    grid_shape = [m.header_i32(x) for x in (1,2,3)]
     axis_pos = m.axis_positions()
     axis_letters = ["","",""]
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
@@ -119,9 +120,10 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
-    logger.write("        Grid: {:4d} {:4d} {:4d}".format(*grid_cell))
+    logger.write("   Cell Grid: {:4d} {:4d} {:4d}".format(*grid_cell))
     logger.write("    Map mode: {}".format(m.header_i32(4)))
     logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
+    logger.write("       Shape: {:4d} {:4d} {:4d}".format(*grid_shape))
     logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
     logger.write("  Axis order: {}".format(" ".join(axis_letters)))
     logger.write(" Space group: {}".format(m.header_i32(23)))
@@ -148,7 +150,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
                                           orgc[3], orgc[4], orgc[5])
         logger.write(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
 
-    return [m.grid, grid_start] # should return original headers?
+    return [m.grid, grid_start] # TODO should return grid_shape so that the same region can be written
 # read_ccp4_map()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):

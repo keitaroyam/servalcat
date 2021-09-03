@@ -161,11 +161,11 @@ def calc_noise_var_from_halfmaps(hkldata):
 # calc_noise_var_from_halfmaps()
 
 def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, mask_threshold=0.5, mask_padding=5,
-                   grid_start=None, grid_end=None):
+                   grid_start=None, grid_shape=None):
     """
-    If mask_for_extent is set: grid_end is ignored
-    grid_end must be specified together with grid_start.
-    mask_padding unit: px
+    - If mask_for_extent is set: grid_shape is ignored
+    - grid_shape must be specified together with grid_start.
+    - mask_padding unit: px
     """
     ccp4 = gemmi.Ccp4Map()
     
@@ -185,33 +185,25 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, ma
         tmp = numpy.where(numpy.array(mask_for_extent)>mask_threshold)
         if grid_start is not None:
             grid_start = numpy.array(grid_start)[:,None]
-            grid_shape = numpy.array(ccp4.grid.shape)[:,None]
+            shape = numpy.array(ccp4.grid.shape)[:,None]
             tmp -= grid_start
-            tmp += (grid_shape*numpy.floor(1-tmp/grid_shape)).astype(int) + grid_start
-
+            tmp += (shape*numpy.floor(1-tmp/shape)).astype(int) + grid_start
+            
         l = [(min(x)-mask_padding, max(x)+mask_padding) for x in tmp]
-        box = gemmi.FractionalBox()
-        for i in (0, 1):
-            fm = ccp4.grid.get_fractional(l[0][i], l[1][i], l[2][i])
-            box.extend(fm)
-
-        logger.write(" setting extent: {} {}".format(box.minimum, box.maximum))
-        ccp4.set_extent(box)
-    elif grid_start is not None and grid_end is not None: # want to crop part of map
-        box = gemmi.FractionalBox()
-        half_offset = gemmi.Fractional(*[0.5/x for x in ccp4.grid.shape])
-        box.extend(ccp4.grid.get_fractional(*grid_start)-half_offset)
-        box.extend(ccp4.grid.get_fractional(*grid_end)+half_offset)
-        logger.write(" setting extent: {} {}".format(box.minimum, box.maximum))
-        ccp4.set_extent(box)
-    elif grid_start is not None: # want to change origin
+        grid_start = [l[i][0] for i in range(3)]
+        grid_shape = [l[i][1]-l[i][0]+1 for i in range(3)]
+        
+    if grid_start is not None: # want to change origin
+        new_shape = ccp4.grid.shape if grid_shape is None else grid_shape
         logger.write(" setting starting grid: {} {} {}".format(*grid_start))
-        new_grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(ccp4.grid.shape))),
-                                   ccp4.grid.unit_cell,
-                                   ccp4.grid.spacegroup)
-        ccp4.grid = new_grid
+        logger.write(" setting     new shape: {} {} {}".format(*new_shape))
+        ccp4.grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(new_shape))),
+                                    ccp4.grid.unit_cell,
+                                    ccp4.grid.spacegroup)
+        ccp4.update_ccp4_header(2, True) # float, update stats
         for i in range(3):
             ccp4.set_header_i32(5+i, grid_start[i])
+            ccp4.set_header_i32(1+i, new_shape[i])
 
     ccp4.write_ccp4_map(filename)
 # write_ccp4_map()

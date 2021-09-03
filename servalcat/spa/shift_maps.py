@@ -253,7 +253,7 @@ def main(args):
         g = utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size)[0]
         if args.no_shift:
             utils.maps.write_ccp4_map(outf, g, cell=cell, sg=g.spacegroup,
-                                      grid_start=starts, grid_end=[starts[i]+new_shape[i]-1 for i in (0,1,2)])
+                                      grid_start=starts, grid_shape=new_shape)
         else:
             newg = g.get_subarray(*(list(starts)+list(new_shape)))
             utils.maps.write_ccp4_map(outf, newg, cell=new_cell, sg=g.spacegroup)
