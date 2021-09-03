@@ -141,10 +141,10 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
 
     # remove and rename columns
     for s in (stats, stats2):
-        s.rename(columns=dict(fsc_FC_full="fsc_model"), inplace=True)
+        s.rename(columns=dict(fsc_FC_full="fsc_model", Rcmplx_FC_full="Rcmplx"), inplace=True)
         if cross_validation:
             if cross_validation_method == "shake":
-                s.drop(columns=["fsc_FC_half1", "fsc_FC_half2", "fsc_FC_sr_full"], inplace=True)
+                s.drop(columns=["fsc_FC_half1", "fsc_FC_half2", "fsc_FC_sr_full", "Rcmplx_FC_sr_full"], inplace=True)
                 s.rename(columns=dict(fsc_FC_sr_half1="fsc_model_half1",
                                           fsc_FC_sr_half2="fsc_model_half2"), inplace=True)
             else:
@@ -164,16 +164,18 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
     # for loggraph
     fsc_logfile = "{}_fsc.log".format(output_prefix)
     with open(fsc_logfile, "w") as ofs:
-        columns = "1/resol^2 ncoef ln(Mn(|Fo|^2)) ln(Mn(|Fc|^2)) FSC(full,model) FSC_half FSC_full_sqrt FSC(half1,model) FSC(half2,model)".split()
+        columns = "1/resol^2 ncoef ln(Mn(|Fo|^2)) ln(Mn(|Fc|^2)) FSC(full,model) FSC_half FSC_full_sqrt FSC(half1,model) FSC(half2,model) Rcmplx(full,model)".split()
         
         ofs.write("$TABLE: Map-model FSC after refinement:\n")
         if len(maps) == 2:
             if cross_validation: fsc_cols = [5,6,7,8,9]
             else:                fsc_cols = [5,6,7]
         else: fsc_cols = [5]
+        fsc_cols.append(10)
         if len(maps) == 2: ofs.write("$GRAPHS: FSC :A:1,5,6,7:\n")
         else:              ofs.write("$GRAPHS: FSC :A:1,5:\n")
         if cross_validation: ofs.write(": cross-validated FSC :A:1,8,9:\n".format(",".join(map(str,fsc_cols))))
+        ofs.write(": Rcmplx :A:1,{}:\n".format(4+len(fsc_cols)))
         ofs.write(": ln(Mn(|F|^2)) :A:1,3,4:\n")
         ofs.write(": number of Fourier coeffs :A:1,2:\n")
         ofs.write("$$ {}$$\n".format(" ".join(columns[:4]+[columns[i-1] for i in fsc_cols])))
@@ -184,7 +186,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
             plot_columns.extend(["fsc_half", "fsc_full_sqrt"])
             if cross_validation:
                 plot_columns.extend(["fsc_model_half1", "fsc_model_half2"])
-
+        plot_columns.append("Rcmplx")
         with numpy.errstate(divide="ignore"):
             log_format = lambda x: "{:.3f}".format(numpy.log(x))
             ofs.write(stats.to_string(header=False, index=False, index_names=False, columns=plot_columns,

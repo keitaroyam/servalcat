@@ -57,6 +57,7 @@ def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
     stats_columns = ["d_max", "d_min", "ncoeffs", "power_{}".format(lab_f)]
     for lab in labs_fc: stats_columns.append("power_{}".format(lab))
     for lab in labs_fc: stats_columns.append("fsc_{}_full".format(lab))
+    for lab in labs_fc: stats_columns.append("Rcmplx_{}_full".format(lab))
     if labs_half is not None:
         stats_columns.append("fsc_half")
         for lab in labs_fc: stats_columns.extend(["fsc_{}_half1".format(lab),
@@ -83,7 +84,10 @@ def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
         for labfc in labs_fc:
             Fc = g[labfc].to_numpy()
             fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
+            D = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
+            rcmplx_model = numpy.sum(numpy.abs(Fo-D*Fc))/numpy.sum(numpy.abs(Fo))
             stats.loc[i_bin, "fsc_{}_full".format(labfc)] = fsc_model
+            stats.loc[i_bin, "Rcmplx_{}_full".format(labfc)] = rcmplx_model
             stats.loc[i_bin, "power_{}".format(labfc)] = numpy.average(numpy.abs(Fc)**2)
             if labs_half is not None:
                 stats.loc[i_bin, "fsc_{}_half1".format(labfc)] = numpy.real(numpy.corrcoef(F1, Fc)[1,0])
@@ -114,7 +118,7 @@ def main(args):
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
         mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
-    elif args.mask_radius is not None:
+    elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
         mask = gemmi.FloatGrid(*maps[0][0].shape)
         mask.set_unit_cell(sts[0].cell)
         mask.spacegroup = sts[0].find_spacegroup()
@@ -126,7 +130,7 @@ def main(args):
         logger.write("Applying mask..")
         maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, ma[0].unit_cell, ma[0].spacegroup)]+ma[1:]
                 for ma in maps]
-    else:
+    elif mask is not None:
         logger.write("Sharpen-mask-unsharpen..")
         maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=args.b_before_mask)
 
@@ -152,6 +156,10 @@ def main(args):
         for k in stats:
             if k.startswith("fsc_FC_"):
                 logger.write("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+            if k.startswith("Rcmplx_FC_"):
+                logger.write("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+
+
 
 # main()
 
