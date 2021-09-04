@@ -49,14 +49,13 @@ def df_from_raw(miller_array, value_array, label):
 
 def hkldata_from_asu_data(asu_data, label):
     df = df_from_asu_data(asu_data, label)
-    return HklData(asu_data.unit_cell, asu_data.spacegroup, None, df)
+    return HklData(asu_data.unit_cell, asu_data.spacegroup, df)
 # hkldata_from_asu_data()
 
 class HklData:
-    def __init__(self, cell, sg, anomalous, df, binned_df=None):
+    def __init__(self, cell, sg, df=None, binned_df=None):
         self.cell = cell
         self.sg = sg
-        self.anomalous = anomalous
         self.df = df
         self.binned_df = binned_df
     # __init__()
@@ -80,7 +79,7 @@ class HklData:
             df = self.df[sel].copy()
             binned_df = None # no way to keep it
         
-        return HklData(self.cell, self.sg, self.anomalous, df, binned_df)
+        return HklData(self.cell, self.sg,  df, binned_df)
     # copy()
 
     def merge_asu_data(self, asu_data, label, common_only=True):
@@ -226,7 +225,7 @@ class HklData:
     # merge()
 
     def merge_df(self, other, common_only=True):
-        # TODO check space group, cell, anomalous
+        # TODO check space group, cell
         # TODO transform to asu with phase shifts
         # TODO check column labels. same names other than HKL?
         # 

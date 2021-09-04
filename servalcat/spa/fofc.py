@@ -329,7 +329,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
                                       grid_start=grid_start, grid_shape=new_shape)
 
     if trim_mtz and shifts is not None:
-        hkldata2 = utils.hkl.HklData(new_cell, hkldata.sg, anomalous=False, df=None)
+        hkldata2 = utils.hkl.HklData(new_cell, hkldata.sg, df=None)
         d_min = hkldata.d_min_max()[0]
         for lab in map_labs + ["FP", "FC"]:
             gr = hkldata.fft_map(lab, mask.shape)

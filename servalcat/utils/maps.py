@@ -109,12 +109,12 @@ def mask_and_fft_maps(maps, d_min, mask=None):
 
     if len(maps) == 2:
         df = hkl.df_from_asu_data(asus[0], "F_map1")
-        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, df)
         hkldata.merge_asu_data(asus[1], "F_map2")
         hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
     else:
         df = hkl.df_from_asu_data(asus[0], "FP")
-        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, False, df)
+        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, df)
         
     return hkldata
 # mask_and_fft_maps()
