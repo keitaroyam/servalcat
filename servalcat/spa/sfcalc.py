@@ -36,9 +36,12 @@ def add_sfcalc_args(parser):
     parser.add_argument('--resolution',
                         type=float,
                         help='')
+    parser.add_argument('--no_trim',
+                        action='store_true',
+                        help='Keep original box (not recommended)')
     parser.add_argument('--no_shift',
                         action='store_true',
-                        help='Use original box (not recommended)')
+                        help='Keep map origin so that output maps overlap with the input maps.')
     parser.add_argument('--blur',
                         nargs="+", # XXX probably no need to be multiple
                         type=float,
@@ -58,6 +61,13 @@ def add_sfcalc_args(parser):
     parser.add_argument('--no_fix_microheterogeneity', action='store_true', 
                         help='By default it will fix microheterogeneity for Refmac')
 # add_sfcalc_args()
+
+"""
+Possible choices:
+ - no mask => no shift AND no trim
+ - mask AND trim => shift OR no shift
+ - mask AND no trim => no shift
+"""
 
 def add_arguments(parser):
     parser.description = 'Structure factor calculation for Refmac'
@@ -218,9 +228,16 @@ def main(args, monlib=None):
         if not args.no_shift:
             logger.write("WARNING: setting --no_shift because --no_mask is given")
             args.no_shift = True
+        if not args.no_trim:
+            logger.write("WARNING: setting --no_trim because --no_mask is given")
+            args.no_trim = True
         if args.mask:
             logger.write("WARNING: Your --mask is ignored because --no_mask is given")
             args.mask = None
+    elif args.no_trim and not args.no_shift:
+        logger.write("WARNING: setting --no_shift because --no_trim is given (and --no_mask not given)")
+        args.no_shift = True
+        
 
     if args.resolution is None and args.model and utils.fileio.splitext(args.model)[1].endswith("cif"):
         doc = gemmi.cif.read(args.model)
@@ -337,7 +354,7 @@ def main(args, monlib=None):
             ret["ncsc_file"] = "ncsc.txt"
         
         st_new = st.clone()
-        if len(st.ncs) > 0 and not args.no_shift:
+        if len(st.ncs) > 0:
             utils.model.expand_ncs(st)
             logger.write(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
@@ -358,7 +375,7 @@ def main(args, monlib=None):
         
     if args.no_shift:
         logger.write(" Saving input model with unit cell information")
-        utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+        utils.fileio.write_model(st_new, "starting_model", pdb=True, cif=True)
         ret["model_file"] = "starting_model" + model_format
 
     if mask:
@@ -379,7 +396,7 @@ def main(args, monlib=None):
             if b_before_mask is None: b_before_mask = determine_b_before_mask(st, maps, grid_start, mask, resolution)                
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, resolution, b=b_before_mask)
 
-        if not args.no_shift:
+        if not args.no_trim:
             logger.write(" Shifting maps and/or model..")
             if args.padding is None: args.padding = args.mask_radius * 2
             new_cell, new_shape, starts, shifts = shift_maps.determine_shape_and_shift(mask=mask,
@@ -391,17 +408,19 @@ def main(args, monlib=None):
                                                                                        json_out="shifts.json")
             ret["shifts"] = shifts
             vol_mask = numpy.count_nonzero(numpy.array(mask)>0.5)
-            vol_map = new_shape[0] * new_shape[1] * new_shape[2]
+            vol_map = new_shape[0] * new_shape[1] * new_shape[2] # XXX assuming all orthogonal
             ret["vol_ratio"] = vol_mask/vol_map
             logger.write(" Vol_mask/Vol_map= {:.2e}".format(ret["vol_ratio"]))
             
             if st_new:
-                for cra in st_new[0].all():
-                    cra.atom.pos += shifts
-                
                 st_new.cell = new_cell
                 st_new.spacegroup_hm = "P 1"
-                if len(st_new.ncs) > 0:
+
+                if not args.no_shift:
+                    for cra in st_new[0].all():
+                        cra.atom.pos += shifts
+                
+                if not args.no_shift and len(st_new.ncs) > 0:
                     new_ops = utils.symmetry.apply_shift_for_ncsops(st_new.ncs, shifts)
                     st_new.ncs.clear()
                     st_new.ncs.extend(new_ops)
@@ -412,9 +431,9 @@ def main(args, monlib=None):
                     utils.symmetry.write_symmetry_expanded_model(st_new, "{}_expanded".format(args.shifted_model_prefix),
                                                                  pdb=True, cif=True)
 
-                logger.write(" Saving shifted model..")
+                logger.write(" Saving model in trimmed map..")
                 utils.fileio.write_model(st_new, args.shifted_model_prefix, pdb=True, cif=True)
-                ret["model_file"] = args.shifted_model_prefix + model_format
+                ret["model_file"] = args.shifted_model_prefix + model_format # the same name whether --no_shift given or not
 
             logger.write(" Trimming maps..")
             for i in range(len(maps)): # Update maps
@@ -447,14 +466,19 @@ def main(args, monlib=None):
         map_labs = ["Fout"]
         sig_lab = None
 
-    if args.no_shift:
-        logger.write("Saving original maps as mtz files..") # XXX not always original (can be masked!)
+    if args.no_mask:
+        logger.write("Saving unmasked maps as mtz file..")
         mtzout = args.output_mtz_prefix+".mtz"
     else:
-        logger.write(" Saving masked maps as mtz files..") # XXX not always masked (if no mask..)
+        logger.write(" Saving masked maps as mtz file..")
         mtzout = args.output_masked_prefix+"_obs.mtz"
 
     hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
+    if "shifts" in ret and args.no_shift:
+        for lab in map_labs: # apply phase shift
+            logger.write("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
+            hkldata.translate(lab, -ret["shifts"])
+        
     write_map_mtz(hkldata, mtzout,
                   map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
     ret["mtz_file"] = mtzout

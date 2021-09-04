@@ -12,6 +12,7 @@ import numpy
 import time
 from servalcat.utils import logger
 from servalcat import utils
+from servalcat.spa import shift_maps
 import argparse
 
 def add_arguments(parser):
@@ -34,8 +35,10 @@ def add_arguments(parser):
                         help="Just for debugging purpose: turn off FSC-based weighting")
     parser.add_argument("--sharpening_b", type=float,
                         help="Use B value (negative value for sharpening) instead of standard deviation of the signal")
-    parser.add_argument("--crop", action='store_true',
-                        help="Write cropped maps")
+    parser.add_argument("--trim", action='store_true',
+                        help="Write trimmed maps")
+    parser.add_argument("--trim_mtz", action='store_true',
+                        help="Write trimmed mtz")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument("--omit_proton", action='store_true',
@@ -268,9 +271,23 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
 # calc_fofc()
 
 def write_files(hkldata, map_labs, grid_start, stats_str,
-                mask=None, output_prefix="diffmap", crop=False, normalize_map=False, omit_h_electron=False):
+                mask=None, output_prefix="diffmap", trim_map=False, trim_mtz=False,
+                normalize_map=False, omit_h_electron=False):
     # this function may modify the overall scale of FWT/DELFWT.
 
+    if mask is not None and (trim_map or trim_mtz):
+        new_cell, new_shape, grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask,
+                                                                                                            hkldata.cell,
+                                                                                                            hkldata.sg),
+                                                                                       grid_start=grid_start,
+                                                                                       padding=5,
+                                                                                       mask_cutoff=0.5,
+                                                                                       noncentered=True,
+                                                                                       noncubic=True,
+                                                                                       json_out=None)
+    else:
+        new_cell, new_shape, shifts = None, None, None
+        
     if normalize_map and mask is not None:
         logger.write("Normalized Fo-Fc map requested.")
         delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
@@ -296,8 +313,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             filename = "{}_normalized_fofc.mrc".format(output_prefix)
         logger.write("  Writing {}".format(filename))
         utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                  mask_for_extent=mask if crop else None,
-                                  grid_start=grid_start)
+                                  grid_start=grid_start, grid_shape=new_shape)
 
         # Write Fo map as well
         if "FWT" in hkldata.df:
@@ -310,9 +326,20 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             filename = "{}_normalized_fo.mrc".format(output_prefix)
             logger.write("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                      mask_for_extent=mask if crop else None,
-                                      grid_start=grid_start)
+                                      grid_start=grid_start, grid_shape=new_shape)
 
+    if trim_mtz and shifts is not None:
+        hkldata2 = utils.hkl.HklData(new_cell, hkldata.sg, anomalous=False, df=None)
+        d_min = hkldata.d_min_max()[0]
+        for lab in map_labs + ["FP", "FC"]:
+            gr = hkldata.fft_map(lab, mask.shape)
+            gr = gemmi.FloatGrid(gr.get_subarray(*(list(grid_start)+list(new_shape))),
+                                 new_cell, hkldata.sg)
+            ad = gemmi.transform_map_to_f_phi(gr).prepare_asu_data(dmin=d_min)
+            hkldata2.merge_asu_data(ad, lab)
+            hkldata2.translate(lab, -shifts)
+        hkldata = hkldata2
+        
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
     open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
 # write_files()
@@ -383,7 +410,7 @@ def main(args):
                                              omit_h_electron=args.omit_h_electron)
     write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=mask, output_prefix=args.output_prefix,
-                crop=args.crop, normalize_map=args.normalized_map, omit_h_electron=args.omit_h_electron)
+                trim_map=args.trim, trim_mtz=args.trim_mtz, normalize_map=args.normalized_map, omit_h_electron=args.omit_h_electron)
     
 # main()
 

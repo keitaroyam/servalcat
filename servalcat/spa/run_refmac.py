@@ -58,6 +58,7 @@ def add_arguments(parser):
     parser.add_argument('--shake_radius', default=0.3,
                         help='Shake rmsd in case of --cross_validation_method=shake')
     parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
+    parser.add_argument('--trim_fofc_mtz', action="store_true", help="diffmap.mtz will have smaller cell (if --mask_for_fofc is given)")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument("--fsc_resolution", type=float,
@@ -301,9 +302,10 @@ def main(args):
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
     utils.model.adp_analysis(st)
     
-    if not args.no_shift:
+    if not args.no_trim:
         st.cell = maps[0][0].unit_cell
-        spa.shiftback.shift_back_model(st, file_info["shifts"]) # st is modified
+        if not args.no_shift:
+            spa.shiftback.shift_back_model(st, file_info["shifts"]) # st is modified
     
     modify_output(st, file_info.get("inscode_mods"))
     utils.fileio.write_model(st, prefix=args.output_prefix,
@@ -335,9 +337,10 @@ def main(args):
         
         # Modify output
         st_sr, cif_ref_sr = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix_shaken+model_format)
-        if not args.no_shift:
+        if not args.no_trim:
             st_sr.cell = maps[0][0].unit_cell
-            spa.shiftback.shift_back_model(st_sr, file_info["shifts"])
+            if not args.no_shift:
+                spa.shiftback.shift_back_model(st_sr, file_info["shifts"])
             
         modify_output(st_sr, file_info.get("inscode_mods"))
         utils.fileio.write_model(st_sr, prefix=args.output_prefix+"_shaken_refined",
@@ -378,7 +381,8 @@ def main(args):
                                                           half1_only=(args.cross_validation and args.cross_validation_method == "throughout"))
         spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
                              mask=mask, output_prefix="diffmap",
-                             crop=mask is not None, normalize_map=mask is not None)
+                             trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
+                             normalize_map=mask is not None)
     else:
         logger.write("Will not calculate Fo-Fc map because half maps were not provided")
 

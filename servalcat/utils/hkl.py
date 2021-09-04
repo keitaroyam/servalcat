@@ -84,11 +84,14 @@ class HklData:
     # copy()
 
     def merge_asu_data(self, asu_data, label, common_only=True):
-        if label in self.df:
+        if self.df is not None and label in self.df:
             raise Exception("Duplicated label")
         
         df_tmp = df_from_asu_data(asu_data, label)
-        if common_only:
+
+        if self.df is None:
+            self.df = df_tmp
+        elif common_only:
             self.df = self.df.merge(df_tmp)
         else:
             self.df = self.df.merge(other.df, how="outer")
@@ -357,3 +360,14 @@ class HklData:
         else:
             return k1, B1
     # scale_k_and_b()
+
+    def translate(self, lab, shift):
+        # apply phase shift
+        assert numpy.iscomplexobj(self.df[lab])
+        
+        if type(shift) != gemmi.Position:
+            shift = gemmi.Position(*shift)
+            
+        self.df[lab] *= numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
+                                                         self.cell.fractionalize(shift).tolist()))
+    # translate()
