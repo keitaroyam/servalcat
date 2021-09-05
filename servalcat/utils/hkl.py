@@ -253,9 +253,10 @@ class HklData:
     def fft_map(self, label, grid_size=None, sample_rate=3):
         asu = self.as_asu_data(label)
         if grid_size is None:
-            grid_size = (0, 0, 0)
-
-        ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=grid_size)
+            ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
+        else:
+            ma = gemmi.transform_f_phi_grid_to_map(asu.get_f_phi_on_grid(grid_size)) # half_l=False
+            
         return ma
     # fft_map()
 
