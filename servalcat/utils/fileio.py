@@ -44,6 +44,8 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.atoms = True
         groups.cell = True
         groups.scale = True
+        groups.assembly = True
+        # FIXME is this all? 
         try:
             doc = read_cif_safe(cif_ref)
         except Exception as e:

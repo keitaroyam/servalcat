@@ -116,7 +116,7 @@ def symmodel(args):
 
     is_helical = args.twist is not None
 
-    st = fileio.read_structure(args.model)
+    st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
     st.spacegroup_hm = "P 1"
     start_xyz = numpy.zeros(3)
     if args.map:
@@ -179,9 +179,9 @@ def symmodel(args):
         args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_asu"
 
     if args.pdb or args.cif:
-        fileio.write_model(st, args.output_prfix, pdb=args.pdb, cif=args.cif)
+        fileio.write_model(st, args.output_prfix, pdb=args.pdb, cif=args.cif, cif_ref=cif_ref)
     else:
-        fileio.write_model(st, file_name=args.output_prfix+model_format)
+        fileio.write_model(st, file_name=args.output_prfix+model_format, cif_ref=cif_ref)
 
     # Sym expand
     model.expand_ncs(st, howtoname=howtoname)
