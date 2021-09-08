@@ -12,6 +12,7 @@ import datetime
 import pipes
 import getpass
 import platform
+import gemmi
 import servalcat.spa.sfcalc
 import servalcat.spa.shiftback
 import servalcat.spa.run_refmac
@@ -28,7 +29,10 @@ def main():
     
     parser = argparse.ArgumentParser(prog="servalcat",
                                      description="A tool for model refinement and map calculation for cryo-EM SPA.")
-    parser.add_argument("-v", "--version", action="version", version='servalcat {}'.format(servalcat.__version__))
+    parser.add_argument("-v", "--version", action="version",
+                        version="Servalcat {servalcat} with gemmi {gemmi} (Python {python})".format(servalcat=servalcat.__version__,
+                                                                                                    python=platform.python_version(),
+                                                                                                    gemmi=gemmi.__version__))
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(sfcalc=servalcat.spa.sfcalc,
