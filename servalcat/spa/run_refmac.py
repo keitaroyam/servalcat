@@ -263,10 +263,10 @@ def main(args):
     if has_ncsc:
         args.keyword_file.append(file_info["ncsc_file"])
 
-    if not args.no_shift:
+    if not args.no_trim:
         refmac_prefix = "{}_{}".format(args.shifted_model_prefix, args.output_prefix)
     else:
-        refmac_prefix = args.output_prefix
+        refmac_prefix = args.output_prefix # XXX this should be different name (nomask etc?)
 
     # Weight auto scale
     if args.weight_matrix is None and args.weight_auto_scale is None:
