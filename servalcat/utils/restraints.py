@@ -33,6 +33,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         return
 
     if monomer_dir:
+        logger.write("Reading monomers from {}".format(monomer_dir))
         resinlib = list(filter(lambda x: os.path.exists(filename_in_monlib(monomer_dir, x)), resnames))
         monlib = gemmi.read_monomer_lib(monomer_dir, resinlib)
     else:
@@ -57,8 +58,18 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     if not_loaded:
         logger.write("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
         
+    logger.write("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
+                                                                                          len(monlib.links),
+                                                                                          len(monlib.modifications)))
+    logger.write("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
+    logger.write("          Links: {}".format(" ".join([x for x in monlib.links])))
+    logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
+    logger.write("")
+
     if stop_for_unknowns:
         logger.write("Checking if unknown atoms exist..")
+        st = st.clone()
+        # XXX this creates non-sense ChemLink if not match (see topo.hpp line 443)
         topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange(0)) # .None is not allowed..
         unknowns = set()
         for cinfo in topo.chain_infos:
@@ -83,14 +94,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         if unknowns:
             raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknowns)))
 
-    logger.write("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
-                                                                                          len(monlib.links),
-                                                                                          len(monlib.modifications)))
-    logger.write("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
-    logger.write("          Links: {}".format(" ".join([x for x in monlib.links])))
-    logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
-    logger.write("")
-    
+   
     return monlib
 # load_monomer_library()
 
