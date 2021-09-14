@@ -72,7 +72,7 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
+def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
              blur=None, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
@@ -96,13 +96,14 @@ def calc_fsc(st, output_prefix, maps, d_min, mask_radius, b_before_mask, no_shar
         utils.restraints.add_hydrogens(st, monlib)
         if st_sr is not None: utils.restraints.add_hydrogens(st_sr, monlib)
 
-    if mask_radius is not None:
-        mask = gemmi.FloatGrid(*maps[0][0].shape)
-        mask.set_unit_cell(st.cell)
-        mask.spacegroup = st.find_spacegroup()
-        mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
+    if mask is not None or mask_radius is not None:
+        if mask is None:
+            mask = gemmi.FloatGrid(*maps[0][0].shape)
+            mask.set_unit_cell(st.cell)
+            mask.spacegroup = st.find_spacegroup()
+            mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
         if no_sharpen_before_mask or len(maps) < 2:
-            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, mask.unit_cell, mask.spacegroup)]+ma[1:]
+            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, st.cell, st.find_spacegroup())]+ma[1:]
                     for ma in maps]
         else:
             # It seems we need different B for different resolution limit
@@ -363,10 +364,15 @@ def main(args):
 
     else:
         st_sr_expanded = None
+
+    if args.mask:
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
+    else:
+        mask = None
         
     # Calc FSC
     fscavg_text = calc_fsc(st_expanded, args.output_prefix, maps,
-                           args.resolution, mask_radius=args.mask_radius if not args.no_mask else None,
+                           args.resolution, mask=mask, mask_radius=args.mask_radius if not args.no_mask else None,
                            b_before_mask=args.b_before_mask,
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
                            make_hydrogen=args.hydrogen,
