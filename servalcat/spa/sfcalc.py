@@ -285,7 +285,7 @@ def main(args, monlib=None):
     mask = None
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
     
     st_new = None
     if args.model: # and 
@@ -378,7 +378,7 @@ def main(args, monlib=None):
         utils.fileio.write_model(st_new, "starting_model", pdb=True, cif=True)
         ret["model_file"] = "starting_model" + model_format
 
-    if mask:
+    if mask is not None:
         if args.invert_mask:
             logger.write("Inverting mask..")
             mask_max, mask_min = numpy.max(mask), numpy.min(mask)
