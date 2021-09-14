@@ -224,6 +224,14 @@ def main(args):
         logger.error("Error: give --map | --halfmaps.")
         return
 
+    if args.mask_for_fofc and not os.path.exists(args.mask_for_fofc):
+        logger.error("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
+        return
+
+    if args.trim_fofc_mtz and not args.mask_for_fofc:
+        logger.error("Error: --trim_fofc_mtz is specified but --mask_for_fofc is not given")
+        return    
+
     if args.ligand: args.ligand = sum(args.ligand, [])
 
     st = utils.fileio.read_structure(args.model)
