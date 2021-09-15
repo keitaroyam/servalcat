@@ -10,6 +10,7 @@ import gemmi
 import numpy
 import pandas
 from servalcat.utils import logger
+from servalcat import spa
 from servalcat import utils
 
 def add_arguments(parser):
@@ -29,8 +30,7 @@ def add_arguments(parser):
                         help='')
     parser.add_argument('-d', '--resolution',
                         type=float,
-                        required=True,
-                        help='')
+                        help='Default: Nyquist')
     parser.add_argument('-o', '--fsc_out',
                         default="fsc.dat",
                         help='')
@@ -105,6 +105,10 @@ def main(args):
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
 
+    if args.resolution is None:
+        args.resolution = utils.maps.nyquist_resolution(maps[0][0])
+        logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
+        
     sts = []
     for xyzin in args.model:
         st = utils.fileio.read_structure(xyzin)
@@ -117,7 +121,7 @@ def main(args):
     
     if args.mask:
         logger.write("Input mask file: {}".format(args.mask))
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
     elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
         mask = gemmi.FloatGrid(*maps[0][0].shape)
         mask.set_unit_cell(sts[0].cell)
@@ -132,7 +136,9 @@ def main(args):
                 for ma in maps]
     elif mask is not None:
         logger.write("Sharpen-mask-unsharpen..")
-        maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=args.b_before_mask)
+        b_before_mask = args.b_before_mask
+        if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
+        maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
 
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
 
