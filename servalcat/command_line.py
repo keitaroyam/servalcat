@@ -13,6 +13,9 @@ import pipes
 import getpass
 import platform
 import gemmi
+import numpy
+import scipy
+import pandas
 import servalcat.spa.sfcalc
 import servalcat.spa.shiftback
 import servalcat.spa.run_refmac
@@ -25,14 +28,21 @@ import servalcat.utils.commands
 
 from servalcat.utils import logger
 
+def dependency_versions():
+    return dict(gemmi=gemmi.__version__,
+                scipy=scipy.version.full_version,
+                numpy=numpy.version.full_version,
+                pandas=pandas.__version__)
+# dependency_versions()
+
 def main():
     
     parser = argparse.ArgumentParser(prog="servalcat",
                                      description="A tool for model refinement and map calculation for cryo-EM SPA.")
     parser.add_argument("-v", "--version", action="version",
-                        version="Servalcat {servalcat} with gemmi {gemmi} (Python {python})".format(servalcat=servalcat.__version__,
-                                                                                                    python=platform.python_version(),
-                                                                                                    gemmi=gemmi.__version__))
+                        version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
+                                                                                             python=platform.python_version(),
+                                                                                             deps=", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(sfcalc=servalcat.spa.sfcalc,
@@ -57,7 +67,8 @@ def main():
         print("specify subcommand.")    
     elif args.command in modules:
         logger.set_file("servalcat.log")
-        logger.write("# Servalcat ver. {}".format(servalcat.__version__))
+        logger.write("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
+        logger.write("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
         logger.write("# Started on {}".format(datetime.datetime.now()))
         logger.write("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
         logger.write("# Command-line args:")
