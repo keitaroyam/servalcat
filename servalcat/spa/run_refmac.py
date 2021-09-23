@@ -57,7 +57,9 @@ def add_arguments(parser):
                         "throughout: use only a half map for refinement (another half map is used for error estimation)")
     parser.add_argument('--shake_radius', default=0.3,
                         help='Shake rmsd in case of --cross_validation_method=shake')
-    parser.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
+    group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
     parser.add_argument('--trim_fofc_mtz', action="store_true", help="diffmap.mtz will have smaller cell (if --mask_for_fofc is given)")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
@@ -229,7 +231,11 @@ def main(args):
         logger.error("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
         return
 
-    if args.trim_fofc_mtz and not args.mask_for_fofc:
+    if args.mask_for_fofc and args.mask_radius_for_fofc:
+        logger.error("Error: you cannot specify both --mask_for_fofc and --mask_radius_for_fofc")
+        return        
+
+    if args.trim_fofc_mtz and not (args.mask_for_fofc or args.mask_radius_for_fofc):
         logger.error("Error: --trim_fofc_mtz is specified but --mask_for_fofc is not given")
         return    
 
@@ -387,8 +393,17 @@ def main(args):
         logger.write(" model: {}".format(args.output_prefix+model_format))
 
         if args.mask_for_fofc:
+            logger.write("  mask: {}".format(args.mask_for_fofc))
             mask = numpy.array(utils.fileio.read_ccp4_map(args.mask_for_fofc)[0])
+        elif args.mask_radius_for_fofc:
+            logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
+            mask = gemmi.FloatGrid(*maps[0][0].shape)
+            mask.set_unit_cell(maps[0][0].unit_cell)
+            mask.spacegroup = gemmi.SpaceGroup(1)
+            mask.mask_points_in_constant_radius(st_expanded[0], args.mask_radius_for_fofc, 1.)
+            mask = numpy.array(mask)
         else:
+            logger.write("  mask: not used")
             mask = None
 
         hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
