@@ -10,7 +10,7 @@ pip install git+https://github.com/keitaroyam/servalcat.git
 ```
 Add `-U` option for updating. Servalcat often requires new [GEMMI](https://github.com/project-gemmi/gemmi) features (not the latest from pypi, but from github).
 
-The required GEMMI version is now [v0.4.8-5-gd4e0765c](https://github.com/project-gemmi/gemmi/commit/d4e0765c). Please update GEMMI as well if it is old.
+The required GEMMI version is now [v0.4.8-42-g5773fa8c](https://github.com/project-gemmi/gemmi/commit/5773fa8c). Please update GEMMI as well if it is old.
 
 ## Usage
 ```
