@@ -15,6 +15,7 @@ from servalcat.utils import maps
 import os
 import gemmi
 import numpy
+import pandas
 
 def add_arguments(p):
     subparsers = p.add_subparsers(dest="subcommand")
@@ -22,6 +23,11 @@ def add_arguments(p):
     # show
     parser = subparsers.add_parser("show", description = 'Show file info supported by the program')
     parser.add_argument('files', nargs='+')
+
+    # json2csv
+    parser = subparsers.add_parser("json2csv", description = 'Convert json to csv for plotting')
+    parser.add_argument('json')
+    parser.add_argument('-o', '--output_prefix')
 
     # symmodel
     parser = subparsers.add_parser("symmodel", description="Add symmetry annotation to model")
@@ -367,22 +373,32 @@ def show(args):
             logger.write("\n")
 # show()
 
+def json2csv(args):
+    if not args.output_prefix:
+        args.output_prefix = fileio.splitext(os.path.basename(args.json))[0]
+        
+    df = pandas.read_json(args.json)
+    df.to_csv(args.output_prefix+".csv", index=False)
+    logger.write("Output: {}".format(args.output_prefix+".csv"))
+# json2csv()
+
 def main(args):
+    comms = dict(show=show,
+                 json2csv=json2csv,
+                 symmodel=symmodel,
+                 expand=symexpand,
+                 h_add=h_add,
+                 merge_models=merge_models,
+                 power=show_power,
+                 fcalc=fcalc)
+    
     com = args.subcommand
-    if com == "show":
-        show(args)
-    elif com == "symmodel":
-        symmodel(args)
-    elif com == "expand":
-        symexpand(args)
-    elif com == "h_add":
-        h_add(args)
-    elif com == "merge_models":
-        merge_models(args)
-    elif com == "power":
-        show_power(args)
-    elif com == "fcalc":
-        fcalc(args)
+    f = comms.get(com)
+    if f:
+        return f(args)
+    else:
+        logger.error("Unknown subcommand: {}".format(com))
+        return
 # main()
 
 if __name__ == "__main__":
