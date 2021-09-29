@@ -288,9 +288,11 @@ def cra_to_indices(cra, model):
 # cra_to_indices()
 
 def cra_to_atomaddress(cra):
-    return gemmi.AtomAddress(cra.chain.name,
-                             cra.residue.seqid, cra.residue.name,
-                             cra.atom.name, cra.atom.altloc)
+    aa = gemmi.AtomAddress(cra.chain.name,
+                           cra.residue.seqid, cra.residue.name,
+                           cra.atom.name, cra.atom.altloc)
+    aa.res_id.segment = cra.residue.segment
+    return aa
 # cra_to_atomaddress()
 
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
@@ -318,8 +320,8 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
             if key1 == key2:
                 segi1, segi2 = int(r.partner1.residue.segment), int(r.partner2.residue.segment)
                 pairs.setdefault(key1, []).append([segi1, segi2])
-                cra_dict[key1+(segi1,)] = r.partner1
-                cra_dict[key1+(segi2,)] = r.partner2
+                cra_dict[key1+(segi1,)] = cra_to_atomaddress(r.partner1)
+                cra_dict[key1+(segi2,)] = cra_to_atomaddress(r.partner2)
 
         if pairs: logger.write("Atoms on special position detected.")
         res_to_be_removed = []
@@ -337,17 +339,17 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
             for i, l in enumerate(labs): groups[l].append(segs[i])
             for group in groups:
                 group.sort() # first segid will be kept
-                sum_occ = sum([cra_dict[key+(i,)].atom.occ for i in group])
+                sum_occ = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.occ for i in group])
                 logger.write("  multiplicity= {} occupancies_total= {:.2f} segids= {}".format(len(group), sum_occ, group))
-                sum_pos = sum([cra_dict[key+(i,)].atom.pos for i in group], gemmi.Position(0,0,0))
+                sum_pos = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.pos for i in group], gemmi.Position(0,0,0))
                 if len(group) < 2: continue # should never happen
                 # modify first atom
-                cra0 = cra_dict[key+(group[0],)]
+                cra0 = st[0].find_cra(cra_dict[key+(group[0],)])
                 cra0.atom.occ = max(1, sum_occ)
                 cra0.atom.pos = sum_pos/len(group)
                 # remove remaining atoms
                 for g in group[1:]:
-                    cra = cra_dict[key+(g,)]
+                    cra = st[0].find_cra(cra_dict[key+(g,)])
                     cra.residue.remove_atom(cra.atom.name, cra.atom.altloc, cra.atom.element)
                     if len(cra.residue) == 0: # empty residue needs to be removed
                         r_idx = [i for i, r in enumerate(cra.chain) if r==cra.residue]
