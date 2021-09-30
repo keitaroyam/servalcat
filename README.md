@@ -4,6 +4,13 @@
 Currently we focus on development for single particle analysis and there are only a few functions at the moment.
 
 ## Installation
+
+```
+pip install servalcat
+```
+will install the stable version.
+
+If you want to try the latest features,
 ```
 pip install git+https://github.com/project-gemmi/gemmi.git
 pip install git+https://github.com/keitaroyam/servalcat.git
@@ -78,4 +85,4 @@ By default new boundary is centered on the original map and cubic, but they can 
 If you do not want to shift maps and models, specify `--no_shift` to keep origin.
 
 ## Reference
-[Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *bioRxiv*](https://doi.org/10.1101/2021.05.04.442493)
+[Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**](https://doi.org/10.1107/S2059798321009475)
