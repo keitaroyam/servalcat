@@ -306,7 +306,10 @@ def main(args):
     # Run Refmac
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
     refmac.set_libin(args.ligand)
-    refmac.run_refmac()
+    refmac_summary = refmac.run_refmac()
+    json.dump(refmac_summary,
+              open("{}_summary.json".format(refmac_prefix), "w"),
+              indent=True)
 
     if args.halfmaps:
         maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
@@ -416,8 +419,8 @@ def main(args):
         logger.write("Will not calculate Fo-Fc map because half maps were not provided")
 
     # Final summary
-    if refmac.actual_weights:
-        final_weight = refmac.actual_weights[-1][1]
+    if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
+        final_weight = refmac_summary["cycles"][-2]["actual_weight"]
     else:
         final_weight = "???"
 
@@ -449,8 +452,8 @@ Weight used: {final_weight}
              
 Open refined{model_format} and diffmap.mtz with COOT.
 =============================================================================
-""".format(rmsbond=refmac.final_stats.get("rms_bond", "???"),
-           rmsangle=refmac.final_stats.get("rms_angle", "???"),
+""".format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
+           rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
            fscavgs=fscavg_text.rstrip(),
            fsclog="{}_fsc.log".format(args.output_prefix),
            adpstats=adpstats_txt.rstrip(),

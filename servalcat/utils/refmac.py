@@ -82,9 +82,6 @@ class Refmac:
                 self.init_from_args(kwargs["args"])
             else:
                 setattr(self, k, kwargs[k])
-
-        self.actual_weights = []
-        self.final_stats = {}
     # __init__()
 
     def init_from_args(self, args):
@@ -224,7 +221,11 @@ class Refmac:
         log_delay = []
         summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.write
         outlier_flag = False
-        self.actual_weights = []
+        last_table_flag = False
+        last_table_keys = []
+        ret = {"version":None,
+               "cycles": [{"cycle":i} for i in range(self.ncycle+1)],
+               } # metadata
         
         for l in iter(p.stdout.readline, ""):
             log.write(l)
@@ -234,6 +235,7 @@ class Refmac:
             
             r_ver = re_version.search(l)
             if r_ver:
+                ret["version"] = r_ver.group(1)
                 summary_write("Starting Refmac {} (PID: {})".format(r_ver.group(1), p.pid))
 
             # print error/warning
@@ -270,6 +272,7 @@ class Refmac:
                 else:
                     note = ""
 
+                ret["cycles"][cycle-1]["fsc_average"] = fsc
                 if self.global_mode == "spa":
                     summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
             elif "Rms BondLength" in l:
@@ -279,9 +282,30 @@ class Refmac:
 
             r_actual_weight = re_actual_weight.search(l)
             if r_actual_weight:
-                self.actual_weights.append((cycle, r_actual_weight.group(1)))
-                    
-        ret = p.wait()
+                ret["cycles"][cycle-1]["actual_weight"] = r_actual_weight.group(1)
+
+            # Final table
+            if "    Ncyc    Rfact    Rfree     FOM" in l:
+                last_table_flag = True
+                last_table_keys = l.split()
+                if last_table_keys[-1] == "$$": del last_table_keys[-1]
+            elif last_table_flag:
+                if "$$ Final results $$" in l:
+                    last_table_flag = False
+                    continue
+                sp = l.split()
+                if len(sp) == len(last_table_keys) and sp[0] != "$$":
+                    cyc = int(sp[last_table_keys.index("Ncyc")])
+                    key_name = dict(rmsBOND="rms_bond", zBOND="rmsz_bond",
+                                    rmsANGL="rms_angle", zANGL="rmsz_angle",
+                                    rmsCHIRAL="rms_chiral")
+                    for k in key_name:
+                        if k in last_table_keys:
+                            ret["cycles"][cyc][key_name[k]] = sp[last_table_keys.index(k)]
+                        else:
+                            logger.error("table does not have key {}?".format(k))
+                            
+        retcode = p.wait()
         if log_delay:
             logger.write("== Summary of Refmac ==")
             logger.write("\n".join(log_delay))
@@ -290,14 +314,13 @@ class Refmac:
             logger.write("                      Initial    Final")
             logger.write(rmsbond.rstrip())
             logger.write(rmsangle.rstrip())
-            self.final_stats["rms_bond"] = rmsbond.split()[-1]
-            self.final_stats["rms_angle"] = rmsangle.split()[-1]
             
-        logger.write("REFMAC5 finished with exit code= {}".format(ret))
+        logger.write("REFMAC5 finished with exit code= {}".format(retcode))
 
         # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
             raise RuntimeError("REFMAC5 did not produce output files.")
-        
+
+        return ret
     # run_refmac()
 # class Refmac
