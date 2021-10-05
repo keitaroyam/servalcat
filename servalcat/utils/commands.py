@@ -100,6 +100,21 @@ def add_arguments(p):
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument('-o', '--output_prefix')
 
+    # nemap
+    parser = subparsers.add_parser("nemap", description = 'Normalized expected map calculation from half maps')
+    parser.add_argument("--halfmaps", required=True, nargs=2)
+    parser.add_argument('--pixel_size', type=float, help='Override pixel size (A)')
+    parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map calculation (use half 2 only for noise estimation)")
+    parser.add_argument('-B', type=float, help="local B value")
+    parser.add_argument("--no_fsc_weights", action='store_true',
+                        help="Just for debugging purpose: turn off FSC-based weighting")
+    parser.add_argument("--sharpening_b", type=float,
+                        help="Use B value (negative value for sharpening) instead of standard deviation of the signal")
+    parser.add_argument("-d", '--resolution', type=float, required=True)
+    parser.add_argument('-m', '--mask', help="mask file")
+    parser.add_argument('-o', '--output_prefix', default='nemap')
+    parser.add_argument("--trim", action='store_true', help="Write trimmed maps")
+    parser.add_argument("--trim_mtz", action='store_true', help="Write trimmed mtz")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -365,6 +380,25 @@ def fcalc(args):
     logger.write("{} written.".format(args.output_prefix+".mtz"))
 # fcalc()
 
+def nemap(args):
+    from servalcat.spa import fofc
+    
+    if args.mask:
+        mask = numpy.array(fileio.read_ccp4_map(args.mask)[0])
+    else:
+        mask = None
+
+    halfmaps = [fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    hkldata = maps.mask_and_fft_maps(halfmaps, args.resolution, mask)
+    hkldata.setup_relion_binning()
+    maps.calc_noise_var_from_halfmaps(hkldata)
+    map_labs = fofc.calc_maps(hkldata, B=args.B, has_halfmaps=True, half1_only=args.half1_only,
+                              no_fsc_weights=args.no_fsc_weights, sharpening_b=args.sharpening_b)
+    fofc.write_files(hkldata, map_labs, grid_start=halfmaps[0][1], stats_str=None,
+                     mask=mask, output_prefix=args.output_prefix,
+                     trim_map=args.trim, trim_mtz=args.trim_mtz)
+# nemap()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -390,7 +424,8 @@ def main(args):
                  h_add=h_add,
                  merge_models=merge_models,
                  power=show_power,
-                 fcalc=fcalc)
+                 fcalc=fcalc,
+                 nemap=nemap)
     
     com = args.subcommand
     f = comms.get(com)

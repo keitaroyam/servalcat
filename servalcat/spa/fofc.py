@@ -119,7 +119,12 @@ $$
 #atexit.register(profile.print_stats)
 #@profile
 def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weights=False, sharpening_b=None):
-    if has_halfmaps:
+    has_fc = "FC" in hkldata.df
+
+    if not has_fc:
+        labs = ["FWT"]
+        if B is not None: labs.append("FWT_b0")
+    elif has_halfmaps:
         labs = ["Fupdate", "DELFWT", "FWT", "DELFWT_noscale", "Fupdate_noscale"]
         if B is not None: labs.extend(["Fupdate_b0", "DELFWT_b0", "FWT_b0"])
     else:
@@ -136,72 +141,75 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
         FP = hkldata.df.F_map1.to_numpy()
     else:
         FP = hkldata.df.FP.to_numpy()
+
+    s2 = 1./hkldata.d_spacings()**2
         
     for i_bin, g in hkldata.binned():
-        Fo = FP[g.index]
-        Fc = g.FC.to_numpy()
-        D = hkldata.binned_df.D[i_bin]
-        if not has_halfmaps:
-            delfwt = (Fo-D*Fc)
-            tmp["DELFWT"][g.index] = delfwt
-            continue
-
-        S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
-        fsc = hkldata.binned_df.FSCfull[i_bin] # FSCfull
-        if half1_only:
-            varn = hkldata.binned_df.var_noise[i_bin] * 2
-            fsc = fsc/(2-fsc) # to FSChalf
+        if has_halfmaps:
+            fsc = hkldata.binned_df.FSCfull[i_bin] # FSCfull
+            if half1_only:
+                varn = hkldata.binned_df.var_noise[i_bin] * 2
+                fsc = fsc/(2-fsc) # to FSChalf
+            else:
+                varn = hkldata.binned_df.var_noise[i_bin]
         else:
-            varn = hkldata.binned_df.var_noise[i_bin]
-
-        w = 1. if no_fsc_weights else S/(S+varn)
+            fsc, varn = 1., 0.
+            
         w_nomodel = 1. if no_fsc_weights else fsc
-        
-        delfwt = w * (Fo-D*Fc)
-        fup = w * Fo + (1.-w)*D*Fc
-
-        tmp["DELFWT_noscale"][g.index] = delfwt
-        tmp["Fupdate_noscale"][g.index] = fup
-
+        Fo = FP[g.index]
         sig_fo = numpy.std(Fo)
+        s2_bin = s2[g.index]
+
+        if has_fc:
+            Fc = g.FC.to_numpy()
+            D = hkldata.binned_df.D[i_bin]
+            S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
+            w = 1. if no_fsc_weights or not has_halfmaps else S/(S+varn)
+            delfwt = w * (Fo-D*Fc)
+            fup = w * Fo + (1.-w)*D*Fc
+            if has_halfmaps: # no point making this map when half maps not given
+                tmp["DELFWT_noscale"][g.index] = delfwt
+                tmp["Fupdate_noscale"][g.index] = fup
+
         if sharpening_b is None:
-            if fsc < 0 or sig_fo < 1e-10: # FIXME probably we should compare sig_fo with mean(fo)
+            if fsc <= 0 or sig_fo < 1e-10: # FIXME probably we should compare sig_fo with mean(fo)
                 logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
                 continue                
             k = sig_fo * numpy.sqrt(fsc)
         else:
-            s2 = 1./hkldata.d_spacings()[g.index]**2
-            k = numpy.exp(-sharpening_b*s2/4)
+            k = numpy.exp(-sharpening_b*s2_bin/4)
             
         #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
 
         lab_suf = "" if B is None else "_b0"
-        tmp["FWT"+lab_suf][g.index] = w_nomodel/k*Fo
-        tmp["DELFWT"+lab_suf][g.index] = delfwt/k
-        tmp["Fupdate"+lab_suf][g.index] = fup/k
+        if has_halfmaps:
+            tmp["FWT"+lab_suf][g.index] = w_nomodel/k*Fo
+            if has_fc:
+                tmp["DELFWT"+lab_suf][g.index] = delfwt/k
+                tmp["Fupdate"+lab_suf][g.index] = fup/k
+        elif has_fc:
+            tmp["DELFWT"+lab_suf][g.index] = delfwt
 
-        if B is not None: # local B based map
-            s2 = 1./hkldata.d_spacings()[g.index]**2 # TODO fix duplicated calculation
-            k_l = numpy.exp(-B*s2/4.)
-            k2_l = numpy.exp(-B*s2/2.)
+        if B is not None and has_halfmaps: # local B based map
+            k_l = numpy.exp(-B*s2_bin/4.)
+            k2_l = numpy.exp(-B*s2_bin/2.)
             fsc_l = k2_l*fsc/(1+(k2_l-1)*fsc)
-            S_l = S * k2_l
-            w = 1. if no_fsc_weights else S_l/(S_l+varn)            
             w_nomodel = 1. if no_fsc_weights else fsc_l
-            
-            delfwt = (Fo-D*Fc)*w/k/k_l
-            fup = (w*Fo+(1.-w)*D*Fc)/k/k_l
-            fwt = Fo*w_nomodel/k/k_l
-            logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
-                                                                           numpy.average(k),
-                                                                           numpy.average(sig_fo),
-                                                                           numpy.average(fsc_l),
-                                                                           numpy.average(k_l),
-                                                                           numpy.average(abs(fup)),
-                                                                           numpy.average(abs(delfwt))))
-            tmp["FWT"][g.index] = fwt
-            tmp["DELFWT"][g.index] = delfwt
-            tmp["Fupdate"][g.index] = fup
+            tmp["FWT"][g.index] = Fo*w_nomodel/k/k_l
+            if has_fc:
+                S_l = S * k2_l
+                w = 1. if no_fsc_weights or not has_halfmaps else S_l/(S_l+varn)            
+                delfwt = (Fo-D*Fc)*w/k/k_l
+                fup = (w*Fo+(1.-w)*D*Fc)/k/k_l
+                logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
+                                                                                      numpy.average(k),
+                                                                                      numpy.average(sig_fo),
+                                                                                      numpy.average(fsc_l),
+                                                                                      numpy.average(k_l),
+                                                                                      numpy.average(abs(fup)),
+                                                                                      numpy.average(abs(delfwt))))
+                tmp["DELFWT"][g.index] = delfwt
+                tmp["Fupdate"][g.index] = fup
 
     for l in labs:
         hkldata.df[l] = tmp[l]
@@ -211,7 +219,8 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 # calc_maps()
 
 def dump_to_mtz(hkldata, map_labs, mtz_out):
-    map_labs = map_labs + ["FP", "FC"]
+    extra_labs = list(filter(lambda x: x in hkldata.df, ["FP", "FC"]))
+    map_labs = map_labs + extra_labs
     data = numpy.empty((len(hkldata.df.index), len(map_labs)*2+3))
     data[:,:3] = hkldata.df[["H","K","L"]]
     for i, lab in enumerate(map_labs):
@@ -289,31 +298,32 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         new_cell, new_shape, shifts = None, None, None
         
     if normalize_map and mask is not None:
-        logger.write("Normalized Fo-Fc map requested.")
-        delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
         cutoff = 0.5
-        masked = numpy.array(delfwt_map)[mask>cutoff]
-        logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
-        logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
-        global_mean = numpy.average(delfwt_map)
-        global_std = numpy.std(delfwt_map)
-        logger.write("    Global mean: {:.3e}".format(global_mean))
-        logger.write("     Global std: {:.3e}".format(global_std))
-        masked_mean = numpy.average(masked)
-        masked_std = numpy.std(masked)
-        logger.write("    Masked mean: {:.3e}".format(masked_mean))
-        logger.write("     Masked std: {:.3e}".format(masked_std))
-        #logger.write(" If you want to scale manually: {}".format())
-        scaled = (delfwt_map - masked_mean)/masked_std
-        hkldata.df["DELFWT"] /= masked_std # it would work if masked_mean~0
-        if omit_h_electron:
-            scaled *= -1
-            filename = "{}_normalized_fofc_flipsign.mrc".format(output_prefix)
-        else:
-            filename = "{}_normalized_fofc.mrc".format(output_prefix)
-        logger.write("  Writing {}".format(filename))
-        utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                  grid_start=grid_start, grid_shape=new_shape)
+        if "DELFWT" in hkldata.df:
+            logger.write("Normalized Fo-Fc map requested.")
+            delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
+            masked = numpy.array(delfwt_map)[mask>cutoff]
+            logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
+            logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
+            global_mean = numpy.average(delfwt_map)
+            global_std = numpy.std(delfwt_map)
+            logger.write("    Global mean: {:.3e}".format(global_mean))
+            logger.write("     Global std: {:.3e}".format(global_std))
+            masked_mean = numpy.average(masked)
+            masked_std = numpy.std(masked)
+            logger.write("    Masked mean: {:.3e}".format(masked_mean))
+            logger.write("     Masked std: {:.3e}".format(masked_std))
+            #logger.write(" If you want to scale manually: {}".format())
+            scaled = (delfwt_map - masked_mean)/masked_std
+            hkldata.df["DELFWT"] /= masked_std # it would work if masked_mean~0
+            if omit_h_electron:
+                scaled *= -1
+                filename = "{}_normalized_fofc_flipsign.mrc".format(output_prefix)
+            else:
+                filename = "{}_normalized_fofc.mrc".format(output_prefix)
+            logger.write("  Writing {}".format(filename))
+            utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
+                                      grid_start=grid_start, grid_shape=new_shape)
 
         # Write Fo map as well
         if "FWT" in hkldata.df:
@@ -332,6 +342,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         hkldata2 = utils.hkl.HklData(new_cell, hkldata.sg, df=None)
         d_min = hkldata.d_min_max()[0]
         for lab in map_labs + ["FP", "FC"]:
+            if lab not in hkldata.df: continue
             gr = hkldata.fft_map(lab, mask.shape)
             gr = gemmi.FloatGrid(gr.get_subarray(*(list(grid_start)+list(new_shape))),
                                  new_cell, hkldata.sg)
@@ -341,7 +352,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         hkldata = hkldata2
         
     dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
-    open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
+    if stats_str: open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
 # write_files()
 
 def main(args):
@@ -350,7 +361,7 @@ def main(args):
         return
 
     if not args.halfmaps and args.B is not None:
-        logger.error("Error: -B only works for half maps")
+        logger.error("Error: -B only works with half maps")
         return
 
     if args.half1_only:

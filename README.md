@@ -85,4 +85,4 @@ By default new boundary is centered on the original map and cubic, but they can 
 If you do not want to shift maps and models, specify `--no_shift` to keep origin.
 
 ## Reference
-[Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**](https://doi.org/10.1107/S2059798321009475)
+[Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**, 1282-1291](https://doi.org/10.1107/S2059798321009475)
