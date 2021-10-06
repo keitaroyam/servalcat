@@ -179,7 +179,7 @@ class HklData:
             else: break
 
         for i in reversed(range(len(bin_counts))):
-            if bin_counts[i][1] < 10 and i > 0:
+            if i > 0 and bin_counts[i][1]/bin_counts[i-1][1] < 0.5:
                 bin_counts[i-1][1] += bin_counts[i][1]
                 modify_table[bin_counts[i][0]] = bin_counts[i-1][0]
                 logger.write("Bin {} only has {} data. Merging with previous bin.".format(bin_counts[i][0],
