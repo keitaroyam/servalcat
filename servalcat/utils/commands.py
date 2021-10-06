@@ -90,6 +90,7 @@ def add_arguments(p):
     # fcalc
     parser = subparsers.add_parser("fcalc", description = 'Structure factor from model')
     parser.add_argument('--model', required=True)
+    parser.add_argument("--method", choices=["fft", "direct"], default="fft")
     parser.add_argument("--source", choices=["electron", "xray"], default="electron")
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
@@ -113,7 +114,7 @@ def add_arguments(p):
     parser.add_argument("-d", '--resolution', type=float, required=True)
     parser.add_argument('-m', '--mask', help="mask file")
     parser.add_argument('-o', '--output_prefix', default='nemap')
-    parser.add_argument("--trim", action='store_true', help="Write trimmed maps")
+    parser.add_argument("--trim", action='store_true', help="Write trimmed maps") # XXX no effect.
     parser.add_argument("--trim_mtz", action='store_true', help="Write trimmed mtz")
 # add_arguments()
 
@@ -365,9 +366,15 @@ def fcalc(args):
         logger.error("ERROR: No unit cell information. Give --cell.")
         return
     monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                   stop_for_unknowns=False, check_hydrogen=True)
-    fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,
-                               monlib=monlib, source=args.source)
+                                             stop_for_unknowns=False, check_hydrogen=True)
+    if args.method == "fft":
+        fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,
+                                   mott_bethe=args.source=="electron",
+                                   monlib=monlib, source=args.source)
+    else:
+        fc_asu = model.calc_fc_direct(st, args.resolution, source=args.source,
+                                      mott_bethe=args.source=="electron", monlib=monlib)
+
     mtz = gemmi.Mtz()
     mtz.spacegroup = fc_asu.spacegroup
     mtz.cell = fc_asu.unit_cell
