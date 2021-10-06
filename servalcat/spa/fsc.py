@@ -21,6 +21,10 @@ def add_arguments(parser):
                         help="")
     parser.add_argument('--map',
                         help='Input map file(s)')
+    parser.add_argument('--mtz',
+                        help='Input mtz file. Mask is not supported.')
+    parser.add_argument('--labin', nargs=2,
+                        help='label for mtz')
     parser.add_argument("--halfmaps",  nargs=2)
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
@@ -102,17 +106,34 @@ def main(args):
         assert maps[0][0].shape == maps[1][0].shape
         assert maps[0][0].unit_cell == maps[1][0].unit_cell
         assert maps[0][1] == maps[1][1]
-    else:
+        unit_cell = maps[0][0].unit_cell
+    elif args.map:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
+        unit_cell = maps[0][0].unit_cell
+    elif args.mtz:
+        if args.mask or args.mask_radius is not None:
+            logger.error("mask for mtz input not supported.")
+            return
+        f = utils.fileio.read_asu_data_from_mtz(args.mtz, args.labin)
+        hkldata = utils.hkl.hkldata_from_asu_data(f, "FP")
+        maps = []
+        unit_cell = hkldata.cell
+        if args.resolution is not None:
+            hkldata = hkldata.copy(d_min=args.resolution)
+        else:
+            args.resolution = hkldata.d_min_max()[0] # plus eps maybe
+    else:
+        logger.error("No input map/mtz found.")
+        return
 
-    if args.resolution is None:
+    if args.resolution is None and not args.mtz:
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])
         logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
         
     sts = []
     for xyzin in args.model:
         st = utils.fileio.read_structure(xyzin)
-        st.cell = maps[0][0].unit_cell
+        st.cell = unit_cell
         st.spacegroup_hm = "P1"
         if len(st.ncs) > 0:
             utils.model.expand_ncs(st)
@@ -124,7 +145,7 @@ def main(args):
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
         mask = gemmi.FloatGrid(*maps[0][0].shape)
-        mask.set_unit_cell(sts[0].cell)
+        mask.set_unit_cell(unit_cell)
         mask.spacegroup = sts[0].find_spacegroup()
         mask.mask_points_in_constant_radius(sts[0][0], args.mask_radius, 1.)    
     else:
@@ -132,7 +153,7 @@ def main(args):
     
     if args.no_sharpen_before_mask or len(maps) < 2:
         logger.write("Applying mask..")
-        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, ma[0].unit_cell, ma[0].spacegroup)]+ma[1:]
+        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, ma[0].spacegroup)]+ma[1:]
                 for ma in maps]
     elif mask is not None:
         logger.write("Sharpen-mask-unsharpen..")
@@ -140,7 +161,8 @@ def main(args):
         if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
         maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
 
-    hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
+    if not args.mtz:
+        hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
 
     labs_fc = []
     for i, st in enumerate(sts): 
