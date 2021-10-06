@@ -33,6 +33,9 @@ def shake_structure(st, sigma):
 
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
+    eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]
+    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * 8*numpy.pi**2)
+
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
     return b_add
@@ -152,7 +155,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
 
     vals = []
     for hkl in miller_array:
-        sf = calc.calculate_sf_from_model(st[0], hkl)
+        sf = calc.calculate_sf_from_model(st[0], hkl) # attention: traverse cell.images
         if mott_bethe: sf *= calc.mott_bethe_factor()
         vals.append(sf)
 
