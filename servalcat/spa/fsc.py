@@ -151,15 +151,16 @@ def main(args):
     else:
         mask = None
     
-    if args.no_sharpen_before_mask or len(maps) < 2:
-        logger.write("Applying mask..")
-        maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, ma[0].spacegroup)]+ma[1:]
-                for ma in maps]
-    elif mask is not None:
-        logger.write("Sharpen-mask-unsharpen..")
-        b_before_mask = args.b_before_mask
-        if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
-        maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
+    if mask is not None:
+        if args.no_sharpen_before_mask or len(maps) < 2:
+            logger.write("Applying mask..")
+            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, ma[0].spacegroup)]+ma[1:]
+                    for ma in maps]
+        else:
+            logger.write("Sharpen-mask-unsharpen..")
+            b_before_mask = args.b_before_mask
+            if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
+            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
 
     if not args.mtz:
         hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
@@ -183,12 +184,11 @@ def main(args):
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
             if k.startswith("fsc_FC_"):
-                logger.write("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.write("FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
             if k.startswith("Rcmplx_FC_"):
-                logger.write("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.write("Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
 
-
-
+    logger.write("See {}".format(args.fsc_out))
 # main()
 
 if __name__ == "__main__":
