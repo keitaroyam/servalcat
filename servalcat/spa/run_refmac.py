@@ -390,33 +390,32 @@ def main(args):
                            d_min_fsc=args.fsc_resolution,
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
-    # Calc updated and Fo-Fc maps
-    if args.halfmaps:
-        logger.write("Starting Fo-Fc calculation..")
-        logger.write(" model: {}".format(args.output_prefix+model_format))
-
-        if args.mask_for_fofc:
-            logger.write("  mask: {}".format(args.mask_for_fofc))
-            mask = numpy.array(utils.fileio.read_ccp4_map(args.mask_for_fofc)[0])
-        elif args.mask_radius_for_fofc:
-            logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
-            mask = gemmi.FloatGrid(*maps[0][0].shape)
-            mask.set_unit_cell(maps[0][0].unit_cell)
-            mask.spacegroup = gemmi.SpaceGroup(1)
-            mask.mask_points_in_constant_radius(st_expanded[0], args.mask_radius_for_fofc, 1.)
-            mask = numpy.array(mask)
-        else:
-            logger.write("  mask: not used")
-            mask = None
-
-        hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
-                                                          half1_only=(args.cross_validation and args.cross_validation_method == "throughout"))
-        spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
-                             mask=mask, output_prefix="diffmap",
-                             trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
-                             normalize_map=mask is not None)
+    # Calc Fo-Fc (and updated) maps
+    logger.write("Starting Fo-Fc calculation..")
+    if not args.halfmaps: logger.write(" with limited functionality because half maps were not provided")
+    logger.write(" model: {}".format(args.output_prefix+model_format))
+        
+    if args.mask_for_fofc:
+        logger.write("  mask: {}".format(args.mask_for_fofc))
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask_for_fofc)[0])
+    elif args.mask_radius_for_fofc:
+        logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
+        mask = gemmi.FloatGrid(*maps[0][0].shape)
+        mask.set_unit_cell(maps[0][0].unit_cell)
+        mask.spacegroup = gemmi.SpaceGroup(1)
+        mask.mask_points_in_constant_radius(st_expanded[0], args.mask_radius_for_fofc, 1.)
+        mask = numpy.array(mask)
     else:
-        logger.write("Will not calculate Fo-Fc map because half maps were not provided")
+        logger.write("  mask: not used")
+        mask = None
+        
+    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
+                                                      half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
+                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
+    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
+                         mask=mask, output_prefix="diffmap",
+                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
+                         normalize_map=mask is not None)
 
     # Final summary
     if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
