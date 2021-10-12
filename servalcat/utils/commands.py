@@ -84,7 +84,7 @@ def add_arguments(p):
     parser.add_argument("--map",  nargs="*", action="append")
     parser.add_argument("--halfmaps",  nargs="*", action="append")
     parser.add_argument('--mask', help='Mask file')
-    parser.add_argument('-d', '--resolution', type=float, required=True)
+    parser.add_argument('-d', '--resolution', type=float)
     parser.add_argument('-o', '--output_prefix', default="power")
 
     # fcalc
@@ -314,8 +314,12 @@ def show_power(args):
     hkldata = None
     labs = []
     for mapin in maps_in:
-        tmp = maps.mask_and_fft_maps([fileio.read_ccp4_map(f) for f in mapin],
-                                     args.resolution, mask)
+        ms = [fileio.read_ccp4_map(f) for f in mapin]
+        d_min = args.resolution
+        if d_min is None:
+            d_min = maps.nyquist_resolution(ms[0][0])
+            logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min))
+        tmp = maps.mask_and_fft_maps(ms, d_min, mask)
         labs.append("F{:02d}".format(len(labs)+1))
         tmp.df.rename(columns=dict(FP=labs[-1]), inplace=True)
         if hkldata is None:
