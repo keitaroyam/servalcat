@@ -16,6 +16,7 @@ import os
 import gemmi
 import numpy
 import pandas
+import argparse
 
 def add_arguments(p):
     subparsers = p.add_subparsers(dest="subcommand")
@@ -163,7 +164,7 @@ def symmodel(args):
 
     if args.center is None:
         A = numpy.array(st.cell.orthogonalization_matrix.tolist())
-        center = numpy.sum(A, axis=1) / 2 + start_xyz
+        center = numpy.sum(A, axis=1) / 2 #+ start_xyz
         logger.write("Center: {}".format(center))
     else:
         center = numpy.array(args.center)

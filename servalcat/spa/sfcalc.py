@@ -241,6 +241,8 @@ def main(args, monlib=None):
 
     if args.resolution is None and args.model and utils.fileio.splitext(args.model)[1].endswith("cif"):
         doc = gemmi.cif.read(args.model)
+        if len(doc) != 1:
+            raise RuntimeError("cannot find resolution from cif. Give --resolution")
         block = doc.sole_block()
         reso_str = block.find_value("_em_3d_reconstruction.resolution")
         try:
@@ -268,7 +270,7 @@ def main(args, monlib=None):
     spacegroup = gemmi.SpaceGroup(1)
     start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
     A = numpy.array(unit_cell.orthogonalization_matrix.tolist())
-    center = numpy.sum(A, axis=1) / 2 + start_xyz
+    center = numpy.sum(A, axis=1) / 2 #+ start_xyz
 
     if args.mapref:
         logger.write("Reference map: {}".format(args.mapref))
