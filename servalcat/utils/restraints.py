@@ -123,38 +123,57 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def find_links(st, monlib):
+def find_and_fix_links(st, monlib): # TODO options to add detected link, remove link not found in dictionary
+    """
+    Find links not registered in st.connections
+    This is required for correctly recognizing link in gemmi.prepare_topology
+    """
     from servalcat.utils import model
-    # Find links not registered in st.connections
 
     hunt = gemmi.LinkHunt()
     hunt.index_chem_links(monlib)
     matches = hunt.find_possible_links(st, 1.5, 0)
-    known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p")
-    matches = [x for x in matches if x.chem_link and not x.conn and x.chem_link.id not in known_links]
-    connections = []
-    for m in matches:
-        logger.write("New link detected: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
-                                                                                                   m.cra1, m.cra2,
-                                                                                                   m.bond_length,
-                                                                                                   m.chem_link.rt.bonds[0].value))
-        con = gemmi.Connection()
-        con.type = gemmi.ConnectionType.Covale # XXX may be others
-        con.link_id = m.chem_link.id
-        con.partner1 = model.cra_to_atomaddress(m.cra1)
-        con.partner2 = model.cra_to_atomaddress(m.cra2)
-        connections.append(con)
+    known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p", "gap")
+    conns = [x for x in st.connections] # to check later
 
-    return connections
-# find_links()
+    for m in matches:
+        if not m.chem_link or m.chem_link.id in known_links:
+            continue
+        if m.conn:
+            logger.write("Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+                                                                                                    m.cra1, m.cra2,
+                                                                                                    m.bond_length,
+                                                                                                    m.chem_link.rt.bonds[0].value))
+            if not m.cra1.atom_matches(m.conn.partner1): # need to swap
+                assert m.cra1.atom_matches(m.conn.partner2)
+                m.conn.partner1 = model.cra_to_atomaddress(m.cra1)
+                m.conn.partner2 = model.cra_to_atomaddress(m.cra2)
+
+            m.conn.link_id = m.chem_link.id
+            conns.pop(conns.index(m.conn))
+        else:
+            logger.write("Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+                                                                                                    m.cra1, m.cra2,
+                                                                                                    m.bond_length,
+                                                                                                    m.chem_link.rt.bonds[0].value))
+            con = gemmi.Connection()
+            con.type = gemmi.ConnectionType.Covale # XXX may be others
+            con.link_id = m.chem_link.id
+            con.partner1 = model.cra_to_atomaddress(m.cra1)
+            con.partner2 = model.cra_to_atomaddress(m.cra2)
+            st.connections.append(con)
+
+    for con in conns:
+        if con.link_id in known_links: continue
+        logger.write("WARNING: unknown link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+# find_and_fix_links()
 
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
     st.setup_entities()
 
     # Check links. XXX Is it ok to update st?
-    connections = find_links(st, monlib)
-    st.connections.extend(connections)
+    find_and_fix_links(st, monlib)
     
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
     if pos == "nucl":
