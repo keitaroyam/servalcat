@@ -40,6 +40,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
     if cif_ref:
         print("  using mmCIF metadata from:", cif_ref)
         groups = gemmi.MmcifOutputGroups(False)
+        groups.group_pdb = True
         groups.ncs = True
         groups.atoms = True
         groups.cell = True
@@ -69,7 +70,12 @@ def write_mmcif(st, cif_out, cif_ref=None):
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
-        st_new.make_mmcif_document().write_file(cif_out)
+        groups = gemmi.MmcifOutputGroups(True)
+        groups.group_pdb = True
+        doc = gemmi.cif.Document()
+        block = doc.add_new_block("new")
+        st_new.update_mmcif_block(block, groups)
+        doc.write_file(cif_out)
 # write_mmcif()
 
 def write_pdb(st, pdb_out):
@@ -178,7 +184,7 @@ def read_asu_data_from_mtz(mtz_in, cols):
         assert phi.type == "P"
         phi = numpy.deg2rad(phi)
         f_comp = f * (numpy.cos(phi) + 1j * numpy.sin(phi))
-        asu = gemmi.ComplexAsuData(cell, sg, miller, f_comp)
+        asu = gemmi.ComplexAsuData(cell, sg, miller, f_comp) # ensure asu?
         return asu
     else:
         if f.is_integer():
