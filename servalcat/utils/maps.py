@@ -161,7 +161,7 @@ def calc_noise_var_from_halfmaps(hkldata):
 # calc_noise_var_from_halfmaps()
 
 def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, mask_threshold=0.5, mask_padding=5,
-                   grid_start=None, grid_shape=None):
+                   grid_start=None, grid_shape=None, update_cell=False):
     """
     - If mask_for_extent is set: grid_shape is ignored
     - grid_shape must be specified together with grid_start.
@@ -197,13 +197,27 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, ma
         new_shape = ccp4.grid.shape if grid_shape is None else grid_shape
         logger.write(" setting starting grid: {} {} {}".format(*grid_start))
         logger.write(" setting     new shape: {} {} {}".format(*new_shape))
-        ccp4.grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(new_shape))),
-                                    ccp4.grid.unit_cell,
-                                    ccp4.grid.spacegroup)
+        
+        new_cell = ccp4.grid.unit_cell
+        if update_cell:
+            abc = [new_cell.parameters[i]*new_shape[i]/ccp4.grid.shape[i] for i in range(3)]
+            new_cell = gemmi.UnitCell(abc[0], abc[1], abc[2],
+                                      new_cell.alpha, new_cell.beta, new_cell.gamma)
+            logger.write(" setting      new cell: {:6.2f} {:6.2f} {:6.2f} {:5.1f} {:5.1f} {:5.1f}".format(*new_cell.parameters))
+            cell_grid = new_shape
+        else:
+            cell_grid = ccp4.grid.shape
+            
+        new_grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(new_shape))),
+                                   new_cell,
+                                   ccp4.grid.spacegroup)
+        ccp4 = gemmi.Ccp4Map()
+        ccp4.grid = new_grid
         ccp4.update_ccp4_header(2, True) # float, update stats
         for i in range(3):
             ccp4.set_header_i32(5+i, grid_start[i])
             ccp4.set_header_i32(1+i, new_shape[i])
+            ccp4.set_header_i32(8+i, cell_grid[i])
 
     ccp4.write_ccp4_map(filename)
 # write_ccp4_map()

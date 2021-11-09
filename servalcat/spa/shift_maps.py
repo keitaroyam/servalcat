@@ -38,6 +38,9 @@ def add_arguments(parser):
     parser.add_argument('--no_shift',
                         action='store_true',
                         help='If specified resultant maps will have shifted origin and overlap with the input maps.')
+    parser.add_argument('--no_shift_keep_cell',
+                        action='store_true',
+                        help='Keep original unit cell when --no_shift is given')
     parser.add_argument('--force_cell', type=float, nargs=6,
                         help='Force cell')
     parser.add_argument('--disable_cell_check',
@@ -164,6 +167,9 @@ def main(args):
     if not args.mask and args.model and not args.shifts and args.padding <= 0:
         raise RuntimeError("--padding must be > 0 if you want to create a mask from the model.")
 
+    if args.no_shift_keep_cell and not args.no_shift:
+        logger.write("WARNING: --no_shift_keep_cell has no effect when --no_shift not given")
+    
     if args.maps:
         args.maps = sum(args.maps, [])
     else:
@@ -253,7 +259,8 @@ def main(args):
         g = utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size)[0]
         if args.no_shift:
             utils.maps.write_ccp4_map(outf, g, cell=cell, sg=g.spacegroup,
-                                      grid_start=starts, grid_shape=new_shape)
+                                      grid_start=starts, grid_shape=new_shape,
+                                      update_cell=not args.no_shift_keep_cell)
         else:
             newg = g.get_subarray(*(list(starts)+list(new_shape)))
             utils.maps.write_ccp4_map(outf, newg, cell=new_cell, sg=g.spacegroup)
