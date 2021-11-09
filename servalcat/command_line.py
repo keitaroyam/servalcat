@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import argparse
 import sys
+import traceback
 import datetime
 import pipes
 import getpass
@@ -35,10 +36,39 @@ def dependency_versions():
                 pandas=pandas.__version__)
 # dependency_versions()
 
-def main():
+def test_installation():
+    vers = dependency_versions()
+    pandas_ver = [int(x) for x in vers["pandas"].split(".")]
+    numpy_ver = [int(x) for x in vers["numpy"].split(".")]
+    msg_unknown = "Unexpected error occurred (related to numpy+pandas). Please report to authors with the result of servalcat -v."
+    msg_skip = "If you want to ignore this error, please specify --skip_test."
+    ret = True
     
+    try:
+        x = pandas.DataFrame(dict(x=[2j]))
+        x.merge(x)
+    except TypeError:
+        ret = False
+        if pandas_ver >= [1,3,0] and numpy_ver < [1,19,1]:
+            print("There is a problem in pandas+numpy. Please update numpy to 1.19.1 or newer (or use pandas < 1.3.0).")
+        else:
+            print(traceback.format_exc())
+            print(msg_unknown)
+    except:
+        print(traceback.format_exc())
+        print(msg_unknown)
+        ret = False
+
+    if not ret:
+        print(msg_skip)
+        
+    return ret
+# test_installation()        
+
+def main():
     parser = argparse.ArgumentParser(prog="servalcat",
                                      description="A tool for model refinement and map calculation for cryo-EM SPA.")
+    parser.add_argument("--skip_test", action="store_true", help="Skip installation test")
     parser.add_argument("-v", "--version", action="version",
                         version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
                                                                                              python=platform.python_version(),
@@ -62,6 +92,9 @@ def main():
         modules[n].add_arguments(p)
 
     args = parser.parse_args()
+    
+    if not args.skip_test and not test_installation():
+        return
     
     if args.command == "util" and not args.subcommand:
         print("specify subcommand.")    
