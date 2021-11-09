@@ -99,6 +99,10 @@ class HklData:
     def miller_array(self):
         return self.df[["H","K","L"]]
 
+    def s_array(self):
+        hkl = self.miller_array()
+        return numpy.dot(hkl, self.cell.fractionalization_matrix)
+    
     def calc_d(self):
         self.df.loc[:,"d"] = self.cell.calculate_d_array(self.miller_array())
     # calc_d()
