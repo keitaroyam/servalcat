@@ -12,12 +12,11 @@ will install the stable version.
 
 If you want to try the latest features,
 ```
-pip install git+https://github.com/project-gemmi/gemmi.git
 pip install git+https://github.com/keitaroyam/servalcat.git
 ```
-Add `-U` option for updating. Servalcat often requires new [GEMMI](https://github.com/project-gemmi/gemmi) features (not the latest from pypi, but from github).
+Add `-U` option for updating.
 
-The required GEMMI version is now [v0.4.9](https://github.com/project-gemmi/gemmi/releases/tag/v0.4.9). Please update GEMMI as well if it is old.
+The required GEMMI version is now [v0.4.9](https://github.com/project-gemmi/gemmi/releases/tag/v0.4.9). Please update GEMMI as well if it is old (it should be done by pip).
 
 ## Usage
 ```
