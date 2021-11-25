@@ -19,9 +19,13 @@ import string
 
 gemmi.IT92_normalize()
 
-def shake_structure(st, sigma):
+def shake_structure(st, sigma, copy=True):
     print("Randomizing structure with rmsd of {}".format(sigma))
-    st2 = st.clone()
+    if copy:
+        st2 = st.clone()
+    else:
+        st2 = st
+        
     sigma /= numpy.sqrt(3)
     for model in st2:
         for cra in model.all():
@@ -683,3 +687,33 @@ def invert_model(st):
 
     # invert peptides
 # invert_model()
+
+def cx_to_mx(ss): #SmallStructure to Structure
+    st = gemmi.Structure()
+    st.spacegroup_hm = ss.spacegroup_hm
+    st.cell = ss.cell
+    st.add_model(gemmi.Model("1"))
+    st[-1].add_chain(gemmi.Chain("A"))
+    st[-1][-1].add_residue(gemmi.Residue())
+    st[-1][-1][-1].seqid.num = 1
+    st[-1][-1][-1].name = "00"
+
+    ruc = ss.cell.reciprocal()
+    # TODO new gemmi will allow to use multiply_by_diagonal
+    abcstar = gemmi.Mat33([[ruc.a,0,0],[0,ruc.b,0],[0,0,ruc.c]])
+    cif2cart = ss.cell.orthogonalization_matrix.multiply(abcstar)
+    as_smat33f = lambda x: gemmi.SMat33f(x.u11, x.u22, x.u33, x.u12, x.u13, x.u23)
+    
+    for site in ss.sites:
+        st[-1][-1][-1].add_atom(gemmi.Atom())
+        a = st[-1][-1][-1][-1]
+        a.name = site.label
+        a.aniso = as_smat33f(site.aniso.transformed_by(cif2cart))
+        a.b_iso = site.u_iso * 8*numpy.pi**2
+        #a.charge = ?
+        a.element = site.element
+        a.occ = site.occ
+        a.pos = site.orth(ss.cell)
+        
+    return st
+# cx_to_mx()

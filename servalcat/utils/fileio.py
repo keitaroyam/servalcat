@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import model
 import os
+import re
 import subprocess
 import gemmi
 import numpy
@@ -286,3 +287,146 @@ def merge_ligand_cif(cifs_in, cif_out):
 
     doc.write_file(cif_out)
 # merge_ligand_cif()
+
+def read_small_structure(xyz_in):
+    spext = splitext(xyz_in)
+    if spext[1].lower() in (".ins", ".res"):
+        logger.write("Reading SHELX ins/res file: {}".format(xyz_in))
+        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in))
+    elif spext[1].lower() in (".pdb", ".ent"):
+        logger.write("Reading PDB file: {}".format(xyz_in))
+        return gemmi.read_pdb(xyz_in)
+    elif spext[1].lower() in (".cif", ".mmcif"):
+        pass # TODO support smcif and mmcif
+    else:
+        raise RuntimeError("Unsupported file type: {}".format(spext[1]))
+# read_structure()
+
+def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
+    assert (ins_in, lines_in).count(None) == 1
+    ss = gemmi.SmallStructure()
+
+    keywords = """
+    TITL CELL ZERR LATT SYMM SFAC NEUT DISP UNIT LAUE REM  MORE END  HKLF OMIT SHEL BASF TWIN TWST EXTI SWAT
+    ABIN ANSC ANSR MERG LIST SPEC RESI MOVE ANIS AFIX HFIX FRAG FEND EXYZ EADP EQIV CONN PART BIND FREE DFIX
+    DANG BUMP SAME SADI CHIV FLAT DELU SIMU RIGU PRIG DEFS ISOR XNPD NCSY SUMP L.S. CGLS BLOC DAMP STIR WGHT
+    FVAR WIGL BOND CONF MPLA RTAB HTAB ACTA SIZE TEMP WPDB FMAP GRID PLAN TIME HOPE MOLE
+    """.split()
+    re_kwd = re.compile("^({})_?".format("|".join(keywords)))
+    
+    # remove comments/blanks and concatenate lines
+    lines = []
+    concat_flag = False
+    for l in open(ins_in) if ins_in else lines_in:
+        l = l.rstrip()
+        if l.startswith("REM"): continue
+        if l.startswith(";"): continue
+        if not l.strip(): continue
+
+        if l.endswith("="):
+            l = l[:l.rindex("=")]
+            if concat_flag:
+                lines[-1] += l
+            else:
+                lines.append(l)
+            concat_flag = True
+        elif concat_flag:
+            lines[-1] += l
+            concat_flag = False
+        else:
+            lines.append(l)
+
+    # parse lines
+    sfacs = []
+    latt, symms = 1, []
+    for l in lines:
+        sp = l.split()
+        ins = sp[0].upper()
+        if ins == "TITL":
+            pass
+        elif l.startswith(" "): # title continued? instructions after space is allowed??
+            pass
+        elif ins == "CELL":
+            #ss.wavelength = float(sp[1]) # next gemmi ver.
+            ss.cell.set(*map(float, sp[2:]))
+        elif ins == "LATT":
+            latt = int(sp[1])
+        elif ins == "SYMM":
+            trp = re.sub("0*\.50*", "1/2", "".join(sp[1:]))
+            trp = re.sub("0*\.250*", "1/4", trp)
+            trp = re.sub("0*\.750*", "3/4", trp)
+            trp = re.sub("0*\.33*", "1/3", trp)
+            trp = re.sub("0*\.6[67]*", "2/3", trp)
+            trp = re.sub("0*\.16[67]*", "1/6", trp) # never seen?
+            trp = re.sub("0*\.833*", "5/6", trp) # never seen?
+            symms.append(gemmi.Op(trp).wrap())
+        elif ins == "SFAC": # TODO check numbers?
+            if len(sp) < 2: continue
+            sfacs.append(gemmi.Element(sp[1]))
+            if len(sp) > 2:
+                try: float(sp[2])
+                except ValueError:
+                    sfacs.extend([gemmi.Element(x) for x in sp[2:]])
+        elif not re_kwd.search(ins):
+            if not 4 < len(sp) < 13:
+                logger.write("cannot parse this line: {}".format(l))
+                continue
+            site = gemmi.SmallStructure.Site()
+            site.label = sp[0]
+            try:
+                site.element = sfacs[int(sp[1])-1]
+            except:
+                logger.error("failed to parse: {}".format(l))
+                continue
+                
+            site.fract.fromlist(list(map(float, sp[2:5])))
+            if len(sp) > 5:
+                q = abs(float(sp[5]))
+                if q > 10: q = q % 10 # FIXME proper handling
+                site.occ = q
+            if len(sp) == 7:
+                site.u_iso = float(sp[6])
+            elif len(sp) == 12:
+                u = list(map(float, sp[6:12]))
+                site.aniso = gemmi.SMat33d(u[0], u[1], u[2], u[5], u[4], u[3])
+                #TODO site.u_iso needs to be set?
+            else:
+                continue # currently skip Q peaks
+            ss.add_site(site)
+
+    # Determine space group
+    if gemmi.Op() not in symms: # identity operator may not be present in ins file
+        symms.append(gemmi.Op())
+
+    lops = {1: [], # P
+            2: [gemmi.Op("x+1/2,y+1/2,z+1/2")], # I
+            3: [gemmi.Op("x+2/3,y+1/3,z+1/3"),  # R
+                gemmi.Op("x+1/3,y+2/3,z+2/3")],
+            4: [gemmi.Op("x,y+1/2,z+1/2"),      # F
+                gemmi.Op("x+1/2,y,z+1/2"),
+                gemmi.Op("x+1/2,y+1/2,z")],
+            5: [gemmi.Op("x,y+1/2,z+1/2")],     # A
+            6: [gemmi.Op("x+1/2,y,z+1/2")],     # B
+            7: [gemmi.Op("x+1/2,y+1/2,z")],     # C
+            }
+    for op in lops[abs(latt)]:
+        symms.extend([x*op for x in symms])
+    if latt > 0:
+        symms.extend([x*gemmi.Op("-x,-y,-z") for x in symms])
+
+    symms = list(set(symms))
+    sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(symms))
+    # in case of non-regular setting, gemmi.SpaceGroup cannot be constructed anyway.
+    if sg is None:
+        logger.error("Cannot construct space group from symbols: {}".format([x.triplet() for x in symms]))
+    else:
+        ss.spacegroup_hm = sg.hm + (" :{}".format(sg.ext) if sg.ext!="\0" else "")
+
+    if sg is not None: # debug
+        sgops = set(gemmi.SpaceGroup(ss.spacegroup_hm).operations())
+        opdiffs = sgops.symmetric_difference(symms)
+        if opdiffs:
+            logger.write("ops= {}".format(" ".join([x.triplet() for x in symms])))
+
+    return ss
+# read_shelx_ins()

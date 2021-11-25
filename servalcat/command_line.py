@@ -24,6 +24,7 @@ import servalcat.spa.fsc
 import servalcat.spa.fofc
 import servalcat.spa.shift_maps
 import servalcat.spa.translate
+import servalcat.xtal.run_refmac_small
 import servalcat.utils.commands
 #import servalcat.spa.bestmap
 
@@ -78,6 +79,7 @@ def main():
     modules = dict(sfcalc=servalcat.spa.sfcalc,
                    shiftback=servalcat.spa.shiftback,
                    refine_spa=servalcat.spa.run_refmac,
+                   refine_cx=servalcat.xtal.run_refmac_small,
                    fsc=servalcat.spa.fsc,
                    fofc=servalcat.spa.fofc,
                    trim=servalcat.spa.shift_maps,

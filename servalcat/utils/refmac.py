@@ -55,9 +55,11 @@ class Refmac:
     def __init__(self, **kwargs):
         self.prefix = "refmac"
         self.hklin = self.xyzin = ""
+        self.source = "elec"
         self.lab_f = None
         self.lab_sigf = None
         self.lab_phi = None
+        self.libin = None
         self.hydrogen = "all"
         self.hout = "no"
         self.ncycle = 10
@@ -135,7 +137,8 @@ class Refmac:
         if self.lab_f: labin.append("FP={}".format(self.lab_f))
         if self.lab_sigf: labin.append("SIGFP={}".format(self.lab_sigf))
         if self.lab_phi: labin.append("PHIB={}".format(self.lab_phi))
-        ret += "labin {}\n".format(" ".join(labin))
+        if labin:
+            ret += "labin {}\n".format(" ".join(labin))
 
 
         ret += "make hydr {}\n".format(self.hydrogen)
@@ -143,8 +146,10 @@ class Refmac:
         
         if self.global_mode == "spa":
             ret += "solvent no\n"
-            ret += "source em mb\n"
             ret += "scale lssc isot\n"
+            
+        if self.global_mode == "spa" or self.source == "elec":
+            ret += "source em mb\n"
 
         ret += "ncycle {}\n".format(self.ncycle)
         if self.resolution is not None:
@@ -263,6 +268,10 @@ class Refmac:
                 cycle = int(l[l.index("=")+1:])
             elif re_lastcycle.search(l):
                 cycle = self.ncycle + 1
+            elif "Overall R factor                     =" in l and cycle > 0:
+                rfac = l[l.index("=")+1:].strip()
+                if self.global_mode != "spa":
+                    summary_write(" cycle= {:3d} R= {}".format(cycle-1, rfac))
             elif "Average Fourier shell correlation    =" in l and cycle > 0:
                 fsc = l[l.index("=")+1:].strip()
                 if cycle == 1:
