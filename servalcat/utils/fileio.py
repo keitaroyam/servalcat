@@ -292,7 +292,7 @@ def read_small_structure(xyz_in):
     spext = splitext(xyz_in)
     if spext[1].lower() in (".ins", ".res"):
         logger.write("Reading SHELX ins/res file: {}".format(xyz_in))
-        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in))
+        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
     elif spext[1].lower() in (".pdb", ".ent"):
         logger.write("Reading PDB file: {}".format(xyz_in))
         return gemmi.read_pdb(xyz_in)
@@ -339,6 +339,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
     # parse lines
     sfacs = []
     latt, symms = 1, []
+    info = dict(hklf=0)
     for l in lines:
         sp = l.split()
         ins = sp[0].upper()
@@ -367,6 +368,8 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
                 try: float(sp[2])
                 except ValueError:
                     sfacs.extend([gemmi.Element(x) for x in sp[2:]])
+        elif ins == "HKLF":
+            info["hklf"] = int(sp[1])
         elif not re_kwd.search(ins):
             if not 4 < len(sp) < 13:
                 logger.write("cannot parse this line: {}".format(l))
@@ -428,5 +431,45 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
         if opdiffs:
             logger.write("ops= {}".format(" ".join([x.triplet() for x in symms])))
 
-    return ss
+    return ss, info
 # read_shelx_ins()
+
+def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
+    assert (file_in, lines_in).count(None) == 1
+    hkls, vals, sigs = [], [], []
+    for l in open(file_in) if file_in else lines_in:
+        if l.startswith(";"): continue
+        if not l.strip() or len(l) < 25: continue
+
+        hkl = int(l[:4]), int(l[4:8]), int(l[8:12])
+        if hkl == (0,0,0): break
+        hkls.append(hkl)
+        vals.append(float(l[12:20]))
+        sigs.append(float(l[20:28]))
+        # batch = l[28:32]
+        # wavelength = l[32:40]
+
+    ints = gemmi.Intensities()
+    ints.set_data(cell, sg, hkls, vals, sigs)
+    ints.merge_in_place(gemmi.Intensities.Type.Mean) # TODO may want Anomalous (in case of X-ray)
+    logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
+                                                                     numpy.mean(ints.nobs_array),
+                                                                     numpy.min(ints.nobs_array)))
+    
+    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array,
+                                      [(v,s) for v,s in zip(ints.value_array, ints.sigma_array)])
+    return asudata
+# read_shelx_hkl()
+
+def read_smcif_shelx(cif_in):
+    logger.write("Reading small molecule cif: {}".format(cif_in))
+    b = gemmi.cif.read(cif_in).sole_block()
+    res_str = b.find_value("_shelx_res_file")
+    hkl_str = b.find_value("_shelx_hkl_file")
+    if not res_str: raise RuntimeError("_shelx_res_file not found in {}".format(cif_in))
+    if not hkl_str: raise RuntimeError("_shelx_hkl_file not found in {}".format(cif_in))
+    
+    ss, info = read_shelx_ins(lines_in=res_str.splitlines())
+    asudata = read_shelx_hkl(ss.cell, ss.find_spacegroup(), lines_in=hkl_str.splitlines())
+    return asudata, ss, info
+# read_smcif_shelx()

@@ -55,13 +55,13 @@ class Refmac:
     def __init__(self, **kwargs):
         self.prefix = "refmac"
         self.hklin = self.xyzin = ""
-        self.source = "elec"
+        self.source = "electron"
         self.lab_f = None
         self.lab_sigf = None
         self.lab_phi = None
         self.libin = None
         self.hydrogen = "all"
-        self.hout = "no"
+        self.hout = False
         self.ncycle = 10
         self.resolution = None
         self.weight_matrix = None
@@ -147,9 +147,11 @@ class Refmac:
         if self.global_mode == "spa":
             ret += "solvent no\n"
             ret += "scale lssc isot\n"
-            
-        if self.global_mode == "spa" or self.source == "elec":
             ret += "source em mb\n"
+        elif self.source == "electron":
+            ret += "source ec mb\n"
+        elif self.source == "neutron":
+            ret += "source n\n"
 
         ret += "ncycle {}\n".format(self.ncycle)
         if self.resolution is not None:
@@ -195,7 +197,8 @@ class Refmac:
         cmd.extend(["xyzout", pipes.quote(self.xyzout())])
         if self.libin:
             cmd.extend(["libin", self.libin])
-
+        if self.source == "neutron":
+            cmd.extend(["atomsf", pipes.quote(os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib"))])
         return cmd
     # make_cmd()
 
