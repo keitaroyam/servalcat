@@ -41,6 +41,10 @@ class Logger(object):
         self.ofs.close()
         self.ofs = None
     # close()
+
+    def flush(self): # to act as a file object
+        if self.ofs:
+            self.ofs.flush()
 # class Logger
 
 _logger = Logger() # singleton
@@ -48,7 +52,7 @@ set_file = _logger.set_file
 write = _logger.write
 error = _logger.error
 close = _logger.close
-
+flush = _logger.flush
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):

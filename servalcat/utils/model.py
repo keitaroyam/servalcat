@@ -66,7 +66,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
-        topo = gemmi.prepare_topology(st, monlib)
+        topo = gemmi.prepare_topology(st, monlib, warnings=logger)
         resnames = st[0].get_all_residue_names()
         restraints.check_monlib_support_nucleus_distances(monlib, resnames)
         # Shift electron positions
@@ -150,7 +150,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     if source == "electron" and mott_bethe:
         if monlib is not None and st[0].count_hydrogen_sites() > 0:
             st = st.clone()
-            topo = gemmi.prepare_topology(st, monlib)
+            topo = gemmi.prepare_topology(st, monlib, warnings=logger)
             resnames = st[0].get_all_residue_names()
             restraints.check_monlib_support_nucleus_distances(monlib, resnames)
 
@@ -185,7 +185,7 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
     logger.write("Setting blur= {:.2f} in density calculation".format(blur))
 
     st = st.clone()
-    topo = gemmi.prepare_topology(st, monlib)
+    topo = gemmi.prepare_topology(st, monlib, warnings=logger)
     resnames = st[0].get_all_residue_names()
     restraints.check_monlib_support_nucleus_distances(monlib, resnames)
 
@@ -559,7 +559,7 @@ def st_from_positions(positions):
             
 def microheterogeneity_for_refmac(st, monlib):
     st.setup_entities()
-    topo = gemmi.prepare_topology(st, monlib)
+    topo = gemmi.prepare_topology(st, monlib, warnings=logger)
     mh_res = []
     chains = []
     icodes = {} # to avoid overlaps
@@ -582,38 +582,34 @@ def microheterogeneity_for_refmac(st, monlib):
             if res.seqid.icode != " ":
                 icodes.setdefault(chain.name, {}).setdefault(res.seqid.num, []).append(res.seqid.icode)
                 
-    def append_links(rinfo, prr, toappend):
-        for pbond in filter(lambda f: (f.provenance==gemmi.Provenance.PrevLink and
-                                       f.rkind==gemmi.RKind.Bond),
-                            rinfo.rules):
-            atoms = topo.bonds[pbond.index].atoms
-            assert len(atoms) == 2
-            found = None
-            for i in range(2):
-                if any(filter(lambda ra: atoms[i]==ra, prr)): found = i
-            if found is not None:
-                toappend.append([atoms[i], atoms[1-i]]) # prev atom, current atom
+    def append_links(bond, prr, toappend):
+        atoms = bond.atoms
+        assert len(atoms) == 2
+        found = None
+        for i in range(2):
+            if any(filter(lambda ra: atoms[i]==ra, prr)): found = i
+        if found is not None:
+            toappend.append([atoms[i], atoms[1-i]]) # prev atom, current atom
     # append_links()
-    
+
     mh_res_all = sum(mh_res, [])
     mh_link = {}
 
     # Check links
-    for cinfo in topo.chain_infos:
-        for rinfo in cinfo.res_infos:
+    for chain in st[0]:
+        for res in chain:
             # If this residue is microheterogeneous
-            if rinfo.res in mh_res_all:
-                for pr in rinfo.prev:
-                    prr = pr.get(rinfo).res
-                    mh_link.setdefault(rinfo.res, []).append([prr, "prev", pr.link, []])
-                    append_links(rinfo, prr, mh_link[rinfo.res][-1][-1])
+            if res in mh_res_all:
+                for link in topo.links_to_previous(res):
+                    mh_link.setdefault(res, []).append([link.res1, "prev", link.link_id, []])
+                    append_links(topo.first_bond_in_link(link), link.res1, mh_link[res][-1][-1])
                     
             # Check if previous residue(s) is microheterogeneous
-            for pr in rinfo.prev:
-                prr = pr.get(rinfo).res
+            for link in topo.links_to_previous(res):
+                prr = link.res1
                 if prr in mh_res_all:
-                    mh_link.setdefault(prr, []).append([rinfo.res, "next", pr.link, []])
-                    append_links(rinfo, prr, mh_link[prr][-1][-1])
+                    mh_link.setdefault(prr, []).append([res, "next", link.link_id, []])
+                    append_links(topo.first_bond_in_link(link), prr, mh_link[prr][-1][-1])
 
     # Change IDs
     for chain_name, rr in zip(chains, mh_res):
@@ -644,7 +640,7 @@ def microheterogeneity_for_refmac(st, monlib):
                         
                     con.partner1 = p1
                     con.partner2 = p2
-                    logger.write("Adding link: {}".format(con))
+                    logger.write(" Adding link: {}".format(con))
                     st.connections.append(con)
         for r1, r2 in itertools.combinations(rr, 2):
             for a1 in set([a.altloc for a in r1]):
