@@ -179,7 +179,6 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
 
 def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5, optimize=False):
     # Very crude implementation to find peak from calculated map
-    # TODO Need to implement peak finding function that involves interpolation
     assert st[0].count_hydrogen_sites() > 0
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     blur = max(0, blur)
@@ -699,9 +698,7 @@ def cx_to_mx(ss): #SmallStructure to Structure
     st[-1][-1][-1].name = "00"
 
     ruc = ss.cell.reciprocal()
-    # TODO new gemmi will allow to use multiply_by_diagonal
-    abcstar = gemmi.Mat33([[ruc.a,0,0],[0,ruc.b,0],[0,0,ruc.c]])
-    cif2cart = ss.cell.orthogonalization_matrix.multiply(abcstar)
+    cif2cart = ss.cell.orthogonalization_matrix.multiply_by_diagonal(gemmi.Vec3(ruc.a, ruc.b, ruc.c))
     as_smat33f = lambda x: gemmi.SMat33f(x.u11, x.u22, x.u33, x.u12, x.u13, x.u23)
     
     for site in ss.sites:

@@ -99,8 +99,7 @@ def main(args):
             logger.write("Reading MTZ file: {}".format(mtz_in))
             mtz = gemmi.read_mtz_file(mtz_in)
             logger.write(" Cell from mtz: {}".format(mtz.cell))
-            # TODO cell.approx can be used (next gemmi)
-            if any([abs(a-b)>1e-3 for a,b in zip(mtz.cell.parameters,st.cell.parameters)]):
+            if mtz.cell.approx(st.cell, 1e-3):
                 logger.write(" Warning: unit cell mismatch!")
             logger.write(" Space group from mtz: {}".format(mtz.spacegroup.hm))
             if mtz.spacegroup != st.find_spacegroup():
