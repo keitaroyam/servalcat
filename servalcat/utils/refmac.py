@@ -12,6 +12,7 @@ import json
 import copy
 import re
 import os
+import tempfile
 from servalcat.utils import logger
 from servalcat.utils import fileio
 
@@ -77,6 +78,7 @@ class Refmac:
         self.exe = "refmac5"
         self.monlib_path = None
         self.show_log = False # summary only if false
+        self.tmpdir = None # set path if CCP4_SCR does not work
         self.global_mode = kwargs.get("global_mode")
         
         for k in kwargs:
@@ -84,6 +86,8 @@ class Refmac:
                 self.init_from_args(kwargs["args"])
             else:
                 setattr(self, k, kwargs[k])
+
+        self.check_tmpdir()
     # __init__()
 
     def init_from_args(self, args):
@@ -118,6 +122,20 @@ class Refmac:
             
         return ret
     # copy()
+
+    def check_tmpdir(self):
+        tmpdir = os.environ.get("CCP4_SCR")
+        if tmpdir:
+            if os.path.isdir(tmpdir): # TODO check writability
+                return
+            try:
+                os.makedirs(tmpdir)
+                return
+            except:
+                logger.write("Warning: cannot create CCP4_SCR= {}".format(tmpdir))
+
+        self.tmpdir = tempfile.mkdtemp(prefix="ccp4tmp")
+    # check_tmpdir()
 
     def set_libin(self, ligands):
         if not ligands: return
@@ -199,6 +217,9 @@ class Refmac:
             cmd.extend(["libin", self.libin])
         if self.source == "neutron":
             cmd.extend(["atomsf", pipes.quote(os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib"))])
+        if self.tmpdir:
+            cmd.extend(["scrref", pipes.quote(os.path.join(self.tmpdir, "refmac5_temp1"))])
+            
         return cmd
     # make_cmd()
 
