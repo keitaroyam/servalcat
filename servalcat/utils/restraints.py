@@ -135,6 +135,7 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
     matches = hunt.find_possible_links(st, 1.5, 0)
     known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p", "gap")
     conns = [x for x in st.connections] # to check later
+    new_connections = []
 
     for m in matches:
         if not m.chem_link or m.chem_link.id in known_links:
@@ -161,11 +162,15 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
             con.link_id = m.chem_link.id
             con.partner1 = model.cra_to_atomaddress(m.cra1)
             con.partner2 = model.cra_to_atomaddress(m.cra2)
-            st.connections.append(con)
+            new_connections.append(con)
 
     for con in conns:
         if con.link_id in known_links: continue
         logger.write("WARNING: unknown link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+
+    for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
+        st.connections.append(con)
+
 # find_and_fix_links()
 
 def add_hydrogens(st, monlib, pos="elec"):
