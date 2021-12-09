@@ -151,7 +151,8 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
                 m.conn.partner2 = model.cra_to_atomaddress(m.cra2)
 
             m.conn.link_id = m.chem_link.id
-            conns.pop(conns.index(m.conn))
+            if m.conn in conns: # may not be found if id duplicated
+                conns.pop(conns.index(m.conn))
         else:
             logger.write("Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
