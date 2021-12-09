@@ -8,13 +8,11 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 import os
+import io
 import gemmi
 import numpy
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
-
-def filename_in_monlib(monomer_dir, name):
-    return os.path.join(monomer_dir, name[0].lower(), name+".cif")
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False):
     resnames = st[0].get_all_residue_names()
@@ -34,8 +32,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
     if monomer_dir:
         logger.write("Reading monomers from {}".format(monomer_dir))
-        resinlib = list(filter(lambda x: os.path.exists(filename_in_monlib(monomer_dir, x)), resnames))
-        monlib = gemmi.read_monomer_lib(monomer_dir, resinlib)
+        monlib = gemmi.read_monomer_lib(monomer_dir, resnames, ignore_missing=True)
     else:
         monlib = gemmi.MonLib()
 
@@ -66,34 +63,15 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
     logger.write("")
 
-    if stop_for_unknowns:
-        logger.write("Checking if unknown atoms exist..")
-        st = st.clone()
-        # XXX this creates non-sense ChemLink if not match (see topo.hpp line 443)
-        topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange(0)) # .None is not allowed..
-        unknowns = set()
-        for cinfo in topo.chain_infos:
-            for rinfo in cinfo.res_infos:
-                if rinfo.chemcomp.name == "": # safer check?
-                    logger.write(" Unknown residue found: {}/{} {}".format(cinfo.name, rinfo.res.name,
-                                                                           rinfo.res.seqid))
-                    unknowns.add(rinfo.res.name)
-                    continue
-
-                cc_atoms = set((a.id for a in rinfo.chemcomp.atoms)) # TODO keep it for speedup?
-                if check_hydrogen:
-                    atoms = set((a.name for a in rinfo.res))
-                else:
-                    atoms = set((a.name for a in rinfo.res if not a.is_hydrogen()))
-                    
-                if not cc_atoms.issuperset(atoms):
-                    logger.write(" Unknown atom(s) found: {}/{} {}/{}".format(cinfo.name, rinfo.res.name,
-                                                                              rinfo.res.seqid,
-                                                                              ",".join(atoms.difference(cc_atoms))))
-                    unknowns.add(rinfo.res.name)
-        if unknowns:
-            raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknowns)))
-
+    logger.write("Checking if unknown atoms exist..")
+    st = st.clone()
+    sio = io.StringIO()
+    # XXX this creates non-sense ChemLink if not match (see topo.hpp line 443)
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True)
+    warnings = sio.getvalue()
+    logger.write(warnings.rstrip())
+    if stop_for_unknowns and warnings.strip():
+        raise RuntimeError("Provide restraint cif file(s) for residues listed above")
    
     return monlib
 # load_monomer_library()
@@ -181,7 +159,7 @@ def add_hydrogens(st, monlib, pos="elec"):
     # Check links. XXX Is it ok to update st?
     find_and_fix_links(st, monlib)
     
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater)
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger)
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")
         restraints.check_monlib_support_nucleus_distances(monlib, resnames)
@@ -197,7 +175,7 @@ def plane_deviations(atoms):
 
 def show_all(st, monlib):
     st.setup_entities() # entity information is needed for links
-    topo = gemmi.prepare_topology(st, monlib)
+    topo = gemmi.prepare_topology(st, monlib, warnings=logger)
     
     lookup = dict([(x.atom, (x.chain, x.residue, x.atom)) for x in st[0].all()])
     label = lambda c, r, a: "{:4s}{:1s}{:3s}{:>2s}{:4d}{:1s}".format(a.name, a.altloc if a.altloc!="\x00" else " ",

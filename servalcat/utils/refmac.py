@@ -77,6 +77,7 @@ class Refmac:
         self.external_restraints_json = None
         self.exe = "refmac5"
         self.monlib_path = None
+        self.keep_chain_ids = False
         self.show_log = False # summary only if false
         self.tmpdir = None # set path if CCP4_SCR does not work
         self.global_mode = kwargs.get("global_mode")
@@ -190,6 +191,9 @@ class Refmac:
             ret += "ncsr {}\n".format(self.ncsr)
         if self.shake:
             ret += "rand {}\n".format(self.shake)
+
+        if self.keep_chain_ids:
+            ret += "pdbo keep auth\n"
 
         if self.external_restraints_json:
             ret += external_restraints_json_to_keywords(self.external_restraints_json)

@@ -273,6 +273,9 @@ def main(args):
     if args.keywords:
         args.keywords = sum(args.keywords, [])
 
+    chain_id_lens = [len(x) for x in utils.model.all_chain_ids(st)]
+    keep_chain_ids = (chain_id_lens and max(chain_id_lens) == 1) # always kept unless one-letter chain IDs
+
     # FIXME if mtz is given and sfcalc() not ran?
     has_ncsc = "ncsc_file" in file_info
     if has_ncsc:
@@ -304,7 +307,8 @@ def main(args):
         logger.write(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
 
     # Run Refmac
-    refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa")
+    refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa",
+                                 keep_chain_ids=keep_chain_ids)
     refmac.set_libin(args.ligand)
     refmac_summary = refmac.run_refmac()
     json.dump(refmac_summary,
