@@ -663,11 +663,22 @@ def modify_inscodes_back(st, modifications):
         for res in chain:
             key = (chain.name, res.seqid.num, res.seqid.icode)
             if key in mods:
-                logger.write(" Changing inscode '{}' to '{}' for {}/{}".format(res.seqid.icode,
-                                                                           mods[key],
-                                                                           chain.name,
-                                                                           res.seqid.num))
+                logger.write(" Changing model inscode '{}' to '{}' for {}/{}".format(key[-1],
+                                                                                     mods[key],
+                                                                                     key[0],
+                                                                                     key[1]))
                 res.seqid.icode = mods[key]
+
+    for con in st.connections:
+        for p in (con.partner1, con.partner2):
+            key = (p.chain_name, p.res_id.seqid.num, p.res_id.seqid.icode)
+            if key in mods:
+                logger.write(" Changing LINK inscode '{}' to '{}' for {}/{}".format(key[-1],
+                                                                                    mods[key],
+                                                                                    key[0],
+                                                                                    key[1]))
+                p.res_id.seqid.icode = mods[key]
+
 # modify_inscodes_back()
 
 def invert_model(st):
