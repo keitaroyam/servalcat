@@ -18,6 +18,7 @@ def add_arguments(parser):
     parser.description = 'Run REFMAC5 for small molecule crystallography'
     parser.add_argument('--exe', default="refmac5", help='refmac5 binary')
     parser.add_argument('--cif', help="cif file containing model and data")
+    parser.add_argument('--sg', help="Space group")
     parser.add_argument('--model', 
                         help='Input atomic model file')
     parser.add_argument('--hklin',
@@ -84,13 +85,31 @@ def main(args):
         logger.error("Give [--model and --hklin] or --cif")
         return
 
+    if args.sg:
+        try:
+            sg_user = gemmi.SpaceGroup(args.sg)
+            logger.write("User-specified space group: {}".format(sg_user.xhm()))
+        except ValueError:
+            logger.error("Error: Unknown space group '{}'".format(args.sg))
+            return
+    else:
+        sg_user = None
+
     if args.cif:
         asudata, ss, info = utils.fileio.read_smcif_shelx(args.cif)
         st = utils.model.cx_to_mx(ss)
+        if sg_user:
+            if not asudata.unit_cell.is_compatible_with_spacegroup(sg_user):
+                logger.error("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
+                                                                                                                       asudata.unit_cell.parameters))
+                return
+            
+            asudata.spacegroup = sg_user
         mtz_in = "input.mtz"
         write_mtz(mtz_in, asudata, info.get("hklf"))
     else:
         st = utils.fileio.read_small_structure(args.model)
+        sg_st = st.find_spacegroup()
         logger.write(" Cell from model: {}".format(st.cell))
         logger.write(" Space group from model: {}".format(st.spacegroup_hm))
 
@@ -99,14 +118,30 @@ def main(args):
             logger.write("Reading MTZ file: {}".format(mtz_in))
             mtz = gemmi.read_mtz_file(mtz_in)
             logger.write(" Cell from mtz: {}".format(mtz.cell))
-            if mtz.cell.approx(st.cell, 1e-3):
+            if not mtz.cell.approx(st.cell, 1e-3):
                 logger.write(" Warning: unit cell mismatch!")
             logger.write(" Space group from mtz: {}".format(mtz.spacegroup.hm))
-            if mtz.spacegroup != st.find_spacegroup():
-                logger.write(" Warning: space group mismatch!")
-        
+            if sg_user:
+                if not mtz.cell.is_compatible_with_spacegroup(sg_user):
+                    logger.error("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
+                                                                                                                           mtz.cell.parameters))
+                    return
+                mtz.spacegroup = sg_user
+                mtz_in = "input.mtz" # overwrite mtz_in
+                logger.write(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
+                mtz.write_to_file(mtz_in)
+            elif mtz.spacegroup != sg_st:
+                logger.write(" Warning: space group mismatch between model and mtz")
+                if mtz.cell.is_compatible_with_spacegroup(sg_st):
+                    logger.write("  Taking space group from model.")
+                    mtz.spacegroup = sg_st
+                    mtz_in = "input.mtz" # overwrite mtz_in
+                    logger.write("  Writing {} as space group {}".format(mtz_in, sg_st.xhm()))
+                    mtz.write_to_file(mtz_in)
+                else:
+                    logger.write("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
         else:
-            logger.error("Unsupported hkl file: {}".format(args.hklin))
+            logger.error("Error: unsupported hkl file: {}".format(args.hklin))
             return
 
         st.cell = mtz.cell
