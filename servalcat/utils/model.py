@@ -18,6 +18,7 @@ import itertools
 import string
 
 gemmi.IT92_normalize()
+gemmi.Element("X").it92.set_coefs(gemmi.Element("O").it92.get_coefs()) # treat X (unknown) as O
 
 def shake_structure(st, sigma, copy=True):
     print("Randomizing structure with rmsd of {}".format(sigma))
