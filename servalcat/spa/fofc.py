@@ -135,6 +135,12 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
         tmp[l] = numpy.zeros(len(hkldata.df.index), numpy.complex128)
 
     logger.write("Calculating maps..")
+    logger.write(" sharpening method: ", end="")
+    if sharpening_b is None:
+        logger.write("1/sqrt(FSC * Mn(Fo))")
+    else:
+        logger.write("1/exp(-B*s^2/4) with B= {:.2f}".format(sharpening_b))
+
     time_t = time.time()
 
     if half1_only:
@@ -257,15 +263,6 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     if has_halfmaps:
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
-    if B is not None:
-        Bave = numpy.average(utils.model.all_B(st))
-        logger.write("Using user-specified B: {}".format(B))
-        logger.write("    Average B of model= {:.2f}".format(Bave))
-        b_local = B - Bave
-        logger.write("    Relative B for map= {:.2f}".format(b_local))
-    else:
-        b_local = None
-        
     stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
 
     if omit_proton or omit_h_electron:
@@ -274,7 +271,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
         del hkldata.df["FC"]
         hkldata.merge_asu_data(fc_asu_2, "FC")
     
-    map_labs = calc_maps(hkldata, B=b_local, has_halfmaps=has_halfmaps, half1_only=half1_only,
+    map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps, half1_only=half1_only,
                          no_fsc_weights=no_fsc_weights, sharpening_b=sharpening_b)
     return hkldata, map_labs, stats_str
 # calc_fofc()
