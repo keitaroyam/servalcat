@@ -295,7 +295,14 @@ def read_small_structure(xyz_in):
         return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
     elif spext[1].lower() in (".pdb", ".ent"):
         logger.write("Reading PDB file: {}".format(xyz_in))
-        return gemmi.read_pdb(xyz_in)
+        st = gemmi.read_pdb(xyz_in)
+        for m in st:
+            for chain in m:
+                # Fix if they are blank TODO if more than one chain/residue?
+                if chain.name == "": chain.name = "A"
+                for res in chain:
+                    if res.name == "": res.name = "00"
+        return st
     elif spext[1].lower() in (".cif", ".mmcif"):
         pass # TODO support smcif and mmcif
     else:
@@ -381,20 +388,23 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
             except:
                 logger.error("failed to parse: {}".format(l))
                 continue
-                
+
+            if site.label.startswith("Q"):
+                logger.write("skip Q peak: {}".format(l))
+                continue
+            
             site.fract.fromlist(list(map(float, sp[2:5])))
             if len(sp) > 5:
                 q = abs(float(sp[5]))
                 if q > 10: q = q % 10 # FIXME proper handling
                 site.occ = q
-            if len(sp) == 7:
-                site.u_iso = float(sp[6])
-            elif len(sp) == 12:
+            if len(sp) > 11:
                 u = list(map(float, sp[6:12]))
                 site.aniso = gemmi.SMat33d(u[0], u[1], u[2], u[5], u[4], u[3])
                 #TODO site.u_iso needs to be set?
             else:
-                continue # currently skip Q peaks
+                site.u_iso = float(sp[6])
+
             ss.add_site(site)
 
     # Determine space group
