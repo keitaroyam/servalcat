@@ -311,6 +311,11 @@ def main(args, monlib=None):
             logger.write("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
             model_format = ".mmcif"
 
+        max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
+        if max_seq_num > 9999 and model_format == ".pdb":
+            logger.write("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
+            model_format = ".mmcif"
+
         ret["model_format"] = model_format
 
         if not args.keep_multiple_models and len(st) > 1:
