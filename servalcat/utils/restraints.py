@@ -46,6 +46,12 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                     logger.write("WARNING:: updating {} using {}".format(name, f))
                     del monlib.monomers[name]
                 monlib.add_monomer_if_present(b)
+
+                # Check if bond length values are included
+                # This is to fail if cif file is e.g. from PDB website
+                for b in monlib.monomers[name].rt.bonds:
+                    if b.value != b.value:
+                        raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
             
             monlib.insert_chemlinks(doc)
             monlib.insert_chemmods(doc)
