@@ -408,22 +408,26 @@ def filter_helical_contacting(st, cutoff=5.):
     st.ncs.extend(ops)
 # filter_helical_contacting()
 
-def adp_analysis(st):
+def adp_analysis(st, ignore_zero_occ=True):
     logger.write("= ADP analysis =")
+    if ignore_zero_occ:
+        logger.write("(zero-occupancy atoms are ignored)")
+
     all_B = []
     for i, mol in enumerate(st):
         if len(st) > 1: logger.write("Model {}:".format(i))
         logger.write("            min    Q1   med    Q3   max")
-        stats = adp_stats_per_chain(mol)
+        stats = adp_stats_per_chain(mol, ignore_zero_occ)
         for chain, natoms, qs in stats:
-            logger.write(("Chain {:3s}".format(chain) if chain!="*" else "All    ") + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
+            logger.write(("Chain {:3s}".format(chain) if chain!="*" else "All      ") + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
     logger.write("")
 # adp_analysis()
 
-def adp_stats_per_chain(model):
+def adp_stats_per_chain(model, ignore_zero_occ=True):
     bs = {}
     for cra in model.all():
-        bs.setdefault(cra.chain.name, []).append(cra.atom.b_iso)
+        if not ignore_zero_occ or cra.atom.occ > 0:
+            bs.setdefault(cra.chain.name, []).append(cra.atom.b_iso)
 
     ret = []
     for chain in model:
@@ -443,11 +447,12 @@ def all_chain_ids(st):
     return [chain.name for model in st for chain in model]
 # all_chain_ids()
 
-def all_B(st):
+def all_B(st, ignore_zero_occ=True):
     ret = []
     for mol in st:
         for cra in mol.all():
-            ret.append(cra.atom.b_iso)
+            if not ignore_zero_occ or cra.atom.occ > 0:
+                ret.append(cra.atom.b_iso)
 
     return ret
 # all_B()
