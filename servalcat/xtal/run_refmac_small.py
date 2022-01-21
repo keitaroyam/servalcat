@@ -38,7 +38,7 @@ def add_arguments(parser):
     group.add_argument('--weight_matrix', type=float,
                        help="weight matrix value")
     
-    parser.add_argument('--bref', choices=["aniso","iso"], default="aniso")
+    parser.add_argument('--bref', choices=["aniso","iso","iso_then_aniso"], default="aniso")
     parser.add_argument('--unrestrained', action='store_true')
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="electron") #FIXME
     parser.add_argument('--keywords', nargs='+', action="append",
@@ -164,8 +164,11 @@ def main(args):
     # FIXME in some cases mtz space group should be modified. 
     utils.fileio.write_model(st, prefix="input", pdb=True, cif=True)
 
+    prefix = "refined"
     if args.bref == "aniso":
         args.keywords.append("refi bref aniso")
+    elif args.bref == "iso_then_aniso":
+        prefix = "refined_1_iso"
         
     if args.unrestrained:
         args.keywords.append("refi type unre")
@@ -175,7 +178,7 @@ def main(args):
                                                        stop_for_unknowns=False)#, check_hydrogen=(args.hydrogen=="yes"))
 
     # Run Refmac
-    refmac = utils.refmac.Refmac(prefix="refined", global_mode="cx",
+    refmac = utils.refmac.Refmac(prefix=prefix, global_mode="cx",
                                  exe=args.exe,
                                  source=args.source,
                                  monlib_path=args.monlib,
@@ -190,6 +193,12 @@ def main(args):
                                  keywords=args.keywords)
     #refmac.set_libin(args.ligand)
     refmac_summary = refmac.run_refmac()
+
+    if args.bref == "iso_then_aniso":
+        refmac2 = refmac.copy(xyzin=prefix+".mmcif",
+                              prefix="refined_2_aniso")
+        refmac2.keywords.append("refi bref aniso")
+        refmac_summary = refmac2.run_refmac()
 
 if __name__ == "__main__":
     import sys
