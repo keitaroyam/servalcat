@@ -117,6 +117,13 @@ def add_arguments(p):
     parser.add_argument('-o', '--output_prefix', default='nemap')
     parser.add_argument("--trim", action='store_true', help="Write trimmed maps") # XXX no effect.
     parser.add_argument("--trim_mtz", action='store_true', help="Write trimmed mtz")
+
+    # blur
+    parser = subparsers.add_parser("blur", description = 'Blur data by specified B value')
+    parser.add_argument('--hklin', required=True, help="input MTZ file")
+    parser.add_argument('-B', type=float, required=True, help="B value for blurring (negative value for sharpening)")
+    parser.add_argument('-o', '--output_prefix')
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -411,6 +418,44 @@ def nemap(args):
                      trim_map=args.trim, trim_mtz=args.trim_mtz)
 # nemap()
 
+def blur(args):
+    if args.output_prefix is None:
+        args.output_prefix = fileio.splitext(os.path.basename(args.hklin))[0]
+    
+    if args.hklin.endswith(".mtz"):
+        mtz = gemmi.read_mtz_file(args.hklin)
+        s2 = mtz.make_1_d2_array()
+        k2 = numpy.exp(-args.B*s2/2)
+        k = numpy.exp(-args.B*s2/4)
+        i_labs = [c.label for c in mtz.columns if c.type in "JK"]
+        f_labs = [c.label for c in mtz.columns if c.type in "FDG"]
+        for labs in i_labs, f_labs:
+            for l in labs:
+                sl = "SIG"+l
+                if sl in mtz.column_labels(): labs.append(sl)
+
+        if i_labs:
+            logger.write("Intensities: {}".format(" ".join(i_labs)))
+            logger.write("  exp(-B*s^2/2) will be multiplied (B= {:.2f})".format(args.B))
+        if f_labs:
+            logger.write("Amplitudes:  {}".format(" ".join(f_labs)))
+            logger.write("  exp(-B*s^2/4) will be multiplied (B= {:.2f})".format(args.B))
+
+        for l in i_labs:
+            c = mtz.column_with_label(l)
+            c.array[:] *= k2
+        for l in f_labs:
+            c = mtz.column_with_label(l)
+            c.array[:] *= k
+
+        suffix = ("_blur" if args.B > 0 else "_sharpen") + "_{:.2f}.mtz".format(abs(args.B))
+        mtz.write_to_file(args.output_prefix+suffix)
+        logger.write("Written: {}".format(args.output_prefix+suffix))
+    else:
+        logger.error("ERROR: Unsupported file type: {}".format(args.hklin))
+        return
+# blur()
+    
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -437,7 +482,8 @@ def main(args):
                  merge_models=merge_models,
                  power=show_power,
                  fcalc=fcalc,
-                 nemap=nemap)
+                 nemap=nemap,
+                 blur=blur)
     
     com = args.subcommand
     f = comms.get(com)
