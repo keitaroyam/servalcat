@@ -304,10 +304,20 @@ def read_small_structure(xyz_in):
                     if res.name == "": res.name = "00"
         return st
     elif spext[1].lower() in (".cif", ".mmcif"):
-        pass # TODO support smcif and mmcif
+        doc = read_cif_safe(xyz_in)
+        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
+        if len(blocks) > 0:
+            if len(blocks) > 1:
+                logger.write(" WARNING: more than one block having _atom_site found. Will use first one.")
+            return gemmi.make_structure_from_block(blocks[0])
+        else:
+            ss = gemmi.read_small_structure(xyz_in)
+            if not ss.sites:
+                raise RuntimeError("No atoms found in cif file.")
+            return model.cx_to_mx(ss)
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
-# read_structure()
+# read_small_structure()
 
 def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
     assert (ins_in, lines_in).count(None) == 1
