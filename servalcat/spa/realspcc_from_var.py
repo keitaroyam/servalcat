@@ -42,24 +42,24 @@ def f_noise(s, x, s_list, w_list, B):
     tinv = numpy.exp(-B*s**2/2) if B is not None else 1.
     return s**2 * tinv * numpy.interp(s, s_list, w_list) * numpy.sinc(2*numpy.abs(s)*numpy.abs(x))
 
-def calc_var(hkldata, bin_start, kind="noise", sharpen_signal=False, weight=None):
+def calc_var(hkldata, kind="noise", sharpen_signal=False, weight=None):
     wsq = None
     if kind == "noise":
-        wsq = hkldata.binned_df.var_noise[bin_start:].to_numpy(copy=True)
+        wsq = hkldata.binned_df.var_noise.to_numpy(copy=True)
     elif kind == "signal":
-        wsq = hkldata.binned_df.var_signal[bin_start:].to_numpy(copy=True)
+        wsq = hkldata.binned_df.var_signal.to_numpy(copy=True)
     elif kind == "total":
-        wsq = hkldata.binned_df.var_signal[bin_start:].to_numpy() + hkldata.binned_df.var_noise[bin_start:].to_numpy()
+        wsq = hkldata.binned_df.var_signal.to_numpy() + hkldata.binned_df.var_noise.to_numpy()
     else:
         raise RuntimeError("unknown kind")
 
     if sharpen_signal:
-        wsq /= hkldata.binned_df.var_signal[bin_start:].to_numpy()
+        wsq /= hkldata.binned_df.var_signal.to_numpy()
     
     if weight is None:
         wsq *= 1.
     elif weight == "fscfull":
-        wsq *= hkldata.binned_df.FSCfull[bin_start:].to_numpy()**2
+        wsq *= hkldata.binned_df.FSCfull.to_numpy()**2
     else:
         raise RuntimeError("unknown weight")
         
@@ -68,9 +68,8 @@ def calc_var(hkldata, bin_start, kind="noise", sharpen_signal=False, weight=None
 
 def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): # XXX unfinished
     bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
-    bin_start = hkldata.bin_and_limits()[0][0] # grr
     logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
-    wsq = calc_var(hkldata, bin_start, kind, sharpen_signal, weight)
+    wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     for B in -numpy.arange(0,100,5):
         cov_xx = scipy.integrate.quad(f_noise, 0, smax, args=(0, bin_s, wsq, B))[0]
         cov_xy = scipy.integrate.quad(f_noise, 0, smax, args=(x, bin_s, wsq, B))[0]
@@ -80,10 +79,9 @@ def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): #
 def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_signal=False, weight=None, B=None):
     assert 1./hkldata.bin_and_limits()[-1][1][1] <= smax
     bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
-    bin_start = hkldata.bin_and_limits()[0][0] # grr
 
     logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
-    wsq = calc_var(hkldata, bin_start, kind, sharpen_signal, weight)
+    wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     cov_xx = scipy.integrate.quad(f_noise, 0, smax, args=(0, bin_s, wsq, B))[0]
     x_all = numpy.arange(0, x_max, x_step)
     cc_all = []

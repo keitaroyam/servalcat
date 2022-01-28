@@ -153,8 +153,7 @@ class HklData:
             self._bin_and_limits.append((i, (bin_limit_ds[i-1], bin_limit_ds[i])))
 
         self.df["bin"] = bin_number
-        self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
-                                          columns=["bin"])
+        self.binned_df = pandas.DataFrame(index=[x[0] for x in self._bin_and_limits])
     # setup_binning()
         
     def setup_relion_binning(self):
@@ -163,8 +162,6 @@ class HklData:
             self.calc_d()
 
         self.df.loc[:, "bin"] = (max_edge/self.df.d).astype(numpy.int)
-        self.binned_df = pandas.DataFrame(data=list(range(max(self.df.bin)+1)),
-                                          columns=["bin"])
         self._bin_and_limits = []
         bin_numbers = set(self.df.bin)
 
@@ -207,6 +204,7 @@ class HklData:
         for i_bin, g in self.df.groupby("bin", sort=True):
             self._bin_and_limits.append((i_bin, (max(g.d), min(g.d))))
 
+        self.binned_df = pandas.DataFrame(index=[x[0] for x in self._bin_and_limits])
     # setup_relion_binning()
 
     def bin_and_limits(self):
