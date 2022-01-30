@@ -14,6 +14,15 @@ import numpy
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
+def decide_new_mod_id(mod_id, mods):
+    i = 1
+    while True:
+        i += 1
+        new_id = "{}-{}".format(mod_id, i)
+        if new_id not in mods:
+            return new_id
+# decide_new_mod_id()
+        
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False):
     resnames = st[0].get_all_residue_names()
 
@@ -43,7 +52,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             if b.find_values("_chem_comp_atom.atom_id"):
                 name = b.name.replace("comp_", "")
                 if name in monlib.monomers:
-                    logger.write("WARNING:: updating {} using {}".format(name, f))
+                    logger.write("WARNING:: updating monomer {} using {}".format(name, f))
                     del monlib.monomers[name]
                 monlib.add_monomer_if_present(b)
 
@@ -52,10 +61,50 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 for b in monlib.monomers[name].rt.bonds:
                     if b.value != b.value:
                         raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
+                    
+        link_list = doc.find_block("link_list")
+        if link_list:
+            for row in link_list.find("_chem_link.", ["id"]):
+                link_id = row.str(0)
+                if link_id in monlib.links:
+                    logger.write("WARNING:: updating link {} using {}".format(link_id, f))
+                    del monlib.links[link_id]
+
+        # If modification id is duplicated, need to rename
+        mod_list = doc.find_block("mod_list")
+        if mod_list:
+            trans = {}
+            for row in mod_list.find("_chem_mod.", ["id"]):
+                mod_id = row.str(0)
+                if mod_id in monlib.modifications:
+                    new_id = decide_new_mod_id(mod_id, monlib.modifications)
+                    trans[mod_id] = new_id
+                    row[0] = new_id # modify id
+                    logger.write("INFO:: modification {} in {} is already registered. changing id to {}".format(mod_id, f, new_id))
+
+            # modify ids in mod_* blocks
+            for mod_id in trans:
+                b = doc.find_block("mod_{}".format(mod_id))
+                if not b: # should raise error?
+                    logger.write("WARNING:: inconsistent data_mod_list for {} in {}".format(mod_id, f))
+                    continue
+                b.name = "mod_{}".format(trans[mod_id]) # modify name
+                for item in b:
+                    for tag in item.loop.tags:
+                        if tag.endswith(".mod_id"):
+                            for row in b.find(tag[:tag.rindex(".")+1], ["mod_id"]):
+                                row[0] = trans[mod_id]
+
+            # Update mod id in links
+            if trans and link_list:
+                for row in link_list.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
+                    for i in range(2):
+                        if row.str(i) in trans:
+                            row[i] = trans[row.str(i)]
             
-            monlib.insert_chemlinks(doc)
-            monlib.insert_chemmods(doc)
-            monlib.insert_comp_list(doc)
+        monlib.insert_chemlinks(doc)
+        monlib.insert_chemmods(doc)
+        monlib.insert_comp_list(doc)
 
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
