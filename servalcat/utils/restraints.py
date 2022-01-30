@@ -107,16 +107,18 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def find_and_fix_links(st, monlib): # TODO options to add detected link, remove link not found in dictionary
+def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_found=True):
     """
     Find links not registered in st.connections
     This is required for correctly recognizing link in gemmi.prepare_topology
+    if remove_unknown=True, undefined links and unmatched links are removed.
     """
     from servalcat.utils import model
 
+    logger.write("Checking links in model")
     hunt = gemmi.LinkHunt()
     hunt.index_chem_links(monlib)
-    matches = hunt.find_possible_links(st, 1.5, 0)
+    matches = hunt.find_possible_links(st, bond_margin, 0)
     known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p", "gap")
     conns = [x for x in st.connections] # to check later
     new_connections = []
@@ -125,7 +127,7 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
         if not m.chem_link or m.chem_link.id in known_links:
             continue
         if m.conn:
-            logger.write("Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+            logger.write(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
                                                                                                     m.bond_length,
                                                                                                     m.chem_link.rt.bonds[0].value))
@@ -138,7 +140,7 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
             if m.conn in conns: # may not be found if id duplicated
                 conns.pop(conns.index(m.conn))
         else:
-            logger.write("Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+            logger.write(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
                                                                                                     m.bond_length,
                                                                                                     m.chem_link.rt.bonds[0].value))
@@ -149,12 +151,29 @@ def find_and_fix_links(st, monlib): # TODO options to add detected link, remove 
             con.partner2 = model.cra_to_atomaddress(m.cra2)
             new_connections.append(con)
 
+    rm_idxes = []
+    con_idxes = dict((c,i) for i,c in enumerate(st.connections))
     for con in conns:
+        if remove_unknown:
+            i = con_idxes.get(con)
+            if i is not None: rm_idxes.append(i)
+            
+        at1, at2 = st[0].find_cra(con.partner1).atom, st[0].find_cra(con.partner2).atom
+        if None in (at1, at2):
+            logger.write(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+            st
+            continue
         if con.link_id in known_links: continue
-        logger.write("WARNING: unknown link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+        dist = at1.pos.dist(at2.pos)
+        logger.write(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
 
-    for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
-        st.connections.append(con)
+    if remove_unknown:
+        for i in sorted(rm_idxes, reverse=True):
+            st.connections.pop(i)
+
+    if add_found:
+        for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
+            st.connections.append(con)
 
 # find_and_fix_links()
 
