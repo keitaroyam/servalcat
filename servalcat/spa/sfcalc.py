@@ -13,6 +13,8 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.spa import shift_maps
 
+# TODO change the name; "sfcalc" is misleading actually - this prepares input files for Refmac
+
 def add_sfcalc_args(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
@@ -54,6 +56,8 @@ def add_sfcalc_args(parser):
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--keep_multiple_models', action='store_true', 
                         help='Multi-models will be kept; by default only 1st model is kept because REFMAC5 does not support it')
+    parser.add_argument('--no_link_check', action='store_true', 
+                        help='Do not find and fix link records in input model.')
     parser.add_argument("--b_before_mask", type=float,
                         help="sharpening B value for sharpen-mask-unsharpen procedure. By default it is determined automatically.")
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
@@ -296,12 +300,15 @@ def main(args, monlib=None):
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
 
+        if monlib is None:
+            # FIXME should use user provided libraries
+            monlib = utils.restraints.load_monomer_library(st)
+
+        if not args.no_link_check:
+            utils.restraints.find_and_fix_links(st, monlib)
+
         if not args.no_fix_microheterogeneity:
             # TODO need to check external restraints
-
-            if monlib is None:
-                # FIXME should use user provided libraries
-                monlib = utils.restraints.load_monomer_library(st)
             mhtr_mods = utils.model.microheterogeneity_for_refmac(st, monlib)
             ret["inscode_mods"] = mhtr_mods
             
