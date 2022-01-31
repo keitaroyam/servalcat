@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import model
+from servalcat.utils import restraints
 import os
 import re
 import subprocess
@@ -249,12 +250,33 @@ def read_structure_from_pdb_and_mmcif(xyz_in):
 # read_structure_from_pdb_and_mmcif()
 
 def merge_ligand_cif(cifs_in, cif_out):
-    # TODO Check duplication?
-    
     docs = [gemmi.cif.read(x) for x in cifs_in]
     tags = dict(comp=["_chem_comp.id"],
                 link=["_chem_link.id"],
                 mod=["_chem_mod.id"])
+    list_names = [k+"_list" for k in tags]
+
+    # Check duplicated block names
+    names = {}
+    for i, doc in enumerate(docs):
+        for j, b in enumerate(doc):
+            if b.name not in list_names and not b.name.startswith("mod_"):
+                names.setdefault(b.name, []).append((i,j))
+
+    # Keep only last one if duplicated
+    for k in names:
+        if len(names[k]) > 1:
+            for i,j in reversed(names[k][:-1]):
+                logger.write("WARNING: removing duplicated {} from {}".format(k, cifs_in[i]))
+                del docs[i][j]
+                for t in "comp", "link":
+                    if k.startswith("{}_".format(t)):
+                        comp_list = docs[i].find_block("{}_list".format(t))
+                        table = comp_list.find("_chem_{}.".format(t), ["id"])
+                        for i in reversed([i for i, row in enumerate(table) if row.str(0) == k[5:]]):
+                            table.remove_row(i)
+
+    # Accumulate list
     found = dict(comp=0, link=0, mod=0)
     for d in docs:
         for k in tags:
@@ -264,8 +286,18 @@ def merge_ligand_cif(cifs_in, cif_out):
             l = b.find_loop(tags[k][0]).get_loop()
             for t in l.tags:
                 if t not in tags[k]: tags[k].append(t)
-  
+
+    # Check duplicated modifications
+    known_mods = [] # need to check monomer library?
+    for d in docs:
+        restraints.rename_cif_modification_if_necessary(d, known_mods)
+        mod_list = d.find_block("mod_list")
+        if mod_list:
+            for row in mod_list.find("_chem_mod.", ["id"]):
+                known_mods.append(row.str(0))
+        
     doc = gemmi.cif.Document()
+    # Add lists
     for k in tags:
         if not found[k]: continue
         lst = doc.add_new_block("{}_list".format(k))
@@ -280,9 +312,10 @@ def merge_ligand_cif(cifs_in, cif_out):
                 rl = [v.get(x) if v.has(x) else "." for x in range(len(tags[k]))]
                 loop.add_row(rl)
 
+    # Add other items
     for d in docs:
         for b in d:
-            if not b.name.endswith("_list"):
+            if b.name not in list_names:
                 doc.add_copied_block(b)
 
     doc.write_file(cif_out)

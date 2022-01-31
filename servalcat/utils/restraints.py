@@ -22,7 +22,44 @@ def decide_new_mod_id(mod_id, mods):
         if new_id not in mods:
             return new_id
 # decide_new_mod_id()
-        
+
+def rename_cif_modification_if_necessary(doc, known_ids):
+    mod_list = doc.find_block("mod_list")
+    if not mod_list: return {}
+    
+    trans = {}
+    for row in mod_list.find("_chem_mod.", ["id"]):
+        mod_id = row.str(0)
+        if mod_id in known_ids:
+            new_id = decide_new_mod_id(mod_id, known_ids)
+            trans[mod_id] = new_id
+            row[0] = new_id # modify id
+            logger.write("INFO:: renaming modification id {} to {}".format(mod_id, new_id))
+
+    # modify ids in mod_* blocks
+    for mod_id in trans:
+        b = doc.find_block("mod_{}".format(mod_id))
+        if not b: # should raise error?
+            logger.write("WARNING:: inconsistent data_mod_list for {} in {}".format(mod_id, f))
+            continue
+        b.name = "mod_{}".format(trans[mod_id]) # modify name
+        for item in b:
+            for tag in item.loop.tags:
+                if tag.endswith(".mod_id"):
+                    for row in b.find(tag[:tag.rindex(".")+1], ["mod_id"]):
+                        row[0] = trans[mod_id]
+
+    # Update mod id in links
+    link_list = doc.find_block("link_list")
+    if trans and link_list:
+        for row in link_list.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
+            for i in range(2):
+                if row.str(i) in trans:
+                    row[i] = trans[row.str(i)]
+
+    return trans
+# rename_cif_modification_if_necessary()
+
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False):
     resnames = st[0].get_all_residue_names()
 
@@ -71,37 +108,8 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                     del monlib.links[link_id]
 
         # If modification id is duplicated, need to rename
-        mod_list = doc.find_block("mod_list")
-        if mod_list:
-            trans = {}
-            for row in mod_list.find("_chem_mod.", ["id"]):
-                mod_id = row.str(0)
-                if mod_id in monlib.modifications:
-                    new_id = decide_new_mod_id(mod_id, monlib.modifications)
-                    trans[mod_id] = new_id
-                    row[0] = new_id # modify id
-                    logger.write("INFO:: modification {} in {} is already registered. changing id to {}".format(mod_id, f, new_id))
-
-            # modify ids in mod_* blocks
-            for mod_id in trans:
-                b = doc.find_block("mod_{}".format(mod_id))
-                if not b: # should raise error?
-                    logger.write("WARNING:: inconsistent data_mod_list for {} in {}".format(mod_id, f))
-                    continue
-                b.name = "mod_{}".format(trans[mod_id]) # modify name
-                for item in b:
-                    for tag in item.loop.tags:
-                        if tag.endswith(".mod_id"):
-                            for row in b.find(tag[:tag.rindex(".")+1], ["mod_id"]):
-                                row[0] = trans[mod_id]
-
-            # Update mod id in links
-            if trans and link_list:
-                for row in link_list.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
-                    for i in range(2):
-                        if row.str(i) in trans:
-                            row[i] = trans[row.str(i)]
-            
+        rename_cif_modification_if_necessary(doc, monlib.modifications)
+        
         monlib.insert_chemlinks(doc)
         monlib.insert_chemmods(doc)
         monlib.insert_comp_list(doc)
