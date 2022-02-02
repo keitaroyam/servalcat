@@ -10,6 +10,7 @@ import gemmi
 import numpy
 import json
 import os
+import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
@@ -31,6 +32,8 @@ def add_arguments(parser):
     parser.add_argument('--ncsr', default="local", choices=["local", "global"],
                         help="local or global NCS restrained")
     parser.add_argument('--ncycle', type=int, default=10)
+    parser.add_argument('--tlscycle', type=int, default=0)
+    parser.add_argument('--tlsin')
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input")
     parser.add_argument('--jellybody', action='store_true')
@@ -306,6 +309,14 @@ def main(args):
         args.weight_auto_scale = max(0.2, min(18.0, ws))
         logger.write(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
 
+    # Take care of TLS in
+    if args.tlsin and not args.no_shift and "shifts" in file_info:
+        logger.write("Shifting origin in tlsin")
+        tlsgroups = utils.refmac.read_tls_file(args.tlsin)
+        spa.shiftback.shift_back_tls(tlsgroups, -file_info["shifts"]) # tlsgroups is modified
+        args.tlsin = "shifted.tls"
+        utils.refmac.write_tls_file(tlsgroups, args.tlsin)
+        
     # Run Refmac
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa",
                                  keep_chain_ids=keep_chain_ids)
@@ -332,6 +343,19 @@ def main(args):
     modify_output(st, file_info.get("inscode_mods"))
     utils.fileio.write_model(st, prefix=args.output_prefix,
                              pdb=True, cif=True, cif_ref=cif_ref)
+
+    # Take care of TLS out
+    if not args.no_trim: # if no_trim, there is nothing to do.
+        tlsout = refmac.tlsout()
+        if os.path.exists(tlsout):
+            if not args.no_shift:
+                logger.write("Shifting origin in tlsout")
+                tlsgroups = utils.refmac.read_tls_file(tlsout)
+                spa.shiftback.shift_back_tls(tlsgroups, file_info["shifts"]) # tlsgroups is modified
+                utils.refmac.write_tls_file(tlsgroups, args.output_prefix+".tls")
+            else:
+                logger.write("Copying tlsout")
+                shutil.copyfile(refmac.tlsout(), args.output_prefix+".tls")
 
     # Expand sym here
     st_expanded = st.clone()

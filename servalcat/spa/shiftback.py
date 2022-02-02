@@ -81,6 +81,12 @@ def shift_back_model(st, shifts):
             n.tr.vec.fromlist(newv.tolist())
 # shift_back_model()
 
+def shift_back_tls(tlsgroups, shifts):
+    for g in tlsgroups:
+        if g["origin"] is not None:
+            g["origin"] -= shifts
+# shift_back_tls()
+
 def shift_back(xyz_in, shifts_json, refine_mtz=None, out_prefix=None):
     logger.write("Reading shifts info from {}".format(shifts_json))
     info = json.load(open(shifts_json))
