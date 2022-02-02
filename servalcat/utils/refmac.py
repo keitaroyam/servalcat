@@ -6,6 +6,7 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
+import gemmi
 import subprocess
 import pipes
 import json
@@ -52,6 +53,60 @@ def external_restraints_json_to_keywords(json_in):
     return "\n".join(ret) + "\n"
 # external_restraints_json_to_keywords()
 
+def read_tls_file(tlsin):
+    # TODO sort out L/S units - currently use Refmac tlsin/out as is
+    # TODO change to gemmi::TlsGroup?
+    
+    groups = [] 
+    for l in open(tlsin):
+        l = l.strip()
+        if l.startswith("TLS"):
+            title = l[4:]
+            groups.append(dict(title=title, ranges=[], origin=None, T=None, L=None, S=None))
+        elif l.startswith("RANG"):
+            r = l[l.index(" "):].strip()
+            groups[-1]["ranges"].append(r)
+        elif l.startswith("ORIG"):
+            try:
+                groups[-1]["origin"] = gemmi.Position(*(float(x) for x in l.split()[1:]))
+            except:
+                raise ValueError("Prolem with TLS file: {}".format(l))
+        elif l.startswith("T   "):
+            try:
+                groups[-1]["T"] = [float(x) for x in l.split()[1:7]]
+            except:
+                raise ValueError("Prolem with TLS file: {}".format(l))
+        elif l.startswith("L   "):
+            try:
+                groups[-1]["L"] = [float(x) for x in l.split()[1:7]]
+            except:
+                raise ValueError("Prolem with TLS file: {}".format(l))
+        elif l.startswith("S   "):
+            try:
+                groups[-1]["S"] = [float(x) for x in l.split()[1:10]]
+            except:
+                raise ValueError("Prolem with TLS file: {}".format(l))
+
+    return groups
+# read_tls_file()
+
+def write_tls_file(groups, tlsout):
+    with open(tlsout, "w") as f:
+        for g in groups:
+            f.write("TLS {}\n".format(g["title"]))
+            for r in g["ranges"]:
+                f.write("RANGE {}\n".format(r))
+            if g["origin"] is not None:
+                f.write("ORIGIN ")
+                f.write(" ".join("{:8.4f}".format(x) for x in g["origin"].tolist()))
+                f.write("\n")
+            for k in "TLS":
+                if g[k] is not None:
+                    f.write("{:4s}".format(k))
+                    f.write(" ".join("{:8.4f}".format(x) for x in g[k]))
+                    f.write("\n")
+# write_tls_file()
+
 class Refmac:
     def __init__(self, **kwargs):
         self.prefix = "refmac"
@@ -61,9 +116,11 @@ class Refmac:
         self.lab_sigf = None
         self.lab_phi = None
         self.libin = None
+        self.tlsin = None
         self.hydrogen = "all"
         self.hout = False
         self.ncycle = 10
+        self.tlscycle = 0
         self.resolution = None
         self.weight_matrix = None
         self.weight_auto_scale = None
@@ -95,7 +152,9 @@ class Refmac:
         self.hklin = args.mtz
         self.xyzin = args.model
         self.libin = args.ligand
+        self.tlsin = args.tlsin
         self.ncycle = args.ncycle
+        self.tlscycle = args.tlscycle
         self.lab_f = args.lab_f
         self.lab_phi = args.lab_phi
         self.lab_sigf = args.lab_sigf
@@ -191,7 +250,9 @@ class Refmac:
             ret += "ncsr {}\n".format(self.ncsr)
         if self.shake:
             ret += "rand {}\n".format(self.shake)
-
+        if self.tlscycle > 0:
+            ret += "refi tlsc {}\n".format(self.tlscycle)
+            ret += "tlsout addu\n"
         if self.keep_chain_ids:
             ret += "pdbo keep auth\n"
 
@@ -210,6 +271,7 @@ class Refmac:
 
     def xyzout(self): return self.prefix + ".pdb"
     def hklout(self): return self.prefix + ".mtz"
+    def tlsout(self): return self.prefix + ".tls"
 
     def make_cmd(self):
         cmd = [self.exe]
@@ -218,7 +280,11 @@ class Refmac:
         cmd.extend(["xyzin", pipes.quote(self.xyzin)])
         cmd.extend(["xyzout", pipes.quote(self.xyzout())])
         if self.libin:
-            cmd.extend(["libin", self.libin])
+            cmd.extend(["libin", pipes.quote(self.libin)])
+        if self.tlsin:
+            cmd.extend(["tlsin", pipes.quote(self.tlsin)])
+        if self.tlscycle > 0:
+            cmd.extend(["tlsout", pipes.quote(self.tlsout())])
         if self.source == "neutron":
             cmd.extend(["atomsf", pipes.quote(os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib"))])
         if self.tmpdir:
@@ -247,7 +313,7 @@ class Refmac:
 
         log = open(self.prefix+".log", "w")
         cycle = 0
-        re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+1))
+        re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+self.tlscycle+1))
         re_actual_weight = re.compile("Actual weight *([^ ]+) *is applied to the X-ray term")
         rmsbond = ""
         rmsangle = ""
@@ -257,7 +323,7 @@ class Refmac:
         last_table_flag = False
         last_table_keys = []
         ret = {"version":None,
-               "cycles": [{"cycle":i} for i in range(self.ncycle+1)],
+               "cycles": [{"cycle":i} for i in range(self.ncycle+self.tlscycle+1)],
                } # metadata
         
         for l in iter(p.stdout.readline, ""):
@@ -292,10 +358,12 @@ class Refmac:
                 else:
                     outlier_flag = False
 
-            if "CGMAT cycle number =" in l:
-                cycle = int(l[l.index("=")+1:])
+            if "TLS refinement cycle" in l:
+                cycle = int(l.split()[-1])
+            elif "CGMAT cycle number =" in l:
+                cycle = int(l[l.index("=")+1:]) + self.tlscycle
             elif re_lastcycle.search(l):
-                cycle = self.ncycle + 1
+                cycle = self.ncycle + self.tlscycle + 1
             elif "Overall R factor                     =" in l and cycle > 0:
                 rfac = l[l.index("=")+1:].strip()
                 if self.global_mode != "spa":
@@ -304,7 +372,9 @@ class Refmac:
                 fsc = l[l.index("=")+1:].strip()
                 if cycle == 1:
                     note = "(initial)"
-                elif cycle > self.ncycle:
+                elif cycle <= self.tlscycle+1:
+                    note = "(TLS)"
+                elif cycle > self.ncycle + self.tlscycle:
                     note = "(final)"
                 else:
                     note = ""
