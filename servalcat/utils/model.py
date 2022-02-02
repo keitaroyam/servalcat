@@ -14,6 +14,7 @@ import numpy
 import pandas
 import scipy.sparse
 import os
+import time
 import itertools
 import string
 
@@ -86,6 +87,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     dc.rate = rate
     dc.set_grid_cell_and_spacegroup(st)
 
+    t_start = time.time()
     if mott_bethe:
         if omit_proton:
             method_str = "proton-omit Fc"
@@ -100,7 +102,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
             method_str = "Fc"
 
         logger.write("Calculating {} using Mott-Bethe formula".format(method_str))
-            
+        
         dc.initialize_grid()
         dc.addends.subtract_z(except_hydrogen=True)
 
@@ -126,6 +128,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         logger.write("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
 
+    logger.write(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
     grid = gemmi.transform_map_to_f_phi(dc.grid)
     asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
         
