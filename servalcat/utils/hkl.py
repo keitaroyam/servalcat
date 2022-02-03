@@ -136,7 +136,7 @@ class HklData:
         if len(bin_limit_ds)==n_bins:
             bin_limit_ds = numpy.append(bin_limit_ds, bin_limit_ds[-1]+spstep)
         if bin_limit_ds[-1] < spmax:
-            bin_limit_ds[-1] == spmax # difference should be very small..
+            bin_limit_ds[-1] = spmax # difference should be very small..
         bin_limit_ds = bin_limit_ds**(-1/s_power)
         assert len(bin_limit_ds) == n_bins + 1
 
