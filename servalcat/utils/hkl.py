@@ -102,17 +102,17 @@ class HklData:
     def s_array(self):
         hkl = self.miller_array()
         return numpy.dot(hkl, self.cell.fractionalization_matrix)
-    
+
     def calc_d(self):
-        self.df.loc[:,"d"] = self.cell.calculate_d_array(self.miller_array())
+        self.df["d"] = self.cell.calculate_d_array(self.miller_array())
     # calc_d()
 
     def calc_epsilon(self):
-        self.df.loc[:,"epsilon"] = self.sg.operations().epsilon_factor_without_centering_array(self.miller_array())
+        self.df["epsilon"] = self.sg.operations().epsilon_factor_without_centering_array(self.miller_array())
     # calc_epsilon()
 
     def calc_centric(self):
-        self.df.loc[:,"centric"] = self.sg.operations().centric_flag_array(self.miller_array()).astype(int)
+        self.df["centric"] = self.sg.operations().centric_flag_array(self.miller_array()).astype(int)
     # calc_centric()
         
     def d_spacings(self):
@@ -123,7 +123,7 @@ class HklData:
 
     def d_min_max(self):
         d = self.d_spacings()
-        return min(d), max(d)
+        return numpy.min(d), numpy.max(d)
     # d_min_max()
 
     def setup_binning(self, n_bins, s_power=2):
@@ -155,21 +155,19 @@ class HklData:
         self.df["bin"] = bin_number
         self.binned_df = pandas.DataFrame(index=[x[0] for x in self._bin_and_limits])
     # setup_binning()
-        
+
     def setup_relion_binning(self):
         max_edge = max(self.cell.parameters[:3])
-        if "d" not in self.df or self.df.d.isnull().values.any():
-            self.calc_d()
-
-        self.df.loc[:, "bin"] = (max_edge/self.df.d).astype(numpy.int)
+        self.df["bin"] = (max_edge/self.d_spacings()+0.5).astype(numpy.int)
         self._bin_and_limits = []
-        bin_numbers = set(self.df.bin)
 
         # Merge inner/outer shells if too few # TODO smarter way
         bin_counts = []
+        bin_ranges = {}
         modify_table = {}
         for i_bin, g in self.df.groupby("bin", sort=True):
             bin_counts.append([i_bin, len(g.index)])
+            bin_ranges[i_bin] = (numpy.max(g.d), numpy.min(g.d))
 
         for i in range(len(bin_counts)):
             if bin_counts[i][1] < 10 and i < len(bin_counts)-1:
@@ -195,14 +193,16 @@ class HklData:
                     flag = False
             if flag: break
 
-        if modify_table:
-            for i_bin, g in self.df.groupby("bin", sort=True):
-                if i_bin in modify_table:
-                    self.df.loc[g.index, "bin"] = modify_table[i_bin]
+        for i_bin in modify_table:
+            new_bin = modify_table[i_bin]
+            self.df["bin"] = numpy.where(self.df["bin"].to_numpy() == i_bin, new_bin, self.df["bin"].to_numpy())
+            bin_ranges[new_bin] = (max(bin_ranges[i_bin][0], bin_ranges[new_bin][0]),
+                                   min(bin_ranges[i_bin][1], bin_ranges[new_bin][1]))
 
         # set bin_and_limits
-        for i_bin, g in self.df.groupby("bin", sort=True):
-            self._bin_and_limits.append((i_bin, (max(g.d), min(g.d))))
+        for i_bin, _ in bin_counts:
+            if i_bin in modify_table: continue
+            self._bin_and_limits.append((i_bin, bin_ranges[i_bin]))
 
         self.binned_df = pandas.DataFrame(index=[x[0] for x in self._bin_and_limits])
     # setup_relion_binning()
