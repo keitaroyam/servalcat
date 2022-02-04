@@ -133,41 +133,26 @@ class HklData:
         return numpy.min(d), numpy.max(d)
     # d_min_max()
 
-    def setup_binning(self, n_bins, s_power=2):
+    def setup_binning(self, n_bins, method=gemmi.Binner.Method.Dstar2):
         self.df.reset_index(drop=True, inplace=True)
-        sp = self.d_spacings()**(-s_power)
-        spmin, spmax = min(sp), max(sp)
-        spstep = (spmax-spmin)/n_bins
-        bin_limit_ds = numpy.arange(spmin, spmax, spstep)
-        
-        #bin_limit_ds = [sprange...] # left ends, and right end.
-        if len(bin_limit_ds)==n_bins:
-            bin_limit_ds = numpy.append(bin_limit_ds, bin_limit_ds[-1]+spstep)
-        if bin_limit_ds[-1] < spmax:
-            bin_limit_ds[-1] = spmax # difference should be very small..
-        bin_limit_ds = bin_limit_ds**(-1/s_power)
-        assert len(bin_limit_ds) == n_bins + 1
-
-        bin_centers = [(bin_limit_ds[i]**(-s_power)+bin_limit_ds[i+1]**(-s_power))/2 for i in range(n_bins)]
-        sprange = bin_limit_ds**(-s_power)
-        sprange[-1] += 1.e-6
-
-        bin_number = numpy.zeros(len(sp), dtype=numpy.int)
-        
-        bin_all = []
+        s2 = 1/self.d_spacings().to_numpy()**2
+        binner = gemmi.Binner()
+        binner.setup_from_1_d2(n_bins, method, s2, self.cell)
+        self._bin_and_limits = []
+        d_limits = 1 / numpy.sqrt(binner.bin_limits)
+        bin_number = binner.get_bin_numbers_from_1_d2(s2)
         d_max_all = []
         d_min_all = []
-        self._bin_and_indices = []
-        for i in range(1, len(sprange)):
-            sel = numpy.where(numpy.logical_and(sprange[i-1]<=sp, sp <sprange[i]))[0]
-            bin_number[sel] = i
-            bin_all.append(i)
-            d_max_all.append(bin_limit_ds[i-1])
-            d_min_all.append(bin_limit_ds[i])
+        for i in range(binner.bin_count()):
+            left = numpy.max(self.d_spacings()) if i == 0 else d_limits[i-1]
+            right = numpy.min(self.d_spacings()) if i == binner.bin_count() -1 else d_limits[i]
+            sel = numpy.where(bin_number==i)[0] # slow?
+            d_max_all.append(left)
+            d_min_all.append(right)
             self._bin_and_indices.append((i, sel))
 
         self.df["bin"] = bin_number
-        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=bin_all)
+        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=list(range(binner.bin_count())))
     # setup_binning()
 
     def setup_relion_binning(self, sort=False):

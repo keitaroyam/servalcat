@@ -154,11 +154,12 @@ def determine_mlf_params(hkldata):
     # Initial values
     hkldata.binned_df["D"] = 1.
     hkldata.binned_df["S"] = 10000.
-    for i_bin, g in hkldata.binned():
-        FC = numpy.abs(g.FC)
-        D = numpy.corrcoef(g.FP, FC)[1,0]
+    for i_bin, idxes in hkldata.binned():
+        FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
+        FP = hkldata.df.FP.to_numpy()[idxes]
+        D = numpy.corrcoef(FP, FC)[1,0]
         hkldata.binned_df.loc[i_bin, "D"] = D
-        hkldata.binned_df.loc[i_bin, "S"] = numpy.var(g.FP - D * numpy.abs(g.FC))
+        hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
 
     logger.write("Initial estimates:")
     logger.write(hkldata.binned_df.to_string())
@@ -175,14 +176,14 @@ def determine_mlf_params(hkldata):
             gnum = (fe-f0)/e
             print(i, gnum, gana[i], gana[i]-gnum)
         
-    for i_bin, g in hkldata.binned():
+    for i_bin, idxes in hkldata.binned():
         D = hkldata.binned_df.D[i_bin]
         S = hkldata.binned_df.S[i_bin]
         x0 = [D, S]
         def target(x):
-            return mlf(g, x[0], x[1])
+            return mlf(hkldata.df.loc[idxes], x[0], x[1])
         def grad(x):
-            return deriv_mlf_wrt_D_S(g, x[0], x[1])
+            return deriv_mlf_wrt_D_S(hkldata.df.loc[idxes], x[0], x[1])
 
         #print("Bin", i_bin)
         res = scipy.optimize.minimize(fun=target, jac=grad, x0=x0)
@@ -263,9 +264,9 @@ $$
     hkldata.df["FWT"] = 0j
     hkldata.df["DELFWT"] = 0j
     hkldata.df["FOM"] = 0.
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
+    for i_bin, idxes in hkldata.binned():
+        bin_d_min = hkldata.binned_df.d_min[i_bin]
+        bin_d_max = hkldata.binned_df.d_max[i_bin]
         D = hkldata.binned_df.D[i_bin]
         S = hkldata.binned_df.S[i_bin]
 
@@ -273,7 +274,7 @@ $$
         mean_fom = [0, 0]
         nrefs = [0, 0]
         fom_func = [fom_acentric, fom_centric]
-        for c, g2 in g.groupby("centric", sort=False):
+        for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
             Fc = numpy.abs(g2.FC.to_numpy())
             phic = numpy.angle(g2.FC.to_numpy())
             expip = numpy.cos(phic) + 1j*numpy.sin(phic)
