@@ -24,6 +24,8 @@ def decide_new_mod_id(mod_id, mods):
 # decide_new_mod_id()
 
 def rename_cif_modification_if_necessary(doc, known_ids):
+    # FIXME Problematic if other file refers to modification that is renamed in this function - but how can we know?
+    
     mod_list = doc.find_block("mod_list")
     if not mod_list: return {}
     
@@ -244,7 +246,8 @@ def add_hydrogens(st, monlib, pos="elec"):
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger)
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")
-        restraints.check_monlib_support_nucleus_distances(monlib, resnames)
+        resnames = st[0].get_all_residue_names()
+        check_monlib_support_nucleus_distances(monlib, resnames)
         topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=default_proton_scale)
     else:
         logger.write("Generating hydrogens at electron positions")
