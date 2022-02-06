@@ -184,9 +184,9 @@ def main(args):
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
             if k.startswith("fsc_FC_"):
-                logger.write("FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.write("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
             if k.startswith("Rcmplx_FC_"):
-                logger.write("Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.write("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
 
     logger.write("See {}".format(args.fsc_out))
 # main()
