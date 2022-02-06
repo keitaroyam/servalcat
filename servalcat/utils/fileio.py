@@ -127,6 +127,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
     spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
     voxel_size = [g.unit_cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
+    origin = [m.header_float(x) for x in (50,51,52)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
     logger.write("Reading CCP4/MRC map file {}".format(filename))
@@ -139,6 +140,9 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     logger.write(" Space group: {}".format(m.header_i32(23)))
     logger.write("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
     logger.write("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
+    logger.write("      Origin: {:.6e} {:.6e} {:.6e}".format(*origin))
+    if not numpy.allclose(origin, [0,0,0]):
+        logger.write("             ! WARNNING: ORIGIN header is not supported.")
     logger.write("       Label: {}".format(label))
     logger.write("")
 
