@@ -18,7 +18,7 @@ def mask_from_model():
 def half2full(map_h1, map_h2):
     assert map_h1.shape == map_h2.shape
     assert map_h1.unit_cell == map_h2.unit_cell
-    tmp = (numpy.array(map_h1)+numpy.array(map_h2))/2.
+    tmp = (numpy.array(map_h1, copy=False) + numpy.array(map_h2, copy=False))/2.
     gr = gemmi.FloatGrid(tmp, map_h1.unit_cell, map_h1.spacegroup)
     return gr
 # half2full()
@@ -77,16 +77,15 @@ $$""")
         normalizer[:] = numpy.exp(-b*s2/4.)
         for lab in labs: hkldata.df.loc[:, lab] /= normalizer
 
-    # 2. Mask
-    new_maps = []
+    # 2. Mask, FFT, and unsharpen
     for lab in labs:
         m = hkldata.fft_map(lab, grid_size=mask.shape)
-        new_maps.append([gemmi.FloatGrid(numpy.array(m)*mask, hkldata.cell, hkldata.sg), None])
+        g = gemmi.FloatGrid(numpy.array(m, copy=False) * mask, hkldata.cell, hkldata.sg)
         #write_ccp4_map("debug_{}.ccp4".format(lab), new_maps[-1][0])
+        rg = gemmi.transform_map_to_f_phi(g)
+        hkldata.df[lab] = rg.get_value_by_hkl(hkldata.miller_array()) * normalizer
 
-    # 3. Unsharpen
-    hkldata = mask_and_fft_maps(new_maps, d_min)
-    for lab in labs: hkldata.df[lab] *= normalizer
+    # TODO can return here for most use cases?
     
     new_maps = []
     for i, lab in enumerate(labs):
@@ -98,50 +97,38 @@ $$""")
 
 def mask_and_fft_maps(maps, d_min, mask=None):
     assert len(maps) <= 2
-    asus = []
-    for m in maps:
+    hkldata = None
+    for i, m in enumerate(maps):
+        if len(maps) == 2:
+            lab = "F_map{}".format(i+1)
+        else:
+            lab = "FP"
         g = m[0]
         if mask is not None:
-            g = gemmi.FloatGrid(numpy.array(g)*mask,
+            g = gemmi.FloatGrid(numpy.array(g, copy=False) * mask,
                                 g.unit_cell, g.spacegroup)
-
-        asus.append(gemmi.transform_map_to_f_phi(g).prepare_asu_data(dmin=d_min))
+        f_grid = gemmi.transform_map_to_f_phi(g)
+        if hkldata is None:
+            asudata = f_grid.prepare_asu_data(dmin=d_min)
+            hkldata = hkl.hkldata_from_asu_data(asudata, lab)
+        else:
+            hkldata.df[lab] = f_grid.get_value_by_hkl(hkldata.miller_array())
 
     if len(maps) == 2:
-        df = hkl.df_from_asu_data(asus[0], "F_map1")
-        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, df)
-        hkldata.merge_asu_data(asus[1], "F_map2")
         hkldata.df["FP"] = (hkldata.df.F_map1 + hkldata.df.F_map2)/2.
-    else:
-        df = hkl.df_from_asu_data(asus[0], "FP")
-        hkldata = hkl.HklData(asus[0].unit_cell, asus[0].spacegroup, df)
         
     return hkldata
 # mask_and_fft_maps()
     
 def calc_noise_var_from_halfmaps(hkldata):
-    # Scale
-    #iniscale = utils.scaling.InitialScaler(fo_asu, fc_asu, aniso=True)
-    #iniscale.run()
-    #scale_for_fo = iniscale.get_scales()
-    #fo_asu.value_array[:] *= scale_for_fo
-    #asu1.value_array[:] *= scale_for_fo
-    #asu2.value_array[:] *= scale_for_fo
-
-    s_array = 1./hkldata.d_spacings()
     hkldata.binned_df["var_noise"] = 0.
     hkldata.binned_df["var_signal"] = 0.
     hkldata.binned_df["FSCfull"] = 0.
     
-    logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise   scale")
+    logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise")
     bin_limits = dict(hkldata.bin_and_limits())
     for i_bin, g in hkldata.binned():
         bin_d_max, bin_d_min = bin_limits[i_bin]
-        # scale
-        scale = 1. #numpy.sqrt(var_cmpl(fc)/var_cmpl(fo))
-        #hkldata.df.loc[sel, "FP"] *= scale
-        #hkldata.df.loc[sel, "F_map1"] *= scale
-        #hkldata.df.loc[sel, "F_map2"] *= scale
         
         sel1 = g.F_map1.to_numpy()
         sel2 = g.F_map2.to_numpy()
@@ -153,8 +140,8 @@ def calc_noise_var_from_halfmaps(hkldata):
         fsc = numpy.real(numpy.corrcoef(sel1, sel2)[1,0])
         varn = numpy.var(sel1-sel2)/4
         vart = numpy.var(sel1+sel2)/4
-        logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e} {}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
-                                                                         fsc, varn, scale))
+        logger.write("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
+                                                                      fsc, varn))
         hkldata.binned_df.loc[i_bin, "var_noise"] = varn
         hkldata.binned_df.loc[i_bin, "var_signal"] = vart-varn
         hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
