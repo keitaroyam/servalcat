@@ -121,6 +121,11 @@ class HklData:
         return self.df.d
     # calc_d()
 
+    def sort_by_resolution(self, ascending=False):
+        self.d_spacings()
+        self.df.sort_values("d", ascending=ascending, inplace=True)
+    # sort_by_resolution()
+
     def d_min_max(self):
         d = self.d_spacings()
         return numpy.min(d), numpy.max(d)
