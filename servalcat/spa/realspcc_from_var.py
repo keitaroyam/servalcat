@@ -67,7 +67,7 @@ def calc_var(hkldata, kind="noise", sharpen_signal=False, weight=None):
 # calc_var()
 
 def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): # XXX unfinished
-    bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
+    bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
     logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     for B in -numpy.arange(0,100,5):
@@ -77,8 +77,8 @@ def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): #
 # find_b()        
 
 def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_signal=False, weight=None, B=None):
-    assert 1./hkldata.bin_and_limits()[-1][1][1] <= smax
-    bin_s = numpy.array([(1/dmax+1/dmin)/2 for _,(dmax,dmin) in hkldata.bin_and_limits()])
+    assert 1./hkldata.binned_df.d_min.iloc[-1] <= smax
+    bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
 
     logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)

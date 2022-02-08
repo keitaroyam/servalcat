@@ -52,10 +52,9 @@ $GRAPHS: ln(Mn(|F|)) :A:1,2:
 : FSC(full) :A:1,4:
 $$ 1/resol^2 ln(Mn(|F|)) normalizer FSC $$
 $$""")
-        bin_limits = dict(hkldata.bin_and_limits())
-        for i_bin, g in hkldata.binned():
-            bin_d_max, bin_d_min = bin_limits[i_bin]
-            Fo = g.FP.to_numpy()
+        for i_bin, idxes in hkldata.binned():
+            bin_d_min = hkldata.binned_df.d_min[i_bin]
+            Fo = hkldata.df.FP.to_numpy()[idxes]
             FSCfull = hkldata.binned_df.FSCfull[i_bin]
             sig_fo = numpy.std(Fo)
             if FSCfull > 0:
@@ -63,8 +62,8 @@ $$""")
             else:
                 n_fo = sig_fo # XXX not a right way
                 
-            normalizer[g.index] = n_fo
-            for lab in labs: hkldata.df.loc[g.index, lab] /= n_fo
+            normalizer[idxes] = n_fo
+            for lab in labs: hkldata.df.loc[idxes, lab] /= n_fo
             logger.write("{:.4f} {:.2f} {:.3f} {:.4f}".format(1/bin_d_min**2,
                                                               numpy.log(numpy.average(numpy.abs(Fo))),
                                                               n_fo, FSCfull))
@@ -126,12 +125,12 @@ def calc_noise_var_from_halfmaps(hkldata):
     hkldata.binned_df["FSCfull"] = 0.
     
     logger.write("Bin Ncoeffs d_max   d_min   FSChalf var.noise")
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
+    for i_bin, idxes in hkldata.binned():
+        bin_d_min = hkldata.binned_df.d_min[i_bin]
+        bin_d_max = hkldata.binned_df.d_max[i_bin]
         
-        sel1 = g.F_map1.to_numpy()
-        sel2 = g.F_map2.to_numpy()
+        sel1 = hkldata.df.F_map1.to_numpy()[idxes]
+        sel2 = hkldata.df.F_map2.to_numpy()[idxes]
 
         if sel1.size < 3:
             logger.write("WARNING: skipping bin {} with size= {}".format(i_bin, sel1.size))

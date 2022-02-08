@@ -58,6 +58,7 @@ class HklData:
         self.sg = sg
         self.df = df
         self.binned_df = binned_df
+        self._bin_and_indices = []
     # __init__()
 
     def update_cell(self, cell):
@@ -69,6 +70,7 @@ class HklData:
         pass
 
     def copy(self, d_min=None, d_max=None):
+        # FIXME we should reset_index here? after resolution truncation, max(df.index) will be larger than size.
         if (d_min, d_max).count(None) == 2:
             df = self.df.copy()
             binned_df = self.binned_df.copy() if self.binned_df is not None else None
@@ -131,48 +133,72 @@ class HklData:
         return numpy.min(d), numpy.max(d)
     # d_min_max()
 
-    def setup_binning(self, n_bins, method=gemmi.Binner.Method.Dstar2):
-        s2 = 1/self.d_spacings().to_numpy()**2
-        binner = gemmi.Binner()
-        binner.setup_from_1_d2(n_bins, method, s2, self.cell)
-        self._bin_and_limits = []
-        d_limits = 1 / numpy.sqrt(binner.bin_limits)
-        for i in range(binner.bin_count()):
-            left = numpy.max(self.d_spacings()) if i == 0 else d_limits[i-1]
-            right = numpy.min(self.d_spacings()) if i == binner.bin_count() -1 else d_limits[i]
-            self._bin_and_limits.append((i, (left, right)))
+    def setup_binning(self, n_bins, s_power=2):
+        self.df.reset_index(drop=True, inplace=True)
+        sp = self.d_spacings()**(-s_power)
+        spmin, spmax = min(sp), max(sp)
+        spstep = (spmax-spmin)/n_bins
+        bin_limit_ds = numpy.arange(spmin, spmax, spstep)
+        
+        #bin_limit_ds = [sprange...] # left ends, and right end.
+        if len(bin_limit_ds)==n_bins:
+            bin_limit_ds = numpy.append(bin_limit_ds, bin_limit_ds[-1]+spstep)
+        if bin_limit_ds[-1] < spmax:
+            bin_limit_ds[-1] = spmax # difference should be very small..
+        bin_limit_ds = bin_limit_ds**(-1/s_power)
+        assert len(bin_limit_ds) == n_bins + 1
 
-        self.df["bin"] = binner.get_bin_numbers_from_1_d2(s2)
-        self.binned_df = pandas.DataFrame(index=range(binner.bin_count()))
+        bin_centers = [(bin_limit_ds[i]**(-s_power)+bin_limit_ds[i+1]**(-s_power))/2 for i in range(n_bins)]
+        sprange = bin_limit_ds**(-s_power)
+        sprange[-1] += 1.e-6
+
+        bin_number = numpy.zeros(len(sp), dtype=numpy.int)
+        
+        bin_all = []
+        d_max_all = []
+        d_min_all = []
+        self._bin_and_indices = []
+        for i in range(1, len(sprange)):
+            sel = numpy.where(numpy.logical_and(sprange[i-1]<=sp, sp <sprange[i]))[0]
+            bin_number[sel] = i
+            bin_all.append(i)
+            d_max_all.append(bin_limit_ds[i-1])
+            d_min_all.append(bin_limit_ds[i])
+            self._bin_and_indices.append((i, sel))
+
+        self.df["bin"] = bin_number
+        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=bin_all)
     # setup_binning()
 
-    def setup_relion_binning(self):
+    def setup_relion_binning(self, sort=False):
         max_edge = max(self.cell.parameters[:3])
+        if sort:
+            self.sort_by_resolution()
+        self.df.reset_index(drop=True, inplace=True) # to allow numpy.array indexing
+            
         self.df["bin"] = (max_edge/self.d_spacings()+0.5).astype(numpy.int)
-        self._bin_and_limits = []
-
         # Merge inner/outer shells if too few # TODO smarter way
         bin_counts = []
         bin_ranges = {}
         modify_table = {}
         for i_bin, g in self.df.groupby("bin", sort=True):
-            bin_counts.append([i_bin, len(g.index)])
+            bin_counts.append([i_bin, g.index])
             bin_ranges[i_bin] = (numpy.max(g.d), numpy.min(g.d))
 
         for i in range(len(bin_counts)):
-            if bin_counts[i][1] < 10 and i < len(bin_counts)-1:
-                bin_counts[i+1][1] += bin_counts[i][1]
+            if len(bin_counts[i][1]) < 10 and i < len(bin_counts)-1:
+                bin_counts[i+1][1] = bin_counts[i+1][1].union(bin_counts[i][1])
                 modify_table[bin_counts[i][0]] = bin_counts[i+1][0]
                 logger.write("Bin {} only has {} data. Merging with next bin.".format(bin_counts[i][0],
-                                                                                      bin_counts[i][1]))
+                                                                                      len(bin_counts[i][1])))
             else: break
 
         for i in reversed(range(len(bin_counts))):
-            if i > 0 and bin_counts[i][1]/bin_counts[i-1][1] < 0.5:
-                bin_counts[i-1][1] += bin_counts[i][1]
+            if i > 0 and len(bin_counts[i][1])/len(bin_counts[i-1][1]) < 0.5:
+                bin_counts[i-1][1] = bin_counts[i-1][1].union(bin_counts[i][1])
                 modify_table[bin_counts[i][0]] = bin_counts[i-1][0]
                 logger.write("Bin {} only has {} data. Merging with previous bin.".format(bin_counts[i][0],
-                                                                                          bin_counts[i][1]))
+                                                                                          len(bin_counts[i][1])))
             else: break
 
         while True:
@@ -189,28 +215,32 @@ class HklData:
             bin_ranges[new_bin] = (max(bin_ranges[i_bin][0], bin_ranges[new_bin][0]),
                                    min(bin_ranges[i_bin][1], bin_ranges[new_bin][1]))
 
-        # set bin_and_limits
-        for i_bin, _ in bin_counts:
+        self._bin_and_indices = []
+        bin_all = []
+        d_max_all = []
+        d_min_all = []
+        for i_bin, indices in bin_counts:
             if i_bin in modify_table: continue
-            self._bin_and_limits.append((i_bin, bin_ranges[i_bin]))
-
-        self.binned_df = pandas.DataFrame(index=[x[0] for x in self._bin_and_limits])
+            #if sort: # want this, but we cannot take len() for slice. we can add ncoeffs to binned_df
+            #    self._bin_and_indices.append((i_bin, slice(numpy.min(indices), numpy.max(indices))))
+            #else:
+            self._bin_and_indices.append((i_bin, indices))
+                
+            bin_all.append(i_bin)
+            d_max_all.append(bin_ranges[i_bin][0])
+            d_min_all.append(bin_ranges[i_bin][1])
+        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=bin_all)
     # setup_relion_binning()
-
-    def bin_and_limits(self):
-        return self._bin_and_limits
-    # bin_and_limits()
 
     def binned_data_as_array(self, lab):
         vals = numpy.zeros(len(self.df.index), dtype=self.binned_df[lab].dtype)
-        grouped = self.df.groupby("bin", sort=False)
-        for b, g in grouped:
-            vals[g.index] = self.binned_df[lab][b]
+        for i_bin, idxes in self.binned():
+            vals[idxes] = self.binned_df[lab][i_bin]
         return vals
     # binned_data_as_array()
 
-    def binned(self, sort=True):
-        return self.df.groupby("bin", sort=sort)
+    def binned(self):
+        return self._bin_and_indices
     
     def merge(self, other, common_only=True):
         self.merge_df(other, common_only)
@@ -255,12 +285,11 @@ class HklData:
     def d_eff(self, label):
         # Effective resolution definied using FSC
         fsc = self.binned_df[label]
-        bin_counts = self.df.bin.value_counts()
         a = 0.
-        for i_bin, (bin_d_max, bin_d_min) in self.bin_and_limits():
-            a += bin_counts[i_bin] * fsc[i_bin]
+        for i_bin, idxes in self.binned():
+            a += len(idxes) * fsc[i_bin]
 
-        fac = (a/sum(bin_counts))**(1/3.)
+        fac = (a/len(self.df.index))**(1/3.)
         d_min = self.d_min_max()[0]
         ret = d_min/fac
         return ret
@@ -328,16 +357,16 @@ class HklData:
 
         if 0:
             self.setup_binning(40)        
-            bin_limits = dict(self.bin_and_limits())
             x = []
             y0,y1,y2,y3=[],[],[],[]
-            for i_bin, g in self.binned():
-                bin_d_max, bin_d_min = bin_limits[i_bin]
+            for i_bin, idxes in self.binned():
+                bin_d_min = hkldata.binned_df.d_min[i_bin]
+                bin_d_max = hkldata.binned_df.d_max[i_bin]
                 x.append(1/bin_d_min**2)
-                y0.append(numpy.average(f1[g.index]))
-                y1.append(numpy.average(f2[g.index]))
-                y2.append(numpy.average(f2tmp[g.index]))
-                y3.append(numpy.average(f2tmp2[g.index]))
+                y0.append(numpy.average(f1[idxes]))
+                y1.append(numpy.average(f2[idxes]))
+                y2.append(numpy.average(f2tmp[idxes]))
+                y3.append(numpy.average(f2tmp2[idxes]))
 
             import matplotlib.pyplot as plt
             plt.plot(x, y0, label="FC")
