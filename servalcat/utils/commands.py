@@ -321,7 +321,7 @@ def show_power(args):
 
     hkldata = None
     labs = []
-    for mapin in maps_in:
+    for mapin in maps_in: # TODO rewrite in faster way
         ms = [fileio.read_ccp4_map(f) for f in mapin]
         d_min = args.resolution
         if d_min is None:
@@ -333,7 +333,7 @@ def show_power(args):
         if hkldata is None:
             hkldata = tmp
         else:
-            if hkldata.cell != tmp.cell: raise RuntimeError("Different unit cell!")
+            if hkldata.cell.parameters != tmp.cell.parameters: raise RuntimeError("Different unit cell!")
             hkldata.merge(tmp.df[["H","K","L",labs[-1]]])
 
     if not labs:
