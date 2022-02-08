@@ -145,6 +145,7 @@ class TestSPACommands(unittest.TestCase):
                                                      0.15678 , 0.087615, 0.049143, 0.075087, 0.04238 ]))
     # test_fsc()
 
+    #@unittest.skip("skip refmac")
     def test_refine(self):
         sys.argv = ["", "refine_spa", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
                     "--model", pipes.quote(data["pdb"]), "--mask_for_fofc", pipes.quote(data["mask"]),
@@ -162,6 +163,10 @@ class TestSPACommands(unittest.TestCase):
         
         st = utils.fileio.read_structure("refined_expanded.pdb")
         self.assertEqual(len(st[0]), 4)
+
+        sys.argv = ["", "util", "json2csv", "refined_fsc.json"]
+        command_line.main()
+        # TODO check result?
     # test_refine()
 
     def test_trim(self):
@@ -178,6 +183,36 @@ class TestSPACommands(unittest.TestCase):
         self.assertTrue(numpy.allclose(shifts["shifts"], [-1.59999327, -4.79997982, -7.99996636]))
         self.assertEqual(shifts["new_grid"], [106, 98, 90])
     # test_trim()
+
+    def test_translate(self):
+        pass
+
+    def test_commands(self): # util commands
+        sys.argv = ["", "util", "symmodel", "--model", pipes.quote(data["pdb"]), "--map", pipes.quote(data["mask"]),
+                    "--pg", "D2", "--biomt"]
+        command_line.main()
+
+        sys.argv = ["", "util", "expand", "--model", "pdb7dy0_asu.pdb"]
+        command_line.main()
+
+        sys.argv = ["", "util", "h_add", pipes.quote(data["pdb"])]
+        command_line.main()
+
+        # TODO merge_models
+
+        sys.argv = ["", "util", "power", "--map", pipes.quote(data["mask"]), pipes.quote(data["half1"]), pipes.quote(data["half2"])]
+        command_line.main()
+
+        sys.argv = ["", "util", "fcalc", "--model", pipes.quote(data["pdb"]), "-d", "1.7"]
+        command_line.main()
+
+        sys.argv = ["", "util", "nemap", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
+                    "--mask", pipes.quote(data["mask"]), "--trim_mtz", "-d", "1.7"]
+        command_line.main()
+
+        sys.argv = ["", "util", "blur", "--hklin", "nemap.mtz", "-B", "100"]
+        command_line.main()
+    # test_commands()
 # class TestSPACommands
 
 if __name__ == '__main__':
