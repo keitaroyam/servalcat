@@ -27,6 +27,7 @@ def add_arguments(parser):
     #parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int, default=20,
                         help="Number of bins (default: %(default)d)")
+    parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -220,7 +221,7 @@ def main(args):
     masker.put_mask_on_float_grid(grid, st[0])
     fmask_asu = gemmi.transform_map_to_f_phi(grid).prepare_asu_data(dmin=d_min)
 
-    fc_asu = utils.model.calc_fc_fft(st, d_min, source="xray", mott_bethe=False)
+    fc_asu = utils.model.calc_fc_fft(st, d_min, source=args.source, mott_bethe=args.source=="electron")
 
     logger.write("Scaling Fc..")
     scaling = gemmi.Scaling(st.cell, st.find_spacegroup())

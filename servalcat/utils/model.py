@@ -49,7 +49,7 @@ def determine_blur_for_dencalc(st, grid):
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
                 omit_proton=False, omit_h_electron=False):
-    assert source in ("xray", "electron")
+    assert source in ("xray", "electron", "neutron")
     if source != "electron": assert not mott_bethe
     if omit_proton or omit_h_electron:
         assert mott_bethe
@@ -78,8 +78,12 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         
     if source == "xray" or mott_bethe:
         dc = gemmi.DensityCalculatorX()
-    else:
+    elif source == "electron":
         dc = gemmi.DensityCalculatorE()
+    elif source == "neutron":
+        dc = gemmi.DensityCalculatorN()
+    else:
+        raise RuntimeError("unknown source")
 
     dc.d_min = d_min
     dc.blur = blur
