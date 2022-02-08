@@ -341,7 +341,6 @@ def show_power(args):
         return
             
     hkldata.setup_relion_binning()
-    bin_limits = dict(hkldata.bin_and_limits())
 
     ofs = open(args.output_prefix+".log", "w")
     ofs.write("Input:\n")
@@ -358,11 +357,13 @@ $$
 $$
 """.format(",".join([str(i+5) for i in range(len(labs))]), " ".join(labs)))
     print(hkldata.df)
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
-        ofs.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, g[labs[0]].size, bin_d_max, bin_d_min,))
+    abssqr = dict((lab, numpy.abs(hkldata.df[lab].to_numpy())**2) for lab in labs)
+    for i_bin, idxes in hkldata.binned():
+        bin_d_min = hkldata.binned_df.d_min[i_bin]
+        bin_d_max = hkldata.binned_df.d_max[i_bin]
+        ofs.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, len(idxes), bin_d_max, bin_d_min,))
         for lab in labs:
-            pwr = numpy.log10(numpy.average(numpy.abs(g[lab].to_numpy())**2))
+            pwr = numpy.log10(numpy.average(abssqr[lab][idxes]))
             ofs.write(" {:.4e}".format(pwr))
         ofs.write("\n")
     ofs.write("$$\n")

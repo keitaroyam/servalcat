@@ -470,8 +470,8 @@ def main(args, monlib=None):
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
         hkldata.df[sig_lab] = 0.
-        for i_bin, g in hkldata.binned():
-            hkldata.df.loc[g.index, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
+        for i_bin, idxes in hkldata.binned():
+            hkldata.df.loc[idxes, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
 
         d_eff_full = hkldata.d_eff("FSCfull")
         logger.write("Effective resolution from FSCfull= {:.2f}".format(d_eff_full))

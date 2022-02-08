@@ -80,11 +80,11 @@ $$
     elif has_halfmaps:
         var_noise = hkldata.binned_df.var_noise
         
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
-        Fo = FP[g.index]
-        Fc = g.FC.to_numpy()
+    for i_bin, idxes in hkldata.binned():
+        bin_d_min = hkldata.binned_df.d_min[i_bin]
+        bin_d_max = hkldata.binned_df.d_max[i_bin]
+        Fo = FP[idxes]
+        Fc = hkldata.df.FC.to_numpy()[idxes]
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
         if has_halfmaps:
@@ -148,9 +148,9 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
     else:
         FP = hkldata.df.FP.to_numpy()
 
-    s2 = 1./hkldata.d_spacings()**2
+    s2 = 1./hkldata.d_spacings().to_numpy()**2
         
-    for i_bin, g in hkldata.binned():
+    for i_bin, idxes in hkldata.binned():
         if has_halfmaps:
             fsc = hkldata.binned_df.FSCfull[i_bin] # FSCfull
             if half1_only:
@@ -162,20 +162,20 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
             fsc, varn = 1., 0.
             
         w_nomodel = 1. if no_fsc_weights else fsc
-        Fo = FP[g.index]
+        Fo = FP[idxes]
         sig_fo = numpy.std(Fo)
-        s2_bin = s2[g.index]
+        s2_bin = s2[idxes]
 
         if has_fc:
-            Fc = g.FC.to_numpy()
+            Fc = hkldata.df.FC.to_numpy()[idxes]
             D = hkldata.binned_df.D[i_bin]
             S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
             w = 1. if no_fsc_weights or not has_halfmaps else S/(S+varn)
             delfwt = w * (Fo-D*Fc)
             fup = w * Fo + (1.-w)*D*Fc
             if has_halfmaps: # no point making this map when half maps not given
-                tmp["DELFWT_noscale"][g.index] = delfwt
-                tmp["Fupdate_noscale"][g.index] = fup
+                tmp["DELFWT_noscale"][idxes] = delfwt
+                tmp["Fupdate_noscale"][idxes] = fup
 
         if sharpening_b is None:
             if fsc <= 0 or sig_fo < 1e-10: # FIXME probably we should compare sig_fo with mean(fo)
@@ -189,19 +189,19 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
         lab_suf = "" if B is None else "_b0"
         if has_halfmaps:
-            tmp["FWT"+lab_suf][g.index] = w_nomodel/k*Fo
+            tmp["FWT"+lab_suf][idxes] = w_nomodel/k*Fo
             if has_fc:
-                tmp["DELFWT"+lab_suf][g.index] = delfwt/k
-                tmp["Fupdate"+lab_suf][g.index] = fup/k
+                tmp["DELFWT"+lab_suf][idxes] = delfwt/k
+                tmp["Fupdate"+lab_suf][idxes] = fup/k
         elif has_fc:
-            tmp["DELFWT"+lab_suf][g.index] = delfwt
+            tmp["DELFWT"+lab_suf][idxes] = delfwt
 
         if B is not None and has_halfmaps: # local B based map
             k_l = numpy.exp(-B*s2_bin/4.)
             k2_l = numpy.exp(-B*s2_bin/2.)
             fsc_l = k2_l*fsc/(1+(k2_l-1)*fsc)
             w_nomodel = 1. if no_fsc_weights else fsc_l
-            tmp["FWT"][g.index] = Fo*w_nomodel/k/k_l
+            tmp["FWT"][idxes] = Fo*w_nomodel/k/k_l
             if has_fc:
                 S_l = S * k2_l
                 w = 1. if no_fsc_weights or not has_halfmaps else S_l/(S_l+varn)            
@@ -214,8 +214,8 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
                                                                                       numpy.average(k_l),
                                                                                       numpy.average(abs(fup)),
                                                                                       numpy.average(abs(delfwt))))
-                tmp["DELFWT"][g.index] = delfwt
-                tmp["Fupdate"][g.index] = fup
+                tmp["DELFWT"][idxes] = delfwt
+                tmp["Fupdate"][idxes] = fup
 
     for l in labs:
         hkldata.df[l] = tmp[l]

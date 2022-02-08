@@ -42,17 +42,13 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(hkldata, lab1, lab2):
-    stats = pandas.DataFrame(index=[x[0] for x in hkldata.bin_and_limits()],
-                             columns=["d_max", "d_min", "ncoeffs", "fsc"], dtype=numpy.float)
-    stats.ncoeffs = 0 # to int
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
-        stats.loc[i_bin, "d_min"] = bin_d_min
-        stats.loc[i_bin, "d_max"] = bin_d_max
-        stats.loc[i_bin, "ncoeffs"] = len(g.index)
-        stats.loc[i_bin, "fsc"] = numpy.real(numpy.corrcoef(g[lab1].to_numpy(),
-                                                            g[lab2].to_numpy())[1,0])
+    stats = hkldata.binned_df[["d_min", "d_max"]].copy()
+    stats["ncoeffs"] = 0
+    stats["fsc"] = 0.
+    for i_bin, idxes in hkldata.binned():
+        stats.loc[i_bin, "ncoeffs"] = len(idxes)
+        stats.loc[i_bin, "fsc"] = numpy.real(numpy.corrcoef(hkldata.df[lab1].to_numpy()[idxes],
+                                                            hkldata.df[lab2].to_numpy()[idxes])[1,0])
 
     sum_n = sum(stats.ncoeffs)
     fscavg = sum(stats.ncoeffs*stats.fsc)/sum_n

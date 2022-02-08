@@ -58,35 +58,30 @@ def fsc_average(n, fsc):
 def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
     if labs_half is not None: assert len(labs_half) == 2
     
-    stats_columns = ["d_max", "d_min", "ncoeffs", "power_{}".format(lab_f)]
-    for lab in labs_fc: stats_columns.append("power_{}".format(lab))
-    for lab in labs_fc: stats_columns.append("fsc_{}_full".format(lab))
-    for lab in labs_fc: stats_columns.append("Rcmplx_{}_full".format(lab))
+    stats = hkldata.binned_df[["d_min", "d_max"]].copy()
+    stats["ncoeffs"] = 0
+    stats["power_{}".format(lab_f)] = 0.
+    for lab in labs_fc: stats["power_{}".format(lab)] = 0.
+    for lab in labs_fc: stats["fsc_{}_full".format(lab)] = 0.
+    for lab in labs_fc: stats["Rcmplx_{}_full".format(lab)] = 0.
     if labs_half is not None:
-        stats_columns.append("fsc_half")
-        for lab in labs_fc: stats_columns.extend(["fsc_{}_half1".format(lab),
-                                                  "fsc_{}_half2".format(lab)])
+        stats["fsc_half"] = 0.
+        for lab in labs_fc:
+            stats["fsc_{}_half1".format(lab)] = 0.
+            stats["fsc_{}_half2".format(lab)] = 0.
 
-    stats = pandas.DataFrame(index=[x[0] for x in hkldata.bin_and_limits()],
-                             columns=stats_columns, dtype=numpy.float)
-    stats.ncoeffs = 0 # to int
-
-    bin_limits = dict(hkldata.bin_and_limits())
-    for i_bin, g in hkldata.binned():
-        bin_d_max, bin_d_min = bin_limits[i_bin]
-        stats.loc[i_bin, "d_min"] = bin_d_min
-        stats.loc[i_bin, "d_max"] = bin_d_max
-        stats.loc[i_bin, "ncoeffs"] = len(g.index)
-        Fo = g[lab_f].to_numpy()
+    for i_bin, idxes in hkldata.binned():
+        stats.loc[i_bin, "ncoeffs"] = len(idxes)
+        Fo = hkldata.df[lab_f].to_numpy()[idxes]
         stats.loc[i_bin, "power_{}".format(lab_f)] = numpy.average(numpy.abs(Fo)**2)
         if labs_half is not None:
-            F1, F2 = g[labs_half[0]].to_numpy(), g[labs_half[1]].to_numpy()
+            F1, F2 = hkldata.df[labs_half[0]].to_numpy()[idxes], hkldata.df[labs_half[1]].to_numpy()[idxes]
             stats.loc[i_bin, "fsc_half"] = numpy.real(numpy.corrcoef(F1, F2)[1,0])
         else:
             F1, F2 = None, None
 
         for labfc in labs_fc:
-            Fc = g[labfc].to_numpy()
+            Fc = hkldata.df[labfc].to_numpy()[idxes]
             fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
             D = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
             rcmplx_model = numpy.sum(numpy.abs(Fo-D*Fc))/numpy.sum(numpy.abs(Fo))
