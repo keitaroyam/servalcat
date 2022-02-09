@@ -80,6 +80,11 @@ def add_arguments(p):
     parser.add_argument('models', nargs="+")
     parser.add_argument('-o','--output', required=True)
 
+    # merge_dicts
+    parser = subparsers.add_parser("merge_dicts", description = 'Merge restraint dictionary cif files')
+    parser.add_argument('cifs', nargs="+")
+    parser.add_argument('-o','--output', default="merged.cif", help="Output cif file (default: %(default)s)")
+    
     # power
     parser = subparsers.add_parser("power", description = 'Show power spectrum')
     parser.add_argument("--map",  nargs="*", action="append")
@@ -301,6 +306,10 @@ def merge_models(args):
     fileio.write_model(st, file_name=args.output)
 # merge_models()
 
+def merge_dicts(args):
+    fileio.merge_ligand_cif(args.cifs, args.output)
+# merge_dicts()
+
 def show_power(args):
     maps_in = []
     if args.map:
@@ -481,6 +490,7 @@ def main(args):
                  expand=symexpand,
                  h_add=h_add,
                  merge_models=merge_models,
+                 merge_dicts=merge_dicts,
                  power=show_power,
                  fcalc=fcalc,
                  nemap=nemap,
