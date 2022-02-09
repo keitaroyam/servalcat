@@ -163,9 +163,9 @@ def main(args):
     labs_fc = []
     for i, st in enumerate(sts): 
         labs_fc.append("FC_{}".format(i) if len(sts)>1 else "FC")
-        fc = utils.model.calc_fc_fft(st, args.resolution, source="electron")
-        hkldata.merge_asu_data(fc, labs_fc[-1])
-        
+        hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st, args.resolution - 1e-6, source="electron",
+                                                          miller_array=hkldata.miller_array())
+
     hkldata.setup_relion_binning()
     stats = calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP", labs_half=["F_map1","F_map2"] if len(maps)==2 else None)
     with open(args.fsc_out, "w") as ofs:

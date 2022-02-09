@@ -213,8 +213,8 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
         newmaps.append([new_grid]+maps[i][1:])
 
     hkldata = utils.maps.mask_and_fft_maps(newmaps, resolution)
-    fc = utils.model.calc_fc_fft(st, resolution, source="electron")
-    hkldata.merge_asu_data(fc, "FC")
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, resolution - 1e-6, source="electron",
+                                               miller_array=hkldata.miller_array())
     k, b = hkldata.scale_k_and_b("FC", "FP")
     return -b
 # determine_b_before_mask()

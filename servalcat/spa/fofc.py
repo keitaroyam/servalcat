@@ -254,9 +254,9 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     if sharpening_b is not None:
         logger.write("WARNING: --sharpening_b={} is given".format(sharpening_b))
     
-    fc_asu = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron")
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
-    hkldata.merge_asu_data(fc_asu, "FC")
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+                                               miller_array=hkldata.miller_array())
     hkldata.setup_relion_binning()
 
     has_halfmaps = (len(maps) == 2)
@@ -266,10 +266,9 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
 
     if omit_proton or omit_h_electron:
-        fc_asu_2 = utils.model.calc_fc_fft(st, d_min, cutoff=1e-7, monlib=monlib, source="electron",
-                                           omit_proton=omit_proton, omit_h_electron=omit_h_electron)
-        del hkldata.df["FC"]
-        hkldata.merge_asu_data(fc_asu_2, "FC")
+        hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+                                                   omit_proton=omit_proton, omit_h_electron=omit_h_electron,
+                                                   miller_array=hkldata.miller_array())
     
     map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps, half1_only=half1_only,
                          no_fsc_weights=no_fsc_weights, sharpening_b=sharpening_b)
@@ -343,8 +342,11 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             gr = hkldata.fft_map(lab, mask.shape)
             gr = gemmi.FloatGrid(gr.get_subarray(*(list(grid_start)+list(new_shape))),
                                  new_cell, hkldata.sg)
-            ad = gemmi.transform_map_to_f_phi(gr).prepare_asu_data(dmin=d_min)
-            hkldata2.merge_asu_data(ad, lab)
+            if hkldata2.df is None:
+                ad = gemmi.transform_map_to_f_phi(gr).prepare_asu_data(dmin=d_min)
+                hkldata2.merge_asu_data(ad, lab)
+            else:
+                hkldata2.df[lab] = gemmi.transform_map_to_f_phi(gr).get_value_by_hkl(hkldata2.miller_array())
             hkldata2.translate(lab, -shifts)
         hkldata = hkldata2
         

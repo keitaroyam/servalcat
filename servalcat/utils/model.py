@@ -48,7 +48,7 @@ def determine_blur_for_dencalc(st, grid):
 # determine_blur_for_dencalc()
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
-                omit_proton=False, omit_h_electron=False):
+                omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
     if omit_proton or omit_h_electron:
@@ -130,9 +130,11 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
     logger.write(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
     grid = gemmi.transform_map_to_f_phi(dc.grid)
-    asu_data = grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
-        
-    return asu_data
+
+    if miller_array is None:
+        return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
+    else:
+        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur)
 
 # calc_fc_fft()
 

@@ -91,8 +91,8 @@ def main(args):
         mask = None
 
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask=None)
-    fc_asu = utils.model.calc_fc_fft(st, args.resolution, source="electron")
-    hkldata.merge_asu_data(fc_asu, "FC")
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, args.resolution - 1e-6, source="electron",
+                                               miller_array=hkldata.miller_array())
     hkldata.setup_relion_binning()
 
     stats, fscavg = calc_fsc(hkldata, "FP", "FC")

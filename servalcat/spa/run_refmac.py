@@ -116,13 +116,13 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
-    fc_asu = utils.model.calc_fc_fft(st, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
-    hkldata.merge_asu_data(fc_asu, "FC")
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+                                               miller_array=hkldata.miller_array())
     labs_fc = ["FC"]
 
     if st_sr is not None:
-        fc_sr_asu = utils.model.calc_fc_fft(st_sr, d_min_fsc, cutoff=1e-7, monlib=monlib, source="electron")
-        hkldata.merge_asu_data(fc_sr_asu, "FC_sr")
+        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+                                                      miller_array=hkldata.miller_array())
         labs_fc.append("FC_sr")
 
     if blur is not None:
