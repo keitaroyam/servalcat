@@ -213,6 +213,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     rm_idxes = []
     con_idxes = dict((c,i) for i,c in enumerate(st.connections))
     for con in conns:
+        if con.link_id in known_links: continue
         if remove_unknown:
             i = con_idxes.get(con)
             if i is not None: rm_idxes.append(i)
@@ -222,7 +223,6 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             logger.write(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
             st
             continue
-        if con.link_id in known_links: continue
         dist = at1.pos.dist(at2.pos)
         logger.write(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
 
@@ -321,4 +321,5 @@ if __name__ == "__main__":
     st = gemmi.read_structure(model_in)
     monlib = load_monomer_library(st,
                                   cif_files=sys.argv[2:] if len(sys.argv)>2 else None)
+    find_and_fix_links(st, monlib, remove_unknown=True)
     show_all(st, monlib)

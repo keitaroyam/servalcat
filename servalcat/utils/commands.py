@@ -75,6 +75,16 @@ def add_arguments(p):
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
+    # fix_link
+    parser = subparsers.add_parser("fix_link", description = 'Fix LINKR/_struct_conn records in the model')
+    parser.add_argument('model')
+    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--bond_margin', type=float, default=1.1, help='(default: %(default).1f)')
+    parser.add_argument('--remove_unknown', action="store_true")
+    parser.add_argument('-o','--output', help="Default: input_fixlink.{pdb|mmcif}")
+
     # merge_models
     parser = subparsers.add_parser("merge_models", description = 'Merge multiple model files')
     parser.add_argument('models', nargs="+")
@@ -277,7 +287,7 @@ def h_add(args):
     if not args.output:
         tmp = fileio.splitext(os.path.basename(args.model))[0]
         args.output = tmp + "_h" + model_format
-        logger.write("Output file: {}".format(args.output))
+    logger.write("Output file: {}".format(args.output))
         
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
@@ -287,6 +297,24 @@ def h_add(args):
     fileio.write_model(st, file_name=args.output)
 # h_add()
 
+def fix_link(args):
+    st = fileio.read_structure(args.model)
+    model_format = fileio.check_model_format(args.model)
+    
+    if not args.output:
+        tmp = fileio.splitext(os.path.basename(args.model))[0]
+        args.output = tmp + "_fixlink" + model_format
+    logger.write("Output file: {}".format(args.output))
+        
+    args.ligand = sum(args.ligand, []) if args.ligand else []
+    monlib = restraints.load_monomer_library(st,
+                                             monomer_dir=args.monlib,
+                                             cif_files=args.ligand)
+    restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin,
+                                  remove_unknown=args.remove_unknown)
+    fileio.write_model(st, file_name=args.output)
+# fix_link()
+    
 def merge_models(args):
     logger.write("Reading file   1: {}".format(args.models[0]))
     st = fileio.read_structure(args.models[0])
@@ -489,6 +517,7 @@ def main(args):
                  symmodel=symmodel,
                  expand=symexpand,
                  h_add=h_add,
+                 fix_link=fix_link,
                  merge_models=merge_models,
                  merge_dicts=merge_dicts,
                  power=show_power,
