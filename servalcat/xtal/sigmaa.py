@@ -305,9 +305,10 @@ def main(args):
         hkldata.merge_asu_data(asu, "FC{}".format(i))
     hkldata.merge_asu_data(fmask_asu, "FC{}".format(nmodels-1)) # will become Fbulk
 
-    overall_scale = numpy.array([scaling.get_overall_scale_factor(h) for h in hkldata.miller_array().to_numpy()]) # TODO gemmi
-    hkldata.df["FC{}".format(nmodels-1)] *= scaling.k_sol * numpy.exp(-scaling.b_sol / hkldata.d_spacings()**2 * 0.25) * overall_scale
-    for i, asu in enumerate(fc_asu):
+    overall_scale = scaling.get_overall_scale_factor(hkldata.miller_array())
+    solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
+    hkldata.df["FC{}".format(nmodels-1)] *= solvent_scale
+    for i in range(nmodels):
         hkldata.df["FC{}".format(i)] *= overall_scale
     
     # total
