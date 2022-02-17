@@ -313,8 +313,8 @@ class HklData:
         g = numpy.array([2 * numpy.sum(tmp), -numpy.sum(tmp*s2p)/2])
         H = numpy.zeros((2,2))
         H[0,0] = 2*len(f1p)
-        H[1,1] = numpy.sum(s2**2/8)
-        H[0,1] = H[1,0] = -numpy.sum(s2)/2
+        H[1,1] = numpy.sum(s2p**2/8)
+        H[0,1] = H[1,0] = -numpy.sum(s2p)/2
         x = -numpy.dot(numpy.linalg.inv(H), g)
         k1 = numpy.exp(x[0])
         B1 = x[1]
