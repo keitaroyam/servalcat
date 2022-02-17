@@ -139,20 +139,20 @@ class HklData:
         binner = gemmi.Binner()
         binner.setup_from_1_d2(n_bins, method, s2, self.cell)
         self._bin_and_limits = []
-        d_limits = 1 / numpy.sqrt(binner.bin_limits)
-        bin_number = binner.get_bin_numbers_from_1_d2(s2)
+        d_limits = 1 / numpy.sqrt(binner.limits)
+        bin_number = binner.get_bins_from_1_d2(s2)
         d_max_all = []
         d_min_all = []
-        for i in range(binner.bin_count()):
+        for i in range(binner.size):
             left = numpy.max(self.d_spacings()) if i == 0 else d_limits[i-1]
-            right = numpy.min(self.d_spacings()) if i == binner.bin_count() -1 else d_limits[i]
+            right = numpy.min(self.d_spacings()) if i == binner.size -1 else d_limits[i]
             sel = numpy.where(bin_number==i)[0] # slow?
             d_max_all.append(left)
             d_min_all.append(right)
             self._bin_and_indices.append((i, sel))
 
         self.df["bin"] = bin_number
-        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=list(range(binner.bin_count())))
+        self.binned_df = pandas.DataFrame(dict(d_max=d_max_all, d_min=d_min_all), index=list(range(binner.size)))
     # setup_binning()
 
     def setup_relion_binning(self, sort=False):
