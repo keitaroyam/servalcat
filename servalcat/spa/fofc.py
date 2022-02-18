@@ -149,6 +149,8 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
         FP = hkldata.df.FP.to_numpy()
 
     s2 = 1./hkldata.d_spacings().to_numpy()**2
+
+    fsc_became_negative = False
         
     for i_bin, idxes in hkldata.binned():
         if has_halfmaps:
@@ -177,16 +179,17 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
                 tmp["DELFWT_noscale"][idxes] = delfwt
                 tmp["Fupdate_noscale"][idxes] = fup
 
+        if not fsc_became_negative and fsc <= 0:
+            logger.write(" WARNING: cutting resolution at {:.2f} A because fsc < 0".format(hkldata.binned_df.d_max[i_bin]))
+            fsc_became_negative = True
+        if fsc_became_negative:
+            continue
+
         if sharpening_b is None:
-            if fsc <= 0 or sig_fo < 1e-10: # FIXME probably we should compare sig_fo with mean(fo)
-                logger.write("WARNING: skipping bin {} sig_fo={} fsc={}".format(i_bin, sig_fo, fsc))
-                continue                
             k = sig_fo * numpy.sqrt(fsc)
         else:
             k = numpy.exp(-sharpening_b*s2_bin/4)
             
-        #n_fofc = numpy.sqrt(var_cmpl(Fo-D*Fc))
-
         lab_suf = "" if B is None else "_b0"
         if has_halfmaps:
             tmp["FWT"+lab_suf][idxes] = w_nomodel/k*Fo
