@@ -16,7 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 
 """
-DFc = D(Fc,0 + D1 Fc,1 + D2 Fc,2 + ...)
+DFc = sum_j D_j F_c,j
 The last Fc,n is bulk solvent contribution.
 """
 
@@ -43,44 +43,43 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_abs_sum_Fc(Ds, Fcs):
-    Fc = Fcs[0].copy()
-    for i in range(1, len(Ds)): Fc += Ds[i] * Fcs[i]
-    return numpy.abs(Fc)
-# calc_abs_sum_Fc()
+def calc_abs_DFc(Ds, Fcs):
+    DFc = sum(Ds[i] * Fcs[i] for i in range(len(Ds)))
+    return numpy.abs(DFc)
+# calc_abs_DFc()
 
 def deriv_DFc2_and_DFc_dDj(Ds, Fcs):
     """
-    [(d/dDj D^2|Fc0,+sum(Dk * Fc,k)|^2,
-      d/dDj D|Fc0,+sum(Dk * Fc,k)|), ....] for j = 0 .. N-1
+    [(d/dDj |sum(Dk * Fc,k)|^2,
+      d/dDj |sum(Dk * Fc,k)|), ....] for j = 0 .. N-1
     """
-    Fc = Fcs[0].copy()
-    for i in range(1, len(Ds)): Fc += Ds[i] * Fcs[i]
     
-    ret = [(2 * Ds[0] * numpy.abs(Fc)**2, numpy.abs(Fc))]
-
-    for j in range(1, len(Ds)):
-        rsq = 2 * numpy.real(Fcs[j] * Fc.conj())
-        ret.append((Ds[0]**2 * rsq,
-                    Ds[0] * 0.5 / numpy.abs(Fc) * rsq))
-    return ret
+    DFc = sum(Ds[i] * Fcs[i] for i in range(len(Ds)))
+    DFc_abs = numpy.abs(DFc)
+    
+    ret = []
+    for j in range(len(Ds)):
+        rsq = numpy.real(Fcs[j] * DFc.conj())
+        ret.append((2 * rsq,
+                    rsq / DFc_abs))
+    return DFc_abs, ret
 # deriv_DFc2_and_DFc_dDj()
 
 def fom_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     Sigma = 2 * varFo + epsilon * S
-    return gemmi.bessel_i1_over_i0(2 * Fo * Ds[0] * calc_abs_sum_Fc(Ds, Fcs) / Sigma)
+    return gemmi.bessel_i1_over_i0(2 * Fo * calc_abs_DFc(Ds, Fcs) / Sigma)
 # fom_acentric()
 
 def fom_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     Sigma = varFo + epsilon * S
-    return numpy.tanh(Fo * Ds[0] * calc_abs_sum_Fc(Ds, Fcs) / Sigma)
+    return numpy.tanh(Fo * calc_abs_DFc(Ds, Fcs) / Sigma)
 # fom_centric()
 
 def mlf_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     # https://doi.org/10.1107/S0907444911001314
     # eqn (4)
     Sigma = 2 * varFo + epsilon * S
-    DFc = Ds[0] * calc_abs_sum_Fc(Ds, Fcs)
+    DFc = calc_abs_DFc(Ds, Fcs)
     ret = numpy.log(2) + numpy.log(Fo) - numpy.log(Sigma)
     ret += -(Fo**2 + DFc**2)/Sigma
     ret += gemmi.log_bessel_i0(2*Fo*DFc/Sigma)
@@ -91,8 +90,7 @@ def deriv_mlf_wrt_D_S_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     deriv = numpy.zeros(1+len(Ds))
     Sigma = 2 * varFo + epsilon * S
     Fo2 = Fo**2
-    tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
-    DFc = Ds[0] * tmp[0][1]
+    DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     i1_i0_x = gemmi.bessel_i1_over_i0(2*Fo*DFc/Sigma) # m
     for i, (sqder, der) in enumerate(tmp):
         deriv[i] = -numpy.sum(-sqder / Sigma + i1_i0_x * 2 * Fo * der / Sigma)
@@ -105,7 +103,7 @@ def mlf_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     # https://doi.org/10.1107/S0907444911001314
     # eqn (4)
     Sigma = varFo + epsilon * S
-    DFc = Ds[0] * calc_abs_sum_Fc(Ds, Fcs)
+    DFc = calc_abs_DFc(Ds, Fcs)
     ret = 0.5 * (numpy.log(2 / numpy.pi) - numpy.log(Sigma))
     ret += -0.5 * (Fo**2 + DFc**2) / Sigma
     ret += gemmi.log_cosh(Fo * DFc / Sigma)
@@ -116,8 +114,7 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     deriv = numpy.zeros(1+len(Ds))
     Sigma = varFo + epsilon * S
     Fo2 = Fo**2
-    tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
-    DFc = Ds[0] * tmp[0][1]
+    DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     tanh_x = numpy.tanh(Fo*DFc/Sigma)
     for i, (sqder, der) in enumerate(tmp):
         deriv[i] = -numpy.sum(-0.5 * sqder / Sigma + tanh_x * Fo * der / Sigma)
@@ -182,8 +179,7 @@ def write_mtz(hkldata, mtz_out):
 
 def determine_mlf_params(hkldata, nmodels):
     # Initial values
-    hkldata.binned_df["D"] = 1.
-    for i in range(1, nmodels):
+    for i in range(nmodels):
         hkldata.binned_df["D{}".format(i)] = 1.
 
     hkldata.binned_df["S"] = 10000.
@@ -191,17 +187,14 @@ def determine_mlf_params(hkldata, nmodels):
         FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
         FP = hkldata.df.FP.to_numpy()[idxes]
         D = numpy.corrcoef(FP, FC)[1,0]
-        hkldata.binned_df.loc[i_bin, "D"] = D
+        hkldata.binned_df.loc[i_bin, "D0"] = D
         hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
 
     logger.write("Initial estimates:")
     logger.write(hkldata.binned_df.to_string())
 
     for i_bin, idxes in hkldata.binned():
-        Ds = [hkldata.binned_df.D[i_bin]]
-        for i in range(1, nmodels):
-            Ds.append(hkldata.binned_df["D{}".format(i)][i_bin])
-
+        Ds = [hkldata.binned_df["D{}".format(i)][i_bin] for i in range(nmodels)]
         S = hkldata.binned_df.S[i_bin]
         x0 = Ds + [S]
         def target(x):
@@ -225,8 +218,7 @@ def determine_mlf_params(hkldata, nmodels):
         res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad)
         #print(res)
         
-        hkldata.binned_df.loc[i_bin, "D"] = res.x[0]
-        for i in range(1, nmodels):
+        for i in range(nmodels):
             hkldata.binned_df.loc[i_bin, "D{}".format(i)] = res.x[i]
         hkldata.binned_df.loc[i_bin, "S"] = res.x[-1]
 
@@ -335,15 +327,19 @@ $GRAPHS
 : log(Mn(|F|^2)) and variances :A:1,7,8,9,10:
 : FOM :A:1,11,12:
 : D :A:1,{Dns}:
+: DFc :A:1,{DFcns}:
 : number of reflections :A:1,3,4:
 $$
-1/resol^2 bin n_a n_c d_max d_min log(Mn(|Fo|^2)) log(Mn(|Fc|^2)) log(Mn(|DFc|^2)) log(Sigma) FOM_a FOM_c {Ds} 
+1/resol^2 bin n_a n_c d_max d_min log(Mn(|Fo|^2)) log(Mn(|Fc|^2)) log(Mn(|DFc|^2)) log(Sigma) FOM_a FOM_c {Ds} {DFcs}
 $$
 $$
 """.format(Dns=",".join(map(str, range(13, 13+nmodels))),
-           Ds=" ".join(["D{}".format(i) if i > 0 else "D" for i in range(nmodels)])))
+           Ds=" ".join(["D{}".format(i) for i in range(nmodels)]),
+           DFcns=",".join(map(str, range(13+nmodels, 13+nmodels*2))),
+           DFcs=" ".join(["log(Mn(|D{}Fc{}|))".format(i,i) for i in range(nmodels)]),
+           ))
     tmpl = "{:.4f} {:3d} {:7d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e}"
-    tmpl += "{: .4f} " * nmodels
+    tmpl += "{: .4f} " * (nmodels * 2)
     tmpl += "{: .4e} {:.4f} {:.4f}\n"
 
     hkldata.df["FWT"] = 0j
@@ -352,7 +348,8 @@ $$
     for i_bin, idxes in hkldata.binned():
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
-        Ds = [hkldata.binned_df["D{}".format(i) if i > 0 else "D"][i_bin] for i in range(nmodels)]
+        Ds = [hkldata.binned_df["D{}".format(i)][i_bin] for i in range(nmodels)]
+        DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df["FC{}".format(i)].to_numpy()[idxes]))) for i in range(nmodels)]
         S = hkldata.binned_df.S[i_bin]
 
         # 0: acentric 1: centric
@@ -371,19 +368,23 @@ $$
             mean_fom[c] = numpy.mean(m)
             nrefs[c] = len(g2.index)
 
-            DFc = Ds[0] * calc_abs_sum_Fc(Ds, Fcs)
+            DFc = calc_abs_DFc(Ds, Fcs)
             hkldata.df.loc[g2.index, "FOM"] = m
-            hkldata.df.loc[g2.index, "DELFWT"] = (m * Fo - DFc ) * expip
+            hkldata.df.loc[g2.index, "DELFWT"] = (m * Fo - DFc) * expip
             if c == 0:
                 hkldata.df.loc[g2.index, "FWT"] = (2 * m * Fo - DFc) * expip
             else:
                 hkldata.df.loc[g2.index, "FWT"] = (m * Fo) * expip
-        
+
+        Fc = hkldata.df.FC.to_numpy()[idxes]
+        Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[idxes] for i in range(len(Ds))]
+        Fo = hkldata.df.FP.to_numpy()[idxes]
+        DFc = calc_abs_DFc(Ds, Fcs)
         ofs.write(tmpl.format(1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
                               numpy.log(numpy.average(numpy.abs(Fo)**2)),
                               numpy.log(numpy.average(numpy.abs(Fc)**2)),
                               numpy.log(numpy.average(DFc**2)),
-                              numpy.log(S), mean_fom[0], mean_fom[1], *Ds)) # no python2 support!
+                              numpy.log(S), mean_fom[0], mean_fom[1], *Ds, *DFcs)) # no python2 support!
     ofs.close()
     logger.write("output log: {}".format(log_out))
     
