@@ -124,30 +124,37 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     return deriv
 # deriv_mlf_wrt_D_S_centric()
 
-def mlf(df, Ds, S):
+#import line_profiler
+#profile = line_profiler.LineProfiler()
+#import atexit
+#atexit.register(profile.print_stats)
+#@profile
+def mlf(df, Ds, S, centric_sel):
     ret = 0.
     func = (mlf_acentric, mlf_centric)
-    for c, g in df.groupby("centric", sort=False):
-        Fcs = [g["FC{}".format(i)].to_numpy() for i in range(len(Ds))]
-        ret += numpy.sum(func[c](g.FP.to_numpy(), g.SIGFP.to_numpy()**2, Fcs, Ds, S, g.epsilon.to_numpy()))
+    for c, cidxes in centric_sel:
+        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+        ret += numpy.sum(func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
     return ret
 # mlf()
 
-def deriv_mlf_wrt_D_S(df, Ds, S):
+#@profile
+def deriv_mlf_wrt_D_S(df, Ds, S, centric_sel):
     ret = []
     func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
-    for c, g in df.groupby("centric", sort=False):
-        Fcs = [g["FC{}".format(i)].to_numpy() for i in range(len(Ds))]
-        ret.append(func[c](g.FP.to_numpy(), g.SIGFP.to_numpy()**2, Fcs, Ds, S, g.epsilon.to_numpy()))
+    for c, cidxes in centric_sel:
+        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+        ret.append((func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])))
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
-def calc_fom(df, Ds, S):
+def calc_fom(df, Ds, S, centric_sel):
     ret = pandas.Series(index=df.index)
     func = (fom_acentric, fom_centric)
-    for c, g in df.groupby("centric", sort=False):
-        Fcs = [g["FC{}".format(i)].to_numpy() for i in range(len(Ds))]
-        ret[g.index] = func[c](g.FP.to_numpy(), g.SIGFP.to_numpy()**2, Fcs, Ds, S, g.epsilon.to_numpy())
+    for c, cidxes in centric_sel:
+        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+        ret[cidxes] = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
+
     return ret
 # calc_fom()
 
@@ -179,7 +186,7 @@ def write_mtz(hkldata, mtz_out):
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 
-def determine_mlf_params(hkldata, nmodels, D_as_exp=False):
+def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
         transD_deriv = numpy.exp # dD/dx
@@ -207,9 +214,9 @@ def determine_mlf_params(hkldata, nmodels, D_as_exp=False):
     for i_bin, idxes in hkldata.binned():
         x0 = [transD_inv(hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] + [hkldata.binned_df.S[i_bin]]
         def target(x):
-            return mlf(hkldata.df.loc[idxes], transD(x[:-1]), x[-1])
+            return mlf(hkldata.df, transD(x[:-1]), x[-1], centric_and_selections[i_bin])
         def grad(x):
-            g = deriv_mlf_wrt_D_S(hkldata.df.loc[idxes], transD(x[:-1]), x[-1])
+            g = deriv_mlf_wrt_D_S(hkldata.df, transD(x[:-1]), x[-1], centric_and_selections[i_bin])
             g[:-1] *= transD_deriv(x[:-1])
             return g
 
@@ -328,8 +335,15 @@ def main(args):
     hkldata.calc_centric()
     hkldata.setup_binning(n_bins=args.nbins)
 
+    # Create a centric selection table for faster look up
+    centric_and_selections = {}
+    for i_bin, idxes in hkldata.binned():
+        centric_and_selections[i_bin] = []
+        for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
+            centric_and_selections[i_bin].append((c, g2.index))
+    
     logger.write("Estimating sigma-A parameters..")
-    determine_mlf_params(hkldata, nmodels, args.D_as_exp)
+    determine_mlf_params(hkldata, nmodels, centric_and_selections, args.D_as_exp)
 
     log_out = "{}.log".format(args.output_prefix)
     ofs = open(log_out, "w")
@@ -367,25 +381,25 @@ $$
         mean_fom = [0, 0]
         nrefs = [0, 0]
         fom_func = [fom_acentric, fom_centric]
-        for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
-            Fcs = [g2["FC{}".format(i)].to_numpy() for i in range(len(Ds))]
+        for c, cidxes in centric_and_selections[i_bin]:
+            Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
 
-            Fc = numpy.abs(g2.FC.to_numpy())
-            phic = numpy.angle(g2.FC.to_numpy())
+            Fc = numpy.abs(hkldata.df.FC.to_numpy()[cidxes])
+            phic = numpy.angle(hkldata.df.FC.to_numpy()[cidxes])
             expip = numpy.cos(phic) + 1j*numpy.sin(phic)
-            Fo = g2.FP.to_numpy()
+            Fo = hkldata.df.FP.to_numpy()[cidxes]
             
-            m = fom_func[c](Fo, g2.SIGFP**2, Fcs, Ds, S, g2.epsilon.to_numpy())
+            m = fom_func[c](Fo, hkldata.df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, hkldata.df.epsilon.to_numpy()[cidxes])
             mean_fom[c] = numpy.mean(m)
-            nrefs[c] = len(g2.index)
+            nrefs[c] = len(cidxes)
 
             DFc = calc_abs_DFc(Ds, Fcs)
-            hkldata.df.loc[g2.index, "FOM"] = m
-            hkldata.df.loc[g2.index, "DELFWT"] = (m * Fo - DFc) * expip
+            hkldata.df.loc[cidxes, "FOM"] = m
+            hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc) * expip
             if c == 0:
-                hkldata.df.loc[g2.index, "FWT"] = (2 * m * Fo - DFc) * expip
+                hkldata.df.loc[cidxes, "FWT"] = (2 * m * Fo - DFc) * expip
             else:
-                hkldata.df.loc[g2.index, "FWT"] = (m * Fo) * expip
+                hkldata.df.loc[cidxes, "FWT"] = (m * Fo) * expip
 
         Fc = hkldata.df.FC.to_numpy()[idxes]
         Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[idxes] for i in range(len(Ds))]
