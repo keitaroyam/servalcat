@@ -33,6 +33,8 @@ def add_arguments(parser):
     parser.add_argument('--nbins', type=int, default=20,
                         help="Number of bins (default: %(default)d)")
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray")
+    parser.add_argument('--D_as_exp',  action='store_true',
+                        help="estimate D through exp(x) as a positivity constraint")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -177,7 +179,16 @@ def write_mtz(hkldata, mtz_out):
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 
-def determine_mlf_params(hkldata, nmodels):
+def determine_mlf_params(hkldata, nmodels, D_as_exp=False):
+    if D_as_exp:
+        transD = numpy.exp # D = transD(x)
+        transD_deriv = numpy.exp # dD/dx
+        transD_inv = numpy.log # x = transD_inv(D)
+    else:
+        transD = lambda x: x
+        transD_deriv = lambda x: 1
+        transD_inv = lambda x: x
+    
     # Initial values
     for i in range(nmodels):
         hkldata.binned_df["D{}".format(i)] = 1.
@@ -194,13 +205,13 @@ def determine_mlf_params(hkldata, nmodels):
     logger.write(hkldata.binned_df.to_string())
 
     for i_bin, idxes in hkldata.binned():
-        Ds = [hkldata.binned_df["D{}".format(i)][i_bin] for i in range(nmodels)]
-        S = hkldata.binned_df.S[i_bin]
-        x0 = Ds + [S]
+        x0 = [transD_inv(hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] + [hkldata.binned_df.S[i_bin]]
         def target(x):
-            return mlf(hkldata.df.loc[idxes], x[:-1], x[-1])
+            return mlf(hkldata.df.loc[idxes], transD(x[:-1]), x[-1])
         def grad(x):
-            return deriv_mlf_wrt_D_S(hkldata.df.loc[idxes], x[:-1], x[-1])
+            g = deriv_mlf_wrt_D_S(hkldata.df.loc[idxes], transD(x[:-1]), x[-1])
+            g[:-1] *= transD_deriv(x[:-1])
+            return g
 
         # test derivative
         if 0:
@@ -219,7 +230,7 @@ def determine_mlf_params(hkldata, nmodels):
         #print(res)
         
         for i in range(nmodels):
-            hkldata.binned_df.loc[i_bin, "D{}".format(i)] = res.x[i]
+            hkldata.binned_df.loc[i_bin, "D{}".format(i)] = transD(res.x[i])
         hkldata.binned_df.loc[i_bin, "S"] = res.x[-1]
 
     logger.write("Refined estimates:")
@@ -318,7 +329,7 @@ def main(args):
     hkldata.setup_binning(n_bins=args.nbins)
 
     logger.write("Estimating sigma-A parameters..")
-    determine_mlf_params(hkldata, nmodels)
+    determine_mlf_params(hkldata, nmodels, args.D_as_exp)
 
     log_out = "{}.log".format(args.output_prefix)
     ofs = open(log_out, "w")
@@ -348,7 +359,7 @@ $$
     for i_bin, idxes in hkldata.binned():
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
-        Ds = [hkldata.binned_df["D{}".format(i)][i_bin] for i in range(nmodels)]
+        Ds = [max(0., hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] # negative D is replaced with zero here
         DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df["FC{}".format(i)].to_numpy()[idxes]))) for i in range(nmodels)]
         S = hkldata.binned_df.S[i_bin]
 
