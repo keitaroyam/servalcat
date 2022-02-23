@@ -102,7 +102,7 @@ def lab_f_suffix(blur):
         return "Sharp_{:.2f}".format(-blur)
 # lab_f_suffix()
 
-def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None):
+def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None): # TODO use hkldata.write_mtz
     if not blurs: blurs = []
     if 0 not in blurs: blurs = [0.] + blurs
     

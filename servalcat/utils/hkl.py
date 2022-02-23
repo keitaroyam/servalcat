@@ -392,3 +392,42 @@ class HklData:
         self.df[lab] *= numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
                                                          self.cell.fractionalize(shift).tolist()))
     # translate()
+
+    def write_mtz(self, mtz_out, labs, types=None):
+        if types is None: types = {}
+        ndata = sum(2 if numpy.iscomplexobj(self.df[lab]) else 1 for lab in labs)
+
+        data = numpy.empty((len(self.df.index), ndata + 3), dtype=numpy.float32)
+        data[:,:3] = self.df[["H","K","L"]]
+        idx = 3
+        for lab in labs:
+            if numpy.iscomplexobj(self.df[lab]):
+                data[:,idx] = numpy.abs(self.df[lab])
+                data[:,idx+1] = numpy.angle(self.df[lab], deg=True)
+                idx += 2
+            else:
+                data[:,idx] = self.df[lab]
+                idx += 1
+
+        mtz = gemmi.Mtz()
+        mtz.spacegroup = self.sg
+        mtz.cell = self.cell
+        mtz.add_dataset('HKL_base')
+        for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
+
+        for lab in labs:
+            if numpy.iscomplexobj(self.df[lab]):
+                mtz.add_column(lab, "F")
+                mtz.add_column(("PH"+lab).replace("FWT", "WT"), "P")
+            else:
+                typ = types.get(lab)
+                if typ is None:
+                    if issubclass(self.df[lab].dtype.type, numpy.integer):
+                        typ = "I"
+                    else:
+                        typ = "R"
+                mtz.add_column(lab, typ)
+    
+        mtz.set_data(data)
+        mtz.write_to_file(mtz_out)
+    # write_mtz()

@@ -230,24 +230,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 def dump_to_mtz(hkldata, map_labs, mtz_out):
     extra_labs = list(filter(lambda x: x in hkldata.df, ["FP", "FC"]))
     map_labs = map_labs + extra_labs
-    data = numpy.empty((len(hkldata.df.index), len(map_labs)*2+3))
-    data[:,:3] = hkldata.df[["H","K","L"]]
-    for i, lab in enumerate(map_labs):
-        data[:,3+i*2] = numpy.abs(hkldata.df[lab])
-        data[:,3+i*2+1] = numpy.angle(hkldata.df[lab], deg=True)
-        
-    mtz = gemmi.Mtz()
-    mtz.spacegroup = hkldata.sg
-    mtz.cell = hkldata.cell
-    mtz.add_dataset('HKL_base')
-    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
-
-    for lab in map_labs:
-        mtz.add_column(lab, "F")
-        mtz.add_column(("PH"+lab).replace("FWT", "WT"), "P")
-    
-    mtz.set_data(data)
-    mtz.write_to_file(mtz_out)
+    hkldata.write_mtz(mtz_out, map_labs)
 # dump_to_mtz()
 
 def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
