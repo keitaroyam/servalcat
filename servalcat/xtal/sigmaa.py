@@ -35,6 +35,8 @@ def add_arguments(parser):
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray")
     parser.add_argument('--D_as_exp',  action='store_true',
                         help="estimate D through exp(x) as a positivity constraint")
+    parser.add_argument('--S_as_exp',  action='store_true',
+                        help="estimate variance of unexplained signal through exp(x) as a positivity constraint")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -186,7 +188,7 @@ def write_mtz(hkldata, mtz_out):
     mtz.set_data(data)
     mtz.write_to_file(mtz_out)
 
-def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=False):
+def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=False, S_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
         transD_deriv = numpy.exp # dD/dx
@@ -195,6 +197,15 @@ def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=Fals
         transD = lambda x: x
         transD_deriv = lambda x: 1
         transD_inv = lambda x: x
+
+    if S_as_exp:
+        transS = numpy.exp
+        transS_deriv = numpy.exp
+        transS_inv = numpy.log
+    else:
+        transS = lambda x: x
+        transS_deriv = lambda x: 1
+        transS_inv = lambda x: x
     
     # Initial values
     for i in range(nmodels):
@@ -212,12 +223,13 @@ def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=Fals
     logger.write(hkldata.binned_df.to_string())
 
     for i_bin, idxes in hkldata.binned():
-        x0 = [transD_inv(hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] + [hkldata.binned_df.S[i_bin]]
+        x0 = [transD_inv(hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] + [transS_inv(hkldata.binned_df.S[i_bin])]
         def target(x):
-            return mlf(hkldata.df, transD(x[:-1]), x[-1], centric_and_selections[i_bin])
+            return mlf(hkldata.df, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
         def grad(x):
-            g = deriv_mlf_wrt_D_S(hkldata.df, transD(x[:-1]), x[-1], centric_and_selections[i_bin])
+            g = deriv_mlf_wrt_D_S(hkldata.df, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
             g[:-1] *= transD_deriv(x[:-1])
+            g[-1] *= transS_deriv(x[-1])
             return g
 
         # test derivative
@@ -238,7 +250,7 @@ def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=Fals
         
         for i in range(nmodels):
             hkldata.binned_df.loc[i_bin, "D{}".format(i)] = transD(res.x[i])
-        hkldata.binned_df.loc[i_bin, "S"] = res.x[-1]
+        hkldata.binned_df.loc[i_bin, "S"] = transS(res.x[-1])
 
     logger.write("Refined estimates:")
     logger.write(hkldata.binned_df.to_string())
@@ -343,7 +355,7 @@ def main(args):
             centric_and_selections[i_bin].append((c, g2.index))
     
     logger.write("Estimating sigma-A parameters..")
-    determine_mlf_params(hkldata, nmodels, centric_and_selections, args.D_as_exp)
+    determine_mlf_params(hkldata, nmodels, centric_and_selections, args.D_as_exp, args.S_as_exp)
 
     log_out = "{}.log".format(args.output_prefix)
     ofs = open(log_out, "w")
