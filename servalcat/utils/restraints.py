@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 import os
 import io
+import re
 import gemmi
 import numpy
 
@@ -133,10 +134,36 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     sio = io.StringIO()
     # XXX this creates non-sense ChemLink if not match (see topo.hpp line 443)
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True)
-    warnings = sio.getvalue()
-    logger.write(warnings.rstrip())
-    if stop_for_unknowns and warnings.strip():
-        raise RuntimeError("Provide restraint cif file(s) for residues listed above")
+
+    # possible warnings:
+    # Warning: unknown chemical component XXX in chain X
+    # Warning: no atom X expected in XXX
+    # and others?
+    unknown_cc = set()
+    unknown_atoms_cc = set()
+    for l in sio.getvalue().splitlines():
+        r = re.search("Warning: unknown chemical component (.*) in chain", l)
+        if r:
+            unk = r.group(1)
+            if unk not in unknown_cc:
+                logger.write(l)
+                unknown_cc.add(unk)
+            continue
+        r = re.search("Warning: no atom (.*) expected in (.*)$", l)
+        if r:
+            unk = r.groups() # (atom, cc)
+            if unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
+                logger.write(l)
+                unknown_atoms_cc.add(unk)
+            continue
+        
+        # something else
+        logger.write(l)
+
+    unknown_cc.update(cc for at, cc in unknown_atoms_cc)
+        
+    if stop_for_unknowns and unknown_cc:
+        raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknown_cc)))
    
     return monlib
 # load_monomer_library()

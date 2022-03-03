@@ -245,8 +245,13 @@ def main(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
 
     st = utils.fileio.read_structure(args.model)
-    monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                   stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
+    try:
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                       stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
+    except RuntimeError as e:
+        logger.write("Error: {}".format(e))
+        return
+        
     args.shifted_model_prefix = "shifted"
     args.output_masked_prefix = "masked_fs"
     args.output_mtz_prefix = "starting_map"
