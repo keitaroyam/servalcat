@@ -160,6 +160,14 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         # something else
         logger.write(l)
 
+    if not check_hydrogen:
+        todel = []
+        for unk in unknown_atoms_cc:
+            elements = [cra.atom.element for cra in st[0].all() if cra.residue.name==unk[1] and cra.atom.name==unk[0]]
+            if elements and elements[0].is_hydrogen:
+                todel.append(unk)
+        unknown_atoms_cc = unknown_atoms_cc - set(todel)
+        
     unknown_cc.update(cc for at, cc in unknown_atoms_cc)
         
     if stop_for_unknowns and unknown_cc:
