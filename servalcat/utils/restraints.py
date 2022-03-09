@@ -132,8 +132,8 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     logger.write("Checking if unknown atoms exist..")
     st = st.clone()
     sio = io.StringIO()
-    # XXX this creates non-sense ChemLink if not match (see topo.hpp line 443)
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True)
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True,
+                                  ignore_unknown_links=True)
 
     # possible warnings:
     # Warning: unknown chemical component XXX in chain X
