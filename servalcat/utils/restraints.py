@@ -149,14 +149,19 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 logger.write(l)
                 unknown_cc.add(unk)
             continue
-        r = re.search("Warning: no atom (.*) expected in (.*)$", l)
-        if r:
-            unk = r.groups() # (atom, cc)
+        r1 = re.search("Warning: no atom (.*) expected in (.*)$", l)
+        r2 = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^/]*)$", l) # chain/resn seqid/atom.alt
+        if r1 or r2:
+            if r1:
+                unk = r1.groups() # (atom, cc)
+            else:
+                unk = r2.groups()[::-1] # (atom, cc)
+                
             if unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
                 logger.write(l)
                 unknown_atoms_cc.add(unk)
             continue
-        
+
         # something else
         logger.write(l)
 
