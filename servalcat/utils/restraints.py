@@ -218,8 +218,6 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     new_connections = []
 
     for m in matches:
-        if not m.chem_link or m.chem_link.id in known_links:
-            continue
         if m.conn:
             logger.write(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
@@ -234,6 +232,10 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             if m.conn in conns: # may not be found if id duplicated
                 conns.pop(conns.index(m.conn))
         else:
+            # Known link is only accepted when in LINK record
+            if not m.chem_link or m.chem_link.id in known_links:
+                continue
+
             logger.write(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
                                                                                                     m.bond_length,
@@ -256,7 +258,6 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
         at1, at2 = st[0].find_cra(con.partner1).atom, st[0].find_cra(con.partner2).atom
         if None in (at1, at2):
             logger.write(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
-            st
             continue
         dist = at1.pos.dist(at2.pos)
         logger.write(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
@@ -276,7 +277,7 @@ def add_hydrogens(st, monlib, pos="elec"):
     st.setup_entities()
 
     # Check links. XXX Is it ok to update st?
-    find_and_fix_links(st, monlib)
+    find_and_fix_links(st, monlib, remove_unknown=True)
     
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger)
     if pos == "nucl":
