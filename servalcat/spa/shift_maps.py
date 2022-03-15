@@ -262,7 +262,7 @@ def main(args):
                                       grid_start=starts, grid_shape=new_shape,
                                       update_cell=not args.no_shift_keep_cell)
         else:
-            newg = g.get_subarray(*(list(starts)+list(new_shape)))
+            newg = g.get_subarray(starts, new_shape)
             utils.maps.write_ccp4_map(outf, newg, cell=new_cell, sg=g.spacegroup)
 
 # main()

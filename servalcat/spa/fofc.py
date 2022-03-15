@@ -341,7 +341,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         for lab in map_labs + ["FP", "FC"]:
             if lab not in hkldata.df: continue
             gr = hkldata.fft_map(lab, mask.shape)
-            gr = gemmi.FloatGrid(gr.get_subarray(*(list(grid_start)+list(new_shape))),
+            gr = gemmi.FloatGrid(gr.get_subarray(grid_start, new_shape),
                                  new_cell, hkldata.sg)
             ad = gemmi.transform_map_to_f_phi(gr).prepare_asu_data(dmin=d_min)
             hkldata2.merge_asu_data(ad, lab)
