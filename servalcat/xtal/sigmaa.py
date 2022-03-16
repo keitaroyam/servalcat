@@ -417,11 +417,11 @@ $$
         Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[idxes] for i in range(len(Ds))]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         DFc = calc_abs_DFc(Ds, Fcs)
-        ofs.write(tmpl.format(1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
-                              numpy.log(numpy.average(numpy.abs(Fo)**2)),
-                              numpy.log(numpy.average(numpy.abs(Fc)**2)),
-                              numpy.log(numpy.average(DFc**2)),
-                              numpy.log(S), mean_fom[0], mean_fom[1], *Ds, *DFcs)) # no python2 support!
+        ofs.write(tmpl.format(*(1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
+                                numpy.log(numpy.average(numpy.abs(Fo)**2)),
+                                numpy.log(numpy.average(numpy.abs(Fc)**2)),
+                                numpy.log(numpy.average(DFc**2)),
+                                numpy.log(S), mean_fom[0], mean_fom[1]) + tuple(Ds + DFcs)))
     ofs.close()
     logger.write("output log: {}".format(log_out))
     

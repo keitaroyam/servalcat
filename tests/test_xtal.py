@@ -18,6 +18,7 @@ import tempfile
 import pipes
 import hashlib
 from servalcat import utils
+from servalcat.xtal import sigmaa
 from servalcat import command_line
 
 root = os.path.abspath(os.path.dirname(__file__))
@@ -37,6 +38,31 @@ class XtalTests(unittest.TestCase):
         self.assertAlmostEqual(k, 0.00667, places=5)
         self.assertAlmostEqual(b, -8.48374, places=4)
     # test_scale()
+
+    def test_sigmaa(self):
+        mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
+        pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
+        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
+                                  "--labin", "FP,SIGFP", "--nbins", "10"])
+        hkldata = sigmaa.main(args)
+        os.remove("sigmaa.log")
+        os.remove("sigmaa.mtz")
+
+        numpy.testing.assert_array_almost_equal(hkldata.binned_df.d_min,
+                                                [5.0834,3.6631,3.0103,2.6155,2.3440,2.1426,1.9855,1.8586,1.7532,1.6640],
+                                                decimal=4)
+        numpy.testing.assert_array_almost_equal(hkldata.binned_df.D0,
+                                                [0.9136,1.0628,1.0807,1.0233,1.0223,1.0350,1.0177,0.9951,0.9148,0.8549],
+                                                decimal=4)
+        numpy.testing.assert_array_almost_equal(hkldata.binned_df.D1,
+                                                [1.0601,0.0000,0.0000,1.0000,1.0000,1.0000,1.0000,1.0000,1.0000,1.0000],
+                                                decimal=4)
+        numpy.testing.assert_array_almost_equal(hkldata.binned_df.S,
+                                                [58.0166,63.7744,48.4727,55.6453,60.9977,72.5630,77.0171,61.5990,48.9608,42.5370],
+                                                decimal=4)
+
+    # test_sigmaa()
+        
 # class XtalTests
 
 if __name__ == '__main__':
