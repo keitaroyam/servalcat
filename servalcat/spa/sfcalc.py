@@ -208,7 +208,7 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
         g = gemmi.FloatGrid(numpy.array(maps[i][0])*mask,
                             maps[i][0].unit_cell, maps[i][0].spacegroup)
 
-        suba = g.get_subarray(*(list(starts)+list(new_shape)))
+        suba = g.get_subarray(starts, new_shape)
         new_grid = gemmi.FloatGrid(suba, new_cell, st.find_spacegroup())
         newmaps.append([new_grid]+maps[i][1:])
 
@@ -451,7 +451,7 @@ def main(args, monlib=None):
 
             logger.write(" Trimming maps..")
             for i in range(len(maps)): # Update maps
-                suba = maps[i][0].get_subarray(*(list(starts)+list(new_shape)))
+                suba = maps[i][0].get_subarray(starts, new_shape)
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 

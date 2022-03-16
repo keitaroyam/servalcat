@@ -78,8 +78,12 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         
     if source == "xray" or mott_bethe:
         dc = gemmi.DensityCalculatorX()
-    else:
+    elif source == "electron":
         dc = gemmi.DensityCalculatorE()
+    elif source == "neutron":
+        dc = gemmi.DensityCalculatorN()
+    else:
+        raise RuntimeError("unknown source")
 
     dc.d_min = d_min
     dc.blur = blur

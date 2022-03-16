@@ -194,7 +194,7 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, ma
         else:
             cell_grid = ccp4.grid.shape
             
-        new_grid = gemmi.FloatGrid(ccp4.grid.get_subarray(*(list(grid_start)+list(new_shape))),
+        new_grid = gemmi.FloatGrid(ccp4.grid.get_subarray(grid_start, new_shape),
                                    new_cell,
                                    ccp4.grid.spacegroup)
         ccp4 = gemmi.Ccp4Map()
