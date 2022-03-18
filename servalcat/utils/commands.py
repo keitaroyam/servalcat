@@ -94,7 +94,18 @@ def add_arguments(p):
     parser = subparsers.add_parser("merge_dicts", description = 'Merge restraint dictionary cif files')
     parser.add_argument('cifs', nargs="+")
     parser.add_argument('-o','--output', default="merged.cif", help="Output cif file (default: %(default)s)")
-    
+
+    # geom
+    parser = subparsers.add_parser("geom", description = 'Calculate geometry and show outliers')
+    parser.add_argument('model')
+    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--sigma', type=float, default=5,
+                        help="sigma cutoff to print outliers (default: %(default).1f)")
+    parser.add_argument('-o', '--output_prefix', default="geometry",
+                        help="default: %(default)s")
+
     # power
     parser = subparsers.add_parser("power", description = 'Show power spectrum')
     parser.add_argument("--map",  nargs="*", action="append")
@@ -338,6 +349,26 @@ def merge_dicts(args):
     fileio.merge_ligand_cif(args.cifs, args.output)
 # merge_dicts()
 
+def geometry(args):
+    if args.ligand: args.ligand = sum(args.ligand, [])
+    st = fileio.read_structure(args.model)
+    try:
+        monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                 stop_for_unknowns=True, check_hydrogen=True)
+    except RuntimeError as e:
+        logger.write("Error: {}".format(e))
+        return
+    
+    restr = restraints.Restraints(st, monlib)
+    for k in restr.outlier_sigmas: restr.outlier_sigmas[k] = args.sigma
+    dfs = restr.show_all()
+    logger.write("")
+    for k in dfs:
+        json_out = "{}_{}.json".format(args.output_prefix, k)
+        dfs[k].to_json(open(json_out, "w"), indent=2, orient="index")
+        logger.write("written: {}".format(json_out))
+# geometry()
+
 def show_power(args):
     maps_in = []
     if args.map:
@@ -520,6 +551,7 @@ def main(args):
                  fix_link=fix_link,
                  merge_models=merge_models,
                  merge_dicts=merge_dicts,
+                 geom=geometry,
                  power=show_power,
                  fcalc=fcalc,
                  nemap=nemap,
