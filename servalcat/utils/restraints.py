@@ -331,7 +331,7 @@ def add_hydrogens(st, monlib, pos="elec"):
     # Check links. XXX Is it ok to update st?
     find_and_fix_links(st, monlib, remove_unknown=True)
     
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger)
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger, ignore_unknown_links=True)
     if pos == "nucl":
         logger.write("Generating hydrogens at nucleus positions")
         resnames = st[0].get_all_residue_names()

@@ -68,7 +68,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
         st = st.clone()
-        topo = gemmi.prepare_topology(st, monlib, warnings=logger)
+        topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
         resnames = st[0].get_all_residue_names()
         restraints.check_monlib_support_nucleus_distances(monlib, resnames)
         # Shift electron positions
@@ -160,7 +160,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
     if source == "electron" and mott_bethe:
         if monlib is not None and st[0].count_hydrogen_sites() > 0:
             st = st.clone()
-            topo = gemmi.prepare_topology(st, monlib, warnings=logger)
+            topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
             resnames = st[0].get_all_residue_names()
             restraints.check_monlib_support_nucleus_distances(monlib, resnames)
 
@@ -195,7 +195,7 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
     logger.write("Setting blur= {:.2f} in density calculation".format(blur))
 
     st = st.clone()
-    topo = gemmi.prepare_topology(st, monlib, warnings=logger)
+    topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
     resnames = st[0].get_all_residue_names()
     restraints.check_monlib_support_nucleus_distances(monlib, resnames)
 
@@ -574,7 +574,7 @@ def st_from_positions(positions):
             
 def microheterogeneity_for_refmac(st, monlib):
     st.setup_entities()
-    topo = gemmi.prepare_topology(st, monlib, warnings=logger)
+    topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
     mh_res = []
     chains = []
     icodes = {} # to avoid overlaps
