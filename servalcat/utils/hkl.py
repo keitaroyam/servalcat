@@ -138,7 +138,7 @@ class HklData:
         s2 = 1/self.d_spacings().to_numpy()**2
         binner = gemmi.Binner()
         binner.setup_from_1_d2(n_bins, method, s2, self.cell)
-        self._bin_and_limits = []
+        self._bin_and_indices = []
         d_limits = 1 / numpy.sqrt(binner.limits)
         bin_number = binner.get_bins_from_1_d2(s2)
         d_max_all = []
