@@ -49,7 +49,7 @@ def determine_blur_for_dencalc(st, grid):
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
-    assert source in ("xray", "electron")
+    assert source in ("xray", "electron", "neutron")
     if source != "electron": assert not mott_bethe
     if omit_proton or omit_h_electron:
         assert mott_bethe
@@ -285,6 +285,13 @@ def translate_into_box(st):
         tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
         m.transform(tr)
 # translate_into_box()
+
+def box_from_model(model, padding):
+    allpos = numpy.array([cra.atom.pos.tolist() for cra in model.all()])
+    ext = numpy.max(allpos, axis=0) - numpy.min(allpos, axis=0) + padding
+    cell = gemmi.UnitCell(ext[0], ext[1], ext[2], 90, 90, 90)
+    return cell
+# box_from_model()
 
 def cra_to_indices(cra, model):
     ret = [None, None, None]

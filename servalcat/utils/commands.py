@@ -117,12 +117,14 @@ def add_arguments(p):
     # fcalc
     parser = subparsers.add_parser("fcalc", description = 'Structure factor from model')
     parser.add_argument('--model', required=True)
+    parser.add_argument("--no_expand_ncs", action='store_true', help="Do not expand strict NCS in MTRIX or _struct_ncs_oper")
     parser.add_argument("--method", choices=["fft", "direct"], default="fft")
-    parser.add_argument("--source", choices=["electron", "xray"], default="electron")
+    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--cell', type=float, nargs=6, help="Override unit cell")
+    parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('--cutoff', type=float, default=1e-7)
     parser.add_argument('--rate', type=float, default=1.5)
     parser.add_argument('-d', '--resolution', type=float, required=True)
@@ -438,16 +440,31 @@ $$
 # show_power()
 
 def fcalc(args):
+    if (args.auto_box_with_padding, args.cell).count(None) == 0:
+        logger.write("Error: you cannot specify both --auto_box_with_padding and --cell")
+        return
+    
     if args.ligand: args.ligand = sum(args.ligand, [])
-    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_fcalc"
+    if not args.output_prefix: args.output_prefix = "{}_fcalc_{}".format(fileio.splitext(os.path.basename(args.model))[0], args.source)
 
     st = fileio.read_structure(args.model)
-    if args.cell is not None: st.cell = gemmi.UnitCell(*args.cell)
+    if not args.no_expand_ncs:
+        model.expand_ncs(st)    
+
+    if args.cell is not None:
+        st.cell = gemmi.UnitCell(*args.cell)
+    elif args.auto_box_with_padding is not None:
+        st.cell = model.box_from_model(st[0], args.auto_box_with_padding)
+        st.spacegroup_hm = "P 1"
+        logger.write("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
+        
     if not st.cell.is_crystal():
-        logger.error("ERROR: No unit cell information. Give --cell.")
+        logger.error("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
         return
+
     monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                              stop_for_unknowns=False, check_hydrogen=True)
+
     if args.method == "fft":
         fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,
                                    mott_bethe=args.source=="electron",
