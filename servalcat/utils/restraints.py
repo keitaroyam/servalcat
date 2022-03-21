@@ -70,18 +70,18 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
     if monomer_dir is None:
         if "CLIBD_MON" not in os.environ:
-            logger.error("ERROR: CLIBD_MON is not set")
+            logger.error("WARNING: CLIBD_MON is not set")
         else:
             monomer_dir = os.environ["CLIBD_MON"]
 
     if cif_files is None:
         cif_files = []
         
-    if not os.path.isdir(monomer_dir):
-        logger.error("ERROR: not a directory: {}".format(monomer_dir))
-        return
-
     if monomer_dir:
+        if not os.path.isdir(monomer_dir):
+            logger.error("ERROR: not a directory: {}".format(monomer_dir))
+            return
+
         logger.write("Reading monomers from {}".format(monomer_dir))
         monlib = gemmi.read_monomer_lib(monomer_dir, resnames, ignore_missing=True)
     else:
