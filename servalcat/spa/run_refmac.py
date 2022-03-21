@@ -214,13 +214,6 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
     return fscavg_text
 # calc_fsc()
 
-def modify_output(st, inscode_mods=None):
-    if not inscode_mods: return
-    
-    if inscode_mods is not None:
-        utils.model.modify_inscodes_back(st, inscode_mods)
-# modify_output()
-
 def main(args):
     if not args.model:
         logger.error("Error: give --model.")
@@ -345,7 +338,8 @@ def main(args):
         if not args.no_shift:
             spa.shiftback.shift_back_model(st, file_info["shifts"]) # st is modified
     
-    modify_output(st, file_info.get("inscode_mods"))
+    if "refmac_fixes" in file_info:
+        file_info["refmac_fixes"].modify_back(st)
     utils.fileio.write_model(st, prefix=args.output_prefix,
                              pdb=True, cif=True, cif_ref=cif_ref)
 
@@ -393,7 +387,9 @@ def main(args):
             if not args.no_shift:
                 spa.shiftback.shift_back_model(st_sr, file_info["shifts"])
             
-        modify_output(st_sr, file_info.get("inscode_mods"))
+        if "refmac_fixes" in file_info:
+            file_info["refmac_fixes"].modify_back(st)
+
         utils.fileio.write_model(st_sr, prefix=args.output_prefix+"_shaken_refined",
                                  pdb=True, cif=True, cif_ref=cif_ref_sr)
 

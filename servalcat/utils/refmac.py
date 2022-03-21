@@ -13,6 +13,8 @@ import json
 import copy
 import re
 import os
+import string
+import itertools
 import tempfile
 from servalcat.utils import logger
 from servalcat.utils import fileio
@@ -108,6 +110,229 @@ def write_tls_file(groups, tlsout):
                     f.write("\n")
 # write_tls_file()
 
+class FixForRefmac:
+    """
+    Workaround for Refmac limitations
+    - microheterogeneity
+    - residue number > 9999
+
+    XXX fix external restraints accordingly
+    TODO fix _struct_conf, _struct_sheet_range, _pdbx_struct_sheet_hbond
+    """
+    def __init__(self, st, topo, fix_microheterogeneity=True, fix_resimax=True):
+        self.MAXNUM = 9999
+        self.inscode_fix = []
+        self.res_fix = []
+        if fix_microheterogeneity:
+            self.inscode_fix = self.fix_microheterogeneity(st, topo)
+        if fix_resimax:
+            self.res_fix = self.fix_too_large_seqnum(st, topo)
+
+    def fix_metadata(self, st, changedict):
+        # fix connections
+        # changedict = dict(changes)
+        aa2tuple = lambda aa: (aa.chain_name, aa.res_id.seqid.num, chr(ord(aa.res_id.seqid.icode)|0x20))
+        for con in st.connections:
+            for aa in (con.partner1, con.partner2):
+                changeto = changedict.get(aa2tuple(aa))
+                if changeto is not None:
+                    aa.chain_name = changeto[0]
+                    aa.res_id.seqid.num = changeto[1]
+                    aa.res_id.seqid.icode = changeto[2]
+        
+    def fix_microheterogeneity(self, st, topo):
+        mh_res = []
+        chains = []
+        icodes = {} # to avoid overlaps
+        modifications = [] # return value
+
+        # Check if microheterogeneity exists
+        for chain in st[0]:
+            for rg in chain.get_polymer().residue_groups():
+                if len(rg) > 1:
+                    ress = [r for r in rg]
+                    chains.append(chain.name)
+                    mh_res.append(ress)
+                    ress_str = "/".join([str(r) for r in ress])
+                    logger.write("Microheterogeneity detected in chain {}: {}".format(chain.name, ress_str))
+
+        if not mh_res: return []
+
+        for chain in st[0]:
+            for res in chain:
+                if res.seqid.icode != " ":
+                    icodes.setdefault(chain.name, {}).setdefault(res.seqid.num, []).append(res.seqid.icode)
+
+        def append_links(bond, prr, toappend):
+            atoms = bond.atoms
+            assert len(atoms) == 2
+            found = None
+            for i in range(2):
+                if any(filter(lambda ra: atoms[i]==ra, prr)): found = i
+            if found is not None:
+                toappend.append([atoms[i], atoms[1-i]]) # prev atom, current atom
+        # append_links()
+
+        mh_res_all = sum(mh_res, [])
+        mh_link = {}
+
+        # Check links
+        for chain in st[0]:
+            for res in chain:
+                # If this residue is microheterogeneous
+                if res in mh_res_all:
+                    for link in topo.links_to_previous(res):
+                        mh_link.setdefault(id(res), []).append([link.res1, "prev", link.link_id, []])
+                        append_links(topo.first_bond_in_link(link), link.res1, mh_link[id(res)][-1][-1])
+
+                # Check if previous residue(s) is microheterogeneous
+                for link in topo.links_to_previous(res):
+                    prr = link.res1
+                    if prr in mh_res_all:
+                        mh_link.setdefault(id(prr), []).append([res, "next", link.link_id, []])
+                        append_links(topo.first_bond_in_link(link), prr, mh_link[id(prr)][-1][-1])
+
+        # Change IDs
+        for chain_name, rr in zip(chains, mh_res):
+            chars = string.ascii_uppercase
+            # avoid already used inscodes
+            if chain_name in icodes and rr[0].seqid.num in icodes[chain_name]:
+                used_codes = set(icodes[chain_name][rr[0].seqid.num])
+                chars = list(filter(lambda x: x not in used_codes, chars))
+            for ir, r in enumerate(rr[1:]):
+                modifications.append([(chain_name, r.seqid.num, r.seqid.icode),
+                                      (chain_name, r.seqid.num, chars[ir])])
+                r.seqid.icode = chars[ir]
+
+        logger.write("DEBUG: mh_link= {}".format(mh_link))
+        # Update connections (LINKR)
+        for chain_name, rr in zip(chains, mh_res):
+            for r in rr:
+                for p in mh_link.get(id(r), []):
+                    for atoms in p[-1]:
+                        con = gemmi.Connection()
+                        con.asu = gemmi.Asu.Same
+                        con.type = gemmi.ConnectionType.Covale
+                        con.link_id = p[2]
+                        if p[1] == "prev":
+                            p1 = gemmi.AtomAddress(chain_name, p[0].seqid, p[0].name, atoms[1].name, atoms[1].altloc)
+                            p2 = gemmi.AtomAddress(chain_name, r.seqid, r.name, atoms[0].name, atoms[0].altloc)
+                        else:
+                            p1 = gemmi.AtomAddress(chain_name, r.seqid, r.name, atoms[1].name, atoms[1].altloc)
+                            p2 = gemmi.AtomAddress(chain_name, p[0].seqid, p[0].name, atoms[0].name, atoms[0].altloc)
+
+                        con.partner1 = p1
+                        con.partner2 = p2
+                        logger.write(" Adding link: {}".format(con))
+                        st.connections.append(con)
+            for r1, r2 in itertools.combinations(rr, 2):
+                for a1 in set([a.altloc for a in r1]):
+                    for a2 in set([a.altloc for a in r2]):
+                        con = gemmi.Connection()
+                        con.asu = gemmi.Asu.Same
+                        con.link_id = "gap"
+                        # XXX altloc will be ignored when atom does not match.. grrr
+                        con.partner1 = gemmi.AtomAddress(chain_name, r1.seqid, r1.name, "", a1)
+                        con.partner2 = gemmi.AtomAddress(chain_name, r2.seqid, r2.name, "", a2)
+                        st.connections.append(con)
+
+        return modifications
+    # fix_microheterogeneity()
+
+    def fix_too_large_seqnum(self, st, topo):
+        # Refmac cannot handle residue id > 9999
+        # What to do:
+        # - move to new chains
+        # - modify link records (and others?)
+        # - add link record if needed
+        newchains = []
+        chainids = set(chain.name for chain in st[0])
+        changes = []
+        
+        def new_chain_id(original_chain_id):
+            # decide new chain ID
+            for i in itertools.count(start=1):
+                new_id = "{}{}".format(original_chain_id, i)
+                if new_id not in chainids:
+                    chainids.add(new_id)
+                    return new_id
+
+        for chain in st[0]:
+            maxseqnum = max([r.seqid.num for r in chain])
+            if maxseqnum > self.MAXNUM:
+
+                add_count = 1
+                offset = 0
+                #target = [res for res in chain if res.seqid.num > 9999]
+                del_idxes = []
+                for ires, res in enumerate(chain):
+                    if res.seqid.num <= self.MAXNUM: continue
+                    if res.seqid.num - offset > self.MAXNUM:
+                        newchains.append(gemmi.Chain(new_chain_id(chain.name)))
+                        add_count += 1
+                        offset = res.seqid.num - 1
+                        # need to keep link to previous residue if exists
+                        for link in topo.links_to_previous(res):
+                            logger.write("Link: {} {} {} alt= {} {}".format(link.link_id, link.res1, link.res2, 
+                                                                            link.alt1, link.alt2))
+
+                            con = gemmi.Connection()
+                            con.type = gemmi.ConnectionType.Covale
+                            con.link_id = link.link_id
+                            #return link
+                            bond = topo.first_bond_in_link(link)
+                            if bond is not None:
+                                con.partner1 = gemmi.AtomAddress(chain.name, link.res1.seqid, link.res1.name, bond.atoms[0].name, bond.atoms[0].altloc)
+                                con.partner2 = gemmi.AtomAddress(chain.name, link.res2.seqid, link.res2.name, bond.atoms[1].name, bond.atoms[1].altloc)
+                                st.connections.append(con)
+
+                    newchains[-1].add_residue(res)
+                    newchains[-1][-1].seqid.num -= offset
+                    del_idxes.append(ires)
+                    prev = chain[ires-1].seqid if ires > 0 else None
+                    changes.append([(chain.name, res.seqid.num, res.seqid.icode),
+                                    (newchains[-1].name, newchains[-1][-1].seqid.num, newchains[-1][-1].seqid.icode)])
+                    logger.write("{} => {} {}".format(changes[-1][0], changes[-1][1], res.name))
+
+                for i in reversed(del_idxes):
+                    del chain[i]
+
+        for c in newchains:
+            st[0].add_chain(c)
+        if changes:
+            st.remove_empty_chains()
+            st.assign_subchains(True) # do we need this?
+            self.fix_metadata(st, dict(changes))
+        return changes
+
+    def fix_model(self, st, changedict):
+        chain_newid = set()
+        for chain in st[0]:
+            for res in chain:
+                changeto = changedict.get((chain.name, res.seqid.num, res.seqid.icode))
+                if changeto is not None:
+                    logger.write("back: {} {} to {}".format(chain.name, res.seqid, changeto))
+                    #chain.name = changeto[0] # this is ok when modify back
+                    chain_newid.add((chain, changeto[0]))
+                    res.seqid.num = changeto[1]
+                    res.seqid.icode = changeto[2]
+
+        for chain, newid in chain_newid:
+            chain.name = newid
+        st.merge_chain_parts()
+        self.fix_metadata(st, changedict)
+        
+    def modify_back(self, st):
+        if self.res_fix:
+            reschanges = dict([x[::-1] for x in self.res_fix])
+            self.fix_model(st, reschanges)
+        if self.inscode_fix:
+            inschanges = dict([x[::-1] for x in self.inscode_fix])
+            self.fix_model(st, inschanges)
+        if self.res_fix:
+            st.assign_subchains(True)
+        
+        
 class Refmac:
     def __init__(self, **kwargs):
         self.prefix = "refmac"

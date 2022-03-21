@@ -64,6 +64,8 @@ def add_sfcalc_args(parser):
                         help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
     parser.add_argument('--no_fix_microheterogeneity', action='store_true', 
                         help='By default it will fix microheterogeneity for Refmac')
+    parser.add_argument('--no_fix_resi9999', action='store_true', 
+                        help='By default it will split chain if max residue number > 9999 which is not supported by Refmac')
 # add_sfcalc_args()
 
 """
@@ -307,11 +309,15 @@ def main(args, monlib=None):
         if not args.no_link_check:
             utils.restraints.find_and_fix_links(st, monlib)
 
-        if not args.no_fix_microheterogeneity:
+        if not args.no_fix_microheterogeneity or not args.no_fix_resi9999:
             # TODO need to check external restraints
-            mhtr_mods = utils.model.microheterogeneity_for_refmac(st, monlib)
-            ret["inscode_mods"] = mhtr_mods
-            
+            st.entities.clear()
+            st.setup_entities()
+            topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
+            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity,
+                                                            fix_resimax=not args.no_fix_resi9999)
+            st.entities.clear()
         model_format = utils.fileio.check_model_format(args.model)
         chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
         if chain_id_len_max > 1 and model_format == ".pdb":
