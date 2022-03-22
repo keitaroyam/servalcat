@@ -26,6 +26,8 @@ def add_arguments(parser):
                         help='Override pixel size (A)')
     parser.add_argument('--model', nargs="+", action="append",
                         help='Input atomic model file(s)')
+    parser.add_argument("--no_expand_ncs", action='store_true',
+                        help="Do not expand strict NCS in MTRIX or _struct_ncs_oper")
     parser.add_argument('--padding', type=float, default=10.0,
                         help='in angstrom unit')
     parser.add_argument('--mask_cutoff', type=float, default=0.5,
@@ -89,7 +91,7 @@ def write_shifts_json(filename, cell, shape, new_cell, new_shape, starts, shifts
               open(filename, "w"), indent=2)
 # write_shifts_json()
 
-def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, noncentered=False, noncubic=False,
+def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1e-5, noncentered=False, noncubic=False,
                               json_out="trim_shifts.json"):
     grid_shape = numpy.array(mask.shape)
     spacing = numpy.array(mask.spacing)
@@ -98,9 +100,17 @@ def determine_shape_and_shift(mask, grid_start, padding, mask_cutoff=1e-5, nonce
     cell = mask.unit_cell
     logger.write("Original grid start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.write("         grid   end: {:4d} {:4d} {:4d}".format(*(grid_end-1)))
-    tmp = numpy.where(numpy.array(mask)>mask_cutoff) - grid_start[:,None]
-    tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
-    limits = [(min(x), max(x)) for x in tmp]
+    if sts:
+        # here model is used to define region and mask content is ignored.
+        allpos = numpy.array([cra.atom.pos.tolist() for st in sts for cra in st[0].all()])
+        minp = mask.get_nearest_point(gemmi.Position(*numpy.min(allpos, axis=0)))
+        maxp = mask.get_nearest_point(gemmi.Position(*numpy.max(allpos, axis=0)))
+        limits = [(minp.u, maxp.u), (minp.v, maxp.v), (minp.w, maxp.w)]
+    else:
+        tmp = numpy.where(numpy.array(mask)>mask_cutoff) - grid_start[:,None]
+        tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
+        limits = [(min(x), max(x)) for x in tmp]
+
     p = numpy.ceil(padding / spacing).astype(int)
     logger.write("Limits: {} {} {}".format(*limits))
     logger.write("Padding: {} {} {}".format(*p))
@@ -190,6 +200,7 @@ def main(args):
 
     cell = gemmi.UnitCell(*cell)
     sts, cif_refs = [], []
+    sts_for_mask = []
     if args.model:
         args.model = sum(args.model, [])
         for m in args.model:
@@ -210,19 +221,20 @@ def main(args):
             args.maps.append(args.mask)
     elif args.model and not args.shifts:
         logger.write("Using model to decide border: {}".format(args.model))
-        mask = gemmi.FloatGrid(*grid_shape)
+        mask = gemmi.FloatGrid(*grid_shape) # this is just dummy. values will not be seen.
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         for st in sts:
-            if len(st.ncs) > 0:
+            if len(st.ncs) > 0 and not args.no_expand_ncs:
                 st = st.clone()
                 utils.model.expand_ncs(st)
-            mask.mask_points_in_constant_radius(st[0], args.padding, 1.)
+            sts_for_mask.append(st)
     elif not args.shifts:
         raise RuntimeError("Give mask or model")
 
     if not args.shifts:
         new_cell, new_shape, starts, shifts = determine_shape_and_shift(mask=mask, grid_start=grid_start,
+                                                                        sts=sts_for_mask,
                                                                         padding=args.padding,
                                                                         mask_cutoff=args.mask_cutoff,
                                                                         noncentered=args.noncentered,
@@ -242,7 +254,7 @@ def main(args):
 
             # apply shifts to translations
             spext = utils.fileio.splitext(os.path.basename(args.model[i]))
-            if len(st.ncs) > 0:
+            if len(st.ncs) > 0 and not args.no_expand_ncs:
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
                 st.ncs.clear()
                 st.ncs.extend(new_ops)
