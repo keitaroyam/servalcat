@@ -580,6 +580,7 @@ def st_from_positions(positions):
 # st_from_positions()
             
 def microheterogeneity_for_refmac(st, monlib):
+    st.entities.clear()
     st.setup_entities()
     topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
     mh_res = []

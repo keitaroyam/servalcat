@@ -326,6 +326,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
 
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
+    st.entities.clear()
     st.setup_entities()
 
     # Check links. XXX Is it ok to update st?
@@ -373,6 +374,7 @@ class Restraints:
         self.monlib = monlib
         self.enerlib = enerlib if enerlib is not None else load_ener_lib()
         find_and_fix_links(self.st, self.monlib)
+        self.st.entities.clear()
         self.st.setup_entities() # entity information is needed for links
         self.topo = gemmi.prepare_topology(self.st, monlib, warnings=logger,
                                            ignore_unknown_links=True, reorder=True) # updates atom serial
