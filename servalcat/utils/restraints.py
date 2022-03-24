@@ -65,10 +65,11 @@ def rename_cif_modification_if_necessary(doc, known_ids):
     return trans
 # rename_cif_modification_if_necessary()
 
-def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False):
+def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False,
+                         ignore_monomer_dir=False):
     resnames = st[0].get_all_residue_names()
 
-    if monomer_dir is None:
+    if monomer_dir is None and not ignore_monomer_dir:
         if "CLIBD_MON" not in os.environ:
             logger.error("WARNING: CLIBD_MON is not set")
         else:
@@ -77,7 +78,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     if cif_files is None:
         cif_files = []
         
-    if monomer_dir:
+    if monomer_dir and not ignore_monomer_dir:
         if not os.path.isdir(monomer_dir):
             logger.error("ERROR: not a directory: {}".format(monomer_dir))
             return
@@ -152,7 +153,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 unknown_cc.add(unk)
             continue
         r1 = re.search("Warning: no atom (.*) expected in (.*)$", l)
-        r2 = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^/]*)$", l) # chain/resn seqid/atom.alt
+        r2 = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
         if r1 or r2:
             if r1:
                 unk = r1.groups() # (atom, cc)
