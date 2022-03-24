@@ -37,7 +37,7 @@ def check_version(exe="refmac5"):
 
 def external_restraints_json_to_keywords(json_in):
     ret = []
-    exte_list = json.load(open(json_in))
+    with open(json_in) as f: exte_list = json.load(f)
     for e in exte_list:
         if "use" in e:
             ret.append("EXTERNAL USE {}".format(e["use"]))
@@ -57,35 +57,36 @@ def read_tls_file(tlsin):
     # TODO sort out L/S units - currently use Refmac tlsin/out as is
     # TODO change to gemmi::TlsGroup?
     
-    groups = [] 
-    for l in open(tlsin):
-        l = l.strip()
-        if l.startswith("TLS"):
-            title = l[4:]
-            groups.append(dict(title=title, ranges=[], origin=None, T=None, L=None, S=None))
-        elif l.startswith("RANG"):
-            r = l[l.index(" "):].strip()
-            groups[-1]["ranges"].append(r)
-        elif l.startswith("ORIG"):
-            try:
-                groups[-1]["origin"] = gemmi.Position(*(float(x) for x in l.split()[1:]))
-            except:
-                raise ValueError("Prolem with TLS file: {}".format(l))
-        elif l.startswith("T   "):
-            try:
-                groups[-1]["T"] = [float(x) for x in l.split()[1:7]]
-            except:
-                raise ValueError("Prolem with TLS file: {}".format(l))
-        elif l.startswith("L   "):
-            try:
-                groups[-1]["L"] = [float(x) for x in l.split()[1:7]]
-            except:
-                raise ValueError("Prolem with TLS file: {}".format(l))
-        elif l.startswith("S   "):
-            try:
-                groups[-1]["S"] = [float(x) for x in l.split()[1:10]]
-            except:
-                raise ValueError("Prolem with TLS file: {}".format(l))
+    groups = []
+    with open(tlsin) as ifs:
+        for l in ifs:
+            l = l.strip()
+            if l.startswith("TLS"):
+                title = l[4:]
+                groups.append(dict(title=title, ranges=[], origin=None, T=None, L=None, S=None))
+            elif l.startswith("RANG"):
+                r = l[l.index(" "):].strip()
+                groups[-1]["ranges"].append(r)
+            elif l.startswith("ORIG"):
+                try:
+                    groups[-1]["origin"] = gemmi.Position(*(float(x) for x in l.split()[1:]))
+                except:
+                    raise ValueError("Prolem with TLS file: {}".format(l))
+            elif l.startswith("T   "):
+                try:
+                    groups[-1]["T"] = [float(x) for x in l.split()[1:7]]
+                except:
+                    raise ValueError("Prolem with TLS file: {}".format(l))
+            elif l.startswith("L   "):
+                try:
+                    groups[-1]["L"] = [float(x) for x in l.split()[1:7]]
+                except:
+                    raise ValueError("Prolem with TLS file: {}".format(l))
+            elif l.startswith("S   "):
+                try:
+                    groups[-1]["S"] = [float(x) for x in l.split()[1:10]]
+                except:
+                    raise ValueError("Prolem with TLS file: {}".format(l))
 
     return groups
 # read_tls_file()
@@ -296,7 +297,7 @@ class Refmac:
     def run_refmac(self):
         cmd = self.make_cmd()
         stdin = self.make_keywords()
-        open(self.prefix+".inp", "w").write(stdin)
+        with open(self.prefix+".inp", "w") as ofs: ofs.write(stdin)
 
         logger.write("Running REFMAC5..")
         logger.write("{} <<__eof__ > {}".format(" ".join(cmd), self.prefix+".log"))
@@ -413,6 +414,7 @@ class Refmac:
                             logger.error("table does not have key {}?".format(k))
                             
         retcode = p.wait()
+        log.close()
         if log_delay:
             logger.write("== Summary of Refmac ==")
             logger.write("\n".join(log_delay))

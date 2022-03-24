@@ -367,7 +367,7 @@ def geometry(args):
     logger.write("")
     for k in dfs:
         json_out = "{}_{}.json".format(args.output_prefix, k)
-        dfs[k].to_json(open(json_out, "w"), indent=2, orient="index")
+        with open(json_out, "w") as ofs: dfs[k].to_json(ofs, indent=2, orient="index")
         logger.write("written: {}".format(json_out))
 # geometry()
 
@@ -437,6 +437,7 @@ $$
             ofs.write(" {:.4e}".format(pwr))
         ofs.write("\n")
     ofs.write("$$\n")
+    ofs.close()
 # show_power()
 
 def fcalc(args):
