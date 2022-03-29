@@ -90,6 +90,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     for f in cif_files:
         logger.write("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
+        comp_list = doc.find_block("comp_list")
         for b in doc:
             if b.find_values("_chem_comp_atom.atom_id"):
                 name = b.name.replace("comp_", "")
@@ -98,6 +99,11 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                     del monlib.monomers[name]
                 monlib.add_monomer_if_present(b)
 
+                if comp_list:
+                    tab = comp_list.find("_chem_comp.", ["id", "group"])
+                    if tab:
+                        monlib.monomers[name].group = tab.find_row(name).str(1)
+                
                 # Check if bond length values are included
                 # This is to fail if cif file is e.g. from PDB website
                 for b in monlib.monomers[name].rt.bonds:
