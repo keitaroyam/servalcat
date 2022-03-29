@@ -325,7 +325,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         d_min = hkldata.d_min_max()[0]
         for lab in map_labs + ["FP", "FC"]:
             if lab not in hkldata.df: continue
-            gr = hkldata.fft_map(lab, mask.shape)
+            gr = hkldata.fft_map(lab, grid_size=mask.shape)
             gr = gemmi.FloatGrid(gr.get_subarray(grid_start, new_shape),
                                  new_cell, hkldata.sg)
             if hkldata2.df is None:

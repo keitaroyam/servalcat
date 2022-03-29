@@ -245,20 +245,25 @@ class HklData:
             df_both = df[df._merge=="both"]
     # merge()
 
-    def as_asu_data(self, label): # TODO add label_sigma
-        if numpy.iscomplexobj(self.df[label]):
+    def as_asu_data(self, label=None, data=None): # TODO add label_sigma
+        if label is None: assert data is not None
+        else: assert data is None
+        
+        if data is None:
+            data = self.df[label]
+        if numpy.iscomplexobj(data):
             asutype = gemmi.ComplexAsuData
-        elif issubclass(self.df[label].dtype.type, numpy.integer):
+        elif issubclass(data.dtype.type, numpy.integer):
             asutype = gemmi.IntAsuData
         else:
             asutype = gemmi.FloatAsuData
         
         return asutype(self.cell, self.sg,
-                       self.miller_array(), self.df[label])
+                       self.miller_array(), data)
     # as_asu_data()
 
-    def fft_map(self, label, grid_size=None, sample_rate=3):
-        asu = self.as_asu_data(label)
+    def fft_map(self, label=None, data=None, grid_size=None, sample_rate=3):
+        asu = self.as_asu_data(label, data)
         if grid_size is None:
             ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
         else:
