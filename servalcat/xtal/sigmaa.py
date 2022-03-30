@@ -32,11 +32,14 @@ def add_arguments(parser):
     #parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int, default=20,
                         help="Number of bins (default: %(default)d)")
-    parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray")
+    parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray",
+                        help="Scattering factor choice (default: %(default)s)")
     parser.add_argument('--D_as_exp',  action='store_true',
                         help="estimate D through exp(x) as a positivity constraint")
     parser.add_argument('--S_as_exp',  action='store_true',
                         help="estimate variance of unexplained signal through exp(x) as a positivity constraint")
+    parser.add_argument('--no_solvent',  action='store_true',
+                        help="Do not consider bulk solvent contribution")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -160,34 +163,6 @@ def calc_fom(df, Ds, S, centric_sel):
     return ret
 # calc_fom()
 
-def write_mtz(hkldata, mtz_out):
-    map_labs = "FWT", "DELFWT", "FC", "Fmask"
-    other_labs = ["FOM", "FP"]
-    other_types = ["W", "F"]
-    data = numpy.empty((len(hkldata.df.index), len(map_labs)*2+len(other_labs)+3))
-    data[:,:3] = hkldata.df[["H","K","L"]]
-    for i, lab in enumerate(map_labs):
-        data[:,3+i*2] = numpy.abs(hkldata.df[lab])
-        data[:,3+i*2+1] = numpy.angle(hkldata.df[lab], deg=True)
-
-    for i, lab in enumerate(other_labs):
-        data[:,3+len(map_labs)*2+i] = hkldata.df[lab]
-        
-    mtz = gemmi.Mtz()
-    mtz.spacegroup = hkldata.sg
-    mtz.cell = hkldata.cell
-    mtz.add_dataset('HKL_base')
-    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
-
-    for lab in map_labs:
-        mtz.add_column(lab, "F")
-        mtz.add_column(("PH"+lab).replace("FWT", "WT"), "P")
-    for lab, typ in zip(other_labs, other_types):
-        mtz.add_column(lab, typ)
-
-    mtz.set_data(data)
-    mtz.write_to_file(mtz_out)
-
 def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=False, S_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
@@ -285,7 +260,7 @@ def main(args):
             logger.write("WARNING: resetting space group to 1st model.")
             st.spacegroup_hm = sts[0].spacegroup_hm
         
-    nmodels = len(sts) + 1 # bulk
+    nmodels = len(sts) + (0 if args.no_solvent else 1) # bulk
     mtz = gemmi.read_mtz_file(args.hklin)
     d_min = args.d_min
     if d_min is None: d_min = mtz.resolution_high()
@@ -294,13 +269,6 @@ def main(args):
     scaleto = mtz.get_value_sigma(*labin)
     fp = mtz.get_float(labin[0])
     sigfp = mtz.get_float(labin[1])
-
-    logger.write("Calculating solvent contribution..")
-    grid = gemmi.FloatGrid()
-    grid.setup_from(sts[0], spacing=0.4)
-    masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
-    masker.put_mask_on_float_grid(grid, merge_models(sts))
-    fmask_asu = gemmi.transform_map_to_f_phi(grid).prepare_asu_data(dmin=d_min)
 
     # TODO no need to make multiple AsuData (just inefficient)
     fc_asu = [utils.model.calc_fc_fft(st, d_min, source=args.source, mott_bethe=args.source=="electron") for st in sts]
@@ -311,10 +279,21 @@ def main(args):
         for asu in fc_asu[1:]:
             fc_asu_total.value_array[:] += asu.value_array
         
-    logger.write("Scaling Fc..")
     scaling = gemmi.Scaling(sts[0].cell, sts[0].find_spacegroup())
-    scaling.use_solvent = True
-    scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
+    scaling.use_solvent = not args.no_solvent
+
+    if args.no_solvent:
+        logger.write("Scaling Fc with no bulk solvent contribution")
+        scaling.prepare_points(fc_asu_total, scaleto)
+    else:
+        logger.write("Calculating solvent contribution..")
+        grid = gemmi.FloatGrid()
+        grid.setup_from(sts[0], spacing=0.4)
+        masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
+        masker.put_mask_on_float_grid(grid, merge_models(sts))
+        fmask_asu = gemmi.transform_map_to_f_phi(grid).prepare_asu_data(dmin=d_min)
+        scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
+        
     scaling.fit_isotropic_b_approximately()
     scaling.fit_parameters()
     b_aniso = scaling.b_overall
@@ -325,11 +304,13 @@ def main(args):
     hkldata.merge_asu_data(sigfp, "SIGFP")
     for i, asu in enumerate(fc_asu):
         hkldata.merge_asu_data(asu, "FC{}".format(i))
-    hkldata.merge_asu_data(fmask_asu, "FC{}".format(nmodels-1)) # will become Fbulk
+
+    if not args.no_solvent:
+        hkldata.merge_asu_data(fmask_asu, "FC{}".format(nmodels-1)) # will become Fbulk
+        solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
+        hkldata.df["FC{}".format(nmodels-1)] *= solvent_scale
 
     overall_scale = scaling.get_overall_scale_factor(hkldata.miller_array())
-    solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
-    hkldata.df["FC{}".format(nmodels-1)] *= solvent_scale
     for i in range(nmodels):
         hkldata.df["FC{}".format(i)] *= overall_scale
     
@@ -365,17 +346,19 @@ $GRAPHS
 : FOM :A:1,11,12:
 : D :A:1,{Dns}:
 : DFc :A:1,{DFcns}:
+: R-factor :A:1,13:
+: CC :A:1,14:
 : number of reflections :A:1,3,4:
 $$
-1/resol^2 bin n_a n_c d_max d_min log(Mn(|Fo|^2)) log(Mn(|Fc|^2)) log(Mn(|DFc|^2)) log(Sigma) FOM_a FOM_c {Ds} {DFcs}
+1/resol^2 bin n_a n_c d_max d_min log(Mn(|Fo|^2)) log(Mn(|Fc|^2)) log(Mn(|DFc|^2)) log(Sigma) FOM_a FOM_c R CC(|Fo|,|Fc|) {Ds} {DFcs}
 $$
 $$
-""".format(Dns=",".join(map(str, range(13, 13+nmodels))),
+""".format(Dns=",".join(map(str, range(15, 15+nmodels))),
            Ds=" ".join(["D{}".format(i) for i in range(nmodels)]),
-           DFcns=",".join(map(str, range(13+nmodels, 13+nmodels*2))),
+           DFcns=",".join(map(str, range(15+nmodels, 15+nmodels*2))),
            DFcs=" ".join(["log(Mn(|D{}Fc{}|))".format(i,i) for i in range(nmodels)]),
            ))
-    tmpl = "{:.4f} {:3d} {:7d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e}"
+    tmpl = "{:.4f} {:3d} {:7d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {:.4f} {:.4f} "
     tmpl += "{: .4f} " * (nmodels * 2)
     tmpl += "{: .4e} {:.4f} {:.4f}\n"
 
@@ -388,7 +371,7 @@ $$
         Ds = [max(0., hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] # negative D is replaced with zero here
         DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df["FC{}".format(i)].to_numpy()[idxes]))) for i in range(nmodels)]
         S = hkldata.binned_df.S[i_bin]
-
+        
         # 0: acentric 1: centric
         mean_fom = [0, 0]
         nrefs = [0, 0]
@@ -417,17 +400,22 @@ $$
         Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[idxes] for i in range(len(Ds))]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         DFc = calc_abs_DFc(Ds, Fcs)
+        r = numpy.sum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.sum(Fo)
+        cc = numpy.corrcoef(numpy.abs(Fc), Fo)[1,0]
         ofs.write(tmpl.format(*(1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
                                 numpy.log(numpy.average(numpy.abs(Fo)**2)),
                                 numpy.log(numpy.average(numpy.abs(Fc)**2)),
                                 numpy.log(numpy.average(DFc**2)),
-                                numpy.log(S), mean_fom[0], mean_fom[1]) + tuple(Ds + DFcs)))
+                                numpy.log(S), mean_fom[0], mean_fom[1], r, cc) + tuple(Ds + DFcs)))
     ofs.close()
     logger.write("output log: {}".format(log_out))
     
-    hkldata.merge_asu_data(fmask_asu, "Fmask")
+    labs = ["FP", "FOM", "FWT", "DELFWT", "FC"]
+    if not args.no_solvent:
+        hkldata.merge_asu_data(fmask_asu, "Fmask")
+        labs.append("Fmask")
     mtz_out = args.output_prefix+".mtz"
-    write_mtz(hkldata, mtz_out)
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F"})
     logger.write("output mtz: {}".format(mtz_out))
 
     return hkldata
