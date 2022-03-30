@@ -52,6 +52,34 @@ def hkldata_from_asu_data(asu_data, label):
     return HklData(asu_data.unit_cell, asu_data.spacegroup, df)
 # hkldata_from_asu_data()
 
+def blur_mtz(mtz, B):
+    # modify given mtz object
+    
+    s2 = mtz.make_1_d2_array()
+    k2 = numpy.exp(-B*s2/2)
+    k = numpy.exp(-B*s2/4)
+    i_labs = [c.label for c in mtz.columns if c.type in "JK"]
+    f_labs = [c.label for c in mtz.columns if c.type in "FDG"]
+    for labs in i_labs, f_labs:
+        for l in labs:
+            sl = "SIG"+l
+            if sl in mtz.column_labels(): labs.append(sl)
+
+    if i_labs:
+        logger.write("Intensities: {}".format(" ".join(i_labs)))
+        logger.write("  exp(-B*s^2/2) will be multiplied (B= {:.2f})".format(B))
+    if f_labs:
+        logger.write("Amplitudes:  {}".format(" ".join(f_labs)))
+        logger.write("  exp(-B*s^2/4) will be multiplied (B= {:.2f})".format(B))
+
+    for l in i_labs:
+        c = mtz.column_with_label(l)
+        c.array[:] *= k2
+    for l in f_labs:
+        c = mtz.column_with_label(l)
+        c.array[:] *= k
+# blur_mtz()
+
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
         self.cell = cell

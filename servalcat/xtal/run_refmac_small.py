@@ -23,6 +23,8 @@ def add_arguments(parser):
                         help='Input atomic model file')
     parser.add_argument('--hklin',
                         help='Input reflection file')
+    parser.add_argument('--blur', type=float,
+                        help='Apply B-factor blurring to --hklin')
     parser.add_argument('--resolution',
                         type=float,
                         help='')
@@ -30,6 +32,8 @@ def add_arguments(parser):
     #parser.add_argument('--jellybody', action='store_true')
     #parser.add_argument('--jellybody_params', nargs=2, type=float,
     #                    metavar=("sigma", "dmax"), default=[0.01, 4.2])
+    parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
+                        help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input")
     parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
 
     group = parser.add_mutually_exclusive_group()
@@ -59,7 +63,7 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def write_mtz(mtz_out, asudata, hklf):
+def write_mtz(mtz_out, asudata, hklf, blur=None):
     data = numpy.hstack((asudata.miller_array,
                          asudata.value_array["value"][:,numpy.newaxis],
                          asudata.value_array["sigma"][:,numpy.newaxis]))
@@ -77,6 +81,7 @@ def write_mtz(mtz_out, asudata, hklf):
         mtz.add_column("SIGI", "Q")
 
     mtz.set_data(data)
+    utils.hkl.blur_mtz(mtz, blur)
     mtz.write_to_file(mtz_out)
 # write_mtz()
     
@@ -95,6 +100,7 @@ def main(args):
     else:
         sg_user = None
 
+    mtz_in = "input.mtz" # always write this file as an input for Refmac
     if args.cif:
         asudata, ss, info = utils.fileio.read_smcif_shelx(args.cif)
         st = utils.model.cx_to_mx(ss)
@@ -105,8 +111,7 @@ def main(args):
                 return
             
             asudata.spacegroup = sg_user
-        mtz_in = "input.mtz"
-        write_mtz(mtz_in, asudata, info.get("hklf"))
+        write_mtz(mtz_in, asudata, info.get("hklf"), args.blur)
     else:
         st = utils.fileio.read_small_structure(args.model)
         sg_st = st.find_spacegroup()
@@ -114,9 +119,8 @@ def main(args):
         logger.write(" Space group from model: {}".format(st.spacegroup_hm))
 
         if args.hklin.endswith(".mtz"): # TODO may be unmerged mtz
-            mtz_in = args.hklin
-            logger.write("Reading MTZ file: {}".format(mtz_in))
-            mtz = gemmi.read_mtz_file(mtz_in)
+            logger.write("Reading MTZ file: {}".format(args.hklin))
+            mtz = gemmi.read_mtz_file(args.hklin)
             logger.write(" Cell from mtz: {}".format(mtz.cell))
             if not mtz.cell.approx(st.cell, 1e-3):
                 logger.write(" Warning: unit cell mismatch!")
@@ -127,19 +131,18 @@ def main(args):
                                                                                                                            mtz.cell.parameters))
                     return
                 mtz.spacegroup = sg_user
-                mtz_in = "input.mtz" # overwrite mtz_in
                 logger.write(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
-                mtz.write_to_file(mtz_in)
             elif mtz.spacegroup != sg_st:
                 logger.write(" Warning: space group mismatch between model and mtz")
                 if mtz.cell.is_compatible_with_spacegroup(sg_st):
                     logger.write("  Taking space group from model.")
                     mtz.spacegroup = sg_st
-                    mtz_in = "input.mtz" # overwrite mtz_in
                     logger.write("  Writing {} as space group {}".format(mtz_in, sg_st.xhm()))
-                    mtz.write_to_file(mtz_in)
                 else:
                     logger.write("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
+
+            if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
+            mtz.write_to_file(mtz_in)
         else:
             logger.error("Error: unsupported hkl file: {}".format(args.hklin))
             return
@@ -187,6 +190,7 @@ def main(args):
                                  ncycle=args.ncycle,
                                  weight_matrix=args.weight_matrix,
                                  weight_auto_scale=args.weight_auto_scale,
+                                 hydrogen=args.hydrogen,
                                  hout=args.hout,
                                  resolution=args.resolution,
                                  keyword_files=args.keyword_file,

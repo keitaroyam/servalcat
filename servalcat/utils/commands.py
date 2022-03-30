@@ -10,6 +10,7 @@ from servalcat.utils import logger
 from servalcat.utils import fileio
 from servalcat.utils import symmetry
 from servalcat.utils import model
+from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
 import os
@@ -511,30 +512,7 @@ def blur(args):
     
     if args.hklin.endswith(".mtz"):
         mtz = gemmi.read_mtz_file(args.hklin)
-        s2 = mtz.make_1_d2_array()
-        k2 = numpy.exp(-args.B*s2/2)
-        k = numpy.exp(-args.B*s2/4)
-        i_labs = [c.label for c in mtz.columns if c.type in "JK"]
-        f_labs = [c.label for c in mtz.columns if c.type in "FDG"]
-        for labs in i_labs, f_labs:
-            for l in labs:
-                sl = "SIG"+l
-                if sl in mtz.column_labels(): labs.append(sl)
-
-        if i_labs:
-            logger.write("Intensities: {}".format(" ".join(i_labs)))
-            logger.write("  exp(-B*s^2/2) will be multiplied (B= {:.2f})".format(args.B))
-        if f_labs:
-            logger.write("Amplitudes:  {}".format(" ".join(f_labs)))
-            logger.write("  exp(-B*s^2/4) will be multiplied (B= {:.2f})".format(args.B))
-
-        for l in i_labs:
-            c = mtz.column_with_label(l)
-            c.array[:] *= k2
-        for l in f_labs:
-            c = mtz.column_with_label(l)
-            c.array[:] *= k
-
+        hkl.blur_mtz(mtz, args.B)
         suffix = ("_blur" if args.B > 0 else "_sharpen") + "_{:.2f}.mtz".format(abs(args.B))
         mtz.write_to_file(args.output_prefix+suffix)
         logger.write("Written: {}".format(args.output_prefix+suffix))
