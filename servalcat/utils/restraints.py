@@ -13,7 +13,6 @@ import re
 import gemmi
 import numpy
 import pandas
-import networkx as nx
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
@@ -393,6 +392,7 @@ class Restraints:
     
     #@profile
     def construct_graph(self):
+        import networkx as nx
         n_atoms = len(self.lookup)
         g = nx.Graph()
         for b in self.topo.bonds:
