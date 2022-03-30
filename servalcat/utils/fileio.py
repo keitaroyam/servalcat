@@ -508,7 +508,7 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
 
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
-    ints.merge_in_place(gemmi.Intensities.Type.Mean) # TODO may want Anomalous (in case of X-ray)
+    ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
     logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
