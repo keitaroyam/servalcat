@@ -93,6 +93,9 @@ def write_shifts_json(filename, cell, shape, new_cell, new_shape, starts, shifts
 
 def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1e-5, noncentered=False, noncubic=False,
                               json_out="trim_shifts.json"):
+    # XXX need to think more carefully.
+    #     probably we need a special class for non-crystallographic maps (reset unit cell with box size)
+    #     negative grid_start with mask (not model) may be problematic
     grid_shape = numpy.array(mask.shape)
     spacing = numpy.array(mask.spacing)
     grid_start = numpy.array(grid_start)
@@ -105,11 +108,12 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
         allpos = numpy.array([cra.atom.pos.tolist() for st in sts for cra in st[0].all()])
         minp = mask.get_nearest_point(gemmi.Position(*numpy.min(allpos, axis=0)))
         maxp = mask.get_nearest_point(gemmi.Position(*numpy.max(allpos, axis=0)))
-        limits = [(minp.u, maxp.u), (minp.v, maxp.v), (minp.w, maxp.w)]
+        tmp = [(minp.u, maxp.u), (minp.v, maxp.v), (minp.w, maxp.w)] - grid_start[:,None]
     else:
         tmp = numpy.where(numpy.array(mask)>mask_cutoff) - grid_start[:,None]
-        tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
-        limits = [(min(x), max(x)) for x in tmp]
+    
+    tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
+    limits = [(min(x), max(x)) for x in tmp]
 
     p = numpy.ceil(padding / spacing).astype(int)
     logger.write("Limits: {} {} {}".format(*limits))
@@ -207,7 +211,7 @@ def main(args):
             st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(m)
             st.spacegroup_hm = "P1"
             st.cell = cell
-            utils.model.translate_into_box(st)
+            # XXX here we do not want moving into box (with "crystallographic" translation) at least for --no_shift
             sts.append(st)
             cif_refs.append(cif_ref)
         

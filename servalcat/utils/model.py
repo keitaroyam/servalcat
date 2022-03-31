@@ -275,15 +275,20 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
 
 # get_em_expected_hydrogen()
 
-def translate_into_box(st):
+def translate_into_box(st, origin=None):
+    if origin is None: origin = gemmi.Position(0,0,0)
+    
     # apply unit cell translations to put model into a box (unit cell)
     omat = numpy.array(st.cell.orthogonalization_matrix)
     fmat = numpy.array(st.cell.fractionalization_matrix).transpose()
+    shifts = []
     for m in st:
-        com = numpy.array(m.calculate_center_of_mass().tolist())
+        com = numpy.array((m.calculate_center_of_mass() - origin).tolist())
         shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
         tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
+        shifts.append(shift)
         m.transform(tr)
+    return shifts
 # translate_into_box()
 
 def box_from_model(model, padding):
