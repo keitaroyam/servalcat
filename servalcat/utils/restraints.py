@@ -476,6 +476,7 @@ class Restraints:
         # check_bonds()
 
         self.nbc = []
+        self.nbc_transforms = []
         ns = gemmi.NeighborSearch(self.st[0], self.st.cell, 4).populate()
         cs = gemmi.ContactSearch(self.max_vdwr()*2)        
         results = cs.find_contacts(ns)
@@ -496,8 +497,8 @@ class Restraints:
         # convert for orthogonal coordiinates
         transform = lambda x: gemmi.Transform(self.st.cell.orthogonalization_matrix.multiply(x.mat).multiply(self.st.cell.fractionalization_matrix),
                                               self.st.cell.orthogonalization_matrix.multiply(x.vec))
-        self.nbc_transforms = [transform(ns.get_image_transformation(i)) for i in range(max(x[2] for x in self.nbc)+1)]
-            
+        if self.nbc:
+            self.nbc_transforms = [transform(ns.get_image_transformation(i)) for i in range(max(x[2] for x in self.nbc)+1)]
     # find_nonbonded()
 
     #@profile
