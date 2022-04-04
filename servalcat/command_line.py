@@ -111,7 +111,6 @@ def main():
         logger.write("# Command-line args:")
         logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
         modules[args.command].main(args)
-        logger.write("\n# Finished on {}\n".format(datetime.datetime.now()))
     else:
         parser.print_help()
 

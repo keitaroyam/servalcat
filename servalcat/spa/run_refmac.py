@@ -216,24 +216,19 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
 
 def main(args):
     if not args.model:
-        logger.error("Error: give --model.")
-        return
+        raise SystemExit("Error: give --model.")
 
     if not (args.map or args.halfmaps):
-        logger.error("Error: give --map | --halfmaps.")
-        return
+        raise SystemExit("Error: give --map | --halfmaps.")
 
     if args.mask_for_fofc and not os.path.exists(args.mask_for_fofc):
-        logger.error("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
-        return
+        raise SystemExit("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
 
     if args.mask_for_fofc and args.mask_radius_for_fofc:
-        logger.error("Error: you cannot specify both --mask_for_fofc and --mask_radius_for_fofc")
-        return        
+        raise SystemExit("Error: you cannot specify both --mask_for_fofc and --mask_radius_for_fofc")
 
     if args.trim_fofc_mtz and not (args.mask_for_fofc or args.mask_radius_for_fofc):
-        logger.error("Error: --trim_fofc_mtz is specified but --mask_for_fofc is not given")
-        return    
+        raise SystemExit("Error: --trim_fofc_mtz is specified but --mask_for_fofc is not given")
 
     if args.ligand: args.ligand = sum(args.ligand, [])
 
@@ -242,8 +237,7 @@ def main(args):
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                        stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
-        logger.write("Error: {}".format(e))
-        return
+        raise SystemExit("Error: {}".format(e))
         
     args.shifted_model_prefix = "shifted"
     args.output_masked_prefix = "masked_fs"

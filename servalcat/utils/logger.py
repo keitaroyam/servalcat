@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 import sys
 import datetime
 import traceback
+import atexit
 
 class Logger(object):
     def __init__(self, file_out=None, append=True):
@@ -54,6 +55,12 @@ error = _logger.error
 close = _logger.close
 flush = _logger.flush
 
+
+def exit_success():
+    _logger.write("\n# Finished on {}\n".format(datetime.datetime.now()))
+
+atexit.register(exit_success)
+
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -63,6 +70,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     #_logger.write("Uncaught exception: {}: {}".format(name, exc_value))
     _logger.error("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
     _logger.write("# Abnormally finished on {}\n".format(datetime.datetime.now()))
+    atexit.unregister(exit_success)
 
 # handle_exception()
 
