@@ -143,6 +143,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     # and others?
     unknown_cc = set()
     unknown_atoms_cc = set()
+    link_related = set()
     for l in sio.getvalue().splitlines():
         r = re.search("Warning: unknown chemical component (.*) in chain", l)
         if r:
@@ -151,15 +152,15 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 logger.write(l)
                 unknown_cc.add(unk)
             continue
-        r1 = re.search("Warning: no atom (.*) expected in (.*)$", l)
-        r2 = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
-        if r1 or r2:
-            if r1:
-                unk = r1.groups() # (atom, cc)
-            else:
-                unk = r2.groups()[::-1] # (atom, cc)
-                
-            if unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
+        r = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
+        if r:
+            unk = r.group(2), r.group(1)
+
+            cc = monlib.monomers[unk[1]] if unk[1] in monlib.monomers else None
+            if cc and unk[0] in [x.id for x in cc.atoms]: # if atom is found in chemcomp, it must be an atom that should be removed.
+                logger.write(l + " - this atom should have been removed when linking")
+                link_related.add(unk[1])
+            elif unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
                 logger.write(l)
                 unknown_atoms_cc.add(unk)
             continue
@@ -177,8 +178,11 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         
     unknown_cc.update(cc for at, cc in unknown_atoms_cc)
         
-    if stop_for_unknowns and unknown_cc:
-        raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknown_cc)))
+    if stop_for_unknowns and (unknown_cc or link_related):
+        msgs = []
+        if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
+        if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
+        raise RuntimeError("Provide {}".format(" and ".join(msgs)))
    
     return monlib
 # load_monomer_library()
