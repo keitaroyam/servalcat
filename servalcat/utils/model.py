@@ -430,6 +430,20 @@ def filter_helical_contacting(st, cutoff=5.):
     st.ncs.extend(ops)
 # filter_helical_contacting()
 
+def check_symmetry_related_model_duplication(st, distance_cutoff=0.5, max_allowed_ratio=0.5):
+    logger.write("Checking if model in asu is given.")
+    n_atoms = st[0].count_atom_sites()
+    n_ncs_op = sum(map(lambda x: not x.given, st.ncs)) + 1 # plus identity
+    st.setup_cell_images()
+    ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
+    cs = gemmi.ContactSearch(distance_cutoff)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+    results = cs.find_contacts(ns)
+    n_sym_contacts = len(results)
+    logger.write(" N_symop= {} N_atoms= {} N_sym_contacts= {}".format(n_ncs_op, n_atoms, n_sym_contacts))
+    return n_sym_contacts/n_atoms > (n_ncs_op - 1) * 0.5 * max_allowed_ratio # return True if too many contacts
+# check_symmetry_related_model_duplication()
+
 def adp_analysis(st, ignore_zero_occ=True):
     logger.write("= ADP analysis =")
     if ignore_zero_occ:

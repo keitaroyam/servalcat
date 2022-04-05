@@ -66,6 +66,9 @@ def add_sfcalc_args(parser):
                         help='By default it will fix microheterogeneity for Refmac')
     parser.add_argument('--no_fix_resi9999', action='store_true', 
                         help='By default it will split chain if max residue number > 9999 which is not supported by Refmac')
+    parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
+                        help='Disable model overlap (e.g. expanded model is used with --pg) test')
+
 # add_sfcalc_args()
 
 """
@@ -225,7 +228,7 @@ def main(args, monlib=None):
     ret = {} # instructions for refinement
     
     if (args.twist, args.rise).count(None) == 1:
-        raise RuntimeError("ERROR: give both helical paramters --twist and --rise")
+        raise SystemExit("ERROR: give both helical paramters --twist and --rise")
 
     is_helical = args.twist is not None
 
@@ -248,18 +251,18 @@ def main(args, monlib=None):
     if args.resolution is None and args.model and utils.fileio.splitext(args.model)[1].endswith("cif"):
         doc = gemmi.cif.read(args.model)
         if len(doc) != 1:
-            raise RuntimeError("cannot find resolution from cif. Give --resolution")
+            raise SystemExit("cannot find resolution from cif. Give --resolution")
         block = doc.sole_block()
         reso_str = block.find_value("_em_3d_reconstruction.resolution")
         try:
             float(reso_str)
         except:
-            raise RuntimeError("ERROR: _em_3d_reconstruction.resolution is invalid. Give --resolution")
+            raise SystemExit("ERROR: _em_3d_reconstruction.resolution is invalid. Give --resolution")
         logger.write("WARNING: --resolution not given. Using _em_3d_reconstruction.resolution = {}".format(reso_str))
         args.resolution = float(reso_str)
 
     if args.resolution is None:
-        raise RuntimeError("ERROR: --resolution is needed.")
+        raise SystemExit("ERROR: --resolution is needed.")
         
     resolution = args.resolution - 1e-6
 
@@ -368,13 +371,17 @@ def main(args, monlib=None):
         elif len(st.ncs) > 0:
             logger.write("Strict NCS detected from model.")
 
+        st_new = st.clone()
+
         if len(st.ncs) > 0:
+            if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
+                raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
+                                 "It is very likely you gave symmetry-expanded model along with symmetry operators.")
+            
             logger.write(" Writing NCS file")
             utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc.txt")
             ret["ncsc_file"] = "ncsc.txt"
         
-        st_new = st.clone()
-        if len(st.ncs) > 0:
             utils.model.expand_ncs(st)
             logger.write(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
