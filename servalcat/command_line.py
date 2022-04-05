@@ -110,7 +110,11 @@ def main():
         logger.write("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
         logger.write("# Command-line args:")
         logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
-        modules[args.command].main(args)
+        try:
+            modules[args.command].main(args)
+        except SystemExit as e:
+            logger.error(str(e))
+            sys.exit(1)
     else:
         parser.print_help()
 
