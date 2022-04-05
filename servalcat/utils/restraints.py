@@ -157,9 +157,11 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             unk = r.group(2), r.group(1)
 
             cc = monlib.monomers[unk[1]] if unk[1] in monlib.monomers else None
-            if cc and unk[0] in [x.id for x in cc.atoms]: # if atom is found in chemcomp, it must be an atom that should be removed.
+            cc_atom = [x for x in cc.atoms if x.id == unk[0]] if cc else None
+            if cc and cc_atom: # if atom is found in chemcomp, it must be an atom that should be removed.
                 logger.write(l + " - this atom should have been removed when linking")
-                link_related.add(unk[1])
+                if check_hydrogen or not cc_atom[0].is_hydrogen():
+                    link_related.add(unk[1])
             elif unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
                 logger.write(l)
                 unknown_atoms_cc.add(unk)
