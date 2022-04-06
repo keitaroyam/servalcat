@@ -653,7 +653,7 @@ class Refmac:
 
         # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
-            raise RuntimeError("REFMAC5 did not produce output files.")
+            raise RuntimeError("REFMAC5 did not produce output files. Check {}".format(self.prefix+".log"))
 
         return ret
     # run_refmac()

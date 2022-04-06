@@ -313,7 +313,11 @@ def main(args):
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa",
                                  keep_chain_ids=keep_chain_ids)
     refmac.set_libin(args.ligand)
-    refmac_summary = refmac.run_refmac()
+    try:
+        refmac_summary = refmac.run_refmac()
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     json.dump(refmac_summary,
               open("{}_summary.json".format(refmac_prefix), "w"),
               indent=True)
@@ -372,7 +376,10 @@ def main(args):
             refmac_hm1.lab_phi = file_info["lab_phi_half1"]
             # SIGMA?
             
-        refmac_hm1.run_refmac()
+        try:
+            refmac_hm1.run_refmac()
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
         
         # Modify output
         st_sr, cif_ref_sr = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix_shaken+model_format)
