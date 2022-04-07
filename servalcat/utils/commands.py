@@ -37,12 +37,8 @@ def add_arguments(p):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--map', help="Take box size from the map")
     group.add_argument('--cell', type=float, nargs=6, help="Box size")
-    parser.add_argument('--pg', required=True, help="Point group symbol")
-    parser.add_argument('--twist', type=float, help="Helical twist (degree)")
-    parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
-    parser.add_argument('--center', type=float, nargs=3, help="Origin of symmetry. Default: center of the box")
-    parser.add_argument('--axis1', type=float, nargs=3, help="Axis1 (if I: 5-fold, O: 4-fold, T: 3-fold)")
-    parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold)")
+    sym_group = parser.add_argument_group("symmetry")
+    symmetry.add_symmetry_args(sym_group, require_pg=True)
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
     parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
                         help="How to decide new chain IDs in expanded model (default: short); "
@@ -173,16 +169,13 @@ def symmodel(args):
         logger.error("ERROR: give both helical paramters --twist and --rise")
         return
 
-    is_helical = args.twist is not None
-
     st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
     st.spacegroup_hm = "P 1"
-    start_xyz = numpy.zeros(3)
+    map_and_start = None
     if args.map:
         logger.write("Reading cell from map")
-        g, grid_start = fileio.read_ccp4_map(args.map)
-        st.cell = g.unit_cell
-        start_xyz = numpy.array(g.get_position(*grid_start).tolist())
+        map_and_start = fileio.read_ccp4_map(args.map)
+        st.cell = map_and_start[0].unit_cell
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
     elif not st.cell.is_crystal():
@@ -198,36 +191,19 @@ def symmodel(args):
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
 
-    if args.center is None:
-        A = numpy.array(st.cell.orthogonalization_matrix.tolist())
-        center = numpy.sum(A, axis=1) / 2 #+ start_xyz
-        logger.write("Center: {}".format(center))
-    else:
-        center = numpy.array(args.center)
-
-    if is_helical:
-        ncsops = symmetry.generate_helical_operators(st, start_xyz, center,
-                                                     args.pg, args.twist, args.rise,
-                                                     axis1=args.axis1, axis2=args.axis2)
-        logger.write("{} helical operators found".format(len(ncsops)))
-    else:
-        _, _, ops = symmetry.operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
-        logger.write("{} operators found for {}".format(len(ops), args.pg))
-        symmetry.show_operators_axis_angle(ops)
-        ncsops = symmetry.make_NcsOps_from_matrices(ops, cell=st.cell, center=center)
-
-    st.ncs.clear()
-    st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
+    symmetry.update_ncs_from_args(args, st, map_and_start=map_and_start)
 
     if args.biomt:
         st.assemblies.clear()
         st.raw_remarks = []
         a = gemmi.Assembly("1")
         g = gemmi.Assembly.Gen()
-        for i, nop in enumerate(ncsops):
+        if sum(map(lambda x: x.tr.is_identity(), st.ncs)) == 0:
+            g.operators.append(gemmi.Assembly.Operator()) # add identity
+        for i, nop in enumerate(st.ncs):
             op = gemmi.Assembly.Operator()
             op.transform = nop.tr
-            if not nop.tr.is_identity(): op.type = "point symmetry operation"
+            if not nop.tr.is_identity(): op.type = "point symmetry operation" # XXX if helical?
             g.operators.append(op)
         g.chains = all_chains
         a.generators.append(g)

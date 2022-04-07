@@ -48,10 +48,7 @@ def add_sfcalc_args(parser):
                         nargs="+", # XXX probably no need to be multiple
                         type=float,
                         help='Sharpening or blurring B')
-    parser.add_argument('--pg',
-                        help="Point group symbol for strict symmetry. The coordinate system is consitent with RELION.")
-    parser.add_argument('--twist', type=float, help="Helical twist (degree)")
-    parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
+    utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--keep_multiple_models', action='store_true', 
@@ -230,8 +227,6 @@ def main(args, monlib=None):
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
 
-    is_helical = args.twist is not None
-
     if args.no_mask:
         args.mask_radius = None
         if not args.no_shift:
@@ -348,31 +343,8 @@ def main(args, monlib=None):
                 for i in reversed(range(len(st.ncs))):
                     if st.ncs[i].given: del st.ncs[i]
 
-        if is_helical:
-            ops = utils.symmetry.generate_helical_operators(st, start_xyz, center,
-                                                            args.pg, args.twist, args.rise)
-            logger.write("{} helical operators found".format(len(ops)))
-            st.ncs.clear()
-            st.ncs.extend([x for x in ops if not x.tr.is_identity()])
-            #ret["helical"] = ops
-            utils.model.filter_helical_contacting(st)
-        elif args.pg:
-            logger.write("Point group symmetry: {}".format(args.pg))
-            if len(st.ncs) > 0:
-                logger.write(" WARNING: NCS information in model file will be ignored")
-
-            _, _, ops = utils.symmetry.operators_from_symbol(args.pg)
-            if ops:
-                logger.write(" {} operators found".format(len(ops)))
-                ops = utils.symmetry.make_NcsOps_from_matrices(ops, cell=unit_cell, center=center)
-                st.ncs.clear()
-                st.ncs.extend([x for x in ops if not x.tr.is_identity()])
-
-        elif len(st.ncs) > 0:
-            logger.write("Strict NCS detected from model.")
-
+        utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_model_helical_contacting=True)
         st_new = st.clone()
-
         if len(st.ncs) > 0:
             if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
                 raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"

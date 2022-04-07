@@ -15,6 +15,55 @@ from servalcat.utils import fileio
 from servalcat.utils import model
 from servalcat.utils import generate_operators
 
+def add_symmetry_args(parser, require_pg=False):
+    parser.add_argument('--pg', required=require_pg, help="Point group symbol")
+    parser.add_argument('--twist', type=float, help="Helical twist (degree)")
+    parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
+    parser.add_argument('--center', type=float, nargs=3, help="Origin of symmetry. Default: center of the box")
+    parser.add_argument('--axis1', type=float, nargs=3, help="Axis1 (if I: 5-fold, O: 4-fold, T: 3-fold)")
+    parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold)")
+# add_symmetry_args()
+    
+def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_contacting=False):
+    is_helical = args.twist is not None
+    if not is_helical and not args.pg:
+        if len(st.ncs) > 0:
+            logger.write("Strict NCS detected from model.")
+            show_ncs_operators_axis_angle(st.ncs)
+        return
+    
+    if len(st.ncs) > 0:
+        logger.write(" WARNING: NCS information in model file will be ignored")
+    
+    if map_and_start is not None:
+        start_xyz = numpy.array(map_and_start[0].get_position(*map_and_start[1]).tolist())
+    else:
+        start_xyz = numpy.zeros(3)
+
+    if args.center is None:
+        A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+        center = numpy.sum(A, axis=1) / 2 #+ start_xyz
+        logger.write("Center: {}".format(center))
+    else:
+        center = numpy.array(args.center)
+        
+    if is_helical:
+        ncsops = generate_helical_operators(st, start_xyz, center,
+                                            args.pg, args.twist, args.rise,
+                                            axis1=args.axis1, axis2=args.axis2)
+        logger.write("{} helical operators found".format(len(ncsops)))
+        if filter_model_helical_contacting:
+            utils.model.filter_helical_contacting(st)
+    else:
+        _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
+        logger.write("{} operators found for {}".format(len(ops), args.pg))
+        show_operators_axis_angle(ops)
+        ncsops = make_NcsOps_from_matrices(ops, cell=st.cell, center=center)
+
+    st.ncs.clear()
+    st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
+# ncsops_from_args()
+
 def get_matrices_using_relion(sym):
     ps = subprocess.check_output(["relion_refine", "--sym", sym.strip(), "--print_symmetry_ops"])
 
