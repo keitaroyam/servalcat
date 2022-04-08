@@ -149,6 +149,17 @@ def add_arguments(p):
     parser.add_argument('-B', type=float, required=True, help="B value for blurring (negative value for sharpening)")
     parser.add_argument('-o', '--output_prefix')
 
+    # applymask (and normalize within mask)
+    parser = subparsers.add_parser("applymask", description = 'Apply mask and optionally normalize map within mask')
+    parser.add_argument("--map", required=True)
+    parser.add_argument('--mask', required=True, help='Mask file')
+    parser.add_argument("--normalize", action='store_true',
+                        help="Normalize map values using mean and sd within the mask")
+    parser.add_argument("--trim", action='store_true', help="Write trimmed map")
+    parser.add_argument('--mask_cutoff', type=float, default=0.5,
+                        help="cutoff value for normalization and trimming (default: %(default)s)")
+    parser.add_argument('-o', '--output_prefix')
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -496,6 +507,30 @@ def blur(args):
         logger.error("ERROR: Unsupported file type: {}".format(args.hklin))
         return
 # blur()
+
+def applymask(args):
+    if args.output_prefix is None:
+        args.output_prefix = fileio.splitext(os.path.basename(args.map))[0] + "_masked"
+
+    grid, grid_start = fileio.read_ccp4_map(args.map)
+    mask = fileio.read_ccp4_map(args.mask)[0]
+    logger.write("Applying mask")
+    logger.write(" mask min: {:.3f} max: {:.3f}".format(numpy.min(mask), numpy.max(mask)))
+    grid.array[:] *= mask.array
+
+    if args.normalize:
+        masked = grid.array[mask.array>args.mask_cutoff]
+        masked_mean = numpy.average(masked)
+        masked_std = numpy.std(masked)
+        logger.write("Normalizing map values within mask")
+        logger.write(" masked volume: {} mean: {:.3e} sd: {:.3e}".format(len(masked), masked_mean, masked_std))
+        grid.array[:] = (grid.array - masked_mean) / masked_std
+
+    maps.write_ccp4_map(args.output_prefix+".mrc", grid,
+                        grid_start=grid_start,
+                        mask_for_extent=mask.array if args.trim else None,
+                        mask_threshold=args.mask_cutoff)
+# applymask()
     
 def show(args):
     for filename in args.files:
@@ -527,7 +562,8 @@ def main(args):
                  power=show_power,
                  fcalc=fcalc,
                  nemap=nemap,
-                 blur=blur)
+                 blur=blur,
+                 applymask=applymask)
     
     com = args.subcommand
     f = comms.get(com)

@@ -153,6 +153,7 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, ma
     - grid_shape must be specified together with grid_start.
     - mask_padding unit: px
     """
+    logger.write("Writing map file: {}".format(filename))
     ccp4 = gemmi.Ccp4Map()
     
     if type(array) == numpy.ndarray:
