@@ -1,0 +1,144 @@
+"""
+Author: "Keitaro Yamashita, Garib N. Murshudov"
+MRC Laboratory of Molecular Biology
+    
+This software is released under the
+Mozilla Public License, version 2.0; see LICENSE.
+"""
+from __future__ import absolute_import, division, print_function, generators
+import gemmi
+import numpy
+import os
+import argparse
+from servalcat.utils import logger
+from servalcat import utils
+
+def add_arguments(parser):
+    parser.description = 'Calculate real space local correlation map from half maps and model'
+    parser.add_argument("--halfmaps", required=True, nargs=2,
+                       help="Input half map files")
+    parser.add_argument('--pixel_size', type=float,
+                        help='Override pixel size (A)')
+    parser.add_argument("--kernel", type=int, default=5,
+                       help="Kernel radius (default: %(default)d)")
+    parser.add_argument('--mask',
+                        help="mask file")
+    parser.add_argument('--model', 
+                        help='Input atomic model file')
+    parser.add_argument('--resolution', type=float,
+                        help='default: nyquist resolution')
+    parser.add_argument("--trim", action='store_true', help="Write trimmed map")
+    parser.add_argument('-o', '--output_prefix', default="ccmap",
+                        help="default: %(default)s")
+# add_arguments()
+                        
+def parse_args(arg_list):
+    parser = argparse.ArgumentParser()
+    add_arguments(parser)
+    return parser.parse_args(arg_list)
+# parse_args()
+
+def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
+    hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
+    hkldata.setup_relion_binning()
+    utils.maps.calc_noise_var_from_halfmaps(hkldata)
+
+    nref = len(hkldata.df.index)
+    F1w = numpy.zeros(nref, dtype=numpy.complex)
+    F2w = numpy.zeros(nref, dtype=numpy.complex)
+    F1 = hkldata.df.F_map1.to_numpy()
+    F2 = hkldata.df.F_map2.to_numpy()
+
+    logger.write("Calculating weights for half map correlation.")
+    logger.write(" weight = sqrt(FSChalf / (2*var_noise + var_signal))")
+    hkldata.binned_df["w2_half_varsignal"] = 0.
+    for i_bin, idxes in hkldata.binned():
+        fscfull = hkldata.binned_df.FSCfull[i_bin]
+        if fscfull < 0:
+            break # stop here so that higher resolution are all zero
+        fsc = fscfull / (2 - fscfull)
+        var_fo = 2 * hkldata.binned_df.var_noise[i_bin] + hkldata.binned_df.var_signal[i_bin]
+        w = numpy.sqrt(fsc / var_fo)
+        hkldata.binned_df.loc[i_bin, "w2_half_varsignal"] = fsc / var_fo * hkldata.binned_df.var_signal[i_bin]
+        F1w[idxes] = F1[idxes] * w
+        F2w[idxes] = F2[idxes] * w
+
+    hkldata.df["F_map1w"] = F1w
+    hkldata.df["F_map2w"] = F2w
+
+    return hkldata
+# setup_coeffs_for_halfmap_cc()
+
+def add_coeffs_for_model_cc(hkldata, st):
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min=hkldata.d_min_max()[0]-1e-6,
+                                               source="electron", miller_array=hkldata.miller_array())
+    nref = len(hkldata.df.index)
+    FCw = numpy.zeros(nref, dtype=numpy.complex)
+    FPw = numpy.zeros(nref, dtype=numpy.complex)
+    FP = hkldata.df.FP.to_numpy()
+    FC = hkldata.df.FC.to_numpy()
+
+    logger.write("Calculating weights for map-model correlation.")
+    logger.write(" weight for Fo = sqrt(FSCfull / var(Fo))")
+    logger.write(" weight for Fc = sqrt(FSCfull / var(Fc))")
+    hkldata.binned_df["w_mapmodel_c"] = 0.
+    hkldata.binned_df["w_mapmodel_o"] = 0.
+    hkldata.binned_df["var_fc"] = 0.
+    for i_bin, idxes in hkldata.binned():
+        fscfull = hkldata.binned_df.FSCfull[i_bin]
+        if fscfull < 0: break
+        var_fc = numpy.var(FC[idxes])
+        wc = numpy.sqrt(fscfull / var_fc)
+        wo = numpy.sqrt(fscfull / numpy.var(FP[idxes]))
+        FCw[idxes] = FC[idxes] * wc
+        FPw[idxes] = FP[idxes] * wo
+        hkldata.binned_df.loc[i_bin, "w_mapmodel_c"] = wc
+        hkldata.binned_df.loc[i_bin, "w_mapmodel_o"] = wo
+        hkldata.binned_df.loc[i_bin, "var_fc"] = var_fc
+    
+    hkldata.df["FPw"] = FPw
+    hkldata.df["FCw"] = FCw
+# add_coeffs_for_model_cc()
+
+def main(args):
+    maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    grid_shape = maps[0][0].shape
+    if args.mask:
+        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0], copy=False)
+    else:
+        mask = None
+
+    if args.resolution is None:
+        d_min = utils.maps.nyquist_resolution(maps[0][0])
+    else:
+        d_min = args.resolution
+
+    hkldata = setup_coeffs_for_halfmap_cc(maps, d_min, mask)
+    knl = utils.maps.raised_cosine_kernel(args.kernel)
+    halfcc_map = utils.maps.local_cc(hkldata.fft_map("F_map1w", grid_size=grid_shape),
+                                     hkldata.fft_map("F_map2w", grid_size=grid_shape),
+                                     knl)
+    halfcc_map_in_mask = halfcc_map.array[mask>0.5] if mask is not None else halfcc_map
+    logger.write("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
+    utils.maps.write_ccp4_map(args.output_prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
+                              mask_for_extent=mask if args.trim else None)
+
+    if args.model:
+        st = utils.fileio.read_structure(args.model)
+        utils.model.expand_ncs(st)
+        st.cell = hkldata.cell
+        st.spacegroup_hm = hkldata.sg.hm
+        add_coeffs_for_model_cc(hkldata, st)
+        modelcc_map = utils.maps.local_cc(hkldata.fft_map("FPw", grid_size=grid_shape),
+                                          hkldata.fft_map("FCw", grid_size=grid_shape),
+                                          knl)
+        modelcc_map_in_mask = modelcc_map.array[mask>0.5] if mask is not None else modelcc_map
+        logger.write("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
+        utils.maps.write_ccp4_map(args.output_prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
+                                  mask_for_extent=mask if args.trim else None)
+# main()
+
+if __name__ == "__main__":
+    import sys
+    args = parse_args(sys.argv[1:])
+    main(args)

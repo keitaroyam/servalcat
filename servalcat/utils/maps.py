@@ -9,8 +9,16 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 import scipy.optimize
+import scipy.signal
 from servalcat.utils import logger
 from servalcat.utils import hkl
+
+def new_grid_like(gr):
+    newgr = type(gr)(*gr.shape)
+    newgr.set_unit_cell(gr.unit_cell)
+    newgr.spacegroup = gr.spacegroup
+    return newgr
+# new_grid_like()
 
 def mask_from_model():
     pass
@@ -224,3 +232,45 @@ def optimize_peak(grid, ini_pos):
     logger.write(" Move from initial: [{:.3f}, {:.3f}, {:.3f}] A".format(*(final_pos-ini_pos).tolist()))
     return final_pos
 # optimize_peak()
+
+def raised_cosine_kernel(r1, dr=2):
+    assert r1 > 2
+    assert dr >= 0
+    assert r1 > dr
+    
+    boxsize = 2 * r1 + 1
+    x, y, z = numpy.meshgrid(range(boxsize), range(boxsize), range(boxsize))
+    cen = boxsize // 2
+    r0 = r1 - dr
+    d = numpy.sqrt((x-cen)**2+(y-cen)**2+(z-cen)**2)
+    kern = 0.5 + 0.5 * numpy.cos(numpy.pi * (d - r0) / (r1 - r0))
+    kern[d<=r0] = 1
+    kern[d>=r1] = 0
+    kern /= numpy.sum(kern)
+    return kern
+# raised_cosine_kernel()
+
+def local_var(grid, kernel):
+    mean_x2 = scipy.signal.fftconvolve(grid.array**2, kernel, "same")
+    mean_x = scipy.signal.fftconvolve(grid.array, kernel, "same")
+    var_x = new_grid_like(grid)
+    var_x.array[:] = mean_x2 - mean_x**2
+    var_x.array[var_x.array<0] = 0 # due to loss of significance
+    return var_x
+# local_var()
+
+def local_cc(map1, map2, kernel):
+    localcc = new_grid_like(map1)
+    mean_1_sqr = scipy.signal.fftconvolve(map1.array**2, kernel, "same")
+    mean_2_sqr = scipy.signal.fftconvolve(map2.array**2, kernel, "same")
+    mean_1 = scipy.signal.fftconvolve(map1.array, kernel, "same")
+    mean_2 = scipy.signal.fftconvolve(map2.array, kernel, "same")
+    mean_12 = scipy.signal.fftconvolve(map1.array * map2.array, kernel, "same")
+    var_1 = mean_1_sqr - mean_1**2
+    var_1[var_1 < 0] = 0
+    var_2 = mean_2_sqr - mean_2**2
+    var_2[var_2 < 0] = 0
+    covar_12 = mean_12 - mean_1 * mean_2
+    localcc.array[:] = covar_12 / numpy.sqrt(var_1 * var_2)
+    return localcc
+# local_cc()

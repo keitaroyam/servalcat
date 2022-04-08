@@ -24,6 +24,7 @@ import servalcat.spa.fsc
 import servalcat.spa.fofc
 import servalcat.spa.shift_maps
 import servalcat.spa.translate
+import servalcat.spa.localcc
 import servalcat.xtal.run_refmac_small
 import servalcat.xtal.sigmaa
 import servalcat.utils.commands
@@ -85,6 +86,7 @@ def main():
                    fofc=servalcat.spa.fofc,
                    trim=servalcat.spa.shift_maps,
                    translate=servalcat.spa.translate,
+                   localcc=servalcat.spa.localcc,
                    sigmaa=servalcat.xtal.sigmaa,
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
