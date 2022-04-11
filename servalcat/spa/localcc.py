@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import pandas
 import os
 import argparse
 from servalcat.utils import logger
@@ -100,6 +101,37 @@ def add_coeffs_for_model_cc(hkldata, st):
     hkldata.df["FCw"] = FCw
 # add_coeffs_for_model_cc()
 
+def model_stats(st, modelcc_map, halfcc_map, loggraph_out=None):
+    tmp = dict(chain=[], seqid=[], resn=[], CC_mapmodel=[], CC_halfmap=[])
+    for chain in st[0]:
+        for res in chain:
+            mm = numpy.mean([modelcc_map.interpolate_value(atom.pos) for atom in res])
+            hc = numpy.mean([halfcc_map.interpolate_value(atom.pos) for atom in res])
+            tmp["chain"].append(chain.name)
+            tmp["seqid"].append(str(res.seqid))
+            tmp["resn"].append(res.name)
+            tmp["CC_mapmodel"].append(mm)
+            tmp["CC_halfmap"].append(hc)
+
+    df = pandas.DataFrame(tmp)
+    df["sqrt_CC_full"] = numpy.sqrt(2 * df.CC_halfmap / (1 + df.CC_halfmap))
+    if loggraph_out is not None:
+        with open(loggraph_out, "w") as ofs:
+            for c, g in df.groupby("chain", sort=False):
+                ofs.write("$TABLE: Chain {} :".format(c))
+                ofs.write("""
+$GRAPHS
+: average correlations :A:2,4,5,6:
+$$
+chain seqid resn CC(map,model) CC_half sqrt(CC_full)
+$$
+$$
+""")
+                ofs.write(g.to_string(header=False, index=False))
+                ofs.write("\n\n")
+    return df
+# model_stats()
+
 def main(args):
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     grid_shape = maps[0][0].shape
@@ -113,6 +145,8 @@ def main(args):
     else:
         d_min = args.resolution
 
+    prefix = "{}_r{}".format(args.output_prefix, args.kernel)
+        
     hkldata = setup_coeffs_for_halfmap_cc(maps, d_min, mask)
     knl = utils.maps.raised_cosine_kernel(args.kernel)
     halfcc_map = utils.maps.local_cc(hkldata.fft_map("F_map1w", grid_size=grid_shape),
@@ -120,7 +154,7 @@ def main(args):
                                      knl)
     halfcc_map_in_mask = halfcc_map.array[mask>0.5] if mask is not None else halfcc_map
     logger.write("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
-    utils.maps.write_ccp4_map(args.output_prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
+    utils.maps.write_ccp4_map(prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
                               mask_for_extent=mask if args.trim else None)
 
     if args.model:
@@ -134,8 +168,9 @@ def main(args):
                                           knl)
         modelcc_map_in_mask = modelcc_map.array[mask>0.5] if mask is not None else modelcc_map
         logger.write("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
-        utils.maps.write_ccp4_map(args.output_prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
+        utils.maps.write_ccp4_map(prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
                                   mask_for_extent=mask if args.trim else None)
+        model_stats(st, modelcc_map, halfcc_map, loggraph_out=prefix+"_byresidue.log")
 # main()
 
 if __name__ == "__main__":
