@@ -81,7 +81,7 @@ def write_mtz(mtz_out, asudata, hklf, blur=None):
         mtz.add_column("SIGI", "Q")
 
     mtz.set_data(data)
-    utils.hkl.blur_mtz(mtz, blur)
+    if blur is not None: utils.hkl.blur_mtz(mtz, blur)
     mtz.write_to_file(mtz_out)
 # write_mtz()
     
