@@ -134,36 +134,26 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
 #import atexit
 #atexit.register(profile.print_stats)
 #@profile
-def mlf(df, Ds, S, centric_sel):
+def mlf(df, fc_labs, Ds, S, centric_sel):
     ret = 0.
     func = (mlf_acentric, mlf_centric)
-    for c, cidxes in centric_sel:
-        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+    for c, cidxes, _ in centric_sel:
+        Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         ret += numpy.sum(func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
     return ret
 # mlf()
 
 #@profile
-def deriv_mlf_wrt_D_S(df, Ds, S, centric_sel):
+def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel):
     ret = []
     func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
-    for c, cidxes in centric_sel:
-        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+    for c, cidxes, _ in centric_sel:
+        Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         ret.append((func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])))
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
-def calc_fom(df, Ds, S, centric_sel):
-    ret = pandas.Series(index=df.index)
-    func = (fom_acentric, fom_centric)
-    for c, cidxes in centric_sel:
-        Fcs = [df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
-        ret[cidxes] = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
-
-    return ret
-# calc_fom()
-
-def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=False, S_as_exp=False):
+def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=False, S_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
         transD_deriv = numpy.exp # dD/dx
@@ -182,27 +172,29 @@ def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=Fals
         transS_deriv = lambda x: 1
         transS_inv = lambda x: x
     
+    D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
     # Initial values
-    for i in range(nmodels):
-        hkldata.binned_df["D{}".format(i)] = 1.
+    for lab in D_labs:
+        hkldata.binned_df[lab] = 1.
 
     hkldata.binned_df["S"] = 10000.
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, _ in hkldata.binned():
+        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
         FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
         FP = hkldata.df.FP.to_numpy()[idxes]
         D = numpy.corrcoef(FP, FC)[1,0]
-        hkldata.binned_df.loc[i_bin, "D0"] = D
+        hkldata.binned_df.loc[i_bin, D_labs[0]] = D
         hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
 
     logger.write("Initial estimates:")
     logger.write(hkldata.binned_df.to_string())
 
     for i_bin, idxes in hkldata.binned():
-        x0 = [transD_inv(hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] + [transS_inv(hkldata.binned_df.S[i_bin])]
+        x0 = [transD_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [transS_inv(hkldata.binned_df.S[i_bin])]
         def target(x):
-            return mlf(hkldata.df, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
+            return mlf(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
         def grad(x):
-            g = deriv_mlf_wrt_D_S(hkldata.df, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
+            g = deriv_mlf_wrt_D_S(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
             g[:-1] *= transD_deriv(x[:-1])
             g[-1] *= transS_deriv(x[-1])
             return g
@@ -223,12 +215,13 @@ def determine_mlf_params(hkldata, nmodels, centric_and_selections, D_as_exp=Fals
         res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad)
         #print(res)
         
-        for i in range(nmodels):
-            hkldata.binned_df.loc[i_bin, "D{}".format(i)] = transD(res.x[i])
+        for i, lab in enumerate(D_labs):
+            hkldata.binned_df.loc[i_bin, lab] = transD(res.x[i])
         hkldata.binned_df.loc[i_bin, "S"] = transS(res.x[-1])
 
     logger.write("Refined estimates:")
     logger.write(hkldata.binned_df.to_string())
+    return D_labs
 # determine_mlf_params()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
@@ -247,10 +240,23 @@ def main(args):
         logger.error("--nbins must be > 0")
         return
 
+    mtz = gemmi.read_mtz_file(args.hklin)
+    d_min = args.d_min
+    if d_min is None: d_min = mtz.resolution_high()
+    labin = args.labin.split(",")
+    assert len(labin) == 2
+
     args.model = sum(args.model, [])
     sts = []
     for xyzin in args.model:
         sts.append(utils.fileio.read_structure(xyzin))
+
+    if not sts[0].cell.is_crystal():
+        logger.write("Copying cell from mtz to model.")
+        sts[0].cell = mtz.cell
+        sts[0].spacegroup_hm = mtz.spacegroup.hm
+
+    # XXX need to check space group and cell consistency with mtz
 
     for st in sts[1:]:
         if st.cell.parameters != sts[0].cell.parameters:
@@ -261,37 +267,41 @@ def main(args):
             st.spacegroup_hm = sts[0].spacegroup_hm
         
     nmodels = len(sts) + (0 if args.no_solvent else 1) # bulk
-    mtz = gemmi.read_mtz_file(args.hklin)
-    d_min = args.d_min
-    if d_min is None: d_min = mtz.resolution_high()
-    labin = args.labin.split(",")
-    assert len(labin) == 2
-    scaleto = mtz.get_value_sigma(*labin)
-    fp = mtz.get_float(labin[0])
-    sigfp = mtz.get_float(labin[1])
 
-    # TODO no need to make multiple AsuData (just inefficient)
-    fc_asu = [utils.model.calc_fc_fft(st, d_min, source=args.source, mott_bethe=args.source=="electron") for st in sts]
-    if len(fc_asu) == 1:
-        fc_asu_total = fc_asu[0]
-    else:
-        fc_asu_total = type(fc_asu[0])(fc_asu[0].unit_cell, fc_asu[0].spacegroup, fc_asu[0].miller_array, fc_asu[0].value_array)
-        for asu in fc_asu[1:]:
-            fc_asu_total.value_array[:] += asu.value_array
-        
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["FP","SIGFP"])
+    hkldata.complete()
+    hkldata.sort_by_resolution()
+    hkldata.calc_epsilon()
+    hkldata.calc_centric()
+    hkldata.setup_binning(n_bins=args.nbins)
+    logger.write("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
+
+    fc_labs = []
+    for i, st in enumerate(sts):
+        lab = "FC{}".format(i)
+        hkldata.df[lab] = utils.model.calc_fc_fft(st, d_min-1e-6, cutoff=1e-7,
+                                                  source=args.source, mott_bethe=args.source=="electron",
+                                                  miller_array=hkldata.miller_array())
+        fc_labs.append(lab)
+
+    # Bulk solvent and overall scaling
     scaling = gemmi.Scaling(sts[0].cell, sts[0].find_spacegroup())
     scaling.use_solvent = not args.no_solvent
-
+    scaleto = hkldata.as_asu_data(label="FP", label_sigma="SIGFP")
+    fc_asu_total = hkldata.as_asu_data(data=hkldata.df[fc_labs].sum(axis=1).to_numpy())
     if args.no_solvent:
         logger.write("Scaling Fc with no bulk solvent contribution")
         scaling.prepare_points(fc_asu_total, scaleto)
     else:
         logger.write("Calculating solvent contribution..")
         grid = gemmi.FloatGrid()
-        grid.setup_from(sts[0], spacing=0.4)
+        grid.setup_from(sts[0], spacing=min(0.4, (d_min-1e-6)/2))
         masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
         masker.put_mask_on_float_grid(grid, merge_models(sts))
-        fmask_asu = gemmi.transform_map_to_f_phi(grid).prepare_asu_data(dmin=d_min)
+        fmask_gr = gemmi.transform_map_to_f_phi(grid)
+        fc_labs.append("Fbulk")
+        hkldata.df[fc_labs[-1]] = fmask_gr.get_value_by_hkl(hkldata.miller_array())
+        fmask_asu = hkldata.as_asu_data(fc_labs[-1])
         scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
         
     scaling.fit_isotropic_b_approximately()
@@ -299,44 +309,34 @@ def main(args):
     b_aniso = scaling.b_overall
     logger.write(" k_ov= {:.2e} B= {}".format(scaling.k_overall, b_aniso))
 
-    # TODO 'merge' not needed; they must have same hkl array (really? what if missing data?)
-    hkldata = utils.hkl.hkldata_from_asu_data(fp, "FP")
-    hkldata.merge_asu_data(sigfp, "SIGFP")
-    for i, asu in enumerate(fc_asu):
-        hkldata.merge_asu_data(asu, "FC{}".format(i))
-
     if not args.no_solvent:
-        hkldata.merge_asu_data(fmask_asu, "FC{}".format(nmodels-1)) # will become Fbulk
         solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
-        hkldata.df["FC{}".format(nmodels-1)] *= solvent_scale
+        hkldata.df[fc_labs[-1]] *= solvent_scale
 
     overall_scale = scaling.get_overall_scale_factor(hkldata.miller_array())
-    for i in range(nmodels):
-        hkldata.df["FC{}".format(i)] *= overall_scale
+    for lab in fc_labs:
+        hkldata.df[lab] *= overall_scale
     
     # total
-    hkldata.df["FC"] = 0j
-    for i in range(nmodels):
-        hkldata.df.FC += hkldata.df["FC{}".format(i)]
+    hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
 
-    fca = numpy.abs(hkldata.df.FC.to_numpy())
-    fpa = hkldata.df.FP.to_numpy()
+    fpa, fca = hkldata.as_numpy_arrays(["FP", "FC"])
+    fca = numpy.abs(fca)
     logger.write(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
-    logger.write(" Rcryst= {:.4f}".format(numpy.sum(numpy.abs(fca-fpa))/numpy.sum(fpa)))
-
-    hkldata.calc_epsilon()
-    hkldata.calc_centric()
-    hkldata.setup_binning(n_bins=args.nbins)
+    logger.write(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
 
     # Create a centric selection table for faster look up
     centric_and_selections = {}
     for i_bin, idxes in hkldata.binned():
         centric_and_selections[i_bin] = []
         for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
-            centric_and_selections[i_bin].append((c, g2.index))
+            valid_sel = numpy.isfinite(g2.FP) & (g2.SIGFP > 0)
+            vidxes = g2.index[valid_sel]
+            nidxes = g2.index[~valid_sel] # missing reflections
+            centric_and_selections[i_bin].append((c, vidxes, nidxes))
     
     logger.write("Estimating sigma-A parameters..")
-    determine_mlf_params(hkldata, nmodels, centric_and_selections, args.D_as_exp, args.S_as_exp)
+    D_labs = determine_mlf_params(hkldata, fc_labs, centric_and_selections, args.D_as_exp, args.S_as_exp)
 
     log_out = "{}.log".format(args.output_prefix)
     ofs = open(log_out, "w")
@@ -354,9 +354,9 @@ $$
 $$
 $$
 """.format(Dns=",".join(map(str, range(15, 15+nmodels))),
-           Ds=" ".join(["D{}".format(i) for i in range(nmodels)]),
+           Ds=" ".join(D_labs),
            DFcns=",".join(map(str, range(15+nmodels, 15+nmodels*2))),
-           DFcs=" ".join(["log(Mn(|D{}Fc{}|))".format(i,i) for i in range(nmodels)]),
+           DFcs=" ".join(["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]),
            ))
     tmpl = "{:.4f} {:3d} {:7d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {:.4f} {:.4f} "
     tmpl += "{: .4f} " * (nmodels * 2)
@@ -365,19 +365,21 @@ $$
     hkldata.df["FWT"] = 0j
     hkldata.df["DELFWT"] = 0j
     hkldata.df["FOM"] = 0.
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, _ in hkldata.binned():
+        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
-        Ds = [max(0., hkldata.binned_df["D{}".format(i)][i_bin]) for i in range(nmodels)] # negative D is replaced with zero here
-        DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df["FC{}".format(i)].to_numpy()[idxes]))) for i in range(nmodels)]
+        Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
+        DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df[lab].to_numpy()[idxes])))
+                for i, lab in enumerate(fc_labs)]
         S = hkldata.binned_df.S[i_bin]
         
         # 0: acentric 1: centric
         mean_fom = [0, 0]
         nrefs = [0, 0]
         fom_func = [fom_acentric, fom_centric]
-        for c, cidxes in centric_and_selections[i_bin]:
-            Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[cidxes] for i in range(len(Ds))]
+        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+            Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
 
             Fc = numpy.abs(hkldata.df.FC.to_numpy()[cidxes])
             phic = numpy.angle(hkldata.df.FC.to_numpy()[cidxes])
@@ -396,8 +398,11 @@ $$
             else:
                 hkldata.df.loc[cidxes, "FWT"] = (m * Fo) * expip
 
+            # Fill missing
+            hkldata.df.loc[nidxes, "FWT"] = sum(Ds[i] * hkldata.df[lab].to_numpy()[nidxes] for i, lab in enumerate(fc_labs))
+
         Fc = hkldata.df.FC.to_numpy()[idxes]
-        Fcs = [hkldata.df["FC{}".format(i)].to_numpy()[idxes] for i in range(len(Ds))]
+        Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         DFc = calc_abs_DFc(Ds, Fcs)
         r = numpy.sum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.sum(Fo)
@@ -412,6 +417,7 @@ $$
     
     labs = ["FP", "FOM", "FWT", "DELFWT", "FC"]
     if not args.no_solvent:
+        labs.append("Fbulk")
         hkldata.merge_asu_data(fmask_asu, "Fmask")
         labs.append("Fmask")
     mtz_out = args.output_prefix+".mtz"

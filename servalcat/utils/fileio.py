@@ -14,6 +14,7 @@ import re
 import subprocess
 import gemmi
 import numpy
+import numpy.lib.recfunctions
 import gzip
 
 def splitext(path):
@@ -512,9 +513,10 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
     logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
-    
-    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array,
-                                      [(v,s) for v,s in zip(ints.value_array, ints.sigma_array)])
+    i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
+                                                               numpy.dtype([("value", numpy.float32),
+                                                                            ("sigma", numpy.float32)]))
+    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array, i_sigi)
     return asudata
 # read_shelx_hkl()
 

@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import numpy
+import numpy.lib.recfunctions
 import scipy.optimize
 import pandas
 import gemmi
@@ -51,6 +52,22 @@ def hkldata_from_asu_data(asu_data, label):
     df = df_from_asu_data(asu_data, label)
     return HklData(asu_data.unit_cell, asu_data.spacegroup, df)
 # hkldata_from_asu_data()
+
+def hkldata_from_mtz(mtz, labels, newlabels=None):
+    if not set(labels).issubset(mtz.column_labels()):
+        raise RuntimeError("All specified coulumns were not found from mtz.")
+    
+    df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
+    df = df.astype({name: 'int32' for name in ['H', 'K', 'L']})
+    for lab in set(mtz.column_labels()).difference(labels+["H","K","L"]):
+        del df[lab]
+        
+    if newlabels is not None:
+        assert len(newlabels) == len(labels)
+        df.rename({x:y for x,y in zip(labels, newlabels)}, inplace=True)
+
+    return HklData(mtz.cell, mtz.spacegroup, df)
+# hkldata_from_mtz()
 
 def blur_mtz(mtz, B):
     # modify given mtz object
@@ -160,6 +177,25 @@ class HklData:
         d = self.d_spacings()
         return numpy.min(d), numpy.max(d)
     # d_min_max()
+
+    def complete(self):
+        # make complete set
+        all_hkl = gemmi.make_miller_array(self.cell, self.sg, self.d_min_max()[0])
+        match = gemmi.HklMatch(self.miller_array(), all_hkl)
+        missing_hkl_df = pandas.DataFrame(all_hkl[numpy.asarray(match.pos) < 0], columns=["H","K","L"])
+        self.df = pandas.concat([self.df, missing_hkl_df])
+        logger.write("Completing hkldata: {} reflections were missing".format(len(missing_hkl_df.index)))
+        self.calc_d()
+    # complete()
+
+    def completeness(self, label=None):
+        if label is None:
+            n_missing = numpy.sum(self.df.isna().any(axis=1))
+        else:
+            n_missing = numpy.sum(self.df[label].isna())
+        n_all = len(self.df.index)
+        return (n_all-n_missing)/n_all
+    # completeness()
 
     def setup_binning(self, n_bins, method=gemmi.Binner.Method.Dstar2):
         self.df.reset_index(drop=True, inplace=True)
@@ -273,16 +309,31 @@ class HklData:
             df_both = df[df._merge=="both"]
     # merge()
 
-    def as_asu_data(self, label=None, data=None): # TODO add label_sigma
+    def as_numpy_arrays(self, labels, omit_nan=True):
+        tmp = self.df[labels]
+        if omit_nan: tmp = tmp[~tmp.isna().any(axis=1)]
+        return [tmp[lab].to_numpy() for lab in labels]
+    # as_numpy_arrays()
+
+    def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None
         else: assert data is None
-        
-        if data is None:
+
+        if label_sigma is not None:
+            assert data is None
+            assert not numpy.iscomplexobj(self.df[label])
+            sigma = self.df[label_sigma]
+            data = numpy.lib.recfunctions.unstructured_to_structured(self.df[[label,label_sigma]].to_numpy(),
+                                                                     numpy.dtype([("value", numpy.float32), ("sigma", numpy.float32)]))
+        elif data is None:
             data = self.df[label]
+            
         if numpy.iscomplexobj(data):
             asutype = gemmi.ComplexAsuData
         elif issubclass(data.dtype.type, numpy.integer):
             asutype = gemmi.IntAsuData
+        elif label_sigma is not None:
+            asutype = gemmi.ValueSigmaAsuData
         else:
             asutype = gemmi.FloatAsuData
         
@@ -291,7 +342,7 @@ class HklData:
     # as_asu_data()
 
     def fft_map(self, label=None, data=None, grid_size=None, sample_rate=3):
-        asu = self.as_asu_data(label, data)
+        asu = self.as_asu_data(label=label, data=data)
         if grid_size is None:
             ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
         else:
