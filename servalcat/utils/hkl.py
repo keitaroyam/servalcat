@@ -64,7 +64,7 @@ def hkldata_from_mtz(mtz, labels, newlabels=None):
         
     if newlabels is not None:
         assert len(newlabels) == len(labels)
-        df.rename({x:y for x,y in zip(labels, newlabels)}, inplace=True)
+        df.rename(columns={x:y for x,y in zip(labels, newlabels)}, inplace=True)
 
     return HklData(mtz.cell, mtz.spacegroup, df)
 # hkldata_from_mtz()
@@ -150,6 +150,14 @@ class HklData:
         hkl = self.miller_array()
         return numpy.dot(hkl, self.cell.fractionalization_matrix)
 
+    def debye_waller_factors(self, b_cart=None, b_iso=None):
+        if b_iso is not None:
+            s2 = 1 / self.d_spacings()**2
+            return numpy.exp(-b_iso / 4 * s2)
+        if b_cart is not None:
+            b_star = b_cart.transformed_by(self.cell.fractionalization_matrix)
+            return numpy.exp(-b_star.r_u_r(self.miller_array().to_numpy()) / 4)
+    
     def calc_d(self):
         self.df["d"] = self.cell.calculate_d_array(self.miller_array())
     # calc_d()

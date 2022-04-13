@@ -233,8 +233,6 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return model
 # merge_models()
 
-# TODO isotropize map
-# TODO add missing reflections
 def main(args):
     if args.nbins < 1:
         logger.error("--nbins must be > 0")
@@ -307,21 +305,31 @@ def main(args):
     scaling.fit_isotropic_b_approximately()
     scaling.fit_parameters()
     b_aniso = scaling.b_overall
-    logger.write(" k_ov= {:.2e} B= {}".format(scaling.k_overall, b_aniso))
-
+    b_iso = b_aniso.trace() / 3
+    b_aniso = b_aniso.added_kI(-b_iso) # subtract isotropic contribution
+    logger.write(" k_ov= {:.2e} B_iso= {:.2e} B_aniso= {}".format(scaling.k_overall, b_iso, b_aniso))
+    k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
+    k_aniso = hkldata.debye_waller_factors(b_cart=b_aniso)
+    hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
+    
     if not args.no_solvent:
         solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
         hkldata.df[fc_labs[-1]] *= solvent_scale
 
-    overall_scale = scaling.get_overall_scale_factor(hkldata.miller_array())
-    for lab in fc_labs:
-        hkldata.df[lab] *= overall_scale
+    # Apply scales.
+    #  - k_aniso^-1 is applied to FP (isotropize), 
+    #    but k_aniso should be applied to FC when calculating R or CC
+    #  - k_iso should be applied to FC
+    hkldata.df.FP /= scaling.k_overall * k_aniso
+    hkldata.df.SIGFP /= scaling.k_overall * k_aniso
+    for lab in fc_labs: hkldata.df[lab] *= k_iso
     
     # total
     hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
 
-    fpa, fca = hkldata.as_numpy_arrays(["FP", "FC"])
-    fca = numpy.abs(fca)
+    fpa, fca, k = hkldata.as_numpy_arrays(["FP", "FC", "k_aniso"])
+    fpa *= k
+    fca = numpy.abs(fca) * k
     logger.write(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
     logger.write(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
 
@@ -364,9 +372,9 @@ $$
 
     hkldata.df["FWT"] = 0j
     hkldata.df["DELFWT"] = 0j
-    hkldata.df["FOM"] = 0.
+    hkldata.df["FOM"] = numpy.nan
     for i_bin, _ in hkldata.binned():
-        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
+        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]]) # w/o missing reflections
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
         Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
@@ -401,9 +409,10 @@ $$
             # Fill missing
             hkldata.df.loc[nidxes, "FWT"] = sum(Ds[i] * hkldata.df[lab].to_numpy()[nidxes] for i, lab in enumerate(fc_labs))
 
-        Fc = hkldata.df.FC.to_numpy()[idxes]
-        Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
-        Fo = hkldata.df.FP.to_numpy()[idxes]
+        k = hkldata.df.k_aniso.to_numpy()[idxes]
+        Fc = hkldata.df.FC.to_numpy()[idxes] * k
+        Fcs = [hkldata.df[lab].to_numpy()[idxes] * k for lab in fc_labs]
+        Fo = hkldata.df.FP.to_numpy()[idxes] * k
         DFc = calc_abs_DFc(Ds, Fcs)
         r = numpy.sum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.sum(Fo)
         cc = numpy.corrcoef(numpy.abs(Fc), Fo)[1,0]
@@ -415,13 +424,13 @@ $$
     ofs.close()
     logger.write("output log: {}".format(log_out))
     
-    labs = ["FP", "FOM", "FWT", "DELFWT", "FC"]
+    labs = ["FP", "SIGFP", "FOM", "FWT", "DELFWT", "FC"]
     if not args.no_solvent:
         labs.append("Fbulk")
         hkldata.merge_asu_data(fmask_asu, "Fmask")
         labs.append("Fmask")
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
     logger.write("output mtz: {}".format(mtz_out))
 
     return hkldata
