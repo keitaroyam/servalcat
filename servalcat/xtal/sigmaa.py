@@ -228,21 +228,36 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     assert source in ["electron", "xray", "neutron"]
     
     mtz = gemmi.read_mtz_file(hklin)
+    logger.write("Input mtz: {}".format(hklin))
+    logger.write("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
+    logger.write("  Space group: {}".format(mtz.spacegroup.hm))
+    logger.write("")
+    
     sts = [utils.fileio.read_structure(f) for f in xyzins]
-    if not sts[0].cell.is_crystal():
-        logger.write("Copying cell from mtz to model.")
-        sts[0].cell = mtz.cell
-        sts[0].spacegroup_hm = mtz.spacegroup.hm
+    logger.write("From model 1:")
+    logger.write("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
+    logger.write("  Space group: {}".format(sts[0].spacegroup_hm))
+    logger.write("")
+    
+    if not mtz.cell.approx(sts[0].cell, 1e-3):
+        logger.write("Warning: unit cell mismatch between model and mtz")
+        logger.write("         using unit cell from mtz")
 
-    # XXX need to check space group and cell consistency with mtz
+    for st in sts: st.cell = mtz.cell # mtz cell is used in any case
 
-    for st in sts[1:]:
-        if st.cell.parameters != sts[0].cell.parameters:
-            logger.write("WARNING: resetting cell to 1st model.")
-            st.cell = sts[0].cell
-        if st.find_spacegroup() != sts[0].find_spacegroup():
-            logger.write("WARNING: resetting space group to 1st model.")
-            st.spacegroup_hm = sts[0].spacegroup_hm
+    sg_st = sts[0].find_spacegroup() # may be None
+    sg_use = mtz.spacegroup
+    if mtz.spacegroup != sg_st:
+        logger.write("Warning: space group mismatch between model and mtz")
+        if sg_st and mtz.spacegroup.point_group_hm() == sg_st.point_group_hm():
+            logger.write("         using space group from model")
+            sg_use = sg_st
+        else:
+            logger.write("         using space group from mtz")
+        logger.write("")
+
+    for st in sts: st.spacegroup_hm = sg_use.hm
+    mtz.spacegroup = sg_use
 
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["FP","SIGFP"])
     if d_min is None:
