@@ -16,7 +16,7 @@ pip install git+https://github.com/keitaroyam/servalcat.git
 ```
 Add `-U` option for updating.
 
-The required GEMMI version is now [v0.5.3](https://github.com/project-gemmi/gemmi/releases/tag/v0.5.3). Please update GEMMI as well if it is old (it should be done by pip).
+The required GEMMI version is now [v0.5.4](https://github.com/project-gemmi/gemmi/releases/tag/v0.5.4). Please update GEMMI as well if it is old (it should be done by pip).
 
 ## Usage
 ```
