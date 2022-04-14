@@ -143,6 +143,84 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel):
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
+def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
+    # theorhetical values
+    cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
+    cc_c = lambda cc: 2/(numpy.pi-2) * (cc**2*numpy.sqrt(1-cc**2) + cc * numpy.arctan(cc/numpy.sqrt(1-cc**2)) + (1-cc**2)**(3/2)-1)
+    table_fsc = numpy.arange(0, 1, 1e-3)
+    table_cc = [cc_a(table_fsc), cc_c(table_fsc)]
+
+    stats = hkldata.binned_df[["d_max", "d_min"]].copy()
+    for i, labi in enumerate(fc_labs):
+        stats["CC(FP,{})".format(labi)] = numpy.nan
+    for i, labi in enumerate(fc_labs):
+        for j in range(i+1, len(fc_labs)):
+            labj = fc_labs[j]
+            stats["CC({},{})".format(labi, labj)] = numpy.nan
+        
+    
+    for i_bin, _ in hkldata.binned():
+        # assume they are all acentrics..
+        cidxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
+        #for c, cidxes, _ in centric_and_selections[i_bin]:
+        sqrt_eps = numpy.sqrt(hkldata.df.epsilon.to_numpy()[cidxes])
+        Fo = hkldata.df.FP.to_numpy()[cidxes] #/ sqrt_eps
+        mean_Fo2 = numpy.mean(Fo**2)
+        SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
+        #Fcs = [hkldata.df[lab].to_numpy()[cidxes] / sqrt_eps for lab in fc_labs]
+        Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
+        mean_Fk2 = numpy.array([numpy.mean(numpy.abs(fk)**2) for fk in Fcs])
+        # estimate D
+        cc_fo_fj = [numpy.corrcoef(numpy.abs(fj), Fo)[1,0] for fj in Fcs]
+        for i in range(len(fc_labs)): stats.loc[i_bin, "CC(FP,{})".format(fc_labs[i])] = cc_fo_fj[i]
+        #est_fsc_fo_fj = numpy.interp(cc_fo_fj, table_cc[0], table_fsc)
+        #print(" cc=", cc_fo_fj)
+        #print("fsc=", est_fsc_fo_fj)
+        mat = [[numpy.sqrt(numpy.mean(numpy.abs(fk)**2)/mean_Fo2) * numpy.real(numpy.corrcoef(fk, fj)[1,0])
+                for fk in Fcs]
+               for fj in Fcs]
+        A = [[numpy.sqrt(numpy.mean(numpy.abs(fk)**2) * numpy.mean(numpy.abs(fj)**2))/mean_Fo2 * numpy.real(numpy.corrcoef(fk, fj)[1,0])
+                for fk in Fcs]
+               for fj in Fcs]
+        A = numpy.array([[numpy.real(numpy.corrcoef(fk, fj)[1,0]) for fk in Fcs] for fj in Fcs])
+        v = numpy.interp(cc_fo_fj, table_cc[0], table_fsc)
+
+        for i in range(len(fc_labs)):
+            labi = fc_labs[i]
+            for j in range(i+1, len(fc_labs)):
+                labj = fc_labs[j]
+                stats.loc[i_bin, "CC({},{})".format(labi, labj)] = numpy.real(numpy.corrcoef(Fcs[i], Fcs[j])[1,0])
+
+        
+        #print(numpy.array(mat))
+        #print(numpy.array([[numpy.corrcoef(fk, fj)[1,0] for fk in Fcs] for fj in Fcs]))
+        #print(est_fsc_fo_fj)
+        #print()
+        print(A)
+        print("cc=", cc_fo_fj)
+        print("v=", v)
+        print("sol=", numpy.linalg.solve(A, v))
+        print("fac=",  numpy.sqrt(mean_Fo2 / mean_Fk2))
+        print()
+        #Dj = numpy.linalg.solve(mat, est_fsc_fo_fj)
+        #Dj = numpy.linalg.solve(A, v) * numpy.sqrt(mean_Fo2 / mean_Fk2)
+        Dj = numpy.dot(numpy.linalg.pinv(A), v) * numpy.sqrt(mean_Fo2 / mean_Fk2)
+        
+        for lab, D in zip(D_labs, Dj):
+            hkldata.binned_df.loc[i_bin, lab] = D #* numpy.sqrt(mean_Fo2 / numpy.mean(numpy.abs(fk)**2))
+
+        # estimate S
+        DFc = calc_abs_DFc(Dj, Fcs)
+        mean_DFc2 = numpy.mean(DFc**2)
+        est_fsc_fo_fc = numpy.interp(numpy.corrcoef(Fo, DFc)[1,0], table_cc[0], table_fsc)
+        S = mean_Fo2 - 2 * numpy.sqrt(mean_Fo2 * mean_DFc2) * est_fsc_fo_fc + mean_DFc2 - numpy.mean(SigFo**2)
+        hkldata.binned_df.loc[i_bin, "S"] = S
+        #print("S", S)
+
+    print(stats)
+
+    print(hkldata.binned_df)
+
 def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=False, S_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
@@ -164,10 +242,11 @@ def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=Fals
     
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
     # Initial values
-    for lab in D_labs:
-        hkldata.binned_df[lab] = 1.
-
+    for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
+    mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections)
+    return D_labs
+
     for i_bin, _ in hkldata.binned():
         idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
         FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
