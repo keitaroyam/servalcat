@@ -53,7 +53,7 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
                                             axis1=args.axis1, axis2=args.axis2)
         logger.write("{} helical operators found".format(len(ncsops)))
         if filter_model_helical_contacting:
-            utils.model.filter_helical_contacting(st)
+            model.filter_helical_contacting(st)
     else:
         _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
         logger.write("{} operators found for {}".format(len(ops), args.pg))
