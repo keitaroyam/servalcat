@@ -1,0 +1,142 @@
+$ servalcat refine_spa -h
+usage: servalcat refine_spa [-h] [--exe EXE] [--monlib MONLIB]
+                            [--halfmaps HALFMAPS HALFMAPS | --map MAP]
+                            [--mapref MAPREF] [--mask MASK] [--model MODEL]
+                            [--mask_radius MASK_RADIUS] [--padding PADDING]
+                            [--no_mask] [--invert_mask]
+                            [--pixel_size PIXEL_SIZE]
+                            [--resolution RESOLUTION] [--no_trim] [--no_shift]
+                            [--blur BLUR [BLUR ...]] [--pg PG] [--twist TWIST]
+                            [--rise RISE] [--center CENTER CENTER CENTER]
+                            [--axis1 AXIS1 AXIS1 AXIS1]
+                            [--axis2 AXIS2 AXIS2 AXIS2]
+                            [--ignore_symmetry IGNORE_SYMMETRY]
+                            [--keep_multiple_models] [--no_link_check]
+                            [--b_before_mask B_BEFORE_MASK]
+                            [--no_sharpen_before_mask]
+                            [--no_fix_microheterogeneity] [--no_fix_resi9999]
+                            [--no_check_ncs_overlaps]
+                            [--ligand [LIGAND [LIGAND ...]]]
+                            [--bfactor BFACTOR] [--ncsr {local,global}]
+                            [--ncycle NCYCLE] [--tlscycle TLSCYCLE]
+                            [--tlsin TLSIN] [--hydrogen {all,yes,no}]
+                            [--jellybody] [--jellybody_params sigma dmax]
+                            [--hout]
+                            [--weight_auto_scale WEIGHT_AUTO_SCALE | --weight_matrix WEIGHT_MATRIX]
+                            [--keywords KEYWORDS [KEYWORDS ...]]
+                            [--keyword_file KEYWORD_FILE [KEYWORD_FILE ...]]
+                            [--external_restraints_json EXTERNAL_RESTRAINTS_JSON]
+                            [--show_refmac_log]
+                            [--output_prefix OUTPUT_PREFIX]
+                            [--cross_validation]
+                            [--cross_validation_method {throughout,shake}]
+                            [--shake_radius SHAKE_RADIUS]
+                            [--mask_for_fofc MASK_FOR_FOFC | --mask_radius_for_fofc MASK_RADIUS_FOR_FOFC]
+                            [--trim_fofc_mtz]
+                            [--fsc_resolution FSC_RESOLUTION]
+
+Run REFMAC5 for SPA
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --exe EXE             refmac5 binary (default: refmac5)
+  --monlib MONLIB       Monomer library path. Default: $CLIBD_MON
+  --ligand [LIGAND [LIGAND ...]]
+                        restraint dictionary cif file(s)
+  --bfactor BFACTOR     reset all atomic B values to specified value
+  --ncsr {local,global}
+                        local or global NCS restrained (default: local)
+  --ncycle NCYCLE       number of cycles in Refmac (default: 10)
+  --tlscycle TLSCYCLE   number of TLS cycles in Refmac (default: 0)
+  --tlsin TLSIN         TLS parameter input for Refmac
+  --hydrogen {all,yes,no}
+                        all: add riding hydrogen atoms, yes: use hydrogen
+                        atoms if present, no: remove hydrogen atoms in input.
+                        Default: all
+  --jellybody           Use jelly body restraints
+  --jellybody_params sigma dmax
+                        Jelly body sigma and dmax (default: [0.01, 4.2])
+  --hout                write hydrogen atoms in the output model
+  --weight_auto_scale WEIGHT_AUTO_SCALE
+                        'weight auto' scale value. automatically determined
+                        from resolution and mask/box volume ratio if
+                        unspecified
+  --weight_matrix WEIGHT_MATRIX
+                        weight matrix value
+  --keywords KEYWORDS [KEYWORDS ...]
+                        refmac keyword(s)
+  --keyword_file KEYWORD_FILE [KEYWORD_FILE ...]
+                        refmac keyword file(s)
+  --external_restraints_json EXTERNAL_RESTRAINTS_JSON
+  --show_refmac_log     show all Refmac log instead of summary
+  --output_prefix OUTPUT_PREFIX
+                        output file name prefix (default: refined)
+  --cross_validation    Run cross validation
+  --cross_validation_method {throughout,shake}
+                        shake: randomize a model refined against a full map
+                        and then refine it against a half map, throughout: use
+                        only a half map for refinement (another half map is
+                        used for error estimation) Default: shake
+  --shake_radius SHAKE_RADIUS
+                        Shake rmsd in case of --cross_validation_method=shake
+                        (default: 0.3)
+  --mask_for_fofc MASK_FOR_FOFC
+                        Mask file for Fo-Fc map calculation
+  --mask_radius_for_fofc MASK_RADIUS_FOR_FOFC
+                        Mask radius for Fo-Fc map calculation
+  --trim_fofc_mtz       diffmap.mtz will have smaller cell (if --mask_for_fofc
+                        is given)
+  --fsc_resolution FSC_RESOLUTION
+                        High resolution limit for FSC calculation. Default:
+                        Nyquist
+
+sfcalc:
+  --halfmaps HALFMAPS HALFMAPS
+                        Input half map files
+  --map MAP             Use this only if you really do not have half maps.
+  --mapref MAPREF       Reference map file
+  --mask MASK           Mask file
+  --model MODEL         Input atomic model file
+  --mask_radius MASK_RADIUS
+  --padding PADDING     Default: 2*mask_radius
+  --no_mask
+  --invert_mask         not for refinement.
+  --pixel_size PIXEL_SIZE
+                        Override pixel size (A)
+  --resolution RESOLUTION
+  --no_trim             Keep original box (not recommended)
+  --no_shift            Keep map origin so that output maps overlap with the
+                        input maps.
+  --blur BLUR [BLUR ...]
+                        Sharpening or blurring B
+  --pg PG               Point group symbol
+  --twist TWIST         Helical twist (degree)
+  --rise RISE           Helical rise (Angstrom)
+  --center CENTER CENTER CENTER
+                        Origin of symmetry. Default: center of the box
+  --axis1 AXIS1 AXIS1 AXIS1
+                        Axis1 (if I: 5-fold, O: 4-fold, T: 3-fold)
+  --axis2 AXIS2 AXIS2 AXIS2
+                        Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold, Dn: 2-fold)
+  --ignore_symmetry IGNORE_SYMMETRY
+                        Ignore symmetry information (MTRIX/_struct_ncs_oper)
+                        in the model file
+  --keep_multiple_models
+                        Multi-models will be kept; by default only 1st model
+                        is kept because REFMAC5 does not support it
+  --no_link_check       Do not find and fix link records in input model.
+  --b_before_mask B_BEFORE_MASK
+                        sharpening B value for sharpen-mask-unsharpen
+                        procedure. By default it is determined automatically.
+  --no_sharpen_before_mask
+                        By default half maps are sharpened before masking by
+                        std of signal and unsharpened after masking. This
+                        option disables it.
+  --no_fix_microheterogeneity
+                        By default it will fix microheterogeneity for Refmac
+  --no_fix_resi9999     By default it will split chain if max residue number >
+                        9999 which is not supported by Refmac
+  --no_check_ncs_overlaps
+                        Disable model overlap (e.g. expanded model is used
+                        with --pg) test
+

@@ -1,0 +1,37 @@
+$ servalcat trim -h
+usage: servalcat trim [-h] [--maps MAPS [MAPS ...]] [--mask MASK]
+                      [--pixel_size PIXEL_SIZE] [--model MODEL [MODEL ...]]
+                      [--no_expand_ncs] [--padding PADDING]
+                      [--mask_cutoff MASK_CUTOFF] [--noncubic] [--noncentered]
+                      [--no_shift] [--no_shift_keep_cell]
+                      [--force_cell FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL]
+                      [--disable_cell_check] [--shifts SHIFTS]
+
+Trim maps and shift models into a small new box.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --maps MAPS [MAPS ...]
+                        Input map file(s)
+  --mask MASK           Mask file
+  --pixel_size PIXEL_SIZE
+                        Override pixel size (A)
+  --model MODEL [MODEL ...]
+                        Input atomic model file(s)
+  --no_expand_ncs       Do not expand strict NCS in MTRIX or _struct_ncs_oper
+  --padding PADDING     padding in angstrom unit (default: 10.0)
+  --mask_cutoff MASK_CUTOFF
+                        Mask value cutoff to define boundary (default: 0.5)
+  --noncubic
+  --noncentered         If specified non-centered trimming is performed. Not
+                        recommended if having some symmetry
+  --no_shift            If specified resultant maps will have shifted origin
+                        and overlap with the input maps.
+  --no_shift_keep_cell  Keep original unit cell when --no_shift is given
+  --force_cell FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL FORCE_CELL
+                        Use specified unit cell parameter
+  --disable_cell_check  Turn off unit cell consistency test
+  --shifts SHIFTS       Specify shifts.json to use precalculated parameters
+
+If --mask is provided, a boundary is decided using the mask and --padding.
+Otherwise the model is used.

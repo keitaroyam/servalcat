@@ -1,0 +1,37 @@
+$ servalcat fofc -h
+usage: servalcat fofc [-h] [--halfmaps HALFMAPS HALFMAPS | --map MAP]
+                      [--pixel_size PIXEL_SIZE] --model MODEL -d RESOLUTION
+                      [-m MASK] [-r MASK_RADIUS] [-B B] [--half1_only]
+                      [--normalized_map] [--no_fsc_weights]
+                      [--sharpening_b SHARPENING_B] [--trim] [--trim_mtz]
+                      [--monlib MONLIB] [--omit_proton] [--omit_h_electron]
+                      [-o OUTPUT_PREFIX]
+
+Fo-Fc map calculation based on model and data errors
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --halfmaps HALFMAPS HALFMAPS
+  --map MAP             Use only if you really do not have half maps.
+  --pixel_size PIXEL_SIZE
+                        Override pixel size (A)
+  --model MODEL         Input atomic model file
+  -d RESOLUTION, --resolution RESOLUTION
+  -m MASK, --mask MASK  mask file
+  -r MASK_RADIUS, --mask_radius MASK_RADIUS
+                        mask radius (not used if --mask is given)
+  -B B                  Estimated blurring
+  --half1_only          Only use half 1 for map calculation (use half 2 only
+                        for noise estimation)
+  --normalized_map      Write normalized map in the masked region
+  --no_fsc_weights      Just for debugging purpose: turn off FSC-based
+                        weighting
+  --sharpening_b SHARPENING_B
+                        Use B value (negative value for sharpening) instead of
+                        standard deviation of the signal
+  --trim                Write trimmed maps
+  --trim_mtz            Write trimmed mtz
+  --monlib MONLIB       Monomer library path. Default: $CLIBD_MON
+  --omit_proton         Omit proton from model in map calculation
+  --omit_h_electron     Omit hydrogen electrons from model in map calculation
+  -o OUTPUT_PREFIX, --output_prefix OUTPUT_PREFIX

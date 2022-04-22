@@ -21,7 +21,7 @@ def add_symmetry_args(parser, require_pg=False):
     parser.add_argument('--rise', type=float, help="Helical rise (Angstrom)")
     parser.add_argument('--center', type=float, nargs=3, help="Origin of symmetry. Default: center of the box")
     parser.add_argument('--axis1', type=float, nargs=3, help="Axis1 (if I: 5-fold, O: 4-fold, T: 3-fold)")
-    parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold)")
+    parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold, Dn: 2-fold)")
 # add_symmetry_args()
     
 def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_contacting=False):

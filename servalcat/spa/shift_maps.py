@@ -29,9 +29,9 @@ def add_arguments(parser):
     parser.add_argument("--no_expand_ncs", action='store_true',
                         help="Do not expand strict NCS in MTRIX or _struct_ncs_oper")
     parser.add_argument('--padding', type=float, default=10.0,
-                        help='in angstrom unit')
+                        help='padding in angstrom unit (default: %(default).1f)')
     parser.add_argument('--mask_cutoff', type=float, default=0.5,
-                        help='Mask value cutoff to define boundary')
+                        help='Mask value cutoff to define boundary (default: %(default).1f)')
     parser.add_argument('--noncubic',
                         action='store_true')
     parser.add_argument('--noncentered',
@@ -44,9 +44,9 @@ def add_arguments(parser):
                         action='store_true',
                         help='Keep original unit cell when --no_shift is given')
     parser.add_argument('--force_cell', type=float, nargs=6,
-                        help='Force cell')
-    parser.add_argument('--disable_cell_check',
-                        action='store_true')
+                        help='Use specified unit cell parameter')
+    parser.add_argument('--disable_cell_check', action='store_true',
+                        help="Turn off unit cell consistency test")
     parser.add_argument("--shifts", help="Specify shifts.json to use precalculated parameters")
 # add_arguments()
 

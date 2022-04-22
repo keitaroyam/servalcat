@@ -46,7 +46,7 @@ def add_arguments(parser):
     parser.add_argument("--omit_h_electron", action='store_true',
                         help="Omit hydrogen electrons from model in map calculation")
     parser.add_argument('-o','--output_prefix', default="diffmap",
-                        help='output file name prefix')
+                        help='output file name prefix (default: %(default)s)')
 # add_arguments()
 
 def parse_args(arg_list):

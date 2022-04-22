@@ -1,0 +1,103 @@
+Refinement of amyloid-β 42 structure
+====================================
+
+Here we demonstrate the atomic model refinement from helical reconstruction using amyloid-β 42 type II (`Yang et al. 2022 <http://dx.doi.org/10.1126/science.abm7285>`_, `PDB 7q4m <https://www.rcsb.org/structure/7q4m>`_, `EMD-13809 <https://www.emdataresource.org/EMD-13809>`_).
+We need the pdb (or mmcif) file and half maps:
+::
+
+    wget https://files.rcsb.org/download/7q4m.pdb
+    wget https://files.rcsb.org/download/7q4m.cif
+    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-13809/other/emd_13809_half_map_1.map.gz
+    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-13809/other/emd_13809_half_map_2.map.gz
+
+**In this example please use Refmac5 from CCP4 8.0 (Refmac5.8.0349 or newer) and Servalcat from CCP-EM 1.6 (Servalcat 0.2.85 or newer).**
+
+Obtaining ASU model
+-------------------
+First let us check the helical symmetry of this entry. mmCIF file has this information.
+
+.. code-block:: console
+
+    $ grep _em_helical_entity 7q4m.cif
+    _em_helical_entity.id                             1
+    _em_helical_entity.image_processing_id            1
+    _em_helical_entity.angular_rotation_per_subunit   -2.9
+    _em_helical_entity.axial_rise_per_subunit         4.9
+    _em_helical_entity.axial_symmetry                 C2
+    _em_helical_entity.details                        ?
+
+So, it has axial symmetry of C2, twist of -2.9°, rise of 4.9 Å.
+
+PDB deposited model contains 10 chains, but actually only one chain is unique. We can check if chain A with helical symmetry covers everything.
+
+.. code-block:: console
+
+    $ servalcat util symmodel --model 7q4m.pdb --map emd_13809_half_map_1.map.gz \
+                              --pg C2 --twist -2.9 --rise 4.9 --chains A
+
+It tells a program to take chain A of 7q4m.pdb, take unit cell parameter (aka box size) from emd_13809_half_map_1.map.gz, and apply specified helical symmetry. Here you can use 7q4m.cif as well (I just guess you are more familiar with pdb file). You will get ``7q4m_asu.pdb`` and ``7q4m_asu_expanded.pdb``, which are asymmetric unit (ASU) model with symmetry operators in the header and the symmetry expanded model, respectively. We use the ASU model in the refinement.
+
+Run refinement from command-line
+--------------------------------
+Servalcat Refmac pipeline is available via refine_spa subcommand. Run following command in *a new directory* as this command creates files with fixed names.
+
+.. code-block:: console
+
+    $ servalcat refine_spa \
+      --model ../7q4m_asu.pdb \
+      --halfmaps ../emd_13809_half_map_1.map.gz ../emd_13809_half_map_2.map.gz \
+      --pg C2 --twist -2.9 --rise 4.9 \
+      --resolution 2.6 --cross_validation 
+
+* ``--halfmaps`` should be unsharpened and unweighted half maps.
+* ``--cross_validation`` is to run cross-validation using half maps as described in `Brown et al. 2015 <https://doi.org/10.1107/S1399004714021683>`_.
+* ``--pg C2 --twist -2.9 --rise 4.9`` is again helical symmetry information. In case of helical symmetry, Servalcat only takes symmetry operators of contacting copies into account, namely operators of copies that make close contacts with the ASU model.
+* ``--resolution`` is the resolution used in refinement and map calculation. It is always good to specify a bit higher value than the global one (as determined by the FSC=0.143 criterion), because local resolution can be higher. Here the global resolution was 2.8 Å so I put 2.6 Å.
+
+If you want to know what Servalcat does in the pipeline, please see :doc:`ChRmine example <chrmine>`.
+
+Final summary is like this:
+
+.. code-block:: none
+
+    =============================================================================
+    * Final Summary *
+
+    Rmsd from ideal
+      bond lengths: 0.0064 A
+      bond  angles: 1.252 deg
+
+    Map-model FSCaverages (at 2.60 A):
+     FSCaverage(full) =  0.7325
+    Cross-validated map-model FSCaverages:
+     FSCaverage(half1)=  0.6934
+     FSCaverage(half2)=  0.6198
+     Run loggraph refined_fsc.log to see plots
+
+    ADP statistics
+     Chain A (227 atoms) min= 57.1 median= 87.9 max=198.7 A^2
+
+    Weight used: 5.15449953
+                 If you want to change the weight, give larger (looser restraints)
+                 or smaller (tighter) value to --weight_auto_scale=.
+             
+    Open refined.pdb and diffmap.mtz with COOT.
+    =============================================================================
+
+Check FSC
+~~~~~~~~~
+See :ref:`ChRmine example<chrmine-check-fsc>`.
+
+Check maps and model
+~~~~~~~~~~~~~~~~~~~~
+Let us open the refined model and maps with COOT:
+
+.. code-block:: console
+
+    $ coot --pdb refined.pdb --auto diffmap.mtz
+
+You may feel maps are too noisy - but it is just a matter of contour level. Please increase the level until you see features. Default contour level in COOT (0.9.8.1) for MTZ file is adjusted with "rmsd" (so-called sigma) value. In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
+
+You only see one chain, because this is a unique part and you only need to fix this model. If you want to see symmetry-expanded model, you can open ``refined_expanded.pdb``.
+
+I think there is a lot of room for improvement in the refinement with helical symmetry. If you have any request, please let the authors know.

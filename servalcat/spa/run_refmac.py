@@ -19,26 +19,36 @@ from servalcat import spa
 def add_arguments(parser):
     parser.description = 'Run REFMAC5 for SPA'
 
-    parser.add_argument('--exe', default="refmac5", help='refmac5 binary')
+    parser.add_argument('--exe', default="refmac5",
+                        help='refmac5 binary (default: %(default)s)')
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
     # sfcalc options
     sfcalc_group = parser.add_argument_group("sfcalc")
     spa.sfcalc.add_sfcalc_args(sfcalc_group)
 
     # run_refmac options
     # TODO use group! like refmac options
-    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument('--ligand', nargs="*", action="append",
+                        help="restraint dictionary cif file(s)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--ncsr', default="local", choices=["local", "global"],
-                        help="local or global NCS restrained")
-    parser.add_argument('--ncycle', type=int, default=10)
-    parser.add_argument('--tlscycle', type=int, default=0)
-    parser.add_argument('--tlsin')
+                        help="local or global NCS restrained (default: %(default)s)")
+    parser.add_argument('--ncycle', type=int, default=10,
+                        help="number of cycles in Refmac (default: %(default)d)")
+    parser.add_argument('--tlscycle', type=int, default=0,
+                        help="number of TLS cycles in Refmac (default: %(default)d)")
+    parser.add_argument('--tlsin',
+                        help="TLS parameter input for Refmac")
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
-                        help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input")
-    parser.add_argument('--jellybody', action='store_true')
+                        help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
+                        "Default: %(default)s")
+    parser.add_argument('--jellybody', action='store_true',
+                        help="Use jelly body restraints")
     parser.add_argument('--jellybody_params', nargs=2, type=float,
-                        metavar=("sigma", "dmax"), default=[0.01, 4.2])
+                        metavar=("sigma", "dmax"), default=[0.01, 4.2],
+                        help="Jelly body sigma and dmax (default: %(default)s)")
     parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--weight_auto_scale', type=float,
@@ -50,22 +60,22 @@ def add_arguments(parser):
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
     parser.add_argument('--external_restraints_json')
-    parser.add_argument('--show_refmac_log', action='store_true')
+    parser.add_argument('--show_refmac_log', action='store_true',
+                        help="show all Refmac log instead of summary")
     parser.add_argument('--output_prefix', default="refined",
-                        help='output file name prefix')
+                        help='output file name prefix (default: %(default)s)')
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation')
     parser.add_argument('--cross_validation_method', default="shake", choices=["throughout", "shake"],
                         help="shake: randomize a model refined against a full map and then refine it against a half map, "
-                        "throughout: use only a half map for refinement (another half map is used for error estimation)")
+                        "throughout: use only a half map for refinement (another half map is used for error estimation) "
+                        "Default: %(default)s")
     parser.add_argument('--shake_radius', default=0.3,
-                        help='Shake rmsd in case of --cross_validation_method=shake')
+                        help='Shake rmsd in case of --cross_validation_method=shake (default: %(default).1f)')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
     parser.add_argument('--trim_fofc_mtz', action="store_true", help="diffmap.mtz will have smaller cell (if --mask_for_fofc is given)")
-    parser.add_argument("--monlib",
-                        help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument("--fsc_resolution", type=float,
                         help="High resolution limit for FSC calculation. Default: Nyquist")
 
