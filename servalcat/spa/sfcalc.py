@@ -372,7 +372,7 @@ def main(args, monlib=None):
     else:
         model_format = None
         
-    if args.no_shift:
+    if args.no_shift and st_new:
         logger.write(" Saving input model with unit cell information")
         utils.fileio.write_model(st_new, "starting_model", pdb=True, cif=True)
         ret["model_file"] = "starting_model" + model_format
