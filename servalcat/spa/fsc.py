@@ -107,8 +107,7 @@ def main(args):
         unit_cell = maps[0][0].unit_cell
     elif args.mtz:
         if args.mask or args.mask_radius is not None:
-            logger.error("mask for mtz input not supported.")
-            return
+            raise SystemExit("mask for mtz input not supported.")
         f = utils.fileio.read_asu_data_from_mtz(args.mtz, args.labin)
         hkldata = utils.hkl.hkldata_from_asu_data(f, "FP")
         maps = []
@@ -118,8 +117,7 @@ def main(args):
         else:
             args.resolution = hkldata.d_min_max()[0] # plus eps maybe
     else:
-        logger.error("No input map/mtz found.")
-        return
+        raise SystemExit("No input map/mtz found.")
 
     if args.resolution is None and not args.mtz:
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])

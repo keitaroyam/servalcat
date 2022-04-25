@@ -177,8 +177,7 @@ def symmodel(args):
                      number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
 
     if (args.twist, args.rise).count(None) == 1:
-        logger.error("ERROR: give both helical paramters --twist and --rise")
-        return
+        raise SystemExit("ERROR: give both helical paramters --twist and --rise")
 
     st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
     st.spacegroup_hm = "P 1"
@@ -190,8 +189,7 @@ def symmodel(args):
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
     elif not st.cell.is_crystal():
-        logger.error("Error: Unit cell parameters look wrong. Please use --map or --cell")
-        return
+        raise SystemExit("Error: Unit cell parameters look wrong. Please use --map or --cell")
 
     if args.chains:
         logger.write("Keep {} chains only".format(" ".join(args.chains)))
@@ -346,8 +344,7 @@ def geometry(args):
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                  stop_for_unknowns=True, check_hydrogen=True)
     except RuntimeError as e:
-        logger.write("Error: {}".format(e))
-        return
+        raise SystemExit("Error: {}".format(e))
     
     restr = restraints.Restraints(st, monlib)
     for k in restr.outlier_sigmas: restr.outlier_sigmas[k] = args.sigma
@@ -395,8 +392,7 @@ def show_power(args):
             hkldata.merge(tmp.df[["H","K","L",labs[-1]]])
 
     if not labs:
-        logger.write("No map files given. Exiting.")
-        return
+        raise SystemExit("No map files given. Exiting.")
             
     hkldata.setup_relion_binning()
 
@@ -430,8 +426,7 @@ $$
 
 def fcalc(args):
     if (args.auto_box_with_padding, args.cell).count(None) == 0:
-        logger.write("Error: you cannot specify both --auto_box_with_padding and --cell")
-        return
+        raise SystemExit("Error: you cannot specify both --auto_box_with_padding and --cell")
     
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix: args.output_prefix = "{}_fcalc_{}".format(fileio.splitext(os.path.basename(args.model))[0], args.source)
@@ -448,8 +443,7 @@ def fcalc(args):
         logger.write("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
         
     if not st.cell.is_crystal():
-        logger.error("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
-        return
+        raise SystemExit("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
 
     monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                              stop_for_unknowns=False, check_hydrogen=True)
@@ -504,8 +498,7 @@ def blur(args):
         mtz.write_to_file(args.output_prefix+suffix)
         logger.write("Written: {}".format(args.output_prefix+suffix))
     else:
-        logger.error("ERROR: Unsupported file type: {}".format(args.hklin))
-        return
+        raise SystemExit("ERROR: Unsupported file type: {}".format(args.hklin))
 # blur()
 
 def applymask(args):
@@ -570,8 +563,7 @@ def main(args):
     if f:
         return f(args)
     else:
-        logger.error("Unknown subcommand: {}".format(com))
-        return
+        raise SystemExit("Unknown subcommand: {}".format(com))
 # main()
 
 if __name__ == "__main__":

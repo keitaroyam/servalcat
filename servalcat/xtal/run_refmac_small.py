@@ -87,16 +87,14 @@ def write_mtz(mtz_out, asudata, hklf, blur=None):
     
 def main(args):
     if not args.cif and not (args.model and args.hklin):
-        logger.error("Give [--model and --hklin] or --cif")
-        return
+        raise SystemExit("Give [--model and --hklin] or --cif")
 
     if args.sg:
         try:
             sg_user = gemmi.SpaceGroup(args.sg)
             logger.write("User-specified space group: {}".format(sg_user.xhm()))
         except ValueError:
-            logger.error("Error: Unknown space group '{}'".format(args.sg))
-            return
+            raise SystemExit("Error: Unknown space group '{}'".format(args.sg))
     else:
         sg_user = None
 
@@ -106,9 +104,8 @@ def main(args):
         st = utils.model.cx_to_mx(ss)
         if sg_user:
             if not asudata.unit_cell.is_compatible_with_spacegroup(sg_user):
-                logger.error("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
-                                                                                                                       asudata.unit_cell.parameters))
-                return
+                raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
+                                                                                                                           asudata.unit_cell.parameters))
             
             asudata.spacegroup = sg_user
         write_mtz(mtz_in, asudata, info.get("hklf"), args.blur)
@@ -127,9 +124,8 @@ def main(args):
             logger.write(" Space group from mtz: {}".format(mtz.spacegroup.hm))
             if sg_user:
                 if not mtz.cell.is_compatible_with_spacegroup(sg_user):
-                    logger.error("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
-                                                                                                                           mtz.cell.parameters))
-                    return
+                    raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
+                                                                                                                               mtz.cell.parameters))
                 mtz.spacegroup = sg_user
                 logger.write(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
             elif mtz.spacegroup != sg_st:
@@ -144,8 +140,7 @@ def main(args):
             if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
             mtz.write_to_file(mtz_in)
         else:
-            logger.error("Error: unsupported hkl file: {}".format(args.hklin))
-            return
+            raise SystemExit("Error: unsupported hkl file: {}".format(args.hklin))
 
         st.cell = mtz.cell
         st.spacegroup_hm = mtz.spacegroup.hm

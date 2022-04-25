@@ -342,17 +342,14 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
 
 def main(args):
     if not args.halfmaps and not args.map:
-        logger.error("Error: give --halfmaps or --map")
-        return
+        raise SystemExit("Error: give --halfmaps or --map")
 
     if not args.halfmaps and args.B is not None:
-        logger.error("Error: -B only works with half maps")
-        return
+        raise SystemExit("Error: -B only works with half maps")
 
     if args.half1_only:
         if not args.halfmaps:
-            logger.error("--half1_only requires half maps")
-            return
+            raise SystemExit("--half1_only requires half maps")
         logger.error("--half1_only specified. Half map 2 is used only for noise estimation")
 
     if not args.halfmaps:
@@ -362,8 +359,7 @@ def main(args):
     utils.model.expand_ncs(st)
 
     if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
-        logger.error("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
-        return
+        raise SystemExit("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
 
     if args.halfmaps:
         maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
@@ -397,8 +393,7 @@ def main(args):
     else:
         mask = None
         if args.normalized_map:
-            logger.error("Error: Provide --mask or --mask_radius if you want --normalized-map.")
-            return
+            raise SystemExit("Error: Provide --mask or --mask_radius if you want --normalized-map.")
 
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
                                              half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,

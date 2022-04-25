@@ -219,7 +219,7 @@ class TestSPACommands(unittest.TestCase):
         sys.argv = ["", "util", "power", "--map", pipes.quote(data["mask"]), pipes.quote(data["half1"]), pipes.quote(data["half2"])]
         command_line.main()
 
-        sys.argv = ["", "util", "fcalc", "--model", pipes.quote(data["pdb"]), "-d", "1.7"]
+        sys.argv = ["", "util", "fcalc", "--model", pipes.quote(data["pdb"]), "-d", "1.7", "--auto_box_with_padding=5"]
         command_line.main()
 
         sys.argv = ["", "util", "nemap", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),

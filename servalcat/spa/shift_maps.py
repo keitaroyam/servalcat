@@ -176,10 +176,10 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
         
 def main(args):
     if not args.maps and not args.shifts:
-        raise RuntimeError("Give --maps or --shifts")
+        raise SystemExit("Give --maps or --shifts")
 
     if not args.mask and args.model and not args.shifts and args.padding <= 0:
-        raise RuntimeError("--padding must be > 0 if you want to create a mask from the model.")
+        raise SystemExit("--padding must be > 0 if you want to create a mask from the model.")
 
     if args.no_shift_keep_cell and not args.no_shift:
         logger.write("WARNING: --no_shift_keep_cell has no effect when --no_shift not given")
@@ -191,9 +191,9 @@ def main(args):
     
     if args.shifts:
         if args.noncubic or args.noncentered or args.mask:
-            raise RuntimeError("You cannot specify --noncubic/--noncentered/--mask if --shifts given")
+            raise SystemExit("You cannot specify --noncubic/--noncentered/--mask if --shifts given")
         if not args.maps and not args.model:
-            raise RuntimeError("Give --maps or --model")
+            raise SystemExit("Give --maps or --model")
         info = json.load(open(args.shifts))
         cell = info["cell"]
     elif args.maps:
@@ -234,7 +234,7 @@ def main(args):
                 utils.model.expand_ncs(st)
             sts_for_mask.append(st)
     elif not args.shifts:
-        raise RuntimeError("Give mask or model")
+        raise SystemExit("Give mask or model")
 
     if not args.shifts:
         new_cell, new_shape, starts, shifts = determine_shape_and_shift(mask=mask, grid_start=grid_start,
