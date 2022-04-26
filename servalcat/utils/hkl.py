@@ -64,7 +64,16 @@ def hkldata_from_mtz(mtz, labels, newlabels=None):
         
     if newlabels is not None:
         assert len(newlabels) == len(labels)
-        df.rename(columns={x:y for x,y in zip(labels, newlabels)}, inplace=True)
+        col_types = {x.label:x.type for x in mtz.columns}
+        for i in range(1, len(newlabels)):
+            if newlabels[i] == "": # means this is phase and should be transferred to previous column
+                assert col_types.get(labels[i]) == "P"
+                assert col_types.get(labels[i-1]) == "F"
+                ph = numpy.deg2rad(df[labels[i]])
+                df[labels[i-1]] = df[labels[i-1]] * (numpy.cos(ph) + 1j * numpy.sin(ph))
+                del df[labels[i]]
+        
+        df.rename(columns={x:y for x,y in zip(labels, newlabels) if y != ""}, inplace=True)
 
     return HklData(mtz.cell, mtz.spacegroup, df)
 # hkldata_from_mtz()
