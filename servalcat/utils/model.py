@@ -142,13 +142,14 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
 # calc_fc_fft()
 
-def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
+def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None):
     assert source in ("xray", "electron")
     if source != "electron": assert not mott_bethe
 
+    miller_array_given = miller_array is not None
     unit_cell = st.cell
     spacegroup = gemmi.SpaceGroup(st.spacegroup_hm)
-    miller_array = gemmi.make_miller_array(unit_cell, spacegroup, d_min)
+    if not miller_array_given: miller_array = gemmi.make_miller_array(unit_cell, spacegroup, d_min)
     topo = None
 
     if source == "xray" or mott_bethe:
@@ -181,10 +182,13 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None):
             sf = calc.calculate_mb_z(st[0], hkl, only_h=True)
             if mott_bethe: sf *= calc.mott_bethe_factor()
             vals[i] += sf
-    
-    asu = gemmi.ComplexAsuData(unit_cell, spacegroup,
-                               miller_array, vals)
-    return asu
+
+    if miller_array_given:
+        return numpy.array(vals)
+    else:
+        asu = gemmi.ComplexAsuData(unit_cell, spacegroup,
+                                   miller_array, vals)
+        return asu
 # calc_fc_direct()
 
 def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5, optimize=False):
