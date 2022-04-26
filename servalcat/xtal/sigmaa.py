@@ -297,6 +297,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
     scaling = gemmi.Scaling(hkldata.cell, hkldata.sg)
     scaling.use_solvent = use_solvent
     scaleto = hkldata.as_asu_data(label="FP", label_sigma="SIGFP")
+    scaleto.value_array["sigma"] = 1. # I guess this would be better.
     fc_asu_total = hkldata.as_asu_data(data=hkldata.df[fc_labs].sum(axis=1).to_numpy())
     if not use_solvent:
         logger.write("Scaling Fc with no bulk solvent contribution")
@@ -314,6 +315,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
         scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
 
     scaling.fit_isotropic_b_approximately()
+    logger.write(" initial k,b = {:.2e} {:.2e}".format(scaling.k_overall, scaling.b_overall.u11))
     scaling.fit_parameters()
     b_aniso = scaling.b_overall
     b_iso = b_aniso.trace() / 3
