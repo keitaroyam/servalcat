@@ -52,8 +52,6 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
                                             args.pg, args.twist, args.rise,
                                             axis1=args.axis1, axis2=args.axis2)
         logger.write("{} helical operators found".format(len(ncsops)))
-        if filter_model_helical_contacting:
-            model.filter_helical_contacting(st)
     else:
         _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
         logger.write("{} operators found for {}".format(len(ops), args.pg))
@@ -62,6 +60,9 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
 
     st.ncs.clear()
     st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
+
+    if is_helical and filter_model_helical_contacting:
+        model.filter_helical_contacting(st)
 # ncsops_from_args()
 
 def get_matrices_using_relion(sym):
