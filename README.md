@@ -16,7 +16,7 @@ pip install git+https://github.com/keitaroyam/servalcat.git
 ```
 Add `-U` option for updating.
 
-The required GEMMI version is now [v0.5.4](https://github.com/project-gemmi/gemmi/releases/tag/v0.5.4). Please update GEMMI as well if it is old (it should be done by pip).
+The required GEMMI version is now [v0.5.5](https://github.com/project-gemmi/gemmi/releases/tag/v0.5.5). Please update GEMMI as well if it is old (it should be done by pip).
 
 ## Usage
 ```
@@ -26,6 +26,8 @@ The most useful `command`s are shown below. To see all arguments for each `comma
 ```
 servalcat <command> -h
 ```
+
+Please also read the documentation: https://servalcat.readthedocs.io/en/latest/
 
 ### Refinement using REFMAC5
 Servalcat makes refinement by REFMAC5 easy for single particle analysis. The weighted and sharpened Fo-Fc map is calculated after the refinement. For details please see the reference.
