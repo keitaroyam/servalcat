@@ -197,6 +197,8 @@ def symmodel(args):
         for m in st:
             to_del = [c.name for c in m if c.name not in chains]
             for c in to_del: m.remove_chain(c)
+        if st[0].count_atom_sites() == 0:
+            raise SystemExit("ERROR: no atoms left. Check --chains option.")
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
 
