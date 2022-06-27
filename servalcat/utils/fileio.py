@@ -269,17 +269,21 @@ def merge_ligand_cif(cifs_in, cif_out):
                 names.setdefault(b.name, []).append((i,j))
 
     # Keep only last one if duplicated
+    todel = []
     for k in names:
         if len(names[k]) > 1:
             for i,j in reversed(names[k][:-1]):
                 logger.write("WARNING: removing duplicated {} from {}".format(k, cifs_in[i]))
-                del docs[i][j]
+                todel.append((i,j))
                 for t in "comp", "link":
                     if k.startswith("{}_".format(t)):
                         comp_list = docs[i].find_block("{}_list".format(t))
                         table = comp_list.find("_chem_{}.".format(t), ["id"])
-                        for i in reversed([i for i, row in enumerate(table) if row.str(0) == k[5:]]):
-                            table.remove_row(i)
+                        for l in reversed([l for l, row in enumerate(table) if row.str(0) == k[5:]]):
+                            table.remove_row(l)
+
+    for i,j in sorted(todel, reverse=True):
+        del docs[i][j]
 
     # Accumulate list
     found = dict(comp=0, link=0, mod=0)
@@ -323,7 +327,7 @@ def merge_ligand_cif(cifs_in, cif_out):
             if b.name not in list_names:
                 doc.add_copied_block(b)
 
-    doc.write_file(cif_out)
+    doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
 # merge_ligand_cif()
 
 def read_small_structure(xyz_in):
