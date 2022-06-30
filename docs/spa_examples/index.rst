@@ -6,4 +6,5 @@ SPA examples
 
    chrmine 
    ab42
+   omitmap
 
