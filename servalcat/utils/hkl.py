@@ -106,6 +106,39 @@ def blur_mtz(mtz, B):
         c.array[:] *= k
 # blur_mtz()
 
+def mtz_selected(mtz, columns):
+    """
+    creates a new mtz object having specified `columns` of `mtz`
+    """
+    columns = ["H", "K", "L"] + columns # TODO make sure no duplicates
+    col_dict = {x.label:x for x in mtz.columns}
+    col_idxes = {x.label:i for i, x in enumerate(mtz.columns)}
+
+    notfound = list(set(columns) - set(col_idxes))
+    if notfound:
+        raise RuntimeError("specified columns not found: {}".format(str(notfound)))
+
+    # copy metadata
+    mtz2 = gemmi.Mtz()
+    for k in ("spacegroup", "cell", "history", "title"):
+        setattr(mtz2, k, getattr(mtz, k))
+
+    for ds in mtz.datasets:
+        ds2 = mtz2.add_dataset("")
+        for k in ("cell", "id", "crystal_name", "dataset_name", "project_name", "wavelength"):
+            setattr(ds2, k, getattr(ds, k))
+
+    # copy selected columns
+    for col in columns:
+        mtz2.add_column(col, col_dict[col].type,
+                        dataset_id=col_dict[col].dataset_id, expand_data=False)
+
+    idxes = [col_idxes[col] for col in columns]
+    data = numpy.array(mtz, copy=False)[:, idxes]
+    mtz2.set_data(data)
+    return mtz2
+# mtz_selected()
+    
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
         self.cell = cell

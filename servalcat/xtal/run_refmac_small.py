@@ -23,6 +23,8 @@ def add_arguments(parser):
                         help='Input atomic model file')
     parser.add_argument('--hklin',
                         help='Input reflection file')
+    parser.add_argument('--hklin_labs', nargs='+',
+                        help='column names to be used')
     parser.add_argument('--blur', type=float,
                         help='Apply B-factor blurring to --hklin')
     parser.add_argument('--resolution',
@@ -137,6 +139,10 @@ def main(args):
                 else:
                     logger.write("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
 
+            if args.hklin_labs:
+                try: mtz = utils.hkl.mtz_selected(mtz, args.hklin_labs)
+                except RuntimeError as e:
+                    raise SystemExit("Error: {}".format(e))
             if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
             mtz.write_to_file(mtz_in)
         else:
