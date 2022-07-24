@@ -14,10 +14,13 @@ import atexit
 class Logger(object):
     def __init__(self, file_out=None, append=True):
         self.ofs = None
+        self.stopped = False
         if file_out:
             self.set_file(file_out, append)
     # __init__()
-    
+    def stop_logging(self): self.stopped = True
+    def start_logging(self): self.stopped = False
+
     def set_file(self, file_out, append=True):
         try:
             self.ofs = open(file_out, "a" if append else "w")
@@ -26,6 +29,7 @@ class Logger(object):
     # set_file()
 
     def write(self, l, end="\n", flush=True, fs=None, print_fs=sys.stdout):
+        if self.stopped: return
         print(l, end=end, file=print_fs)
         for f in (self.ofs, fs):
             if f is not None:
@@ -54,7 +58,8 @@ write = _logger.write
 error = _logger.error
 close = _logger.close
 flush = _logger.flush
-
+stop = _logger.stop_logging
+start = _logger.start_logging
 
 def exit_success():
     _logger.write("\n# Finished on {}\n".format(datetime.datetime.now()))
