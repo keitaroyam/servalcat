@@ -41,9 +41,14 @@ def add_sfcalc_args(parser):
     parser.add_argument('--no_trim',
                         action='store_true',
                         help='Keep original box (not recommended)')
-    parser.add_argument('--no_shift',
-                        action='store_true',
-                        help='Keep map origin so that output maps overlap with the input maps.')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--no_shift',
+                       action='store_true',
+                       help='Keep map origin so that output maps overlap with the input maps. '
+                            'Now this is on by default. Use --shift_if_trim if you want the previous default behavior.')
+    group.add_argument('--shift_if_trim',
+                       action='store_true',
+                       help='Shift model and map origin if map is trimmed. This option is to emulate previous default behavior.')
     parser.add_argument('--blur',
                         nargs="+", # XXX probably no need to be multiple
                         type=float,
@@ -223,6 +228,11 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
 
 def main(args, monlib=None):
     ret = {} # instructions for refinement
+
+    if args.no_shift:
+        logger.write("DeprecationWarning: --no_shift is now on by default, and this option will be removed in the future.")
+    if not args.shift_if_trim:
+        args.no_shift = True
     
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
