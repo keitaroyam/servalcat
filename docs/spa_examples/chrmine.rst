@@ -34,6 +34,9 @@ Servalcat Refmac pipeline is available via refine_spa subcommand. Run following 
 * ``--pg C3`` is specified because the map is symmetrised with *C*\ 3 symmetry. In this case ``--model`` must be an asymmetric unit. The orientation of group and origin follow `RELION's convention <https://relion.readthedocs.io/en/latest/Reference/Conventions.html#symmetry>`_: 3-fold is along z-axis through the centre of the box.
 * ``--resolution`` is the resolution used in refinement and map calculation. It is always good to specify a bit higher value than the global one (as determined by the FSC=0.143 criterion), because local resolution can be higher. Here the global resolution was 2.02 Å so I put 1.95 Å.
 
+.. note::
+    If the pixel size in map file header is wrong, you can specify the correct pixel size using ``--pixel_size`` option. Note that this affects all input map and mask files, but not for input model. Model should overlap with map with correct the pixel size, and needs to be fixed before refinement if the model is fitted to a map with wrong pixel size.
+
 In case you want to know what Servalcat does in the pipeline:
 
 #. Expand model with *C*\ 3 symmetry (written as input_model_expanded.pdb).
