@@ -30,7 +30,7 @@ def add_arguments(parser):
     parser.add_argument("-B", type=float, help="Estimated blurring")
     parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map calculation (use half 2 only for noise estimation)")
     parser.add_argument("--normalized_map", action='store_true',
-                        help="Write normalized map in the masked region")
+                        help="Write normalized map in the masked region. Now this is on by default.")
     parser.add_argument("--no_fsc_weights", action='store_true',
                         help="Just for debugging purpose: turn off FSC-based weighting")
     parser.add_argument("--sharpening_b", type=float,
@@ -263,7 +263,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
 
 def write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=None, output_prefix="diffmap", trim_map=False, trim_mtz=False,
-                normalize_map=False, omit_h_electron=False):
+                normalize_map=True, omit_h_electron=False):
     # this function may modify the overall scale of FWT/DELFWT.
 
     if mask is not None and (trim_map or trim_mtz):
@@ -352,6 +352,9 @@ def main(args):
             raise SystemExit("--half1_only requires half maps")
         logger.error("--half1_only specified. Half map 2 is used only for noise estimation")
 
+    if args.normalized_map:
+        logger.write("DeprecationWarning: --normalized_map is now on by default. This option will be removed in the future.")
+        
     if not args.halfmaps:
         logger.error("Warning: using --halfmaps is strongly recommended!")
 
@@ -392,8 +395,7 @@ def main(args):
         mask = numpy.array(mask)
     else:
         mask = None
-        if args.normalized_map:
-            raise SystemExit("Error: Provide --mask or --mask_radius if you want --normalized-map.")
+        logger.write("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")
 
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
                                              half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,
@@ -401,7 +403,7 @@ def main(args):
                                              omit_h_electron=args.omit_h_electron)
     write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=mask, output_prefix=args.output_prefix,
-                trim_map=args.trim, trim_mtz=args.trim_mtz, normalize_map=args.normalized_map, omit_h_electron=args.omit_h_electron)
+                trim_map=args.trim, trim_mtz=args.trim_mtz, omit_h_electron=args.omit_h_electron)
     
 # main()
 

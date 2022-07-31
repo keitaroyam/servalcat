@@ -454,8 +454,7 @@ def main(args):
                                                       sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
     spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
                          mask=mask, output_prefix="diffmap",
-                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
-                         normalize_map=mask is not None)
+                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
 
     # Final summary
     if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
