@@ -13,14 +13,23 @@ import re
 import gemmi
 import numpy
 import pandas
+import string
+import random
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
 def decide_new_mod_id(mod_id, mods):
-    i = 1
-    while True:
-        i += 1
-        new_id = "{}-{}".format(mod_id, i)
+    # Refmac only allows up to 8 characters
+    letters = string.digits + string.ascii_lowercase
+    if len(mod_id) < 8:
+        for l in letters:
+            new_id = "{}{}{}".format(mod_id, "" if len(mod_id)==7 else "-", l)
+            if new_id not in mods:
+                return new_id
+
+    # give up keeping original name
+    while True: # XXX risk of infinite loop.. less likely though
+        new_id = "mod" + "".join([random.choice(letters) for _ in range(4)])
         if new_id not in mods:
             return new_id
 # decide_new_mod_id()

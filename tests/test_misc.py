@@ -31,7 +31,7 @@ class RestrTests(unittest.TestCase):
 
         doc = gemmi.cif.read(tmpf)
         names = set(["comp_list", "link_list", "mod_list", "comp_4D4", "comp_MS6",
-                     "mod_4D4m1", "mod_MS6m1", "mod_MS6m1-2", "mod_GLYm1",
+                     "mod_4D4m1", "mod_MS6m1", "mod_MS6m1-0", "mod_GLYm1",
                      "link_MS6-GLY", "link_4D4-MS6"])
         self.assertTrue(names.issubset([x.name for x in doc]))
         # TODO need to test hydrogen generation etc?
