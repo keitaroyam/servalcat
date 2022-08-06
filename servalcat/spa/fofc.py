@@ -245,6 +245,11 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
                                                miller_array=hkldata.miller_array())
+    if mask is not None:
+        fc_map = hkldata.fft_map("FC", grid_size=mask.shape)
+        fc_map.array[:] *= mask
+        hkldata.df["FC"] = gemmi.transform_map_to_f_phi(fc_map).get_value_by_hkl(hkldata.miller_array())
+        
     hkldata.setup_relion_binning()
 
     has_halfmaps = (len(maps) == 2)
