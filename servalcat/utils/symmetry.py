@@ -164,14 +164,16 @@ def read_helical_parameters_from_mmcif(cif_in):
     return axsym, deltaphi, deltaz
 # read_helical_parameters_from_mmcif()
 
-def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, axis1=None, axis2=None, padding=1):
+def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, axis1=None, axis2=None, padding=2.):
     if not axsym: axsym = "C1"
     if axis1 is None: axis1 = numpy.array([0,0,1.])
     else: axis1 /= numpy.linalg.norm(axis1)
     _, _, axtrs = operators_from_symbol(axsym, axis1, axis2)
-    all_z = [cra.atom.pos.z for cra in st[0].all()] # XXX along axis1
-    min_z, max_z = min(all_z), max(all_z) # XXX
-    min_n, max_n = int((min_z-padding-start_xyz[2])/deltaz), int((st.cell.c+start_xyz[2]-max_z-padding)/deltaz) # XXX
+    all_z = numpy.dot([cra.atom.pos.tolist() for cra in st[0].all()], axis1)
+    min_z, max_z = numpy.min(all_z), numpy.max(all_z)
+    direc = numpy.argmax([numpy.dot(axis1, v) for v in ((1.,0,0), (0,1.,0), (0,0,1.))]) # assume axis1 along any of a,b,c axis
+    min_n = int((min_z - padding - start_xyz[direc]) / deltaz)
+    max_n = int((st.cell.parameters[direc] + start_xyz[direc] - max_z - padding) / deltaz)
     ops = []
     for i in range(-min_n, max_n+1):
         deg = deltaphi*i

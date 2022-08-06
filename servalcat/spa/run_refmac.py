@@ -441,6 +441,16 @@ def main(args):
     if not args.halfmaps: logger.write(" with limited functionality because half maps were not provided")
     logger.write(" model: {}".format(args.output_prefix+model_format))
 
+    # for Fo-Fc in case of helical reconstruction, expand model more
+    # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
+    if args.twist is not None:
+        logger.write("Generating all helical copies in the box")
+        st_expanded = st.clone()
+        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_model_helical_contacting=False)
+        utils.model.expand_ncs(st_expanded)
+        utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded_all"+model_format,
+                                 cif_ref=cif_ref)
+
     if args.mask_for_fofc:
         logger.write("  mask: {}".format(args.mask_for_fofc))
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
