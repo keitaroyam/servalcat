@@ -372,7 +372,7 @@ def show_power(args):
         maps_in.extend([(args.halfmaps[2*i],args.halfmaps[2*i+1]) for i in range(len(args.halfmaps)//2)])
         
     if args.mask:
-        mask = numpy.array(fileio.read_ccp4_map(args.mask)[0])
+        mask = fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
 
@@ -474,7 +474,7 @@ def nemap(args):
     from servalcat.spa import fofc
     
     if args.mask:
-        mask = numpy.array(fileio.read_ccp4_map(args.mask)[0])
+        mask = fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
 

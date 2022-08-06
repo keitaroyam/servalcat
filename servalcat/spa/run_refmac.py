@@ -118,7 +118,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
             mask.spacegroup = st.find_spacegroup()
             mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
         if no_sharpen_before_mask or len(maps) < 2:
-            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, st.cell, st.find_spacegroup())]+ma[1:]
+            maps = [[gemmi.FloatGrid(ma[0].array*mask, st.cell, st.find_spacegroup())]+ma[1:]
                     for ma in maps]
         else:
             # It seems we need different B for different resolution limit
@@ -440,17 +440,16 @@ def main(args):
     logger.write("Starting Fo-Fc calculation..")
     if not args.halfmaps: logger.write(" with limited functionality because half maps were not provided")
     logger.write(" model: {}".format(args.output_prefix+model_format))
-        
+
     if args.mask_for_fofc:
         logger.write("  mask: {}".format(args.mask_for_fofc))
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask_for_fofc)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
     elif args.mask_radius_for_fofc:
         logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
         mask = gemmi.FloatGrid(*maps[0][0].shape)
         mask.set_unit_cell(maps[0][0].unit_cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
         mask.mask_points_in_constant_radius(st_expanded[0], args.mask_radius_for_fofc, 1.)
-        mask = numpy.array(mask)
     else:
         logger.write("  mask: not used")
         mask = None

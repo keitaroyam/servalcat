@@ -86,7 +86,7 @@ def main(args):
     st.spacegroup_hm = "P1"
 
     if args.mask:
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
 

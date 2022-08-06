@@ -214,7 +214,7 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
 
     newmaps = []
     for i in range(len(maps)): # Update maps
-        g = gemmi.FloatGrid(numpy.array(maps[i][0])*mask,
+        g = gemmi.FloatGrid(maps[i][0].array*mask,
                             maps[i][0].unit_cell, maps[i][0].spacegroup)
 
         suba = g.get_subarray(starts, new_shape)
@@ -404,7 +404,7 @@ def main(args, monlib=None):
         # Mask maps
         if args.no_sharpen_before_mask or len(maps) < 2:
             logger.write("Applying mask..")
-            maps = [[gemmi.FloatGrid(numpy.array(ma[0])*mask, unit_cell, spacegroup)]+ma[1:]
+            maps = [[gemmi.FloatGrid(ma[0].array*mask, unit_cell, spacegroup)]+ma[1:]
                     for ma in maps]
         else:
             logger.write("Sharpen-mask-unsharpen..")
@@ -423,7 +423,7 @@ def main(args, monlib=None):
                                                                                        noncubic=True,
                                                                                        json_out="shifts.json")
             ret["shifts"] = shifts
-            vol_mask = numpy.count_nonzero(numpy.array(mask)>0.5)
+            vol_mask = numpy.count_nonzero(mask.array>0.5)
             vol_map = new_shape[0] * new_shape[1] * new_shape[2] # XXX assuming all orthogonal
             ret["vol_ratio"] = vol_mask/vol_map
             logger.write(" Vol_mask/Vol_map= {:.2e}".format(ret["vol_ratio"]))

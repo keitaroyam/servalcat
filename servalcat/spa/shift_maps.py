@@ -110,7 +110,7 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
         maxp = mask.get_nearest_point(gemmi.Position(*numpy.max(allpos, axis=0)))
         tmp = [(minp.u, maxp.u), (minp.v, maxp.v), (minp.w, maxp.w)] - grid_start[:,None]
     else:
-        tmp = numpy.where(numpy.array(mask)>mask_cutoff) - grid_start[:,None]
+        tmp = numpy.where(mask.array>mask_cutoff) - grid_start[:,None]
     
     tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
     limits = [(min(x), max(x)) for x in tmp]

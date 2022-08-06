@@ -269,7 +269,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
     # this function may modify the overall scale of FWT/DELFWT.
 
     if mask is not None and (trim_map or trim_mtz):
-        new_cell, new_shape, grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask,
+        new_cell, new_shape, grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask.array,
                                                                                                             hkldata.cell,
                                                                                                             hkldata.sg),
                                                                                        grid_start=grid_start,
@@ -286,7 +286,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         if "DELFWT" in hkldata.df:
             logger.write("Normalized Fo-Fc map requested.")
             delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
-            masked = numpy.array(delfwt_map)[mask>cutoff]
+            masked = delfwt_map.array[mask.array>cutoff]
             logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
             logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
             global_mean = numpy.average(delfwt_map)
@@ -312,7 +312,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         # Write Fo map as well
         if "FWT" in hkldata.df:
             fwt_map = hkldata.fft_map("FWT", grid_size=mask.shape)
-            masked = numpy.array(fwt_map)[mask>cutoff]
+            masked = fwt_map.array[mask.array>cutoff]
             masked_mean = numpy.average(masked)
             masked_std = numpy.std(masked)
             scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
@@ -389,7 +389,6 @@ def main(args):
             if not utils.maps.test_mask_with_model(mask, st):
                 raise SystemExit("\nError: Model is out of mask.\n"
                                  "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
-        mask = numpy.array(mask)
     elif args.mask_radius:
         mask = gemmi.FloatGrid(*g.shape)
         mask.set_unit_cell(g.unit_cell)
@@ -399,7 +398,6 @@ def main(args):
         ccp4.grid = mask
         ccp4.update_ccp4_header(2, True) # float, update stats
         ccp4.write_ccp4_map("mask_from_model.ccp4")
-        mask = numpy.array(mask)
     else:
         mask = None
         logger.write("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")

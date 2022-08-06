@@ -96,7 +96,7 @@ def calc_cc_from_var(hkldata, smax, x_max=20, x_step=0.1, kind="noise", sharpen_
 def main(args):
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     if args.mask:
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
 

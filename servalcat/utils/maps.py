@@ -41,7 +41,7 @@ def test_mask_with_model(mask, st, mask_threshold=.5, inclusion_cutoff=.8):
 def half2full(map_h1, map_h2):
     assert map_h1.shape == map_h2.shape
     assert map_h1.unit_cell == map_h2.unit_cell
-    tmp = (numpy.array(map_h1, copy=False) + numpy.array(map_h2, copy=False))/2.
+    tmp = (map_h1.array + map_h2.array)/2.
     gr = gemmi.FloatGrid(tmp, map_h1.unit_cell, map_h1.spacegroup)
     return gr
 # half2full()
@@ -102,7 +102,7 @@ $$""")
     # 2. Mask, FFT, and unsharpen
     for lab in labs:
         m = hkldata.fft_map(lab, grid_size=mask.shape)
-        g = gemmi.FloatGrid(numpy.array(m, copy=False) * mask, hkldata.cell, hkldata.sg)
+        g = gemmi.FloatGrid(m.array * mask, hkldata.cell, hkldata.sg)
         #write_ccp4_map("debug_{}.ccp4".format(lab), new_maps[-1][0])
         rg = gemmi.transform_map_to_f_phi(g)
         hkldata.df[lab] = rg.get_value_by_hkl(hkldata.miller_array()) * normalizer
@@ -127,7 +127,7 @@ def mask_and_fft_maps(maps, d_min, mask=None):
             lab = "FP"
         g = m[0]
         if mask is not None:
-            g = gemmi.FloatGrid(numpy.array(g, copy=False) * mask,
+            g = gemmi.FloatGrid(g.array * mask,
                                 g.unit_cell, g.spacegroup)
         f_grid = gemmi.transform_map_to_f_phi(g)
         if hkldata is None:
@@ -192,7 +192,7 @@ def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, ma
     ccp4.update_ccp4_header(2, True) # float, update stats
 
     if mask_for_extent is not None: # want to crop part of map using mask
-        tmp = numpy.where(numpy.array(mask_for_extent)>mask_threshold)
+        tmp = numpy.where(mask_for_extent.array > mask_threshold)
         if grid_start is not None:
             grid_start = numpy.array(grid_start)[:,None]
             shape = numpy.array(ccp4.grid.shape)[:,None]

@@ -136,7 +136,7 @@ def main(args):
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     grid_shape = maps[0][0].shape
     if args.mask:
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0], copy=False)
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
 
@@ -152,7 +152,7 @@ def main(args):
     halfcc_map = utils.maps.local_cc(hkldata.fft_map("F_map1w", grid_size=grid_shape),
                                      hkldata.fft_map("F_map2w", grid_size=grid_shape),
                                      knl)
-    halfcc_map_in_mask = halfcc_map.array[mask>0.5] if mask is not None else halfcc_map
+    halfcc_map_in_mask = halfcc_map.array[mask.array>0.5] if mask is not None else halfcc_map
     logger.write("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
     utils.maps.write_ccp4_map(prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
                               mask_for_extent=mask if args.trim else None)
@@ -166,7 +166,7 @@ def main(args):
         modelcc_map = utils.maps.local_cc(hkldata.fft_map("FPw", grid_size=grid_shape),
                                           hkldata.fft_map("FCw", grid_size=grid_shape),
                                           knl)
-        modelcc_map_in_mask = modelcc_map.array[mask>0.5] if mask is not None else modelcc_map
+        modelcc_map_in_mask = modelcc_map.array[mask.array>0.5] if mask is not None else modelcc_map
         logger.write("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
         utils.maps.write_ccp4_map(prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
                                   mask_for_extent=mask if args.trim else None)
