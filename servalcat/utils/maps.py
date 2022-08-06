@@ -102,9 +102,9 @@ $$""")
     # 2. Mask, FFT, and unsharpen
     for lab in labs:
         m = hkldata.fft_map(lab, grid_size=mask.shape)
-        g = gemmi.FloatGrid(m.array * mask, hkldata.cell, hkldata.sg)
+        m.array[:] *= mask
         #write_ccp4_map("debug_{}.ccp4".format(lab), new_maps[-1][0])
-        rg = gemmi.transform_map_to_f_phi(g)
+        rg = gemmi.transform_map_to_f_phi(m)
         hkldata.df[lab] = rg.get_value_by_hkl(hkldata.miller_array()) * normalizer
 
     # TODO can return here for most use cases?
@@ -127,8 +127,7 @@ def mask_and_fft_maps(maps, d_min, mask=None):
             lab = "FP"
         g = m[0]
         if mask is not None:
-            g = gemmi.FloatGrid(g.array * mask,
-                                g.unit_cell, g.spacegroup)
+            g.array[:] *= mask
         f_grid = gemmi.transform_map_to_f_phi(g)
         if hkldata is None:
             asudata = f_grid.prepare_asu_data(dmin=d_min)

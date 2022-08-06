@@ -118,8 +118,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
             mask.spacegroup = st.find_spacegroup()
             mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
         if no_sharpen_before_mask or len(maps) < 2:
-            maps = [[gemmi.FloatGrid(ma[0].array*mask, st.cell, st.find_spacegroup())]+ma[1:]
-                    for ma in maps]
+            for ma in maps: ma[0].array[:] *= mask
         else:
             # It seems we need different B for different resolution limit
             if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, d_min_fsc)

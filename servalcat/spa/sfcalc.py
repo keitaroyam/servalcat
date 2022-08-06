@@ -404,8 +404,7 @@ def main(args, monlib=None):
         # Mask maps
         if args.no_sharpen_before_mask or len(maps) < 2:
             logger.write("Applying mask..")
-            maps = [[gemmi.FloatGrid(ma[0].array*mask, unit_cell, spacegroup)]+ma[1:]
-                    for ma in maps]
+            for ma in maps: ma[0].array[:] *= mask
         else:
             logger.write("Sharpen-mask-unsharpen..")
             b_before_mask = args.b_before_mask
