@@ -475,6 +475,15 @@ def main(args):
     for chain, natoms, qs in adp_stats:
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
+
+    # Create Coot script
+    with open("{}_coot.py".format(args.output_prefix), "w") as ofs:
+        ofs.write('imol = read_pdb("{}.pdb")\n'.format(args.output_prefix)) # as Coot is not good at mmcif file..
+        ofs.write('imol_fo = make_and_draw_map("diffmap.mtz", "FWT", "PHWT", "", 0, 0)\n')
+        ofs.write('imol_fofc = make_and_draw_map("diffmap.mtz", "DELFWT", "PHDELWT", "", 0, 1)\n')
+        if mask is not None:
+            ofs.write('set_contour_level_absolute(imol_fo, 1.2)\n')
+            ofs.write('set_contour_level_absolute(imol_fofc, 3.0)\n')
         
     logger.write("""
 =============================================================================
@@ -494,7 +503,8 @@ Weight used: {final_weight}
              If you want to change the weight, give larger (looser restraints)
              or smaller (tighter) value to --weight_auto_scale=.
              
-Open refined{model_format} and diffmap.mtz with COOT.
+Open refined model and diffmap.mtz with COOT:
+coot --script {prefix}_coot.py
 =============================================================================
 """.format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
            rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
@@ -502,7 +512,7 @@ Open refined{model_format} and diffmap.mtz with COOT.
            fsclog="{}_fsc.log".format(args.output_prefix),
            adpstats=adpstats_txt.rstrip(),
            final_weight=final_weight,
-           model_format=model_format))
+           prefix=args.output_prefix))
 # main()
         
 if __name__ == "__main__":
