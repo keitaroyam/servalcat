@@ -23,6 +23,21 @@ def new_grid_like(gr):
 def mask_from_model():
     pass
 
+def test_mask_with_model(mask, st, mask_threshold=.5, inclusion_cutoff=.8):
+    logger.write("Testing mask with model..")
+    n_all = 0
+    n_out = 0
+    for cra in st[0].all():
+        v = mask.interpolate_value(cra.atom.pos)
+        n_all += 1
+        if v < mask_threshold:
+            logger.write(" WARNING: mask value at {} = {:.1f}".format(cra, v))
+            n_out += 1
+
+    logger.write(" n_atoms= {} n_out_of_mask= {} ({:.2%})".format(n_all, n_out, n_out/n_all if n_all>0 else 0))
+    return 1 - n_out/n_all > inclusion_cutoff
+# test_mask_with_model()
+
 def half2full(map_h1, map_h2):
     assert map_h1.shape == map_h2.shape
     assert map_h1.unit_cell == map_h2.unit_cell

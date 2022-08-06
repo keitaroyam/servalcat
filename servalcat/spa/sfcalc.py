@@ -70,6 +70,8 @@ def add_sfcalc_args(parser):
                         help='By default it will split chain if max residue number > 9999 which is not supported by Refmac')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
+    parser.add_argument('--no_check_mask_with_model', action='store_true', 
+                        help='Disable mask test using model')
 
 # add_sfcalc_args()
 
@@ -367,7 +369,12 @@ def main(args, monlib=None):
             utils.model.expand_ncs(st)
             logger.write(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
-    
+
+        if mask is not None and not args.no_check_mask_with_model:
+            if not utils.maps.test_mask_with_model(mask, st):
+                raise SystemExit("\nError: Model is out of mask.\n"
+                                 "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
+            
         if mask is None and args.mask_radius:
             logger.write("Creating mask..")
             mask = gemmi.FloatGrid(*maps[0][0].shape)

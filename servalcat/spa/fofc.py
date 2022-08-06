@@ -27,6 +27,8 @@ def add_arguments(parser):
     parser.add_argument("-d", '--resolution', type=float, required=True)
     parser.add_argument('-m', '--mask', help="mask file")
     parser.add_argument('-r', '--mask_radius', type=float, help="mask radius (not used if --mask is given)")
+    parser.add_argument('--no_check_mask_with_model', action='store_true', 
+                        help='Disable mask test using model')
     parser.add_argument("-B", type=float, help="Estimated blurring")
     parser.add_argument("--half1_only", action='store_true', help="Only use half 1 for map calculation (use half 2 only for noise estimation)")
     parser.add_argument("--normalized_map", action='store_true',
@@ -382,7 +384,12 @@ def main(args):
         monlib = None
 
     if args.mask:
-        mask = numpy.array(utils.fileio.read_ccp4_map(args.mask)[0])
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
+        if not args.no_check_mask_with_model:
+            if not utils.maps.test_mask_with_model(mask, st):
+                raise SystemExit("\nError: Model is out of mask.\n"
+                                 "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
+        mask = numpy.array(mask)
     elif args.mask_radius:
         mask = gemmi.FloatGrid(*g.shape)
         mask.set_unit_cell(g.unit_cell)

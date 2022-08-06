@@ -248,6 +248,12 @@ def main(args):
                                                        stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+
+    if args.mask_for_fofc and not args.no_check_mask_with_model:
+        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
+        if not utils.maps.test_mask_with_model(mask, st):
+            raise SystemExit("\nError: Model is out of mask.\n"
+                             "Please check your --model and --mask_for_fofc. You can disable this test with --no_check_mask_with_model.")
         
     args.shifted_model_prefix = "shifted"
     args.output_masked_prefix = "masked_fs"
