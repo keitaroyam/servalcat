@@ -16,6 +16,7 @@ from servalcat.utils import maps
 import os
 import gemmi
 import numpy
+import scipy.spatial
 import pandas
 import argparse
 
@@ -71,6 +72,25 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
+
+    # h_density
+    parser = subparsers.add_parser("h_density", description = 'Hydrogen density analysis')
+    parser.add_argument('--model', required=True, help="Model with hydrogen atoms")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--map', help="Fo-Fc map file")
+    group.add_argument('--mtz', help="MTZ for Fo-Fc map file")
+    parser.add_argument('--mtz_labels', default="DELFWT,PHDELWT", help='F,PHI labels (default: %(default)s)')
+    parser.add_argument('--oversample_pixel', type=float, help='Desired pixel spacing in map (Angstrom)')
+    #parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--sigma_level', type=float, help="Threshold map level in sigma unit")
+    group.add_argument('--abs_level', type=float, help="Threshold map level in absolute unit")
+    parser.add_argument('--max_dist', type=float, default=0.5, help="max distance between peak and hydrogen position in the model (default: %(default).1f)")
+    parser.add_argument('--blob_pos', choices=["peak", "centroid"], default="centroid",
+                       help="default: %(default)s")
+    parser.add_argument('--min_volume', type=float, default=0.3, help="minimum blob volume (default: %(default).1f)")
+    parser.add_argument('--max_volume', type=float, default=3, help="maximum blob volume (default: %(default).1f)")
+    parser.add_argument('-o','--output_prefix')
 
     # fix_link
     parser = subparsers.add_parser("fix_link", description = 'Fix LINKR/_struct_conn records in the model')
@@ -299,6 +319,104 @@ def h_add(args):
     restraints.add_hydrogens(st, monlib, args.pos)
     fileio.write_model(st, file_name=args.output)
 # h_add()
+
+def h_density_analysis(args):
+    #if args.source != "electron":
+    #    raise SystemExit("Only electron source is supported.")
+    model_format = fileio.check_model_format(args.model)
+    st = fileio.read_structure(args.model)
+    if st[0].count_hydrogen_sites() == 0:
+        raise SystemExit("No hydrogen in model.")
+
+    if args.output_prefix is None:
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_hana"
+
+    if args.mtz is not None:
+        mtz = gemmi.read_mtz_file(args.mtz)
+        lab_f, lab_phi = args.mtz_labels.split(",")
+        asu = mtz.get_f_phi(lab_f, lab_phi)
+        if args.oversample_pixel is not None:
+            d_min = numpy.min(asu.make_d_array())
+            sample_rate = d_min / args.oversample_pixel
+        else:
+            sample_rate = 3
+        gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
+    elif args.map is not None:
+        gr = fileio.read_ccp4_map(args.map)[0]
+        if args.oversample_pixel is not None:
+            asu = gemmi.transform_map_to_f_phi(gr).prepare_asu_data()
+            d_min = numpy.min(asu.make_d_array())
+            sample_rate = d_min / args.oversample_pixel
+            gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
+    else:
+        raise SystemExit("Invalid input")
+
+    if args.oversample_pixel is not None:
+        logger.write("--oversample_pixel= {} is requested.".format(args.oversample_pixel))
+        logger.write(" recalculated grid:")
+        logger.write("  {:4d} {:4d} {:4d}".format(*gr.shape))
+        logger.write(" spacings:")
+        logger.write("  {:.6f} {:.6f} {:.6f}".format(*gr.spacing))
+        #maps.write_ccp4_map("{}_oversampled.mrc".format(args.output_prefix), gr)
+
+    if args.abs_level is not None:
+        cutoff = args.abs_level
+    else:
+        cutoff = args.sigma_level * numpy.std(gr) # assuming mean(gr) = 0
+
+    blobs = gemmi.find_blobs_by_flood_fill(gr, cutoff,
+                                           min_volume=args.min_volume, min_score=0)
+    getpos = dict(peak=lambda x: x.peak_pos,
+                  centroid=lambda x: x.centroid)[args.blob_pos]
+
+    peaks = [getpos(b).tolist() for b in blobs]
+    kdtree = scipy.spatial.cKDTree(peaks)
+    found = []
+    n_hydr = 0
+    h_assigned = [0 for _ in range(len(blobs))]
+    st2 = st.clone()
+    for ic, chain in enumerate(st[0]):
+        for ir, res in enumerate(chain):
+            for ia, atom in reversed(list(enumerate(res))):
+                if not atom.is_hydrogen(): continue
+                n_hydr += 1
+                dist, idx = kdtree.query(atom.pos.tolist(), k=1, p=2)
+                map_val = gr.interpolate_value(getpos(blobs[idx]))
+                if dist < args.max_dist and blobs[idx].volume < args.max_volume and map_val > cutoff:
+                    found.append((getpos(blobs[idx]), map_val, dist,  blobs[idx].volume, 
+                                  chain.name, str(res.seqid), res.name,
+                                  atom.name, atom.altloc.replace("\0","")))
+                    h_assigned[idx] = 1
+                else:
+                    del st2[0][ic][ir][ia]
+
+    found.sort(key=lambda x: x[1], reverse=True)
+    logger.write("")
+    logger.write("Found hydrogen peaks:")
+    logger.write("dist map  vol  atom")
+    for _, map_val, dist, volume, chain, resi, resn, atom, alt in found:
+        logger.write("{:.2f} {:.2f} {:.2f} {}/{} {}/{}{}".format(dist, map_val, volume,
+                                                                 chain, resn, resi,
+                                                                 atom, "."+alt if alt else ""))
+
+    logger.write("")
+    logger.write("Result:")
+    logger.write(" number of hydrogen in the model  : {}".format(n_hydr))
+    logger.write(" number of peaks close to hydrogen: {} ({:.1%})".format(len(found), len(found)/n_hydr))
+    logger.write("")
+
+    st_peaks = model.st_from_positions([getpos(b) for b in blobs],
+                                       bs=[gr.interpolate_value(getpos(b)) for b in blobs],
+                                       qs=h_assigned)
+    fileio.write_model(st_peaks, file_name="{}_peaks.mmcif".format(args.output_prefix))
+    logger.write(" this file includes peak positions")
+    logger.write(" occ=1: hydrogen assigned, occ=0: unassigned.")
+    logger.write(" B: density value at {}".format(args.blob_pos))
+    logger.write("")
+    
+    fileio.write_model(st2, file_name="{}_h_with_peak{}".format(args.output_prefix, model_format))
+    logger.write(" this file is a copy of input model, where hydrogen atoms without peaks are removed.")
+# h_density_analysis()
 
 def fix_link(args):
     st = fileio.read_structure(args.model)
@@ -578,6 +696,7 @@ def main(args):
                  symmodel=symmodel,
                  expand=symexpand,
                  h_add=h_add,
+                 h_density=h_density_analysis,
                  fix_link=fix_link,
                  merge_models=merge_models,
                  merge_dicts=merge_dicts,

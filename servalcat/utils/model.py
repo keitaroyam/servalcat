@@ -580,12 +580,14 @@ def from_dataframe(df, st=None): # Slow!
     return st
 # from_dataframe()
 
-def st_from_positions(positions):
+def st_from_positions(positions, bs=None, qs=None):
     st = gemmi.Structure()
     st.add_model(gemmi.Model("1"))
     st[0].add_chain(gemmi.Chain("A"))
     c = st[0][0]
-    for i, pos in enumerate(positions):
+    if bs is None: bs = (0. for _ in range(len(positions)))
+    if qs is None: qs = (1. for _ in range(len(positions)))
+    for i, (pos, b, q) in enumerate(zip(positions, bs, qs)):
         c.add_residue(gemmi.Residue())
         r = c[-1]
         r.seqid.num = i
@@ -595,8 +597,8 @@ def st_from_positions(positions):
         a.name = "O"
         a.element = gemmi.Element("O")
         a.pos = pos
-        #a.b_iso = 
-        #a.occ = 
+        a.b_iso = b
+        a.occ = q
                     
     return st
 # st_from_positions()
