@@ -100,6 +100,8 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--sigma', type=float, default=5,
                         help="sigma cutoff to print outliers (default: %(default).1f)")
+    parser.add_argument('--write_z_per_atom', nargs="*", 
+                        help="write model file(s) with sum of z values of specified metric as B values")
     parser.add_argument('-o', '--output_prefix', default="geometry",
                         help="default: %(default)s")
 
@@ -341,6 +343,11 @@ def merge_dicts(args):
 
 def geometry(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
+    args.write_z_per_atom = set(args.write_z_per_atom) if args.write_z_per_atom else set()
+    if not args.write_z_per_atom.issubset(set(("bond","angle","chiral","plane"))):
+        raise SystemExit("invalid keyword included in --write_z_per_atom: {}".format(args.write_z_per_atom))
+
+    model_format = fileio.check_model_format(args.model)
     st = fileio.read_structure(args.model)
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
@@ -356,6 +363,27 @@ def geometry(args):
         json_out = "{}_{}.json".format(args.output_prefix, k)
         with open(json_out, "w") as ofs: dfs[k].to_json(ofs, indent=2, orient="index")
         logger.write("written: {}".format(json_out))
+
+    for k in args.write_z_per_atom:
+        for cra in st[0].all(): cra.atom.b_iso = 0
+        if k == "bond":
+            for t in restr.topo.bonds:
+                z = t.calculate_z()
+                for a in t.atoms: a.b_iso += z
+        elif k == "angle":
+            for t in restr.topo.angles:
+                t.atoms[1].b_iso += t.calculate_z()
+        elif k == "chiral":
+            for t in restr.topo.chirs:
+                t.atoms[0].b_iso += t.calculate_z(restr.topo.ideal_chiral_abs_volume(t), 0.2)
+        elif k == "plane":
+            for t in restr.topo.planes:
+                devs = restraints.plane_deviations(t.atoms)
+                for a, d in zip(t.atoms, devs):
+                    a.b_iso += abs(d) / t.restr.esd
+  
+        fileio.write_model(st, file_name="z_{}s{}".format(k, model_format))
+
 # geometry()
 
 def show_power(args):
