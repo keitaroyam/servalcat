@@ -24,6 +24,7 @@ import servalcat.spa.localcc
 import servalcat.xtal.run_refmac_small
 import servalcat.xtal.sigmaa
 import servalcat.refmac.refmac_wrapper
+import servalcat.xtal.french_wilson
 import servalcat.utils.commands
 import servalcat.refine.refine_geom
 import servalcat.refine.refine_spa
@@ -80,6 +81,7 @@ def main():
                    translate=servalcat.spa.translate,
                    localcc=servalcat.spa.localcc,
                    sigmaa=servalcat.xtal.sigmaa,
+                   fw=servalcat.xtal.french_wilson,
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
                    refmac5=servalcat.refmac.refmac_wrapper,
