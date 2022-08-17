@@ -419,6 +419,29 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
 
 # expand_ncs()
 
+def prepare_assembly(name, chains, ops, is_helical=False):
+    a = gemmi.Assembly(name)
+    g = gemmi.Assembly.Gen()
+    if sum(map(lambda x: x.tr.is_identity(), ops)) == 0:
+        g.operators.append(gemmi.Assembly.Operator()) # add identity
+    for i, nop in enumerate(ops):
+        op = gemmi.Assembly.Operator()
+        op.transform = nop.tr
+        if not nop.tr.is_identity():
+            if is_helical:
+                op.type = "helical symmetry operation"
+            else:
+                op.type = "point symmetry operation"
+        g.operators.append(op)
+    g.chains = chains
+    a.generators.append(g)
+    if is_helical:
+        a.special_kind = gemmi.AssemblySpecialKind.RepresentativeHelical
+    else:
+        a.special_kind = gemmi.AssemblySpecialKind.CompletePoint
+    return a
+# prepare_assembly()
+
 def filter_helical_contacting(st, cutoff=5.):
     if len(st.ncs) == 0: return
     logger.write("Filtering out non-contacting helical copies with cutoff={:.2f} A".format(cutoff))

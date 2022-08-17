@@ -51,6 +51,23 @@ def add_arguments(p):
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
     parser.add_argument('--cif', action="store_true", help="Write a cif file")
 
+    # helical_biomt
+    parser = subparsers.add_parser("helical_biomt", description="generate BIOMT of helical reconstruction for PDB deposition")
+    parser.add_argument('--model', required=True)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--map', help="Take box size from the map")
+    group.add_argument('--cell', type=float, nargs=6, help="Box size")
+    sym_group = parser.add_argument_group("symmetry")
+    symmetry.add_symmetry_args(sym_group, require_pg=True)
+    parser.add_argument('--start', type=int)
+    parser.add_argument('--end', type=int)
+    parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
+                        help="How to decide new chain IDs in expanded model (default: short); "
+                        "dup: use original chain IDs (with different segment IDs), "
+                        "short: use unique new IDs, "
+                        "number: add number to original chain ID")
+    parser.add_argument('-o', '--output_prfix')
+
     # expand
     parser = subparsers.add_parser("expand", description="Expand symmetry")
     parser.add_argument('--model', required=True)
@@ -201,6 +218,7 @@ def symmodel(args):
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
 
+    is_helical = args.twist is not None
     st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
     st.spacegroup_hm = "P 1"
     map_and_start = None
@@ -229,18 +247,7 @@ def symmodel(args):
     if args.biomt:
         st.assemblies.clear()
         st.raw_remarks = []
-        a = gemmi.Assembly("1")
-        g = gemmi.Assembly.Gen()
-        if sum(map(lambda x: x.tr.is_identity(), st.ncs)) == 0:
-            g.operators.append(gemmi.Assembly.Operator()) # add identity
-        for i, nop in enumerate(st.ncs):
-            op = gemmi.Assembly.Operator()
-            op.transform = nop.tr
-            if not nop.tr.is_identity(): op.type = "point symmetry operation" # XXX if helical?
-            g.operators.append(op)
-        g.chains = all_chains
-        a.generators.append(g)
-        a.special_kind = gemmi.AssemblySpecialKind.CompletePoint
+        a = model.prepare_assembly("1", all_chains, st.ncs, is_helical=is_helical)
         st.assemblies.append(a)
 
     if not args.output_prfix:
@@ -260,6 +267,67 @@ def symmodel(args):
     else:
         fileio.write_model(st, file_name=args.output_prfix+model_format)
 # symmodel()
+
+def helical_biomt(args):
+    if (args.twist, args.rise).count(None) > 0:
+        raise SystemExit("ERROR: give helical paramters --twist and --rise")
+
+    model_format = fileio.check_model_format(args.model)
+    howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
+                     short=gemmi.HowToNameCopiedChain.Short,
+                     number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
+
+    st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
+    st.spacegroup_hm = "P 1"
+    map_and_start = None
+    if args.map:
+        logger.write("Reading cell from map")
+        map_and_start = fileio.read_ccp4_map(args.map)
+        st.cell = map_and_start[0].unit_cell
+    elif args.cell:
+        st.cell = gemmi.UnitCell(*args.cell)
+    elif not st.cell.is_crystal():
+        raise SystemExit("Error: Unit cell parameters look wrong. Please use --map or --cell")
+
+    all_chains = [c.name for c in st[0] if c.name not in st[0]]
+
+    ncsops = symmetry.ncsops_from_args(args, st.cell, map_and_start=map_and_start, st=st,
+                                       helical_min_n=args.start, helical_max_n=args.end)
+    #ncsops = [x for x in ncsops if not x.tr.is_identity()] # remove identity
+
+    logger.write("")
+    logger.write("-------------------------------------------------------------")
+    logger.write("You may need to write following matrices in OneDep interface:")
+    for idx, op in enumerate(ncsops):
+        logger.write("")
+        logger.write("operator {}".format(idx+1))
+        mat = op.tr.mat.tolist()
+        vec = op.tr.vec.tolist()
+        for i in range(3):
+            mstr = ["{:10.6f}".format(mat[i][j]) for j in range(3)]
+            logger.write("{} {:14.5f}".format(" ".join(mstr), vec[i]))
+    logger.write("-------------------------------------------------------------")
+    logger.write("")
+
+    # BIOMT
+    st.assemblies.clear()
+    st.raw_remarks = []
+    a = model.prepare_assembly("1", all_chains, ncsops, is_helical=True)
+    st.assemblies.append(a)
+
+    if not args.output_prfix:
+        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_biomt"
+
+    fileio.write_model(st, args.output_prfix, pdb=(model_format == ".pdb"), cif=True, cif_ref=cif_ref)
+    logger.write("")
+    logger.write("These {}.* files may be used for deposition (once OneDep implemented reading BIOMT from file..)".format(args.output_prfix))
+    logger.write("")
+    # BIOMT expand
+    st.transform_to_assembly("1", howtoname)
+    args.output_prfix += "_expanded"
+    fileio.write_model(st, file_name=args.output_prfix+model_format)
+    logger.write(" note that this expanded model file is just for visual inspection, *not* for deposition!")
+# helical_biomt()
 
 def symexpand(args):
     if args.chains: args.chains = sum(args.chains, [])
@@ -697,6 +765,7 @@ def main(args):
     comms = dict(show=show,
                  json2csv=json2csv,
                  symmodel=symmodel,
+                 helical_biomt=helical_biomt,
                  expand=symexpand,
                  h_add=h_add,
                  h_density=h_density_analysis,

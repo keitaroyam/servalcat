@@ -24,7 +24,8 @@ def add_symmetry_args(parser, require_pg=False):
     parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold, Dn: 2-fold)")
 # add_symmetry_args()
     
-def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_contacting=False):
+def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_contacting=False,
+                         helical_min_n=None, helical_max_n=None):
     is_helical = args.twist is not None
     if not is_helical and not args.pg:
         if len(st.ncs) > 0:
@@ -34,6 +35,19 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
     
     if len(st.ncs) > 0:
         logger.write(" WARNING: NCS information in model file will be ignored")
+
+    ncsops = ncsops_from_args(args, st.cell, map_and_start=map_and_start, st=st,
+                              helical_min_n=helical_min_n, helical_max_n=helical_max_n)
+
+    st.ncs.clear()
+    st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
+
+    if is_helical and filter_model_helical_contacting:
+        model.filter_helical_contacting(st)
+# nupdate_ncs_from_args()
+
+def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None, helical_max_n=None):
+    is_helical = args.twist is not None
     
     if map_and_start is not None:
         start_xyz = numpy.array(map_and_start[0].get_position(*map_and_start[1]).tolist())
@@ -41,28 +55,25 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
         start_xyz = numpy.zeros(3)
 
     if args.center is None:
-        A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+        A = numpy.array(cell.orthogonalization_matrix.tolist())
         center = numpy.sum(A, axis=1) / 2 #+ start_xyz
         logger.write("Center: {}".format(center))
     else:
         center = numpy.array(args.center)
         
     if is_helical:
-        ncsops = generate_helical_operators(st, start_xyz, center,
+        ncsops = generate_helical_operators(start_xyz, center,
                                             args.pg, args.twist, args.rise,
-                                            axis1=args.axis1, axis2=args.axis2)
+                                            axis1=args.axis1, axis2=args.axis2,
+                                            st=st, min_n=helical_min_n, max_n=helical_max_n)
         logger.write("{} helical operators found".format(len(ncsops)))
     else:
         _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
         logger.write("{} operators found for {}".format(len(ops), args.pg))
         show_operators_axis_angle(ops)
-        ncsops = make_NcsOps_from_matrices(ops, cell=st.cell, center=center)
+        ncsops = make_NcsOps_from_matrices(ops, cell=cell, center=center)
 
-    st.ncs.clear()
-    st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
-
-    if is_helical and filter_model_helical_contacting:
-        model.filter_helical_contacting(st)
+    return ncsops
 # ncsops_from_args()
 
 def get_matrices_using_relion(sym):
@@ -164,18 +175,23 @@ def read_helical_parameters_from_mmcif(cif_in):
     return axsym, deltaphi, deltaz
 # read_helical_parameters_from_mmcif()
 
-def generate_helical_operators(st, start_xyz, center, axsym, deltaphi, deltaz, axis1=None, axis2=None, padding=2.):
+def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1=None, axis2=None,
+                               st=None, min_n=None, max_n=None, padding=2.):
     if not axsym: axsym = "C1"
     if axis1 is None: axis1 = numpy.array([0,0,1.])
     else: axis1 /= numpy.linalg.norm(axis1)
     _, _, axtrs = operators_from_symbol(axsym, axis1, axis2)
-    all_z = numpy.dot([cra.atom.pos.tolist() for cra in st[0].all()], axis1)
-    min_z, max_z = numpy.min(all_z), numpy.max(all_z)
-    direc = numpy.argmax([numpy.dot(axis1, v) for v in ((1.,0,0), (0,1.,0), (0,0,1.))]) # assume axis1 along any of a,b,c axis
-    min_n = int((min_z - padding - start_xyz[direc]) / deltaz)
-    max_n = int((st.cell.parameters[direc] + start_xyz[direc] - max_z - padding) / deltaz)
+    if min_n is None or max_n is None:
+        assert st is not None
+        all_z = numpy.dot([cra.atom.pos.tolist() for cra in st[0].all()], axis1)
+        min_z, max_z = numpy.min(all_z), numpy.max(all_z)
+        direc = numpy.argmax([numpy.dot(axis1, v) for v in ((1.,0,0), (0,1.,0), (0,0,1.))]) # assume axis1 along any of a,b,c axis
+        if min_n is None:
+            min_n = -int((min_z - padding - start_xyz[direc]) / deltaz)
+        if max_n is None:
+            max_n = int((st.cell.parameters[direc] + start_xyz[direc] - max_z - padding) / deltaz)
     ops = []
-    for i in range(-min_n, max_n+1):
+    for i in range(min_n, max_n+1):
         deg = deltaphi*i
         t = numpy.deg2rad(deg)
         m = generate_operators.AngleAxis2rotatin(axis1, t)
