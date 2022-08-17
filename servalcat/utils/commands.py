@@ -162,7 +162,7 @@ def add_arguments(p):
     parser.add_argument("-d", '--resolution', type=float, required=True)
     parser.add_argument('-m', '--mask', help="mask file")
     parser.add_argument('-o', '--output_prefix', default='nemap')
-    parser.add_argument("--trim", action='store_true', help="Write trimmed maps") # XXX no effect.
+    parser.add_argument("--trim", action='store_true', help="Write trimmed maps")
     parser.add_argument("--trim_mtz", action='store_true', help="Write trimmed mtz")
 
     # blur
@@ -618,6 +618,9 @@ def fcalc(args):
 
 def nemap(args):
     from servalcat.spa import fofc
+
+    if (args.trim or args.trim_mtz) and args.mask is None:
+        raise SystemExit("\nError: You need to give --mask as you requested --trim or --trim_mtz.\n")
     
     if args.mask:
         mask = fileio.read_ccp4_map(args.mask)[0]

@@ -274,17 +274,24 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
     # this function may modify the overall scale of FWT/DELFWT.
 
     if mask is not None and (trim_map or trim_mtz):
-        new_cell, new_shape, grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask.array,
-                                                                                                            hkldata.cell,
-                                                                                                            hkldata.sg),
-                                                                                       grid_start=grid_start,
-                                                                                       padding=5,
-                                                                                       mask_cutoff=0.5,
-                                                                                       noncentered=True,
-                                                                                       noncubic=True,
-                                                                                       json_out=None)
+        new_cell, new_shape, new_grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask.array,
+                                                                                                                hkldata.cell,
+                                                                                                                hkldata.sg),
+                                                                                           grid_start=grid_start,
+                                                                                           padding=5,
+                                                                                           mask_cutoff=0.5,
+                                                                                           noncentered=True,
+                                                                                           noncubic=True,
+                                                                                           json_out=None)
     else:
-        new_cell, new_shape, shifts = None, None, None
+        new_cell, new_shape, new_grid_start, shifts = None, None, None, None
+
+    if trim_map:
+        grid_start_for_map = new_grid_start
+        shape_for_map = new_shape
+    else:
+        grid_start_for_map = grid_start
+        shape_for_map = None
         
     if normalize_map and mask is not None:
         cutoff = 0.5
@@ -312,7 +319,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
                 filename = "{}_normalized_fofc.mrc".format(output_prefix)
             logger.write("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                      grid_start=grid_start, grid_shape=new_shape)
+                                      grid_start=grid_start_for_map, grid_shape=shape_for_map)
 
         # Write Fo map as well
         if "FWT" in hkldata.df:
@@ -325,7 +332,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             filename = "{}_normalized_fo.mrc".format(output_prefix)
             logger.write("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
-                                      grid_start=grid_start, grid_shape=new_shape)
+                                      grid_start=grid_start_for_map, grid_shape=shape_for_map)
 
     if trim_mtz and shifts is not None:
         hkldata2 = utils.hkl.HklData(new_cell, hkldata.sg, df=None)
@@ -333,7 +340,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         for lab in map_labs + ["FP", "FC"]:
             if lab not in hkldata.df: continue
             gr = hkldata.fft_map(lab, grid_size=mask.shape)
-            gr = gemmi.FloatGrid(gr.get_subarray(grid_start, new_shape),
+            gr = gemmi.FloatGrid(gr.get_subarray(new_grid_start, new_shape),
                                  new_cell, hkldata.sg)
             if hkldata2.df is None:
                 ad = gemmi.transform_map_to_f_phi(gr).prepare_asu_data(dmin=d_min)
