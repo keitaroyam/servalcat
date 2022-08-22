@@ -118,7 +118,7 @@ def main(args):
     logger.write("FSCaverage after translation = {:.4f}".format(fscavg))
 
     tr = gemmi.Transform(gemmi.Mat33(), shift)
-    st[0].transform(tr)
+    st[0].transform_pos_and_adp(tr)
     utils.model.translate_into_box(st)
     utils.fileio.write_model(st, file_name=args.output_prefix+model_format)
 # main()

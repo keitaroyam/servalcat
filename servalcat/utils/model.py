@@ -291,7 +291,7 @@ def translate_into_box(st, origin=None):
         shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
         tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
         shifts.append(shift)
-        m.transform(tr)
+        m.transform_pos_and_adp(tr)
     return shifts
 # translate_into_box()
 
@@ -634,7 +634,7 @@ def invert_model(st):
     mat = gemmi.Mat33([[-1,0,0],[0,1,0],[0,0,1]]) 
     vec = mat.multiply(-center) + center
     tr = gemmi.Transform(mat, vec)
-    st[0].transform(tr)
+    st[0].transform_pos_and_adp(tr)
 
     # invert peptides
 # invert_model()
