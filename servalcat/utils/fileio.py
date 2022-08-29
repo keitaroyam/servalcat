@@ -502,8 +502,12 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
     for l in open(file_in) if file_in else lines_in:
         if l.startswith(";"): continue
         if not l.strip() or len(l) < 25: continue
-
-        hkl = int(l[:4]), int(l[4:8]), int(l[8:12])
+        try:
+            hkl = int(l[:4]), int(l[4:8]), int(l[8:12])
+        except ValueError:
+            logger.write("Error while parsing HKL part: {}".format(l))
+            break
+            
         if hkl == (0,0,0): break
         hkls.append(hkl)
         vals.append(float(l[12:20]))
@@ -524,6 +528,47 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
     return asudata
 # read_shelx_hkl()
 
+def read_smcif_hkl(cif_in):
+    # Very crude support for smcif - just because I do not know other varieties.
+    # TODO other possible data types? (amplitudes?)
+    # TODO check _refln_observed_status?
+    logger.write("Reading hkl data from small molecule cif: {}".format(cif_in))
+    b = gemmi.cif.read(cif_in).sole_block()
+    try:
+        cell_par = [float(b.find_value("_cell_length_{}".format(x))) for x in ("a", "b", "c")]
+        cell_par += [float(b.find_value("_cell_angle_{}".format(x))) for x in ("alpha", "beta", "gamma")]
+        cell = gemmi.UnitCell(*cell_par)
+    except:
+        logger.write(" WARNING: no unit cell in this file")
+        cell = None
+
+    ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop("_space_group_symop_operation_xyz")]
+    sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(ops))
+        
+    l = b.find_values("_refln_index_h").get_loop()
+    i_hkl = [l.tags.index("_refln_index_{}".format(h)) for h in "hkl"]
+    i_int = l.tags.index("_refln_F_squared_meas")
+    i_sig = l.tags.index("_refln_F_squared_sigma")
+    hkls, vals, sigs = [], [], []
+    for i in range(l.length()):
+        hkl = [gemmi.cif.as_int(l.val(i, j)) for j in i_hkl]
+        hkls.append(hkl)
+        vals.append(gemmi.cif.as_number(l.val(i, i_int)))
+        sigs.append(gemmi.cif.as_number(l.val(i, i_sig)))
+    
+    ints = gemmi.Intensities()
+    ints.set_data(cell, sg, hkls, vals, sigs)
+    ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
+    logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
+                                                                     numpy.mean(ints.nobs_array),
+                                                                     numpy.min(ints.nobs_array)))
+    i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
+                                                               numpy.dtype([("value", numpy.float32),
+                                                                            ("sigma", numpy.float32)]))
+    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array, i_sigi)
+    return asudata, 4 # 4 for intensity
+# read_smcif_hkl()
+    
 def read_smcif_shelx(cif_in):
     logger.write("Reading small molecule cif: {}".format(cif_in))
     b = gemmi.cif.read(cif_in).sole_block()

@@ -145,11 +145,16 @@ def main(args):
                     raise SystemExit("Error: {}".format(e))
             if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
             mtz.write_to_file(mtz_in)
+            st.cell = mtz.cell
+            st.spacegroup_hm = mtz.spacegroup.hm
+        elif args.hklin.endswith(".hkl"):
+            asudata, hklf = utils.fileio.read_smcif_hkl(args.hklin)
+            # TODO check consistency with model cell and sg
+            write_mtz(mtz_in, asudata, hklf, args.blur)
+            st.cell = asudata.unit_cell
+            st.spacegroup_hm = asudata.spacegroup.hm
         else:
             raise SystemExit("Error: unsupported hkl file: {}".format(args.hklin))
-
-        st.cell = mtz.cell
-        st.spacegroup_hm = mtz.spacegroup.hm
 
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
