@@ -163,6 +163,7 @@ def add_arguments(p):
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('--cutoff', type=float, default=1e-7)
     parser.add_argument('--rate', type=float, default=1.5)
+    parser.add_argument('--add_dummy_sigma', action='store_true', help="write dummy SIGF")
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument('-o', '--output_prefix')
 
@@ -672,15 +673,13 @@ def fcalc(args):
         fc_asu = model.calc_fc_direct(st, args.resolution, source=args.source,
                                       mott_bethe=args.source=="electron", monlib=monlib)
 
-    mtz = gemmi.Mtz()
-    mtz.spacegroup = fc_asu.spacegroup
-    mtz.cell = fc_asu.unit_cell
-    mtz.add_dataset('HKL_base')
-    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
-    mtz.add_column("FC", "F")
-    mtz.add_column("PHIC", "P")
-    mtz.set_data(fc_asu)
-    mtz.write_to_file(args.output_prefix+".mtz")
+    hkldata = hkl.hkldata_from_asu_data(fc_asu, "FC")
+    if args.add_dummy_sigma:
+        hkldata.df["SIGFC"] = 1.
+        hkldata.write_mtz(args.output_prefix+".mtz", ["FC", "SIGFC"], types=dict(SIGFC="Q"))
+    else:
+        hkldata.write_mtz(args.output_prefix+".mtz", ["FC"])
+
     logger.write("{} written.".format(args.output_prefix+".mtz"))
 # fcalc()
 
