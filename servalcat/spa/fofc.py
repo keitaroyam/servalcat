@@ -139,7 +139,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
     logger.write("Calculating maps..")
     logger.write(" sharpening method: ", end="")
     if sharpening_b is None:
-        logger.write("1/sqrt(FSC * Mn(Fo))")
+        logger.write("1/sqrt(FSC * Mn(Fo)) for Fo and 1/sigma_U,T for Fo-Fc")
     else:
         logger.write("1/exp(-B*s^2/4) with B= {:.2f}".format(sharpening_b))
 
@@ -189,15 +189,16 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
         if sharpening_b is None:
             k = sig_fo * numpy.sqrt(fsc)
+            k_fofc = numpy.sqrt(S) if S > 0 else 1. # to avoid zero-division. if S=0 then w=0.
         else:
             k = numpy.exp(-sharpening_b*s2_bin/4)
             
         lab_suf = "" if B is None else "_b0"
         if has_halfmaps:
-            tmp["FWT"+lab_suf][idxes] = w_nomodel/k*Fo
+            tmp["FWT"+lab_suf][idxes] = w_nomodel / k * Fo
             if has_fc:
-                tmp["DELFWT"+lab_suf][idxes] = delfwt/k
-                tmp["Fupdate"+lab_suf][idxes] = fup/k
+                tmp["DELFWT"+lab_suf][idxes] = delfwt / k_fofc
+                tmp["Fupdate"+lab_suf][idxes] = fup / k
         elif has_fc:
             tmp["DELFWT"+lab_suf][idxes] = delfwt
 
@@ -210,7 +211,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
             if has_fc:
                 S_l = S * k2_l
                 w = 1. if no_fsc_weights or not has_halfmaps else S_l/(S_l+varn)            
-                delfwt = (Fo-D*Fc)*w/k/k_l
+                delfwt = (Fo-D*Fc)*w/k_fofc/k_l
                 fup = (w*Fo+(1.-w)*D*Fc)/k/k_l
                 logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
                                                                                       numpy.average(k),
