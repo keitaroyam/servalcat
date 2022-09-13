@@ -189,7 +189,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
         if sharpening_b is None:
             k = sig_fo * numpy.sqrt(fsc)
-            k_fofc = numpy.sqrt(S) if S > 0 else 1. # to avoid zero-division. if S=0 then w=0.
+            k_fofc = numpy.sqrt(S) if has_fc and S > 0 else 1. # to avoid zero-division. if S=0 then w=0.
         else:
             k = numpy.exp(-sharpening_b*s2_bin/4)
             
