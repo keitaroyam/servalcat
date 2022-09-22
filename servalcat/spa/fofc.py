@@ -376,7 +376,7 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     utils.model.expand_ncs(st)
 
-    if (args.omit_proton or args.omit_h_electron) and st[0].count_hydrogen_sites() == 0:
+    if (args.omit_proton or args.omit_h_electron) and not st[0].has_hydrogen():
         raise SystemExit("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
 
     if args.halfmaps:
@@ -391,7 +391,7 @@ def main(args):
     st.spacegroup_hm = "P1"
     st.cell = g.unit_cell
 
-    if st[0].count_hydrogen_sites() > 0:
+    if st[0].has_hydrogen():
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib)
     else:
         monlib = None

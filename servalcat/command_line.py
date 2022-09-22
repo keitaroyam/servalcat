@@ -27,8 +27,8 @@ import servalcat.spa.translate
 import servalcat.spa.localcc
 import servalcat.xtal.run_refmac_small
 import servalcat.xtal.sigmaa
+import servalcat.xtal.refmac_wrapper
 import servalcat.utils.commands
-#import servalcat.spa.bestmap
 
 from servalcat.utils import logger
 
@@ -90,7 +90,7 @@ def main():
                    sigmaa=servalcat.xtal.sigmaa,
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
-                   #bestmap=servalcat.spa.bestmap,
+                   refmac5=servalcat.xtal.refmac_wrapper,
                    )
 
     for n in modules:

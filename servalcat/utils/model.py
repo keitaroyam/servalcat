@@ -53,7 +53,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     if source != "electron": assert not mott_bethe
     if omit_proton or omit_h_electron:
         assert mott_bethe
-        if st[0].count_hydrogen_sites() == 0:
+        if not st[0].has_hydrogen():
             logger.write("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
             omit_proton = omit_h_electron = False
         elif omit_proton and omit_h_electron:
@@ -66,7 +66,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
     logger.write("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
         
-    if mott_bethe and not omit_proton and monlib is not None and st[0].count_hydrogen_sites() > 0:
+    if mott_bethe and not omit_proton and monlib is not None and st[0].has_hydrogen():
         st = st.clone()
         topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
         resnames = st[0].get_all_residue_names()
@@ -118,7 +118,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
             dc.add_model_density_to_grid(st[0])
 
         # Subtract hydrogen Z
-        if not omit_proton and st[0].count_hydrogen_sites() > 0:
+        if not omit_proton and st[0].has_hydrogen():
             if topo is not None:
                 # Shift proton positions
                 topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
@@ -159,7 +159,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None
         
     
     if source == "electron" and mott_bethe:
-        if monlib is not None and st[0].count_hydrogen_sites() > 0:
+        if monlib is not None and st[0].has_hydrogen():
             st = st.clone()
             topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
             resnames = st[0].get_all_residue_names()
@@ -193,7 +193,7 @@ def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None
 
 def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=1e-5, rate=1.5, optimize=False):
     # Very crude implementation to find peak from calculated map
-    assert st[0].count_hydrogen_sites() > 0
+    assert st[0].has_hydrogen()
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     blur = max(0, blur)
     logger.write("Setting blur= {:.2f} in density calculation".format(blur))
@@ -291,7 +291,7 @@ def translate_into_box(st, origin=None):
         shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
         tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
         shifts.append(shift)
-        m.transform(tr)
+        m.transform_pos_and_adp(tr)
     return shifts
 # translate_into_box()
 
@@ -634,7 +634,7 @@ def invert_model(st):
     mat = gemmi.Mat33([[-1,0,0],[0,1,0],[0,0,1]]) 
     vec = mat.multiply(-center) + center
     tr = gemmi.Transform(mat, vec)
-    st[0].transform(tr)
+    st[0].transform_pos_and_adp(tr)
 
     # invert peptides
 # invert_model()

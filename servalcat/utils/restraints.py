@@ -516,8 +516,7 @@ class Restraints:
                     self.nbc.append((r.partner1, r.partner2, r.image_idx, r.dist, mindist, sigma, z, vdwtype))
 
         # convert for orthogonal coordiinates
-        transform = lambda x: gemmi.Transform(self.st.cell.orthogonalization_matrix.multiply(x.mat).multiply(self.st.cell.fractionalization_matrix),
-                                              self.st.cell.orthogonalization_matrix.multiply(x.vec))
+        transform = lambda x: self.st.cell.orth.combine(x).combine(self.st.cell.frac)
         if self.nbc:
             self.nbc_transforms = [transform(ns.get_image_transformation(i)) for i in range(max(x[2] for x in self.nbc)+1)]
     # find_nonbonded()
