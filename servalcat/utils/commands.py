@@ -394,7 +394,7 @@ def h_density_analysis(args):
     #    raise SystemExit("Only electron source is supported.")
     model_format = fileio.check_model_format(args.model)
     st = fileio.read_structure(args.model)
-    if st[0].count_hydrogen_sites() == 0:
+    if not st[0].has_hydrogen():
         raise SystemExit("No hydrogen in model.")
 
     if args.output_prefix is None:
