@@ -86,51 +86,129 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
 
     return k_aniso
 
-#import line_profiler
-#profile = line_profiler.LineProfiler()
-#import atexit
-#atexit.register(profile.print_stats)
-#@profile
-def J(k, z, mode="pbdv"):
-    """
-    Calculate J(k,z) = int_0^inf t^k exp(-(t-z)^2/2) dt
-    """
-    zsq = z**2
-    if mode == "pbdv":
-        return scipy.special.gamma(k+1) * numpy.exp(-zsq/4) * scipy.special.pbdv(-k-1, -z)[0]
-    elif mode == "1f1":
-        ret = scipy.special.gamma((k+1)/2) * scipy.special.hyp1f1(-k/2, 0.5, -zsq/2)
-        ret += numpy.sqrt(2) * z * scipy.special.gamma(k/2 + 1) * scipy.special.hyp1f1((1-k)/2, 1.5, -zsq/2)
-        ret *= 2**((k-1) / 2)
-        return ret
-    elif mode == "1f1_u":
-        selp = z >= 0
-        seln = ~selp
-        retp = scipy.special.gamma((k+1)/2) * scipy.special.hyp1f1(-k/2, 0.5, -zsq[selp]/2)
-        retp += numpy.sqrt(2) * z[selp] * scipy.special.gamma(k/2 + 1) * scipy.special.hyp1f1((1-k)/2, 1.5, -zsq[selp]/2)
-        retp *= 2**((k-1) / 2)
+# For the calculation of J = \int_0^\infty x^{4z-1} e^{-(x^4 - 2t0 x^2)/2} dx
+def f1_orig2_value(x, z, t0):
+    return (x**4 - 2 * t0 * x**2) / 2.0 - (4 * z - 1) * numpy.log(x)
 
-        retn = 2**(-k/2-1) * scipy.special.gamma(k + 1)
-        retn *= numpy.exp(-zsq[seln]/2) * numpy.sqrt(2)
-        retn *= scipy.special.hyperu(k/2+0.5, 0.5, zsq[seln]/2)
+def f1_orig2_1der(x, z, t0):
+    return 2.0*(x**3 - t0 * x) - (4 * z - 1) / x
 
-        ret = numpy.zeros(len(z))
-        ret[selp] = retp
-        ret[seln] = retn
-        return ret
-    elif mode == "laplace_x2": # Laplace approximation with t=x^2
-        xk = numpy.sqrt(0.5 * z + 0.5 * numpy.sqrt(zsq + 4 * k + 2))
-        f_xk = 0.5 * xk**4 - xk**2 * z - (2 * k + 1) * numpy.log(xk)
-        fpp_xk = 4 * numpy.sqrt(zsq + 4*k + 2)
-        return 2 * numpy.exp(-0.5*zsq - f_xk) * numpy.sqrt(0.5 * numpy.pi / fpp_xk) * (scipy.special.erf(xk*numpy.sqrt(0.5 * fpp_xk)) + 1)
-    elif mode == "laplace_x4": # Laplace approximation with t=x^4
-        xk4 = 0.5 * (z + numpy.sqrt(zsq + 4 * k + 3))
-        xk = xk4**0.25
-        f_xk = 0.5 * xk4**2 - z * xk4 - (4 * k + 3) * numpy.log(xk)
-        fpp_xk = 28 * xk4 * numpy.sqrt(xk4) - 12 * z * numpy.sqrt(xk4) + (4 * k + 3) / numpy.sqrt(xk4)
-        return 4 * numpy.exp(-0.5*zsq - f_xk) * numpy.sqrt(0.5 * numpy.pi / fpp_xk) * (scipy.special.erf(xk * numpy.sqrt(0.5 * fpp_xk)) + 1)
+def f1_orig2_2der(x, z, t0):
+    return 6.0 * x**2 - 2.0 * t0 + (4 * z - 1) / x**2
+
+def calc_f1_orig2_x0(z, t0):
+    return numpy.sqrt((t0 + numpy.sqrt(t0**2 + 8 * z - 2)) / 2.0)
+
+# with variable transformation exp(x-exp(-x))
+def f1_exp2_value(x, z, t0):
+    ex = numpy.exp(-x)
+    exx = x - ex
+    ex1 = numpy.exp(2.0 * exx)
+    return (ex1 * ex1 - 2.0 * t0 * ex1) / 2.0 - 4 * z * exx - numpy.log(1.0 + ex)
+
+def f1_exp2_1der(x, z, t0):
+    ex = numpy.exp(-x)
+    exx = x - ex
+    ex1 = numpy.exp(2.0 * exx)
+    ret = (1 + ex) * (2 * ex1 * ex1 - 2.0 * t0 * ex1 - 4 * z) + 1 - 1 / (1 + ex)
+    return ret
+
+def f1_exp2_2der(x, z, t0):
+    ex = numpy.exp(-x)
+    exx = x - ex
+    ex1 = numpy.exp(2.0 * exx)
+    return -ex * (2.0 * ex1 * ex1 - 2.0 * t0 * ex1 - 4 * z) + (1 + ex)**2 * (8.0 * ex1 * ex1 - 4.0 * t0 * ex1) - ex / (1 + ex)**2
+
+def calc_f1_exp2_x0(z, t0):
+    v = (t0 + numpy.sqrt(t0**2 + 8 * z)) * 0.5
+    a = 0.5 * numpy.log(v)
+    exp_a = v**(-0.5)
+    return scipy.special.lambertw(exp_a).real + a
+
+def J_ratio_1(k_num, k_den, to1, h): # case 1
+    N = 100 # we should use N1 and N2 optimized
+    z = 0.5 * (k_den + 1)
+    root = calc_f1_exp2_x0(z, to1)
+    f1val = f1_exp2_value(root, z, to1)
+    f2der = f1_exp2_2der(root, z, to1)
+    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+    ff = f1_exp2_value(xx, z, to1) - f1val
+    laplace_correct = numpy.sum(numpy.exp(-ff), axis=0)
+    
+    # for numerator
+    deltaz = 0.5 * (k_num - k_den)
+    g = numpy.exp(4 * deltaz * (xx - numpy.exp(-xx)))
+    laplace_correct_num = numpy.sum(numpy.exp(-ff) * g, axis=0)
+    return laplace_correct_num / laplace_correct
+
+def J_1(k, to1, h, log=False): # case 1
+    N = 100 # we should use N1 and N2 optimized
+    z = 0.5 * (k + 1)
+    root = calc_f1_exp2_x0(z, to1)
+    f1val = f1_exp2_value(root, z, to1)
+    f2der = f1_exp2_2der(root, z, to1)
+    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+    ff = f1_exp2_value(xx, z, to1) - f1val
+    expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
+    laplace_correct = numpy.sum(numpy.exp(-ff), axis=0)
+    if log:
+        return expon + numpy.log(laplace_correct)
     else:
-        raise Exception("bad mode")
+        return numpy.exp(expon) * laplace_correct
+
+def J_ratio_2(k_num, k_den, to1, h): # case 2
+    N = 100 # we should use N1 and N2 optimized
+    z = 0.5 * (k_den + 1)
+    root = calc_f1_orig2_x0(z, to1)
+    f1val = f1_orig2_value(root, z, to1)
+    f2der = f1_orig2_2der(root, z, to1)
+    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+    ff = f1_orig2_value(xx, z, to1) - f1val
+    laplace_correct = numpy.sum(numpy.where(xx>0, numpy.exp(-ff), 0.), axis=0)
+    
+    # for numerator
+    deltaz = 0.5 * (k_num - k_den)
+    g = numpy.exp(4 * deltaz * numpy.log(xx))
+    laplace_correct_num = numpy.sum(numpy.where(xx>0, numpy.exp(-ff) * g, 0.), axis=0)
+    return laplace_correct_num / laplace_correct
+
+def J_2(k, to1, h, log=False): # case 2
+    N = 100 # we should use N1 and N2 optimized
+    z = 0.5 * (k + 1)
+    root = calc_f1_orig2_x0(z, to1)
+    f1val = f1_orig2_value(root, z, to1)
+    f2der = f1_orig2_2der(root, z, to1)
+    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+    ff = f1_orig2_value(xx, z, to1) - f1val
+    expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
+    laplace_correct = numpy.sum(numpy.where(xx>0, numpy.exp(-ff), 0.), axis=0) * h
+    if log:
+        return expon + numpy.log(laplace_correct)
+    else:
+        return numpy.exp(expon) * laplace_correct
+
+def J_conditions(k_den, to1, case1_lim=10):
+    d = to1 + numpy.sqrt(to1**2 + 4 * (k_den + 1) - 2)
+    idxes = numpy.digitize(d, [case1_lim, numpy.inf])
+    return idxes
+
+def J_ratio(k_num, k_den, to1, h=0.5, case1_lim=10):
+    idxes = J_conditions(k_den, to1, case1_lim)
+    ret = numpy.zeros(to1.shape)
+    sel0 = idxes==0
+    sel1 = idxes==1
+    ret[sel0] = J_ratio_1(k_num, k_den, to1[sel0], h)
+    ret[sel1] = J_ratio_2(k_num, k_den, to1[sel1], h)
+    return ret
+
+def J(k, to1, h=0.5, case1_lim=10, log=False):
+    idxes = J_conditions(k, to1, case1_lim)
+    ret = numpy.zeros(to1.shape)
+    sel0 = idxes==0
+    sel1 = idxes==1
+    ret[sel0] = J_1(k, to1[sel0], h, log)
+    ret[sel1] = J_2(k, to1[sel1], h, log)
+    return ret
 # J()
 
 def french_wilson(hkldata, centric_and_selections, k_aniso):
@@ -147,14 +225,12 @@ def french_wilson(hkldata, centric_and_selections, k_aniso):
             
             if c == 0: # acentric
                 to1 = Io / sigo - sigo / epsS
-                J_0 = J(0., to1)
-                F = numpy.sqrt(sigo) * J(0.5, to1) / J_0
-                Fsq = sigo * J(1., to1) / J_0
+                F = numpy.sqrt(sigo) * J_ratio(0.5, 0., to1)
+                Fsq = sigo * J_ratio(1., 0., to1)
             else: # centric
                 to1 = Io / sigo - 0.5 * sigo / epsS
-                J_minus_half = J(-0.5, to1)
-                F = numpy.sqrt(sigo) * J(0., to1) / J_minus_half
-                Fsq = sigo * J(0.5, to1) / J_minus_half
+                F = numpy.sqrt(sigo) * J_ratio(0., -0.5, to1)
+                Fsq = sigo * J_ratio(0.5, -0.5, to1)
 
             print("bin=",i_bin, "cen=", c, "min_to1=", numpy.min(to1))
             varF = Fsq - F**2
