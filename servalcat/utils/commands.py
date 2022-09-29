@@ -72,11 +72,13 @@ def add_arguments(p):
     parser = subparsers.add_parser("expand", description="Expand symmetry")
     parser.add_argument('--model', required=True)
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
-    parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
-                        help="How to decide new chain IDs in expanded model (default: short); "
-                        "dup: use original chain IDs (with different segment IDs), "
-                        "short: use unique new IDs, "
-                        "number: add number to original chain ID")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
+                       help="How to decide new chain IDs in expanded model (default: short); "
+                       "dup: use original chain IDs (with different segment IDs), "
+                       "short: use unique new IDs, "
+                       "number: add number to original chain ID")
+    group.add_argument("--split", action="store_true", help="split file for each operator")
     parser.add_argument('-o', '--output_prfix')
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
     parser.add_argument('--cif', action="store_true", help="Write a cif file")
@@ -333,10 +335,10 @@ def helical_biomt(args):
 def symexpand(args):
     if args.chains: args.chains = sum(args.chains, [])
     model_format = fileio.check_model_format(args.model)
-
-    howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
-                     short=gemmi.HowToNameCopiedChain.Short,
-                     number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
+    if not args.split:
+        howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
+                         short=gemmi.HowToNameCopiedChain.Short,
+                         number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
 
     st = fileio.read_structure(args.model)
 
@@ -356,13 +358,24 @@ def symexpand(args):
         symmetry.show_ncs_operators_axis_angle(st.ncs)
         non_given = [op for op in st.ncs if not op.given]
         if len(non_given) > 0:
-            st_tmp = st.clone()
-            model.expand_ncs(st_tmp, howtoname=howtoname)
-            output_prfix = args.output_prfix + "_ncs_expanded"
-            if args.pdb or args.cif:
-                fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+            if args.split:
+                for i, op in enumerate(st.ncs):
+                    if op.given: continue
+                    st_tmp = st.clone()
+                    for m in st_tmp: m.transform_pos_and_adp(op.tr)
+                    output_prfix = args.output_prfix + "_ncs_{:02d}".format(i+1)
+                    if args.pdb or args.cif:
+                        fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+                    else:
+                        fileio.write_model(st_tmp, file_name=output_prfix+model_format)
             else:
-                fileio.write_model(st_tmp, file_name=output_prfix+model_format)
+                st_tmp = st.clone()
+                model.expand_ncs(st_tmp, howtoname=howtoname)
+                output_prfix = args.output_prfix + "_ncs_expanded"
+                if args.pdb or args.cif:
+                    fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+                else:
+                    fileio.write_model(st_tmp, file_name=output_prfix+model_format)
         else:
             logger.write("All operators are already expanded (marked as given). Exiting.")
     else:
