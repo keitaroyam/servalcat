@@ -189,14 +189,14 @@ class TestSPACommands(unittest.TestCase):
 
     def test_localcc(self):
         sys.argv = ["", "localcc", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
-                    "--model", pipes.quote(data["pdb"]), "--mask", pipes.quote(data["mask"])]
+                    "--model", pipes.quote(data["pdb"]), "--mask", pipes.quote(data["mask"]), "--kernel", "5"]
         command_line.main()
-        self.assertTrue(os.path.isfile("ccmap_r5_half.mrc"))
-        self.assertTrue(os.path.isfile("ccmap_r5_model.mrc"))
+        self.assertTrue(os.path.isfile("ccmap_r5px_half.mrc"))
+        self.assertTrue(os.path.isfile("ccmap_r5px_model.mrc"))
 
         st = utils.fileio.read_structure(data["pdb"])
-        halfcc = utils.fileio.read_ccp4_map("ccmap_r5_half.mrc")[0]
-        modelcc = utils.fileio.read_ccp4_map("ccmap_r5_model.mrc")[0]
+        halfcc = utils.fileio.read_ccp4_map("ccmap_r5px_half.mrc")[0]
+        modelcc = utils.fileio.read_ccp4_map("ccmap_r5px_model.mrc")[0]
 
         self.assertAlmostEqual(numpy.mean([modelcc.interpolate_value(cra.atom.pos) for cra in st[0].all()]),
                                0.6416836618309301, places=4)

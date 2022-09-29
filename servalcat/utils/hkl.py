@@ -392,6 +392,7 @@ class HklData:
     # as_asu_data()
 
     def fft_map(self, label=None, data=None, grid_size=None, sample_rate=3):
+        if data is not None: data = data.astype(numpy.complex64) # we may want to keep complex128?
         asu = self.as_asu_data(label=label, data=data)
         if grid_size is None:
             ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
@@ -413,6 +414,16 @@ class HklData:
         ret = d_min/fac
         return ret
     # d_eff()
+
+    def hard_sphere_kernel(self, r_ang, grid_size):
+        s = 1. / self.d_spacings()
+        t = 2 * numpy.pi * s * r_ang
+        F_kernel = 3. * (-t * numpy.cos(t) + numpy.sin(t)) / t**3
+        knl = self.fft_map(data=F_kernel, grid_size=grid_size)
+        knl.array[:] += 1. / knl.unit_cell.volume # F000
+        knl.array[:] /= numpy.sum(knl.array)
+        return knl
+    # hard_sphere_kernel()
 
     def scale_k_and_b(self, lab_ref, lab_scaled):
         logger.write("Determining k, B scales between {} and {}".format(lab_ref, lab_scaled))

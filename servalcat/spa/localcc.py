@@ -20,8 +20,11 @@ def add_arguments(parser):
                        help="Input half map files")
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
-    parser.add_argument("--kernel", type=int, default=5,
-                       help="Kernel radius (default: %(default)d)")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--kernel", type=int, 
+                       help="Kernel radius in pixel")
+    group.add_argument("--kernel_ang", type=float,
+                       help="Kernel radius in Angstrom (hard sphere)")
     parser.add_argument('--mask',
                         help="mask file")
     parser.add_argument('--model', 
@@ -145,13 +148,18 @@ def main(args):
     else:
         d_min = args.resolution
 
-    prefix = "{}_r{}".format(args.output_prefix, args.kernel)
-        
     hkldata = setup_coeffs_for_halfmap_cc(maps, d_min, mask)
-    knl = utils.maps.raised_cosine_kernel(args.kernel)
+    if args.kernel is None:
+        prefix = "{}_r{}A".format(args.output_prefix, args.kernel_ang)
+        knl = hkldata.hard_sphere_kernel(r_ang=args.kernel_ang, grid_size=grid_shape)
+    else:
+        prefix = "{}_r{}px".format(args.output_prefix, args.kernel)
+        knl = utils.maps.raised_cosine_kernel(args.kernel)
+        
     halfcc_map = utils.maps.local_cc(hkldata.fft_map("F_map1w", grid_size=grid_shape),
                                      hkldata.fft_map("F_map2w", grid_size=grid_shape),
-                                     knl)
+                                     knl, method="simple" if args.kernel is None else "scipy")
+
     halfcc_map_in_mask = halfcc_map.array[mask.array>0.5] if mask is not None else halfcc_map
     logger.write("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
     utils.maps.write_ccp4_map(prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
@@ -165,7 +173,7 @@ def main(args):
         add_coeffs_for_model_cc(hkldata, st)
         modelcc_map = utils.maps.local_cc(hkldata.fft_map("FPw", grid_size=grid_shape),
                                           hkldata.fft_map("FCw", grid_size=grid_shape),
-                                          knl)
+                                          knl, method="simple" if args.kernel is None else "scipy")
         modelcc_map_in_mask = modelcc_map.array[mask.array>0.5] if mask is not None else modelcc_map
         logger.write("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
         utils.maps.write_ccp4_map(prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,

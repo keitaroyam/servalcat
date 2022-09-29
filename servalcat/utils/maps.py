@@ -264,22 +264,34 @@ def raised_cosine_kernel(r1, dr=2):
     return kern
 # raised_cosine_kernel()
 
-def local_var(grid, kernel):
-    mean_x2 = scipy.signal.fftconvolve(grid.array**2, kernel, "same")
-    mean_x = scipy.signal.fftconvolve(grid.array, kernel, "same")
+def fft_convolve_simple(in1, in2):
+    return numpy.fft.irfftn(numpy.fft.rfftn(in1) * numpy.fft.rfftn(in2))
+
+def local_var(grid, kernel, method="scipy"):
+    if method == "scipy":
+        convolve = lambda x, y: scipy.signal.fftconvolve(x, y, "same")
+    else:
+        convolve = fft_convolve_simple
+    mean_x2 = convolve(grid.array**2, kernel)
+    mean_x = convolve(grid.array, kernel)
     var_x = new_grid_like(grid)
     var_x.array[:] = mean_x2 - mean_x**2
     var_x.array[var_x.array<0] = 0 # due to loss of significance
     return var_x
 # local_var()
 
-def local_cc(map1, map2, kernel):
+def local_cc(map1, map2, kernel, method="scipy"):
+    if method == "scipy":
+        convolve = lambda x, y: scipy.signal.fftconvolve(x, y, "same")
+    else:
+        convolve = fft_convolve_simple
+
     localcc = new_grid_like(map1)
-    mean_1_sqr = scipy.signal.fftconvolve(map1.array**2, kernel, "same")
-    mean_2_sqr = scipy.signal.fftconvolve(map2.array**2, kernel, "same")
-    mean_1 = scipy.signal.fftconvolve(map1.array, kernel, "same")
-    mean_2 = scipy.signal.fftconvolve(map2.array, kernel, "same")
-    mean_12 = scipy.signal.fftconvolve(map1.array * map2.array, kernel, "same")
+    mean_1_sqr = convolve(map1.array**2, kernel)
+    mean_2_sqr = convolve(map2.array**2, kernel)
+    mean_1 = convolve(map1.array, kernel)
+    mean_2 = convolve(map2.array, kernel)
+    mean_12 = convolve(map1.array * map2.array, kernel)
     var_1 = mean_1_sqr - mean_1**2
     var_1[var_1 < 0] = 0
     var_2 = mean_2_sqr - mean_2**2
