@@ -79,8 +79,14 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     k_aniso = numpy.zeros(6)
     I_over_eps = hkldata.df.I.to_numpy() / hkldata.df.epsilon.to_numpy()
     for i_bin, idxes in hkldata.binned():
-        hkldata.binned_df.loc[i_bin, "S"] = numpy.nanmean(I_over_eps[idxes])
-
+        S = numpy.nanmean(I_over_eps[idxes])
+        hkldata.binned_df.loc[i_bin, "S"] = S
+        ret = scipy.optimize.minimize(fun=ll_acentric,
+                                      jac=ll_1der_acentric,
+                                      x0=[S],
+                                      args=(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], hkldata.df.epsilon.to_numpy()[idxes]))
+        print(ret)
+                                
     logger.write("Initial estimates:")
     logger.write(hkldata.binned_df.to_string())
 
@@ -210,6 +216,40 @@ def J(k, to1, h=0.5, case1_lim=10, log=False):
     ret[sel1] = J_2(k, to1[sel1], h, log)
     return ret
 # J()
+
+def ll_acentric(x, Io, sigIo, eps, h=0.5):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - sigIo / S / eps)
+    return -J(0., to1, h, log=True) + numpy.log(S)
+
+def ll_1der_acentric(x, Io, sigIo, eps, h=0.5):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - sigIo / S / eps)
+    return -J_ratio(1., 0., to1, h) * sigIo / eps / S**2 + 1. / S
+
+def ll_2der_acentric(x, Io, sigIo, eps, h=0.5):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - sigIo / S / eps)
+    J_2_0 = J_ratio(2., 0., to1, h)
+    J_1_0 = J_ratio(1., 0., to1, h)
+    return (J_2_0 - J_1_0**2) * (sigIo / eps / S**2)**2 + 2. * J_1_0 * sigIo / eps / S**3 - 1. / S**2
+
+def ll_centric(x, Io, sigIo, eps, h):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
+    return -J(-0.5, to1, h, log=True) + 0.5 * numpy.log(S)
+
+def ll_1der_centric(x, Io, sigIo, eps, h):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
+    return -J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S**2 + 0.5 / S
+
+def ll_2der_centric(x, Io, sigIo, eps, h):
+    S = x[0]
+    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
+    J_15_05 = J_ratio(1.5, -0.5, to1, h)
+    J_05_05 = J_ratio(0.5, -0.5, to1, h)
+    return (-J_15_05 + J_05_05**2) * (0.5 * sigIo / eps / S**2)**2 + J_05_05 * sigIo / eps / S**3 - 0.5 / S**2
 
 def french_wilson(hkldata, centric_and_selections, k_aniso):
     hkldata.df["F"] = numpy.nan
