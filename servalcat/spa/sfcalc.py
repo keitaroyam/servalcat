@@ -377,15 +377,8 @@ def main(args, monlib=None):
             
         if mask is None and args.mask_radius:
             logger.write("Creating mask..")
-            mask = gemmi.FloatGrid(*maps[0][0].shape)
-            mask.set_unit_cell(unit_cell)
-            mask.spacegroup = spacegroup
-            mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
-            ccp4 = gemmi.Ccp4Map()
-            ccp4.grid = mask
-            ccp4.update_ccp4_header(2, True) # float, update stats
-            ccp4.write_ccp4_map("mask_from_model.ccp4")
-            logger.write("Mask file written: mask_from_model.ccp4")
+            mask = utils.maps.mask_from_model(st, args.mask_radius, grid=maps[0][0])
+            utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
     else:
         model_format = None
         

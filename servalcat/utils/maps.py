@@ -20,8 +20,17 @@ def new_grid_like(gr):
     return newgr
 # new_grid_like()
 
-def mask_from_model():
-    pass
+def mask_from_model(st, radius, soft_edge=0, grid=None, unit_cell=None, spacegroup=None, grid_shape=None):
+    if grid is not None:
+        mask = new_grid_like(grid)
+    else:
+        mask = gemmi.FloatGrid(grid_shape)
+        mask.set_unit_cell(unit_cell)
+        mask.spacegroup = spacegroup
+    mask.mask_points_in_constant_radius(st[0], radius, 1.)
+    if soft_edge > 0: mask.add_soft_edge_to_mask(soft_edge)
+    return mask
+# mask_from_model()
 
 def test_mask_with_model(mask, st, mask_threshold=.5, inclusion_cutoff=.8):
     logger.write("Testing mask with model..")

@@ -113,10 +113,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
 
     if mask is not None or mask_radius is not None:
         if mask is None:
-            mask = gemmi.FloatGrid(*maps[0][0].shape)
-            mask.set_unit_cell(st.cell)
-            mask.spacegroup = st.find_spacegroup()
-            mask.mask_points_in_constant_radius(st[0], mask_radius, 1.)
+            assert maps[0][0].unit_cell == st.cell
+            mask = utils.maps.mask_from_model(st, mask_radius, grid=maps[0][0])
         if no_sharpen_before_mask or len(maps) < 2:
             for ma in maps: ma[0].array[:] *= mask
         else:
@@ -455,10 +453,7 @@ def main(args):
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
     elif args.mask_radius_for_fofc:
         logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
-        mask = gemmi.FloatGrid(*maps[0][0].shape)
-        mask.set_unit_cell(maps[0][0].unit_cell)
-        mask.spacegroup = gemmi.SpaceGroup(1)
-        mask.mask_points_in_constant_radius(st_expanded[0], args.mask_radius_for_fofc, 1.)
+        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0])
     else:
         logger.write("  mask: not used")
         mask = None

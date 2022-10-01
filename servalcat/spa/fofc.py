@@ -403,14 +403,8 @@ def main(args):
                 raise SystemExit("\nError: Model is out of mask.\n"
                                  "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
     elif args.mask_radius:
-        mask = gemmi.FloatGrid(*g.shape)
-        mask.set_unit_cell(g.unit_cell)
-        mask.spacegroup = gemmi.SpaceGroup(1)
-        mask.mask_points_in_constant_radius(st[0], args.mask_radius, 1.)
-        ccp4 = gemmi.Ccp4Map()
-        ccp4.grid = mask
-        ccp4.update_ccp4_header(2, True) # float, update stats
-        ccp4.write_ccp4_map("mask_from_model.ccp4")
+        mask = utils.maps.mask_from_model(st, args.mask_radius, grid=g)
+        utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
     else:
         mask = None
         logger.write("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")

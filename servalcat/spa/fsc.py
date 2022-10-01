@@ -137,10 +137,7 @@ def main(args):
         logger.write("Input mask file: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
-        mask = gemmi.FloatGrid(*maps[0][0].shape)
-        mask.set_unit_cell(unit_cell)
-        mask.spacegroup = sts[0].find_spacegroup()
-        mask.mask_points_in_constant_radius(sts[0][0], args.mask_radius, 1.)    
+        mask = utils.maps.mask_from_model(st, args.mask_radius, grid=maps[0][0])
     else:
         mask = None
     
