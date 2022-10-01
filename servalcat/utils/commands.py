@@ -191,6 +191,16 @@ def add_arguments(p):
     parser.add_argument('-B', type=float, required=True, help="B value for blurring (negative value for sharpening)")
     parser.add_argument('-o', '--output_prefix')
 
+    # mask_from_model
+    parser = subparsers.add_parser("mask_from_model", description = 'Make a mask from model')
+    parser.add_argument("--map", required=True, help="For unit cell and pixel size reference")
+    parser.add_argument("--model", required=True)
+    parser.add_argument('--radius', type=float, required=True,
+                        help='Radius in angstrom')
+    parser.add_argument('--soft_edge', type=float, default=0,
+                        help='Soft edge (default: %(default).1f)')
+    parser.add_argument('-o', '--output', default="mask_from_model.mrc")
+    
     # applymask (and normalize within mask)
     parser = subparsers.add_parser("applymask", description = 'Apply mask and optionally normalize map within mask')
     parser.add_argument("--map", required=True)
@@ -736,6 +746,13 @@ def blur(args):
         raise SystemExit("ERROR: Unsupported file type: {}".format(args.hklin))
 # blur()
 
+def mask_from_model(args):
+    st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
+    gr, grid_start = fileio.read_ccp4_map(args.map)
+    mask = maps.mask_from_model(st, args.radius, soft_edge=args.soft_edge, grid=gr)
+    maps.write_ccp4_map(args.output, mask, grid_start=grid_start)
+# mask_from_model()
+
 def applymask(args):
     if args.output_prefix is None:
         args.output_prefix = fileio.splitext(os.path.basename(args.map))[0] + "_masked"
@@ -793,6 +810,7 @@ def main(args):
                  fcalc=fcalc,
                  nemap=nemap,
                  blur=blur,
+                 mask_from_model=mask_from_model,
                  applymask=applymask)
     
     com = args.subcommand

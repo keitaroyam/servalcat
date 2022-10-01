@@ -28,6 +28,9 @@ def add_sfcalc_args(parser):
     parser.add_argument('--mask_radius',
                         type=float, default=3,
                         help='')
+    parser.add_argument('--mask_soft_edge',
+                        type=float, default=0,
+                        help='Add soft edge to model mask. Should use with --no_sharpen_before_mask?')
     parser.add_argument('--padding',
                         type=float, 
                         help='Default: 2*mask_radius')
@@ -253,7 +256,10 @@ def main(args, monlib=None):
     elif args.no_trim and not args.no_shift:
         logger.write("WARNING: setting --no_shift because --no_trim is given (and --no_mask not given)")
         args.no_shift = True
-        
+
+    #if args.mask_soft_edge > 0:
+    #    logger.write("INFO: --mask_soft_edge={} is given. Turning off sharpen_before_mask.".format(args.mask_soft_edge))
+    #    args.no_sharpen_before_mask = True
 
     if args.resolution is None and args.model and utils.fileio.splitext(args.model)[1].endswith("cif"):
         doc = gemmi.cif.read(args.model)
@@ -377,7 +383,7 @@ def main(args, monlib=None):
             
         if mask is None and args.mask_radius:
             logger.write("Creating mask..")
-            mask = utils.maps.mask_from_model(st, args.mask_radius, grid=maps[0][0])
+            mask = utils.maps.mask_from_model(st, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
             utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
     else:
         model_format = None

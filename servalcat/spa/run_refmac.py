@@ -87,7 +87,7 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
+def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
              blur=None, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
@@ -114,7 +114,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, b_before_mask, n
     if mask is not None or mask_radius is not None:
         if mask is None:
             assert maps[0][0].unit_cell == st.cell
-            mask = utils.maps.mask_from_model(st, mask_radius, grid=maps[0][0])
+            mask = utils.maps.mask_from_model(st, mask_radius, soft_edge=soft_edge, grid=maps[0][0])
         if no_sharpen_before_mask or len(maps) < 2:
             for ma in maps: ma[0].array[:] *= mask
         else:
@@ -425,6 +425,7 @@ def main(args):
     # Calc FSC
     fscavg_text = calc_fsc(st_expanded, args.output_prefix, maps,
                            args.resolution, mask=mask, mask_radius=args.mask_radius if not args.no_mask else None,
+                           soft_edge=args.mask_soft_edge,
                            b_before_mask=args.b_before_mask,
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
                            make_hydrogen=args.hydrogen,
@@ -453,7 +454,7 @@ def main(args):
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
     elif args.mask_radius_for_fofc:
         logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
-        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0])
+        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
     else:
         logger.write("  mask: not used")
         mask = None

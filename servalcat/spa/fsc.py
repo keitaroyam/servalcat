@@ -32,6 +32,9 @@ def add_arguments(parser):
     parser.add_argument('-r', '--mask_radius',
                         type=float,
                         help='')
+    parser.add_argument('--mask_soft_edge',
+                        type=float, default=0,
+                        help='Add soft edge to model mask')
     parser.add_argument('-d', '--resolution',
                         type=float,
                         help='Default: Nyquist')
@@ -137,7 +140,7 @@ def main(args):
         logger.write("Input mask file: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
-        mask = utils.maps.mask_from_model(st, args.mask_radius, grid=maps[0][0])
+        mask = utils.maps.mask_from_model(st, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
     else:
         mask = None
     
@@ -166,7 +169,7 @@ def main(args):
         if args.mask:
             ofs.write("# Mask= {}\n".format(args.mask))
         elif args.mask_radius:
-            ofs.write("# Mask_radius= {}\n".format(args.mask_radius))
+            ofs.write("# Mask_radius= {} soft_edge= {}\n".format(args.mask_radius, args.mask_soft_edge))
         for lab, xyzin in zip(labs_fc, args.model):
             ofs.write("# {} from {}\n".format(lab, xyzin))
 
