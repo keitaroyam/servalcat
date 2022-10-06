@@ -444,7 +444,7 @@ def main(args):
     if args.twist is not None:
         logger.write("Generating all helical copies in the box")
         st_expanded = st.clone()
-        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_model_helical_contacting=False)
+        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
         utils.model.expand_ncs(st_expanded)
         utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded_all"+model_format,
                                  cif_ref=cif_ref)

@@ -442,20 +442,20 @@ def prepare_assembly(name, chains, ops, is_helical=False):
     return a
 # prepare_assembly()
 
-def filter_helical_contacting(st, cutoff=5.):
+def filter_contacting_ncs(st, cutoff=5.):
     if len(st.ncs) == 0: return
-    logger.write("Filtering out non-contacting helical copies with cutoff={:.2f} A".format(cutoff))
+    logger.write("Filtering out non-contacting NCS copies with cutoff={:.2f} A".format(cutoff))
     st.setup_cell_images()
-    ns = gemmi.NeighborSearch(st[0], st.cell, cutoff*2).populate()
+    ns = gemmi.NeighborSearch(st[0], st.cell, cutoff*2).populate() # This is considered crystallographic cell if not 1 1 1. Undesirable result may be seen.
     cs = gemmi.ContactSearch(cutoff)
     cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
     results = cs.find_contacts(ns)
     indices = set([r.image_idx for r in results])
-    logger.write(" contacting helical copies: {}".format(indices))
+    logger.write(" contacting copies: {}".format(indices))
     ops = [st.ncs[i-1] for i in indices] # XXX is this correct? maybe yes as long as identity operator is not there
     st.ncs.clear()
     st.ncs.extend(ops)
-# filter_helical_contacting()
+# filter_contacting_ncs()
 
 def check_symmetry_related_model_duplication(st, distance_cutoff=0.5, max_allowed_ratio=0.5):
     logger.write("Checking if model in asu is given.")

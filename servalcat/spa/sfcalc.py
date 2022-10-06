@@ -57,6 +57,7 @@ def add_sfcalc_args(parser):
                         type=float,
                         help='Sharpening or blurring B')
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
+    parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--keep_multiple_models', action='store_true', 
@@ -241,7 +242,9 @@ def main(args, monlib=None):
     
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
-
+    if args.twist is not None:
+        logger.write("INFO: setting --contacting_only because helical symmetry is given")
+        args.contacting_only = True
     if args.no_mask:
         args.mask_radius = None
         if not args.no_shift:
@@ -360,8 +363,7 @@ def main(args, monlib=None):
                 # remove already-applied symmetries, which can confuse refmac
                 for i in reversed(range(len(st.ncs))):
                     if st.ncs[i].given: del st.ncs[i]
-
-        utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_model_helical_contacting=True)
+        utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_contacting=args.contacting_only)
         st_new = st.clone()
         if len(st.ncs) > 0:
             if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):

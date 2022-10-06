@@ -40,6 +40,7 @@ def add_arguments(p):
     group.add_argument('--cell', type=float, nargs=6, help="Box size")
     sym_group = parser.add_argument_group("symmetry")
     symmetry.add_symmetry_args(sym_group, require_pg=True)
+    parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to keep")
     parser.add_argument('--howtoname', choices=["dup", "short", "number"], default="short",
                         help="How to decide new chain IDs in expanded model (default: short); "
@@ -256,7 +257,7 @@ def symmodel(args):
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
 
-    symmetry.update_ncs_from_args(args, st, map_and_start=map_and_start)
+    symmetry.update_ncs_from_args(args, st, map_and_start=map_and_start, filter_contacting=args.contacting_only)
 
     if args.biomt:
         st.assemblies.clear()

@@ -24,7 +24,7 @@ def add_symmetry_args(parser, require_pg=False):
     parser.add_argument('--axis2', type=float, nargs=3, help="Axis2 (if I: 5-fold, O: 4-fold, T: 3-fold, Dn: 2-fold)")
 # add_symmetry_args()
     
-def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_contacting=False,
+def update_ncs_from_args(args, st, map_and_start=None, filter_contacting=False,
                          helical_min_n=None, helical_max_n=None):
     is_helical = args.twist is not None
     if not is_helical and not args.pg:
@@ -42,9 +42,9 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_model_helical_cont
     st.ncs.clear()
     st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
 
-    if is_helical and filter_model_helical_contacting:
-        model.filter_helical_contacting(st)
-# nupdate_ncs_from_args()
+    if filter_contacting:
+        model.filter_contacting_ncs(st)
+# update_ncs_from_args()
 
 def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None, helical_max_n=None):
     is_helical = args.twist is not None
