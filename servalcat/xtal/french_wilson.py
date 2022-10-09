@@ -15,6 +15,12 @@ import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
+from . import fw_helper as ext
+
+import line_profiler
+profile = line_profiler.LineProfiler()
+import atexit
+atexit.register(profile.print_stats)
 
 def add_arguments(parser):
     parser.description = 'Convert intensity to amplitude'
@@ -183,65 +189,88 @@ def calc_f1_exp2_x0(z, t0):
     exp_a = v**(-0.5)
     return scipy.special.lambertw(exp_a).real + a
 
-def J_ratio_1(k_num, k_den, to1, h): # case 1
+@profile
+def J_ratio_1(k_num, k_den, to1, h, py=False): # case 1
     N = 100 # we should use N1 and N2 optimized
     z = 0.5 * (k_den + 1)
+    deltaz = 0.5 * (k_num - k_den)
     root = calc_f1_exp2_x0(z, to1)
     f1val = f1_exp2_value(root, z, to1)
     f2der = f1_exp2_2der(root, z, to1)
-    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
-    ff = f1_exp2_value(xx, z, to1) - f1val
-    laplace_correct = numpy.sum(numpy.exp(-ff), axis=0)
+    if py:
+        xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+        ff = f1_exp2_value(xx, z, to1) - f1val
+        laplace_correct = numpy.sum(numpy.exp(-ff), axis=0)
     
-    # for numerator
-    deltaz = 0.5 * (k_num - k_den)
-    g = numpy.exp(4 * deltaz * (xx - numpy.exp(-xx)))
-    laplace_correct_num = numpy.sum(numpy.exp(-ff) * g, axis=0)
-    return laplace_correct_num / laplace_correct
+        # for numerator
+        g = numpy.exp(4 * deltaz * (xx - numpy.exp(-xx)))
+        laplace_correct_num = numpy.sum(numpy.exp(-ff) * g, axis=0)
+        return laplace_correct_num / laplace_correct
+    else:
+        return ext.integ_J_ratio_1(delta=h * numpy.sqrt(2 / f2der),
+                                   root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
 
-def J_1(k, to1, h, log=False): # case 1
+@profile
+def J_1(k, to1, h, log=False, py=False): # case 1
     N = 100 # we should use N1 and N2 optimized
     z = 0.5 * (k + 1)
     root = calc_f1_exp2_x0(z, to1)
     f1val = f1_exp2_value(root, z, to1)
     f2der = f1_exp2_2der(root, z, to1)
-    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
-    ff = f1_exp2_value(xx, z, to1) - f1val
+    if py:
+        xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+        ff = f1_exp2_value(xx, z, to1) - f1val
+        laplace_correct = numpy.sum(numpy.exp(-ff), axis=0) * h
+    else:
+        laplace_correct = ext.integ_J_1(delta=h * numpy.sqrt(2 / f2der),
+                                        root=root, to1=to1, f1val=f1val, z=z) * h
+        
     expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
-    laplace_correct = numpy.sum(numpy.exp(-ff), axis=0)
     if log:
         return expon + numpy.log(laplace_correct)
     else:
         return numpy.exp(expon) * laplace_correct
 
-def J_ratio_2(k_num, k_den, to1, h): # case 2
+@profile
+def J_ratio_2(k_num, k_den, to1, h, py=False): # case 2
     N = 100 # we should use N1 and N2 optimized
     z = 0.5 * (k_den + 1)
+    deltaz = 0.5 * (k_num - k_den)
     root = calc_f1_orig2_x0(z, to1)
     f1val = f1_orig2_value(root, z, to1)
     f2der = f1_orig2_2der(root, z, to1)
-    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
-    sel = xx > 0
-    ff = f1_orig2_value(xx, z, to1, where=sel) - f1val
-    laplace_correct = numpy.sum(numpy.exp(-ff, where=sel),  where=sel, axis=0)
+    if py:
+        xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+        sel = xx > 0
+        ff = f1_orig2_value(xx, z, to1, where=sel) - f1val
+        laplace_correct = numpy.sum(numpy.exp(-ff, where=sel),  where=sel, axis=0)
     
-    # for numerator
-    deltaz = 0.5 * (k_num - k_den)
-    g = numpy.exp(4 * deltaz * numpy.log(xx, where=sel), where=sel)
-    laplace_correct_num = numpy.sum(numpy.exp(-ff, where=sel) * g, where=sel, axis=0)
-    return laplace_correct_num / laplace_correct
+        # for numerator
+        g = numpy.exp(4 * deltaz * numpy.log(xx, where=sel), where=sel)
+        laplace_correct_num = numpy.sum(numpy.exp(-ff, where=sel) * g, where=sel, axis=0)
+        return laplace_correct_num / laplace_correct
+    else:
+        return ext.integ_J_ratio_2(delta=h * numpy.sqrt(2 / f2der),
+                                   root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
 
-def J_2(k, to1, h, log=False): # case 2
+
+@profile
+def J_2(k, to1, h, log=False, py=False): # case 2
     N = 100 # we should use N1 and N2 optimized
     z = 0.5 * (k + 1)
     root = calc_f1_orig2_x0(z, to1)
     f1val = f1_orig2_value(root, z, to1)
     f2der = f1_orig2_2der(root, z, to1)
-    xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
-    sel = xx > 0
-    ff = f1_orig2_value(xx, z, to1, where=sel) - f1val
+    if py:
+        xx = h * numpy.sqrt(2 / f2der) * numpy.arange(-N, N+1)[:,None] + root
+        sel = xx > 0
+        ff = f1_orig2_value(xx, z, to1, where=sel) - f1val
+        laplace_correct = numpy.sum(numpy.exp(-ff, where=sel), where=sel, axis=0) * h # need where to avoid exp(-ff)
+    else:
+        laplace_correct = ext.integ_J_2(delta=h * numpy.sqrt(2 / f2der),
+                                        root=root, to1=to1, f1val=f1val, z=z) * h
+        
     expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
-    laplace_correct = numpy.sum(numpy.exp(-ff, where=sel), where=sel, axis=0) * h # need where to avoid exp(-ff)
     if log:
         return expon + numpy.log(laplace_correct)
     else:
@@ -252,6 +281,7 @@ def J_conditions(k_den, to1, case1_lim=10):
     idxes = numpy.digitize(d, [case1_lim, numpy.inf])
     return idxes
 
+@profile
 def J_ratio(k_num, k_den, to1, h=0.5, case1_lim=10):
     idxes = J_conditions(k_den, to1, case1_lim)
     ret = numpy.zeros(to1.shape)
@@ -261,6 +291,7 @@ def J_ratio(k_num, k_den, to1, h=0.5, case1_lim=10):
     ret[sel1] = J_ratio_2(k_num, k_den, to1[sel1], h)
     return ret
 
+@profile
 def J(k, to1, h=0.5, case1_lim=10, log=False):
     idxes = J_conditions(k, to1, case1_lim)
     ret = numpy.zeros(to1.shape)
@@ -275,6 +306,7 @@ def ll_acentric(S, Io, sigIo, eps, h=0.5): # S includes k^2
     to1 = numpy.asarray(Io / sigIo - sigIo / S / eps)
     return -J(0., to1, h, log=True) + numpy.log(S)
 
+@profile
 def ll_1der_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - sigIo / S / eps / k2)
     tmp = -J_ratio(1., 0., to1, h) * sigIo / eps / S / k2
@@ -300,6 +332,7 @@ def ll_centric(S, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
     return -J(-0.5, to1, h, log=True) + 0.5 * numpy.log(S)
 
+@profile
 def ll_1der_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps / k2)
     tmp = -J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S / k2
@@ -349,6 +382,7 @@ def ll_bin(x, B, i_bin, svecs, hkldata, centric_and_selections):
         ret += numpy.sum(ll[c](S * k2[cidxes], Io, sigo, eps))
     return ret
     
+@profile
 def ll_all_B(x, svecs, hkldata, centric_and_selections):
     ll = (ll_acentric, ll_centric)
     n_bins = 0
@@ -400,6 +434,7 @@ def ll_1der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
         ret += tmp[0]
     return [ret]
 
+@profile
 def ll_1der_all_B(x, svecs, hkldata, centric_and_selections):
     ll_1der = (ll_1der_acentric, ll_1der_centric)
     n_bins = 0
