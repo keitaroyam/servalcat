@@ -42,6 +42,42 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def adp_constraints(ops, cell, tr0=True):
+    # think about f = (b-Rb)^T (b-Rb) = b^T b - b^TRb -b^TR^Tb + b^TR^TRb
+    # d^2f/db^2 = 2I - 2(R+R^T) + (R^TR + RR^T)
+    # eigenvectors of this second derivative matrix corresponding to 0-valeud eigenvalues are directions to refine
+    def get_6x6(m):
+        r = numpy.zeros((6,6))
+        for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
+            r[k,:] = (m[i][0] * m[j][0],
+                      m[i][1] * m[j][1],
+                      m[i][2] * m[j][2],
+                      m[i][0] * m[j][1] + m[i][1] * m[j][0],
+                      m[i][0] * m[j][2] + m[i][2] * m[j][0],
+                      m[i][1] * m[j][2] + m[i][2] * m[j][1])
+        return r
+
+    Ainv = cell.frac.mat
+    x = numpy.zeros((6,6))
+    if tr0:
+        x[:3,:3] += numpy.ones((3,3)) * 2
+    for op in ops:
+        m = gemmi.Mat33(op.rot).multiply(Ainv)
+        r1 = get_6x6(Ainv.tolist())
+        r2 = get_6x6(m.tolist()) / op.DEN**2
+        r1r2 = numpy.dot(r1.T, r2)
+        x += 2 * numpy.dot(r1.T, r1) - 2 * (r1r2 + r1r2.T) + 2 * numpy.dot(r2.T, r2)
+
+    evals, evecs = numpy.linalg.eig(x)
+    ret = []
+    print(evals)
+    for i in range(6):
+        if numpy.isclose(evals[i], 0):
+            ret.append(evecs[:, i])
+
+    return numpy.vstack(ret)
+# adp_constraints()
+
 # TODO this function can be generalised and merged with sigmaa.process_input
 def process_input(hklin, labin, n_bins, d_max=None, d_min=None):
     assert len(labin) == 2
@@ -89,14 +125,17 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         S = max(numpy.nanmean(I_over_eps[idxes]), 1e-3)
         hkldata.binned_df.loc[i_bin, "S"] = S
         x.append(S)
-    x.extend([0. for _ in range(5)])
-    x = numpy.array(x)
     logger.write("Initial estimates:")
     logger.write(hkldata.binned_df.to_string())
 
-    if 0:
+    B = gemmi.SMat33d(0,0,0,0,0,0)
+    SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
+    adpdirs = adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
+    logger.write("ADP free parameters = {}".format(adpdirs.shape[0]))
+    if 1:
+        x = numpy.hstack([x, numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))])
         e = 1.e-4
-        args = (hkldata.s_array(), hkldata, centric_and_selections)
+        args = (hkldata.s_array(), hkldata, centric_and_selections, adpdirs)
         f0 = ll_all(x, *args)
         ad = ll_1der_all(x, *args)
         print("ana=", ad)
@@ -114,23 +153,23 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         ret = scipy.optimize.minimize(fun=ll_all,
                                       jac=ll_1der_all,
                                       x0=x,
-                                      args=(hkldata.s_array(), hkldata, centric_and_selections))
+                                      args=(hkldata.s_array(), hkldata, centric_and_selections, adpdirs))
         
         print(ret)
+
     svecs = hkldata.s_array()
-    B = gemmi.SMat33d(0,0,0,0,0,0)
 
     for icyc in range(5):
         logger.write("Refine B")
         t0 = time.time()
+        x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
         ret = scipy.optimize.minimize(fun=ll_all_B,
                                       jac=ll_1der_all_B,
-                                      x0=[B.u11, B.u22, B.u12, B.u13, B.u23],
-                                      args=(svecs, hkldata, centric_and_selections))
+                                      x0=x,
+                                      args=(svecs, hkldata, centric_and_selections, adpdirs))
         logger.write(str(ret))
         logger.write("time= {}".format(time.time() - t0))
-        B = gemmi.SMat33d(ret.x[0], ret.x[1], -ret.x[0] - ret.x[1],
-                          ret.x[2], ret.x[3], ret.x[4])
+        B = gemmi.SMat33d(*numpy.dot(ret.x, adpdirs))
         logger.write("B_aniso= {}".format(B))
         logger.write("Refine S")
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
@@ -311,14 +350,15 @@ def ll_1der_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - sigIo / S / eps / k2)
     tmp = -J_ratio(1., 0., to1, h) * sigIo / eps / S / k2
     tmp2 = -tmp - 1
-    ret = numpy.zeros(1+5) # dS, dBij
+    ret = numpy.zeros(1+6) # dS, dBij
     #return -J_ratio(1., 0., to1, h) * sigIo / eps / S**2 + 1. / S
     ret[0] = numpy.sum(tmp / S + 1./S) # S
-    ret[1] = 0.5 * numpy.sum((svecs[:,0]**2 - svecs[:,2]**2) * tmp2) # B11
-    ret[2] = 0.5 * numpy.sum((svecs[:,1]**2 - svecs[:,2]**2) * tmp2) # B22
-    ret[3] = numpy.sum(svecs[:,0] * svecs[:,1] * tmp2) # B12
-    ret[4] = numpy.sum(svecs[:,0] * svecs[:,2] * tmp2) # B13
-    ret[5] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
+    ret[1] = 0.5 * numpy.sum((svecs[:,0]**2) * tmp2) # B11
+    ret[2] = 0.5 * numpy.sum((svecs[:,1]**2) * tmp2) # B22
+    ret[3] = 0.5 * numpy.sum((svecs[:,2]**2) * tmp2) # B33
+    ret[4] = numpy.sum(svecs[:,0] * svecs[:,1] * tmp2) # B12
+    ret[5] = numpy.sum(svecs[:,0] * svecs[:,2] * tmp2) # B13
+    ret[6] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
     return ret
 
 def ll_2der_acentric(x, Io, sigIo, eps, h=0.5):
@@ -337,14 +377,15 @@ def ll_1der_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps / k2)
     tmp = -J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S / k2
     tmp2 = -tmp - 0.5
-    ret = numpy.zeros(1+5) # dS, dBij
+    ret = numpy.zeros(1+6) # dS, dBij
     #return -J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S**2 + 0.5 / S
     ret[0] = numpy.sum(tmp / S + 0.5 / S) # S
-    ret[1] = 0.5 * numpy.sum((svecs[:,0]**2 - svecs[:,2]**2) * tmp2) # B11
-    ret[2] = 0.5 * numpy.sum((svecs[:,1]**2 - svecs[:,2]**2) * tmp2) # B22
-    ret[3] = numpy.sum(svecs[:,0] * svecs[:,1] * tmp2) # B12
-    ret[4] = numpy.sum(svecs[:,0] * svecs[:,2] * tmp2) # B13
-    ret[5] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
+    ret[1] = 0.5 * numpy.sum((svecs[:,0]**2) * tmp2) # B11
+    ret[2] = 0.5 * numpy.sum((svecs[:,1]**2) * tmp2) # B22
+    ret[3] = 0.5 * numpy.sum((svecs[:,2]**2) * tmp2) # B33
+    ret[4] = numpy.sum(svecs[:,0] * svecs[:,1] * tmp2) # B12
+    ret[5] = numpy.sum(svecs[:,0] * svecs[:,2] * tmp2) # B13
+    ret[6] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
     return ret
 
 def ll_2der_centric(x, Io, sigIo, eps, h=0.5):
@@ -354,12 +395,11 @@ def ll_2der_centric(x, Io, sigIo, eps, h=0.5):
     J_05_05 = J_ratio(0.5, -0.5, to1, h)
     return (-J_15_05 + J_05_05**2) * (0.5 * sigIo / eps / S**2)**2 + J_05_05 * sigIo / eps / S**3 - 0.5 / S**2
 
-def ll_all(x, svecs, hkldata, centric_and_selections):
+def ll_all(x, svecs, hkldata, centric_and_selections, adpdirs):
     ll = (ll_acentric, ll_centric)
     n_bins = len(hkldata.binned())
     S = x[:n_bins]
-    B = gemmi.SMat33d(x[n_bins], x[n_bins+1], -x[n_bins]-x[n_bins+1],
-                      x[n_bins+2], x[n_bins+3], x[n_bins+4])
+    B = gemmi.SMat33d(*numpy.dot(x[n_bins:], adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     ret = 0.
     for i, (i_bin, idxes) in enumerate(hkldata.binned()):
@@ -383,11 +423,9 @@ def ll_bin(x, B, i_bin, svecs, hkldata, centric_and_selections):
     return ret
     
 @profile
-def ll_all_B(x, svecs, hkldata, centric_and_selections):
+def ll_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
     ll = (ll_acentric, ll_centric)
-    n_bins = 0
-    B = gemmi.SMat33d(x[n_bins], x[n_bins+1], -x[n_bins]-x[n_bins+1],
-                      x[n_bins+2], x[n_bins+3], x[n_bins+4])
+    B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     ret = 0.
     for i, (i_bin, idxes) in enumerate(hkldata.binned()):
@@ -398,12 +436,11 @@ def ll_all_B(x, svecs, hkldata, centric_and_selections):
             ret += numpy.sum(ll[c](hkldata.binned_df.S[i_bin] * k2[cidxes], Io, sigo, eps))
     return ret
 
-def ll_1der_all(x, svecs, hkldata, centric_and_selections):
+def ll_1der_all(x, svecs, hkldata, centric_and_selections, adpdirs):
     ll_1der = (ll_1der_acentric, ll_1der_centric)
     n_bins = len(hkldata.binned())
     S = x[:n_bins]
-    B = gemmi.SMat33d(x[n_bins], x[n_bins+1], -x[n_bins]-x[n_bins+1],
-                      x[n_bins+2], x[n_bins+3], x[n_bins+4])
+    B = gemmi.SMat33d(*numpy.dot(x[n_bins:], adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     #svecs = hkldata.s_array()
     ret = numpy.zeros_like(x)
@@ -414,8 +451,7 @@ def ll_1der_all(x, svecs, hkldata, centric_and_selections):
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
             tmp = ll_1der[c](S[i], svecs[cidxes], k2[cidxes], Io, sigo, eps)
             ret[i] += tmp[0]
-            for j in range(5):
-                ret[n_bins+j] += tmp[1+j]
+            ret[n_bins:] += numpy.dot(tmp[1:], adpdirs.T)
     return ret
 
 def ll_1der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
@@ -435,12 +471,11 @@ def ll_1der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
     return [ret]
 
 @profile
-def ll_1der_all_B(x, svecs, hkldata, centric_and_selections):
+def ll_1der_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
     ll_1der = (ll_1der_acentric, ll_1der_centric)
-    n_bins = 0
-    B = gemmi.SMat33d(x[n_bins], x[n_bins+1], -x[n_bins]-x[n_bins+1],
-                      x[n_bins+2], x[n_bins+3], x[n_bins+4])
+    B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
+    #print("x=", x)
     #svecs = hkldata.s_array()
     ret = numpy.zeros_like(x)
     for i, (i_bin, idxes) in enumerate(hkldata.binned()):
@@ -449,8 +484,8 @@ def ll_1der_all_B(x, svecs, hkldata, centric_and_selections):
             sigo = hkldata.df.SIGI.to_numpy()[cidxes]
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
             tmp = ll_1der[c](hkldata.binned_df.S[i_bin], svecs[cidxes], k2[cidxes], Io, sigo, eps)
-            for j in range(5):
-                ret[n_bins+j] += tmp[1+j]
+            #print(numpy.dot(tmp[1:].reshape(1,6), adpdirs.T))
+            ret += numpy.dot(tmp[1:], adpdirs.T)
     return ret
 
 def ll_2der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
