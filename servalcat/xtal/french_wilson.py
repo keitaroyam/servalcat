@@ -132,9 +132,10 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
     adpdirs = adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
     logger.write("ADP free parameters = {}".format(adpdirs.shape[0]))
-    if 1:
+    if 0:
+        B = gemmi.SMat33d(1,2,3,4,5,6)
         x = numpy.hstack([x, numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))])
-        e = 1.e-4
+        e = 1.e-3
         args = (hkldata.s_array(), hkldata, centric_and_selections, adpdirs)
         f0 = ll_all(x, *args)
         ad = ll_1der_all(x, *args)
@@ -149,6 +150,54 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
             print(i, nd, ad[i] / nd)
         quit()
 
+    if 0:
+        x = [100.]
+        e = 1.e-4
+        args = (hkldata.s_array(), hkldata, centric_and_selections)
+        for i, (i_bin, idxes) in enumerate(hkldata.binned()):
+            f0 = ll_bin(x, B, i_bin, *args)
+            ad = ll_1der_bin_S(x, B, i_bin, *args)[0]
+            f1 = ll_bin([x[0]+e], B, i_bin, *args)
+            nd = (f1 - f0) / e
+            print(i_bin, nd, ad / nd)
+        quit()
+
+    if 0:
+        B = gemmi.SMat33d(1,2,3,4,5,6)
+        #adpdirs = numpy.identity(6)
+        x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
+        e = 1.e-4
+        args = (hkldata.s_array(), hkldata, centric_and_selections, adpdirs)
+        f0 = ll_1der_all_B(x, *args)
+        ad = ll_2der_all_B(x, *args)
+        print("ana2=", ad)
+        print("ana1=", f0)
+        print("x=", x)
+        for i in range(len(x)):
+            x2 = [_ for _ in x]
+            x2[i] += e
+            f1 = ll_1der_all_B(x2, *args)
+            nd = (f1 - f0) / e
+            print(i, nd, ad[i] / nd)
+        
+        quit()
+
+    if 0:
+        B = gemmi.SMat33d(1,2,3,4,5,6)
+        x = [100.]
+        e = 1.e-4
+        args = (hkldata.s_array(), hkldata, centric_and_selections)
+        for i, (i_bin, idxes) in enumerate(hkldata.binned()):
+            f0 = ll_1der_bin_S(x, B, i_bin, *args)[0]
+            ad = ll_2der_bin_S(x, B, i_bin, *args)[0]
+            print("ana2=", ad)
+            print("ana1=", f0)
+            print("x=", x)
+            f1 = ll_1der_bin_S([x[0]+e], B, i_bin, *args)[0]
+            nd = (f1 - f0) / e
+            print(i_bin, nd, ad / nd)
+        quit()
+        
     if 0:
         ret = scipy.optimize.minimize(fun=ll_all,
                                       jac=ll_1der_all,
@@ -165,6 +214,8 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
         ret = scipy.optimize.minimize(fun=ll_all_B,
                                       jac=ll_1der_all_B,
+                                      hess=ll_2der_all_B,
+                                      method="Newton-CG",
                                       x0=x,
                                       args=(svecs, hkldata, centric_and_selections, adpdirs))
         logger.write(str(ret))
@@ -173,16 +224,27 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         logger.write("B_aniso= {}".format(B))
         logger.write("Refine S")
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
-            S = hkldata.binned_df.loc[i_bin, "S"]
-            ret = scipy.optimize.minimize(fun=ll_bin,
-                                          jac=ll_1der_bin_S,
-                                          hess=ll_2der_bin_S,
-                                          method="Newton-CG",
-                                          x0=[S],
-                                          args=(B, i_bin, svecs, hkldata, centric_and_selections))
             logger.write("Bin {}".format(i_bin))
-            logger.write(str(ret))
-            hkldata.binned_df.loc[i_bin, "S"] = ret.x
+            S = hkldata.binned_df.loc[i_bin, "S"]
+            if 1:
+                ret = scipy.optimize.minimize(fun=ll_bin,
+                                              jac=ll_1der_bin_S,
+                                              hess=ll_2der_bin_S,
+                                              method="Newton-CG",
+                                              x0=[S],
+                                              args=(B, i_bin, svecs, hkldata, centric_and_selections))
+                logger.write(str(ret))
+                hkldata.binned_df.loc[i_bin, "S"] = ret.x
+            else:
+                args=(B, i_bin, svecs, hkldata, centric_and_selections)
+                f0 = ll_bin([S], *args)
+                g = ll_1der_bin_S([S], *args)[0]
+                H = ll_2der_bin_S([S], *args)[0]
+                shift = -g / H
+                f1 = ll_bin([S+shift], *args)
+                logger.write("f0 = {:.3e} shift = {:.3e} f1 = {:.3e} dec? {}".format(f0, shift, f1, f1 < f0))
+                hkldata.binned_df.loc[i_bin, "S"] = S + shift
+                
         logger.write("Refined estimates in cycle {}:".format(icyc))
         logger.write(hkldata.binned_df.to_string())
         logger.write("B_aniso= {}".format(B))
@@ -352,7 +414,7 @@ def ll_1der_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     tmp2 = -tmp - 1
     ret = numpy.zeros(1+6) # dS, dBij
     #return -J_ratio(1., 0., to1, h) * sigIo / eps / S**2 + 1. / S
-    ret[0] = numpy.sum(tmp / S + 1./S) # S
+    ret[0] = numpy.sum(tmp / S + 1. / S) # S
     ret[1] = 0.5 * numpy.sum((svecs[:,0]**2) * tmp2) # B11
     ret[2] = 0.5 * numpy.sum((svecs[:,1]**2) * tmp2) # B22
     ret[3] = 0.5 * numpy.sum((svecs[:,2]**2) * tmp2) # B33
@@ -361,12 +423,27 @@ def ll_1der_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     ret[6] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
     return ret
 
-def ll_2der_acentric(x, Io, sigIo, eps, h=0.5):
+def ll_2der_S_acentric(x, k2, Io, sigIo, eps, h=0.5):
     S = x[0]
-    to1 = numpy.asarray(Io / sigIo - sigIo / S / eps)
+    to1 = numpy.asarray(Io / sigIo - sigIo / S / k2 / eps)
     J_2_0 = J_ratio(2., 0., to1, h)
     J_1_0 = J_ratio(1., 0., to1, h)
-    return (J_2_0 - J_1_0**2) * (sigIo / eps / S**2)**2 + 2. * J_1_0 * sigIo / eps / S**3 - 1. / S**2
+    return -(J_2_0 - J_1_0**2) * (sigIo / eps / k2 / S**2)**2 - 1. / S**2 + 2. * J_1_0 * sigIo / eps / k2 / S**3
+
+@profile
+def ll_2der_B_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
+    to1 = numpy.asarray(Io / sigIo - sigIo / S / k2 / eps)
+    J_2_0 = J_ratio(2., 0., to1, h)
+    J_1_0 = J_ratio(1., 0., to1, h)
+    tmp = -(J_2_0 - J_1_0**2) * (sigIo / eps / S / k2)**2 + J_1_0 * sigIo / eps / S / k2
+    ret = numpy.zeros((6,6))
+    tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
+           svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
+    for i, j in ((0,0), (1,1), (2,2), (0,1), (0,2), (1,2)):
+        ret[i,j] = numpy.sum(tmp2[i] * tmp2[j] * tmp)
+        if i != j: ret[j,i] = ret[i,j]
+
+    return ret
 
 def ll_centric(S, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
@@ -388,12 +465,27 @@ def ll_1der_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     ret[6] = numpy.sum(svecs[:,1] * svecs[:,2] * tmp2) # B23
     return ret
 
-def ll_2der_centric(x, Io, sigIo, eps, h=0.5):
+def ll_2der_S_centric(x, k2, Io, sigIo, eps, h=0.5):
     S = x[0]
-    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps)
+    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / k2 / eps)
     J_15_05 = J_ratio(1.5, -0.5, to1, h)
     J_05_05 = J_ratio(0.5, -0.5, to1, h)
-    return (-J_15_05 + J_05_05**2) * (0.5 * sigIo / eps / S**2)**2 + J_05_05 * sigIo / eps / S**3 - 0.5 / S**2
+    return (-J_15_05 + J_05_05**2) * (0.5 * sigIo / eps / k2 / S**2)**2 - 0.5 / S**2 + J_05_05 * sigIo / eps / k2 / S**3 
+
+@profile
+def ll_2der_B_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
+    to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / k2 / eps)
+    J_15_05 = J_ratio(1.5, -0.5, to1, h)
+    J_05_05 = J_ratio(0.5, -0.5, to1, h)
+    tmp = (-J_15_05 + J_05_05**2) * (0.5 * sigIo / eps / S / k2)**2 + J_05_05 * sigIo / eps / S / k2 * 0.5
+    ret = numpy.zeros((6,6))
+    tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
+           svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
+    for i, j in ((0,0), (1,1), (2,2), (0,1), (0,2), (1,2)):
+        ret[i,j] = numpy.sum(tmp2[i] * tmp2[j] * tmp)
+        if i != j: ret[j,i] = ret[i,j]
+
+    return ret
 
 def ll_all(x, svecs, hkldata, centric_and_selections, adpdirs):
     ll = (ll_acentric, ll_centric)
@@ -490,7 +582,7 @@ def ll_1der_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
 
 def ll_2der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
     S = x[0]
-    ll_2der = (ll_2der_acentric, ll_2der_centric)
+    ll_2der = (ll_2der_S_acentric, ll_2der_S_centric)
     n_bins = len(hkldata.binned())
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     #ret = numpy.zeros_like(x)
@@ -500,8 +592,26 @@ def ll_2der_bin_S(x, B, i_bin, svecs, hkldata, centric_and_selections):
         sigo = hkldata.df.SIGI.to_numpy()[cidxes]
         eps = hkldata.df.epsilon.to_numpy()[cidxes]
         #print(S, k2.shape, k2[cidxes].shape)
-        ret += numpy.sum(ll_2der[c]([S*k2[cidxes]], Io, sigo, eps))
+        ret += numpy.sum(ll_2der[c]([S], k2[cidxes], Io, sigo, eps))
     return [ret]
+
+@profile
+def ll_2der_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
+    ll_2der = (ll_2der_B_acentric, ll_2der_B_centric)
+    B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+    k2 = hkldata.debye_waller_factors(b_cart=B)**2
+    #print("x=", x)
+    #svecs = hkldata.s_array()
+    ret = numpy.zeros((len(x), len(x)))
+    for i, (i_bin, idxes) in enumerate(hkldata.binned()):
+        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+            Io = hkldata.df.I.to_numpy()[cidxes]
+            sigo = hkldata.df.SIGI.to_numpy()[cidxes]
+            eps = hkldata.df.epsilon.to_numpy()[cidxes]
+            tmp = ll_2der[c](hkldata.binned_df.S[i_bin], svecs[cidxes], k2[cidxes], Io, sigo, eps)
+            #print(numpy.dot(tmp[1:].reshape(1,6), adpdirs.T))
+            ret += numpy.dot(adpdirs, numpy.dot(tmp, adpdirs.T))
+    return ret
 
 def french_wilson(hkldata, centric_and_selections, B_aniso):
     hkldata.df["F"] = numpy.nan
