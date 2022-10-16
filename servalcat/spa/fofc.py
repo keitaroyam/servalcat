@@ -380,7 +380,7 @@ def main(args):
         raise SystemExit("ERROR! --omit_proton/--omit_h_electron requested, but no hydrogen atoms were found.")
 
     if args.halfmaps:
-        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+        maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
         has_halfmaps = True
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]

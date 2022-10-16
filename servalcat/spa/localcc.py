@@ -136,7 +136,7 @@ $$
 # model_stats()
 
 def main(args):
-    maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     grid_shape = maps[0][0].shape
     if args.mask:
         mask = utils.fileio.read_ccp4_map(args.mask)[0]

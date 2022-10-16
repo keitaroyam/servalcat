@@ -336,13 +336,12 @@ def main(args):
               indent=True)
 
     if args.halfmaps:
-        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+        maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
 
     # Modify output
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
-    utils.model.adp_analysis(st)
     
     if not args.no_trim:
         st.cell = maps[0][0].unit_cell
@@ -351,6 +350,7 @@ def main(args):
     
     if "refmac_fixes" in file_info:
         file_info["refmac_fixes"].modify_back(st)
+    utils.model.adp_analysis(st)
     utils.fileio.write_model(st, prefix=args.output_prefix,
                              pdb=True, cif=True, cif_ref=cif_ref)
 

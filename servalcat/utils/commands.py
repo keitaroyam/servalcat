@@ -719,7 +719,7 @@ def nemap(args):
     else:
         mask = None
 
-    halfmaps = [fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    halfmaps = fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     if args.resolution is None:
         args.resolution = maps.nyquist_resolution(halfmaps[0][0])
         logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))

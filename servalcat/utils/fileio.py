@@ -168,6 +168,20 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     return [m.grid, grid_start] # TODO should return grid_shape so that the same region can be written
 # read_ccp4_map()
 
+def read_halfmaps(files, pixel_size=None, fail=True):
+    if fail and len(files) != 2:
+        raise SystemExit("Error: Give exactly two files for half maps")
+    maps = [read_ccp4_map(f, pixel_size=pixel_size) for f in files]
+    if numpy.array_equal(maps[0][0].array, maps[1][0].array):
+        raise SystemExit("Error: Half maps have exactly the same values. Check your input.")
+    
+    assert maps[0][0].shape == maps[1][0].shape
+    assert maps[0][0].unit_cell == maps[1][0].unit_cell
+    assert maps[0][1] == maps[1][1]
+    
+    return maps
+# read_halfmaps()    
+
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
     mtz = gemmi.read_mtz_file(mtz_in)
     d_min = mtz.resolution_high() # TODO get resolution for column?

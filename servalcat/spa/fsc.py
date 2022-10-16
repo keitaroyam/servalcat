@@ -100,7 +100,7 @@ def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
 def main(args):
     args.model = sum(args.model, [])
     if args.halfmaps:
-        maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+        maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
         assert maps[0][0].shape == maps[1][0].shape
         assert maps[0][0].unit_cell == maps[1][0].unit_cell
         assert maps[0][1] == maps[1][1]

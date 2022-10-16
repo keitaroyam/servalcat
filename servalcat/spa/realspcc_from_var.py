@@ -88,7 +88,7 @@ def calc_cc_from_var(hkldata, x_list, kind="noise", sharpen_signal=False, weight
 # calc_cc_from_var()
 
 def main(args):
-    maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
+    maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     if args.mask:
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     else:
