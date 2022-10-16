@@ -275,14 +275,26 @@ class FixForRefmac:
     XXX fix external restraints accordingly
     TODO fix _struct_conf, _struct_sheet_range, _pdbx_struct_sheet_hbond
     """
-    def __init__(self, st, topo, fix_microheterogeneity=True, fix_resimax=True):
+    def __init__(self, st, topo, fix_microheterogeneity=True, fix_resimax=True, fix_nonpolymer=True, add_gaps=False):
         self.MAXNUM = 9999
-        self.inscode_fix = []
-        self.res_fix = []
+        self.fixes = []
+        self.chainids = set(chain.name for chain in st[0])
         if fix_microheterogeneity:
-            self.inscode_fix = self.fix_microheterogeneity(st, topo)
-        if fix_resimax:
-            self.res_fix = self.fix_too_large_seqnum(st, topo)
+            self.fixes.append(self.fix_microheterogeneity(st, topo))
+        if add_gaps:
+            self.add_gaps(st, topo)
+        if fix_resimax: # This modifies chains, so topo will be broken
+            self.fixes.append(self.fix_too_large_seqnum(st, topo))
+        if fix_nonpolymer: # This modifies chains, so topo will be broken
+            self.fixes.append(self.fix_nonpolymer(st))
+
+    def new_chain_id(self, original_chain_id):
+        # decide new chain ID
+        for i in itertools.count(start=1):
+            new_id = "{}{}".format(original_chain_id, i)
+            if new_id not in self.chainids:
+                self.chainids.add(new_id)
+                return new_id
 
     def fix_metadata(self, st, changedict):
         # fix connections
@@ -295,7 +307,26 @@ class FixForRefmac:
                     aa.chain_name = changeto[0]
                     aa.res_id.seqid.num = changeto[1]
                     aa.res_id.seqid.icode = changeto[2]
-        
+
+    def add_gaps(self, st, topo):
+        # Refmac (as of 5.8.0352) has a bug that makes two links for IAS (IAS-pept and usual TRANS/CIS)
+        # However this implementation is even more harmful.. if gap is inserted to real gaps then necessary p link is also gone!
+        for chain in st[0]:
+            rs = chain.get_polymer()
+            for i in range(1, len(rs)):
+                res0 = rs[i-1]
+                res = rs[i]
+                links = topo.links_to_previous(res)
+                if len(links) == 0 or links[0].link_id in ("gap", "?"):
+                    con = gemmi.Connection()
+                    con.asu = gemmi.Asu.Same
+                    con.type = gemmi.ConnectionType.Unknown
+                    con.link_id = "gap"
+                    con.partner1 = gemmi.AtomAddress(chain.name, res0.seqid, res0.name, "", "\0")
+                    con.partner2 = gemmi.AtomAddress(chain.name, res.seqid, res.name, "", "\0")
+                    logger.write("Refmac workaround (gap link): {}".format(con))
+                    st.connections.append(con)
+
     def fix_microheterogeneity(self, st, topo):
         mh_res = []
         chains = []
@@ -395,6 +426,35 @@ class FixForRefmac:
         return modifications
     # fix_microheterogeneity()
 
+    def fix_nonpolymer(self, st):
+        # Refmac (as of 5.8.0352) has a bug that links non-neighbouring nucleotides
+        # It only happens with mmCIF file
+        newchains = []
+        changes = []
+        for chain in st[0]:
+            polymer = chain.get_polymer()
+            if len(polymer) == len(chain): continue
+            if len(polymer) == 0: continue
+            del_idxes = []
+            newchains.append(gemmi.Chain(self.new_chain_id(chain.name)))
+            logger.write("Refmac workaround (nonpolymer-fix) {} => {} ({} residues)".format(chain.name, newchains[-1].name,
+                                                                                            len(chain) - len(polymer)))
+            for i, res in enumerate(chain):
+                if res in polymer: continue
+                newchains[-1].add_residue(res)
+                del_idxes.append(i)
+                changes.append([(chain.name, res.seqid.num, res.seqid.icode),
+                                (newchains[-1].name, newchains[-1][-1].seqid.num, newchains[-1][-1].seqid.icode)])
+            for i in reversed(del_idxes):
+                del chain[i]
+                
+        for c in newchains:
+            st[0].add_chain(c)
+        if changes:
+            st.remove_empty_chains()
+            self.fix_metadata(st, dict(changes))
+        return changes            
+
     def fix_too_large_seqnum(self, st, topo):
         # Refmac cannot handle residue id > 9999
         # What to do:
@@ -402,30 +462,18 @@ class FixForRefmac:
         # - modify link records (and others?)
         # - add link record if needed
         newchains = []
-        chainids = set(chain.name for chain in st[0])
         changes = []
         
-        def new_chain_id(original_chain_id):
-            # decide new chain ID
-            for i in itertools.count(start=1):
-                new_id = "{}{}".format(original_chain_id, i)
-                if new_id not in chainids:
-                    chainids.add(new_id)
-                    return new_id
-
         for chain in st[0]:
             maxseqnum = max([r.seqid.num for r in chain])
             if maxseqnum > self.MAXNUM:
-
-                add_count = 1
                 offset = 0
                 #target = [res for res in chain if res.seqid.num > 9999]
                 del_idxes = []
                 for ires, res in enumerate(chain):
                     if res.seqid.num <= self.MAXNUM: continue
                     if res.seqid.num - offset > self.MAXNUM:
-                        newchains.append(gemmi.Chain(new_chain_id(chain.name)))
-                        add_count += 1
+                        newchains.append(gemmi.Chain(self.new_chain_id(chain.name)))
                         offset = res.seqid.num - 1
                         # need to keep link to previous residue if exists
                         for link in topo.links_to_previous(res):
@@ -448,7 +496,7 @@ class FixForRefmac:
                     prev = chain[ires-1].seqid if ires > 0 else None
                     changes.append([(chain.name, res.seqid.num, res.seqid.icode),
                                     (newchains[-1].name, newchains[-1][-1].seqid.num, newchains[-1][-1].seqid.icode)])
-                    logger.write("{} => {} {}".format(changes[-1][0], changes[-1][1], res.name))
+                    logger.write("Refmac workaround (too large seq) {} => {} {}".format(changes[-1][0], changes[-1][1], res.name))
 
                 for i in reversed(del_idxes):
                     del chain[i]
@@ -457,7 +505,6 @@ class FixForRefmac:
             st[0].add_chain(c)
         if changes:
             st.remove_empty_chains()
-            st.assign_subchains(True) # do we need this?
             self.fix_metadata(st, dict(changes))
         return changes
 
@@ -479,14 +526,9 @@ class FixForRefmac:
         self.fix_metadata(st, changedict)
         
     def modify_back(self, st):
-        if self.res_fix:
-            reschanges = dict([x[::-1] for x in self.res_fix])
+        for fix in reversed(self.fixes):
+            reschanges = dict([x[::-1] for x in fix])
             self.fix_model(st, reschanges)
-        if self.inscode_fix:
-            inschanges = dict([x[::-1] for x in self.inscode_fix])
-            self.fix_model(st, inschanges)
-        if self.res_fix:
-            st.assign_subchains(True)
         
         
 class Refmac:

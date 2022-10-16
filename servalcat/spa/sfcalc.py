@@ -317,6 +317,7 @@ def main(args, monlib=None):
         st = utils.fileio.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P 1"
+        model_format = utils.fileio.check_model_format(args.model)
 
         if monlib is None:
             # FIXME should use user provided libraries
@@ -332,9 +333,9 @@ def main(args, monlib=None):
             topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
             ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
                                                             fix_microheterogeneity=not args.no_fix_microheterogeneity,
-                                                            fix_resimax=not args.no_fix_resi9999)
+                                                            fix_resimax=not args.no_fix_resi9999,
+                                                            fix_nonpolymer=(model_format==".mmcif"))
             st.entities.clear()
-        model_format = utils.fileio.check_model_format(args.model)
         chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
         if chain_id_len_max > 1 and model_format == ".pdb":
             logger.write("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
