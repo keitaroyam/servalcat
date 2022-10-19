@@ -74,7 +74,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
 # rename_cif_modification_if_necessary()
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False,
-                         ignore_monomer_dir=False):
+                         ignore_monomer_dir=False, make_newligand=False):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None and not ignore_monomer_dir:
@@ -200,6 +200,16 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
+    
+    if unknown_cc and make_newligand:
+        for mon in unknown_cc:
+            # find most complete residue
+            res_list = [(len(res), res) for chain in st[0] for res in chain if res.name == mon]
+            res = max(res_list, key=lambda x: x[0])[1]
+            monlib.monomers[mon] = gemmi.make_chemcomp_with_restraints(res)
+
+        logger.write("WARNING: ad-hoc restraints were generated for {}".format(",".join(unknown_cc)))
+        logger.write("         it is strongly recommended to generate them using AceDRG.")
    
     return monlib
 # load_monomer_library()

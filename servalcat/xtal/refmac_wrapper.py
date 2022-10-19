@@ -25,6 +25,7 @@ def add_arguments(parser):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("opts", nargs="+",
                         help="HKLIN hklin XYZIN xyzin...")
+    # TODO --prefix to automatically set hklout/xyzout/log file?
 
 # add_arguments()
                         
@@ -72,9 +73,9 @@ def parse_keywords(inputs):
                 elif s[itk].lower().startswith("newl"): #default e
                     tmp = s[itk+1].lower()
                     if tmp.startswith("e"): # exit
-                        r["newligand"] = "h"
+                        r["newligand"] = False
                     elif tmp.startswith(("c", "y", "noex")): # noexit
-                        r["newligand"] = "y"
+                        r["newligand"] = True
                     else:
                         raise SystemExit("Invalid make instruction: {}".format(l))
                     itk += 2
@@ -143,8 +144,6 @@ def parse_keywords(inputs):
     def sorry(s): raise SystemExit("Sorry, {} is not supported".format(s))
     if ret["make"].get("hydr") == "f":
         sorry("make hydr full")
-    if ret["make"].get("newligand") == "y":
-        sorry("make newligand continue")
     if ret["make"].get("buil") == "y":
         sorry("make build yes")
 
@@ -160,21 +159,30 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
     if st.input_format in (gemmi.CoorFormat.Pdb, gemmi.CoorFormat.ChemComp):
         st.entities.clear()
         st.setup_entities()
+
+    # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
         monlib = utils.restraints.load_monomer_library(st,
                                                        monomer_dir=monlib_path,
                                                        cif_files=ligand,
-                                                       stop_for_unknowns=True) # until we have make newligand option
+                                                       stop_for_unknowns=not make.get("newligand"),
+                                                       make_newligand=make.get("newligand"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
     if make.get("cispept", "y") == "y": st.assign_cis_flags()
     if make.get("link", "n") == "y": # TODO support it correctly, and also make link define. what is 0?
-        utils.restraints.find_and_fix_links(st, monlib) # TODO fix for unknown links
-
+        #utils.restraints.find_and_fix_links(st, monlib) # TODO fix for unknown links
+        logger.write("Make link yes specified. Finding links..")
+        before = len(st.connections)
+        gemmi.add_automatic_links(st[0], st, monlib)
+        for i in range(before, len(st.connections)):
+            con = st.connections[i]
+            logger.write(" automatic link: {} - {} id= {}".format(con.partner1, con.partner2, con.link_id))
+        
     if make.get("hydr") == "a":
         logger.write("generating hydrogen atoms")
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=True)
+    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False)
     if make.get("hydr") != "n" and st[0].has_hydrogen():
         if h_pos == "nucl":
             resnames = st[0].get_all_residue_names()
@@ -185,11 +193,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
             logger.write("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
-    doc = gemmi.cif.Document()
-    crd = gemmi.prepare_crd(st, topo, h_change)
-    rst = gemmi.prepare_rst(topo, monlib, st.cell)
-    doc.add_copied_block(crd)
-    doc.add_copied_block(rst)
+    doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.write("crd file written: {}".format(crdout))
 # prepare_crd()
@@ -241,7 +245,7 @@ def main(args):
         logger.write(l, end="")
     p.wait()
 
-    # TODO append monomer description to mmcif file.
+    # TODO if input is pdb-incompatible (but hybrid-36 compatible) format, convert mmcif to pdb?
 # main()
 
 if __name__ == "__main__":
