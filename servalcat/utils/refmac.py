@@ -280,13 +280,13 @@ class FixForRefmac:
         self.fixes = []
         self.chainids = set(chain.name for chain in st[0])
         if fix_microheterogeneity:
-            self.fixes.append(self.fix_microheterogeneity(st, topo))
+            self.fix_microheterogeneity(st, topo)
         if add_gaps:
             self.add_gaps(st, topo)
         if fix_resimax: # This modifies chains, so topo will be broken
-            self.fixes.append(self.fix_too_large_seqnum(st, topo))
+            self.fix_too_large_seqnum(st, topo)
         if fix_nonpolymer: # This modifies chains, so topo will be broken
-            self.fixes.append(self.fix_nonpolymer(st))
+            self.fix_nonpolymer(st)
 
     def new_chain_id(self, original_chain_id):
         # decide new chain ID
@@ -343,7 +343,7 @@ class FixForRefmac:
                     ress_str = "/".join([str(r) for r in ress])
                     logger.write("Microheterogeneity detected in chain {}: {}".format(chain.name, ress_str))
 
-        if not mh_res: return []
+        if not mh_res: return
 
         for chain in st[0]:
             for res in chain:
@@ -423,7 +423,7 @@ class FixForRefmac:
                         con.partner2 = gemmi.AtomAddress(chain_name, r2.seqid, r2.name, "", a2)
                         st.connections.append(con)
 
-        return modifications
+        self.fixes.append(modifications)
     # fix_microheterogeneity()
 
     def fix_nonpolymer(self, st):
@@ -453,7 +453,7 @@ class FixForRefmac:
         if changes:
             st.remove_empty_chains()
             self.fix_metadata(st, dict(changes))
-        return changes            
+        self.fixes.append(changes)
 
     def fix_too_large_seqnum(self, st, topo):
         # Refmac cannot handle residue id > 9999
@@ -506,7 +506,7 @@ class FixForRefmac:
         if changes:
             st.remove_empty_chains()
             self.fix_metadata(st, dict(changes))
-        return changes
+        self.fixes.append(changes)
 
     def fix_model(self, st, changedict):
         chain_newid = set()

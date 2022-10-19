@@ -326,7 +326,12 @@ def main(args, monlib=None):
         if not args.no_link_check:
             utils.restraints.find_and_fix_links(st, monlib)
 
-        if not args.no_fix_microheterogeneity or not args.no_fix_resi9999:
+        max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
+        if max_seq_num > 9999 and model_format == ".pdb":
+            logger.write("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
+            model_format = ".mmcif"
+
+        if 1: # workaround for Refmac
             # TODO need to check external restraints
             st.entities.clear()
             st.setup_entities()
@@ -334,17 +339,13 @@ def main(args, monlib=None):
             ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
                                                             fix_microheterogeneity=not args.no_fix_microheterogeneity,
                                                             fix_resimax=not args.no_fix_resi9999,
-                                                            fix_nonpolymer=(model_format==".mmcif"))
+                                                            fix_nonpolymer=False)
+            chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+            if chain_id_len_max > 1 and model_format == ".pdb":
+                logger.write("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+                model_format = ".mmcif"
+            if model_format == ".mmcif": ret["refmac_fixes"].fix_nonpolymer(st)
             st.entities.clear()
-        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
-        if chain_id_len_max > 1 and model_format == ".pdb":
-            logger.write("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
-            model_format = ".mmcif"
-
-        max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
-        if max_seq_num > 9999 and model_format == ".pdb":
-            logger.write("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
-            model_format = ".mmcif"
 
         ret["model_format"] = model_format
 
