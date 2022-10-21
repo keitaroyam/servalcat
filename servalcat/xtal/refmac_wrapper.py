@@ -26,6 +26,7 @@ def add_arguments(parser):
     parser.add_argument("opts", nargs="+",
                         help="HKLIN hklin XYZIN xyzin...")
     # TODO --prefix to automatically set hklout/xyzout/log file?
+    # TODO --auto_box_with_padding in case of model idealisation
 
 # add_arguments()
                         
@@ -50,6 +51,7 @@ def parse_keywords(inputs):
         if "#" in l: l = l[:l.index("#")]
         s = l.split()
         ntok = len(s)
+        if ntok == 0: continue
         if s[0].lower().startswith("make"):
             itk = 1
             r = ret["make"]
@@ -156,9 +158,11 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
     st = utils.fileio.read_structure(xyzin)
-    if st.input_format in (gemmi.CoorFormat.Pdb, gemmi.CoorFormat.ChemComp):
-        st.entities.clear()
-        st.setup_entities()
+    if not st.cell.is_crystal():
+        raise SystemExit("Error: unit cell is not defined in the model.")
+
+    st.entities.clear()
+    st.setup_entities()
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
@@ -179,7 +183,17 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
         for i in range(before, len(st.connections)):
             con = st.connections[i]
             logger.write(" automatic link: {} - {} id= {}".format(con.partner1, con.partner2, con.link_id))
-        
+
+    refmac_fixes = None
+    max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
+    if max_seq_num > 9999:
+        logger.write("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
+        topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
+        refmac_fixes = utils.refmac.FixForRefmac(st, topo, 
+                                                 fix_microheterogeneity=False,
+                                                 fix_resimax=True,
+                                                 fix_nonpolymer=False)
+
     if make.get("hydr") == "a":
         logger.write("generating hydrogen atoms")
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False)
@@ -196,6 +210,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.write("crd file written: {}".format(crdout))
+    return refmac_fixes
 # prepare_crd()
 
 def main(args):
@@ -216,12 +231,13 @@ def main(args):
 
     # Process model
     crdout = None
+    refmac_fixes = None
     if xyzin is not None:
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
-        crdout = "gemmi_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0])
-        prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
-                    h_pos="nucl" if keywords.get("source")=="ne" else "elec")
+        crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
+        refmac_fixes = prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
+                                   h_pos="nucl" if keywords.get("source")=="ne" else "elec")
         opts.extend(["xyzin", crdout])
 
     if keywords["make"].get("exit"):
@@ -246,6 +262,8 @@ def main(args):
     p.wait()
 
     # TODO if input is pdb-incompatible (but hybrid-36 compatible) format, convert mmcif to pdb?
+    if refmac_fixes:
+        pass
 # main()
 
 if __name__ == "__main__":
