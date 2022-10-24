@@ -10,6 +10,8 @@ from servalcat.utils import logger
 from servalcat.utils import model
 from servalcat.utils import restraints
 import os
+import shutil
+import glob
 import re
 import subprocess
 import gemmi
@@ -23,6 +25,36 @@ def splitext(path):
     else:
         return os.path.splitext(path)
 # splitext()
+
+def rotate_file(filename, copy=False):
+    if not os.path.exists(filename): return
+
+    # make list [ [filename, number], ... ]
+    old_list = []
+    dot_files = glob.glob(filename + ".*")
+    for f in dot_files:
+        suffix = f.replace(filename+".", "")
+        try:
+            i = int(suffix)
+            if str(i) == suffix: # ignore if suffix was such as 003...
+                old_list.append([f, i])
+        except ValueError as e:
+            continue
+
+    old_list.sort(key=lambda x: x[1])
+
+    # rotate files
+    for f, i in reversed(old_list):
+        logger.write("Rotating file: {}".format(f))
+        os.rename(f, "%s.%d" % (f[:f.rfind(".")], i+1))
+
+    if copy:
+        shutil.copyfile(filename, filename + ".1")
+    else:
+        os.rename(filename, filename + ".1")
+
+    return filename + ".1"
+# rotate_file()
 
 def check_model_format(xyzin):
     # TODO check format actually

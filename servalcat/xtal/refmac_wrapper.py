@@ -36,10 +36,10 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def get_opt(opts, kwd):
+def get_opt(opts, kwd, keep=False):
     for i in range(len(opts)-1):
         if opts[i].lower() == kwd.lower():
-            return opts[i+1], opts[:i] + opts[i+2:]
+            return opts[i+1], opts if keep else (opts[:i] + opts[i+2:])
     return None, opts
 # get_opt()
 
@@ -161,8 +161,17 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
     if not st.cell.is_crystal():
         raise SystemExit("Error: unit cell is not defined in the model.")
 
+    st.collapse_hd_mixture()
     st.entities.clear()
     st.setup_entities()
+
+    # fix deuterium monomers
+    d_table = dict(DOD="HOH", ND4="NH4", SPW="SPK")
+    # XXX for ND4 and SPW atom names should be changed.
+    for chain in st[0]:
+        for res in chain:
+            newname = d_table.get(res.name)
+            if newname: res.name = newname
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
@@ -213,6 +222,51 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
     return refmac_fixes
 # prepare_crd()
 
+def get_output_model_names(xyzout):
+    # ref: WRITE_ATOMS_REFMAC in oppro_allocate.f
+    if xyzout is None: xyzout = "XYZOUT"
+    pdb, mmcif = "", ""
+    if len(xyzout) > 3:
+        if xyzout.lower().endswith("pdb"):
+            mmcif = xyzout[:-4] + ".mmcif"
+            pdb = xyzout
+        else:
+            if xyzout.lower().endswith("cif") and len(xyzout) > 5:
+                if xyzout.lower().endswith("mmcif"):
+                    mmcif = xyzout
+                    pdb = xyzout[:-6] + ".pdb"
+                else:
+                    mmcif = xyzout
+                    pdb = xyzout[:-4] + ".pdb"
+            else:
+                mmcif = xyzout + ".mmcif"
+                pdb = xyzout
+    else:
+        mmcif = xyzout + ".mmcif"
+        pdb = xyzout
+        
+    return pdb, mmcif
+# get_output_model_names()
+
+def modify_output(pdbout, cifout, fixes):
+    utils.fileio.rotate_file(pdbout, copy=True)
+    utils.fileio.rotate_file(cifout, copy=True)
+    
+    st = utils.fileio.read_structure(cifout)
+    st.raw_remarks = gemmi.read_structure(pdbout).raw_remarks
+    if fixes is not None:
+        fixes.modify_back(st)
+
+    utils.fileio.write_mmcif(st, cifout, cifout)
+    
+    chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+    seqnums = [res.seqid.num for chain in st[0] for res in chain]
+    if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
+        logger.write("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
+    st.expand_hd_mixture()
+    utils.fileio.write_pdb(st, pdbout)
+# modify_output()
+
 def main(args):
     args.ligand = sum(args.ligand, []) if args.ligand else []
     inputs = []
@@ -222,6 +276,7 @@ def main(args):
             break
 
     xyzin, opts = get_opt(args.opts, "xyzin")
+    xyzout = get_opt(args.opts, "xyzout", keep=True)[0]
     libin, _ = get_opt(opts, "libin")
     keywords = parse_keywords(inputs) # TODO expand @
     if libin: args.ligand.append(libin)
@@ -261,9 +316,9 @@ def main(args):
         logger.write(l, end="")
     p.wait()
 
-    # TODO if input is pdb-incompatible (but hybrid-36 compatible) format, convert mmcif to pdb?
-    if refmac_fixes:
-        pass
+    # Modify output
+    pdbout, cifout = get_output_model_names(xyzout)
+    modify_output(pdbout, cifout, refmac_fixes)
 # main()
 
 if __name__ == "__main__":
