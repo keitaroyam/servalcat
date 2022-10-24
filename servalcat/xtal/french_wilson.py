@@ -124,7 +124,10 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     I_over_eps = hkldata.df.I.to_numpy() / hkldata.df.epsilon.to_numpy()
     x = []
     for i_bin, idxes in hkldata.binned():
-        S = max(numpy.nanmean(I_over_eps[idxes]), 1e-3)
+        #S = max(numpy.nanmean(I_over_eps[idxes]), 1e-3)
+        # var(I) = var_signal + var_noise, so this overestimates S,
+        # but it should be better than having negative values (in noisy shell)
+        S = numpy.nanstd(I_over_eps[idxes])
         hkldata.binned_df.loc[i_bin, "S"] = S
         x.append(S)
     logger.write("Initial estimates:")
@@ -209,8 +212,8 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         print(ret)
 
     svecs = hkldata.s_array()
-
-    for icyc in range(10):
+    cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]
+    for icyc in range(100):
         logger.write("Refine B")
         t0 = time.time()
         x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
@@ -247,8 +250,8 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         logger.write("Refine S")
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
             #logger.write("Bin {}".format(i_bin))
-            S = hkldata.binned_df.loc[i_bin, "S"]
             if 0:
+                S = hkldata.binned_df.loc[i_bin, "S"]
                 ret = scipy.optimize.minimize(fun=ll_bin,
                                               jac=ll_1der_bin_S,
                                               hess=ll_2der_bin_S,
@@ -259,32 +262,42 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
                 hkldata.binned_df.loc[i_bin, "S"] = ret.x
             else:
                 args=(B, i_bin, svecs, hkldata, centric_and_selections)
-                f0 = ll_bin([S], *args)
-                #g = ll_1der_bin_S([S], *args)[0]
-                #H = ll_2der_bin_S([S], *args)[0]
-                #shift = -g / H
-                shift = numpy.exp(ll_shift_bin_S(S, *args))
-                #for i in range(-30, 31):
-                #    print(i/10, ll_bin([S+shift*i/10], *args))
-                #quit()
-                if 0:#i_bin == 16:
-                    with open("debug.txt", "w") as ofs:
-                        for i in range(0,31):
-                            ss = shift**(1. / 2**i)
-                            print(ss, ll_bin([S*ss], *args), file=ofs)
-                    quit()
-                for i in range(3):
-                    ss = shift**(1. / 2**i)
-                    f1 = ll_bin([S*ss], *args)
-                    logger.write("bin {:3d} f0 = {:.3e} shift = {:.3e} f1 = {:.3e} dec? {}".format(i_bin, f0, ss, f1, f1 < f0))
-                    if f1 < f0:
-                        hkldata.binned_df.loc[i_bin, "S"] = S * ss
-                        break
+                for j in range(3):
+                    S = hkldata.binned_df.loc[i_bin, "S"]
+                    f0 = ll_bin([S], *args)
+                    #g = ll_1der_bin_S([S], *args)[0]
+                    #H = ll_2der_bin_S([S], *args)[0]
+                    #shift = -g / H
+                    shift = numpy.exp(ll_shift_bin_S(S, *args))
+                    #for i in range(-30, 31):
+                    #    print(i/10, ll_bin([S+shift*i/10], *args))
+                    #quit()
+                    if 0:#i_bin == 16:
+                        with open("debug.txt", "w") as ofs:
+                            for i in range(0,31):
+                                ss = shift**(1. / 2**i)
+                                print(ss, ll_bin([S*ss], *args), file=ofs)
+                        quit()
+                    for i in range(3):
+                        ss = shift**(1. / 2**i)
+                        f1 = ll_bin([S*ss], *args)
+                        logger.write("bin {:3d} f0 = {:.3e} shift = {:.3e} f1 = {:.3e} dec? {}".format(i_bin, f0, ss, f1, f1 < f0))
+                        if f1 < f0:
+                            hkldata.binned_df.loc[i_bin, "S"] = S * ss
+                            break
                 
         logger.write("Refined estimates in cycle {}:".format(icyc))
         logger.write(hkldata.binned_df.to_string())
         logger.write("B_aniso= {}".format(B))
-    
+        cycle_data.append([icyc] + SMattolist(B) + list(hkldata.binned_df.S))
+
+    with open("fw_cycles.dat", "w") as ofs:
+        ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df.index) + "\n")
+        for data in cycle_data:
+            ofs.write("{:2d} ".format(data[0]+1))
+            ofs.write(" ".join("{:.4e}".format(x) for x in data[1:]))
+            ofs.write("\n")
+        
     return B
 
 # For the calculation of J = \int_0^\infty x^{4z-1} e^{-(x^4 - 2t0 x^2)/2} dx
@@ -321,13 +334,18 @@ def f1_exp2_2der(x, z, t0):
     return -ex * (2.0 * ex1 * ex1 - 2.0 * t0 * ex1 - 4 * z) + (1 + ex)**2 * (8.0 * ex1 * ex1 - 4.0 * t0 * ex1) - ex / (1 + ex)**2
 
 def calc_f1_exp2_x0(z, t0):
-    v = (t0 + numpy.sqrt(t0**2 + 8 * z)) * 0.5 # FIXME may be zero when t0 is huge negative
+    # Want to solve x - exp(-x) = 0.5 * log(v) = A
+    # solution: x = W(exp(-A)) + A
+    tmp = numpy.sqrt(t0**2 + 8 * z)
+    v = 0.5 * numpy.where(t0 > 0, t0 + tmp,
+                          8 * z / (tmp - t0)) # to avoid precision loss
     if numpy.any(v == 0):
         sel = v == 0
         print("ERROR: v=0, t0=", t0[sel], "z=", z)
-    a = 0.5 * numpy.log(v)
-    exp_a = v**(-0.5)
-    return scipy.special.lambertw(exp_a).real + a
+    sel = v > 0
+    a = 0.5 * numpy.log(v, where=sel)
+    exp_a = numpy.power(v, -0.5, where=sel)
+    return numpy.where(sel, scipy.special.lambertw(exp_a).real + a, -numpy.inf)
 
 @profile
 def J_ratio_1(k_num, k_den, to1, h, py=False): # case 1
