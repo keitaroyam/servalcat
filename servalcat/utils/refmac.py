@@ -737,7 +737,7 @@ class Refmac:
 
         log = open(self.prefix+".log", "w")
         cycle = 0
-        re_lastcycle = re.compile("Cycle *{}. Rfactor analysis".format(self.ncycle+self.tlscycle+1))
+        re_cycle_table = re.compile("Cycle *([0-9]+). Rfactor analysis")
         re_actual_weight = re.compile("Actual weight *([^ ]+) *is applied to the X-ray term")
         rmsbond = ""
         rmsangle = ""
@@ -746,6 +746,8 @@ class Refmac:
         outlier_flag = False
         last_table_flag = False
         last_table_keys = []
+        occ_flag = False
+        occ_cycles = 0
         ret = {"version":None,
                "cycles": [{"cycle":i} for i in range(self.ncycle+self.tlscycle+1)],
                } # metadata
@@ -784,21 +786,33 @@ class Refmac:
 
             if "TLS refinement cycle" in l:
                 cycle = int(l.split()[-1])
+            elif "----Group occupancy refinement----" in l:
+                occ_flag = True
+                occ_cycles += 1
+                cycle += 1
             elif "CGMAT cycle number =" in l:
-                cycle = int(l[l.index("=")+1:]) + self.tlscycle
-            elif re_lastcycle.search(l):
-                cycle = self.ncycle + self.tlscycle + 1
-            elif "Overall R factor                     =" in l and cycle > 0:
+                cycle = int(l[l.index("=")+1:]) + self.tlscycle + occ_cycles
+                occ_flag = False
+            
+            r_cycle = re_cycle_table.search(l)
+            if r_cycle: cycle = int(r_cycle.group(1))                
+
+            for i in range(len(ret["cycles"]), cycle):
+                ret["cycles"].append({"cycle":i})
+
+            if "Overall R factor                     =" in l and cycle > 0:
                 rfac = l[l.index("=")+1:].strip()
                 if self.global_mode != "spa":
                     summary_write(" cycle= {:3d} R= {}".format(cycle-1, rfac))
             elif "Average Fourier shell correlation    =" in l and cycle > 0:
                 fsc = l[l.index("=")+1:].strip()
-                if cycle == 1:
+                if occ_flag:
+                    note = "(occupancy)"
+                elif cycle == 1:
                     note = "(initial)"
                 elif cycle <= self.tlscycle+1:
                     note = "(TLS)"
-                elif cycle > self.ncycle + self.tlscycle:
+                elif cycle > self.ncycle + occ_cycles + self.tlscycle:
                     note = "(final)"
                 else:
                     note = ""
