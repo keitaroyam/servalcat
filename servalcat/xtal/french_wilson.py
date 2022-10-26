@@ -215,9 +215,10 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]
     for icyc in range(100):
         logger.write("Refine B")
+        B_converged = False
         t0 = time.time()
-        x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
         if 0:
+            x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
             ret = scipy.optimize.minimize(fun=ll_all_B,
                                           jac=ll_1der_all_B,
                                           hess=ll_2der_all_B,
@@ -228,26 +229,26 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
             logger.write(str(ret))
         else:
             args=(svecs, hkldata, centric_and_selections, adpdirs)
-            f0 = ll_all_B(x, *args)
-            #g = ll_1der_all_B(x, *args)
-            #H = ll_2der_all_B(x, *args)
-            #shift0 = -numpy.dot(g, numpy.linalg.pinv(H))
-            shift = ll_shift_B(x, *args)
-            #print("DEBUG", shift, shift0, numpy.allclose(shift, shift0))
-            #for i in range(-30, 31):
-            #    print(i/10, ll_all_B(x+shift*i/10, *args))
-            #quit()
-            for i in range(3):
-                ss = shift / 2**i
-                f1 = ll_all_B(x + ss, *args)
-                logger.write("f0 = {:.3e} shift = {} f1 = {:.3e} dec? {}".format(f0, ss, f1, f1 < f0))
-                if f1 < f0:
-                    B = gemmi.SMat33d(*numpy.dot(x+ss, adpdirs))
-                    break
+            for j in range(10):
+                x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
+                f0 = ll_all_B(x, *args)
+                shift = ll_shift_B(x, *args)
+                for i in range(3):
+                    ss = shift / 2**i
+                    f1 = ll_all_B(x + ss, *args)
+                    logger.write("f0 = {:.3e} shift = {} f1 = {:.3e} dec? {}".format(f0, ss, f1, f1 < f0))
+                    if f1 < f0:
+                        B = gemmi.SMat33d(*numpy.dot(x+ss, adpdirs))
+                        if numpy.max(numpy.abs(ss)) < 1e-4: B_converged = True
+                        break
+                else:
+                    B_converged = True
+                if B_converged: break
 
         logger.write("time= {}".format(time.time() - t0))
         logger.write("B_aniso= {}".format(B))
         logger.write("Refine S")
+        S_converged = [False for _ in hkldata.binned()]
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
             #logger.write("Bin {}".format(i_bin))
             if 0:
@@ -262,34 +263,36 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
                 hkldata.binned_df.loc[i_bin, "S"] = ret.x
             else:
                 args=(B, i_bin, svecs, hkldata, centric_and_selections)
-                for j in range(3):
+                for j in range(10):
                     S = hkldata.binned_df.loc[i_bin, "S"]
                     f0 = ll_bin([S], *args)
-                    #g = ll_1der_bin_S([S], *args)[0]
-                    #H = ll_2der_bin_S([S], *args)[0]
-                    #shift = -g / H
                     shift = numpy.exp(ll_shift_bin_S(S, *args))
-                    #for i in range(-30, 31):
-                    #    print(i/10, ll_bin([S+shift*i/10], *args))
-                    #quit()
                     if 0:#i_bin == 16:
                         with open("debug.txt", "w") as ofs:
                             for i in range(0,31):
                                 ss = shift**(1. / 2**i)
                                 print(ss, ll_bin([S*ss], *args), file=ofs)
                         quit()
-                    for i in range(3):
-                        ss = shift**(1. / 2**i)
+                    for k in range(3):
+                        ss = shift**(1. / 2**k)
                         f1 = ll_bin([S*ss], *args)
                         logger.write("bin {:3d} f0 = {:.3e} shift = {:.3e} f1 = {:.3e} dec? {}".format(i_bin, f0, ss, f1, f1 < f0))
                         if f1 < f0:
                             hkldata.binned_df.loc[i_bin, "S"] = S * ss
+                            if ss > 0.9999: S_converged[i] = True
                             break
-                
+                    else:
+                        S_converged[i] = True
+                    if S_converged[i]: break
+
         logger.write("Refined estimates in cycle {}:".format(icyc))
         logger.write(hkldata.binned_df.to_string())
         logger.write("B_aniso= {}".format(B))
         cycle_data.append([icyc] + SMattolist(B) + list(hkldata.binned_df.S))
+        print(B_converged, S_converged)
+        if B_converged and all(S_converged):
+            logger.write("Converged. Finished in cycle {}".format(icyc))
+            break
 
     with open("fw_cycles.dat", "w") as ofs:
         ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df.index) + "\n")
