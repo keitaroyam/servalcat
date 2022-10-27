@@ -244,6 +244,12 @@ def make_NcsOps_from_matrices(matrices, cell=None, center=None):
     return ops
 # make_NcsOps_from_matrices()
 
+def find_center_of_origin(mat, vec): # may not be unique.
+    tmp = numpy.identity(3) - numpy.array(mat)
+    ret = numpy.dot(numpy.linalg.pinv(tmp), vec.tolist())
+    return gemmi.Vec3(*ret)
+# find_center_of_origin()
+
 def write_NcsOps_for_refmac(ncs_ops, file_name):
     def make_line(tr):
         m = tr.mat.tolist()

@@ -402,7 +402,7 @@ def main(args):
                 spa.shiftback.shift_back_model(st_sr, file_info["shifts"])
             
         if "refmac_fixes" in file_info:
-            file_info["refmac_fixes"].modify_back(st)
+            file_info["refmac_fixes"].modify_back(st_sr)
 
         utils.fileio.write_model(st_sr, prefix=args.output_prefix+"_shaken_refined",
                                  pdb=True, cif=True, cif_ref=cif_ref_sr)
@@ -488,6 +488,11 @@ def main(args):
         if mask is not None:
             ofs.write('set_contour_level_absolute(imol_fo, 1.2)\n')
             ofs.write('set_contour_level_absolute(imol_fofc, 3.0)\n')
+        for op in st.ncs:
+            if op.given: continue
+            c = utils.symmetry.find_center_of_origin(op.tr.mat, op.tr.vec)
+            v = [y for x in op.tr.mat.tolist() for y in x] + c.tolist()
+            ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
         
     logger.write("""
 =============================================================================
