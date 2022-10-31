@@ -25,8 +25,10 @@ def add_arguments(parser):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("opts", nargs="+",
                         help="HKLIN hklin XYZIN xyzin...")
+    parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
+
     # TODO --prefix to automatically set hklout/xyzout/log file?
-    # TODO --auto_box_with_padding in case of model idealisation
+    # TODO --cell to override unit cell
 
 # add_arguments()
                         
@@ -142,24 +144,36 @@ def parse_keywords(inputs):
             else:
                 ret["source"] = "xr"
             # TODO check mb, lamb
-
+        elif s[0].lower().startswith("refi"): # TODO support this. Note that only valid with hklin
+            itk = 1
+            while itk < ntok:
+                if s[itk].startswith("type"):
+                    if itk+1 < ntok and s[itk+1].startswith("unre"):
+                        ret["refi"] = {"type": "unre"}
+                    itk += 2
+                else:
+                    itk += 1
     def sorry(s): raise SystemExit("Sorry, {} is not supported".format(s))
     if ret["make"].get("hydr") == "f":
         sorry("make hydr full")
     if ret["make"].get("buil") == "y":
         sorry("make build yes")
-
     return ret
 # parse_keywords()
 
-def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec"):
+def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
     st = utils.fileio.read_structure(xyzin)
     if not st.cell.is_crystal():
-        raise SystemExit("Error: unit cell is not defined in the model.")
+        if auto_box_with_padding is not None:
+            st.cell = utils.model.box_from_model(st[0], auto_box_with_padding)
+            st.spacegroup_hm = "P 1"
+            logger.write("Box size from the model with padding of {}: {}".format(auto_box_with_padding, st.cell.parameters))
+        else:
+            raise SystemExit("Error: unit cell is not defined in the model.")
 
     st.collapse_hd_mixture()
     st.entities.clear()
@@ -292,7 +306,8 @@ def main(args):
         #os.close(tmpfd)
         crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
         refmac_fixes = prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
-                                   h_pos="nucl" if keywords.get("source")=="ne" else "elec")
+                                   h_pos="nucl" if keywords.get("source")=="ne" else "elec",
+                                   auto_box_with_padding=args.auto_box_with_padding)
         opts.extend(["xyzin", crdout])
 
     if keywords["make"].get("exit"):
