@@ -111,7 +111,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 if comp_list:
                     tab = comp_list.find("_chem_comp.", ["id", "group"])
                     if tab:
-                        monlib.monomers[name].group = tab.find_row(name).str(1)
+                        monlib.monomers[name].set_group(tab.find_row(name).str(1))
                 
                 # Check if bond length values are included
                 # This is to fail if cif file is e.g. from PDB website
