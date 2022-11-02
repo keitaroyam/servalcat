@@ -36,24 +36,21 @@ def decide_new_mod_id(mod_id, mods):
 
 def rename_cif_modification_if_necessary(doc, known_ids):
     # FIXME Problematic if other file refers to modification that is renamed in this function - but how can we know?
-    
-    mod_list = doc.find_block("mod_list")
-    if not mod_list: return {}
-    
     trans = {}
-    for row in mod_list.find("_chem_mod.", ["id"]):
-        mod_id = row.str(0)
-        if mod_id in known_ids:
-            new_id = decide_new_mod_id(mod_id, known_ids)
-            trans[mod_id] = new_id
-            row[0] = new_id # modify id
-            logger.write("INFO:: renaming modification id {} to {}".format(mod_id, new_id))
+    for b in doc:
+        for row in b.find("_chem_mod.", ["id"]):
+            mod_id = row.str(0)
+            if mod_id in known_ids:
+                new_id = decide_new_mod_id(mod_id, known_ids)
+                trans[mod_id] = new_id
+                row[0] = new_id # modify id
+                logger.write("INFO:: renaming modification id {} to {}".format(mod_id, new_id))
 
     # modify ids in mod_* blocks
     for mod_id in trans:
         b = doc.find_block("mod_{}".format(mod_id))
         if not b: # should raise error?
-            logger.write("WARNING:: inconsistent data_mod_list for {} in {}".format(mod_id, f))
+            logger.write("WARNING:: inconsistent mod description for {} in {}".format(mod_id, f))
             continue
         b.name = "mod_{}".format(trans[mod_id]) # modify name
         for item in b:
@@ -63,12 +60,12 @@ def rename_cif_modification_if_necessary(doc, known_ids):
                         row[0] = trans[mod_id]
 
     # Update mod id in links
-    link_list = doc.find_block("link_list")
-    if trans and link_list:
-        for row in link_list.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
-            for i in range(2):
-                if row.str(i) in trans:
-                    row[i] = trans[row.str(i)]
+    if trans:
+        for b in doc:
+            for row in b.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
+                for i in range(2):
+                    if row.str(i) in trans:
+                        row[i] = trans[row.str(i)]
 
     return trans
 # rename_cif_modification_if_necessary()
@@ -99,29 +96,19 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     for f in cif_files:
         logger.write("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
-        comp_list = doc.find_block("comp_list")
         for b in doc:
             if b.find_values("_chem_comp_atom.atom_id"):
                 name = b.name.replace("comp_", "")
                 if name in monlib.monomers:
                     logger.write("WARNING:: updating monomer {} using {}".format(name, f))
                     del monlib.monomers[name]
-                monlib.add_monomer_if_present(b)
 
-                if comp_list:
-                    tab = comp_list.find("_chem_comp.", ["id", "group"])
-                    if tab:
-                        monlib.monomers[name].set_group(tab.find_row(name).str(1))
-                
                 # Check if bond length values are included
                 # This is to fail if cif file is e.g. from PDB website
-                for b in monlib.monomers[name].rt.bonds:
-                    if b.value != b.value:
-                        raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
+                if not b.find_values("_chem_comp_bond.value_dist"):
+                    raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
                     
-        link_list = doc.find_block("link_list")
-        if link_list:
-            for row in link_list.find("_chem_link.", ["id"]):
+            for row in b.find("_chem_link.", ["id"]):
                 link_id = row.str(0)
                 if link_id in monlib.links:
                     logger.write("WARNING:: updating link {} using {}".format(link_id, f))
@@ -130,9 +117,14 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         # If modification id is duplicated, need to rename
         rename_cif_modification_if_necessary(doc, monlib.modifications)
         
+        monlib.insert_chemcomps(doc)
         monlib.insert_chemlinks(doc)
         monlib.insert_chemmods(doc)
-        monlib.insert_comp_list(doc)
+        
+        for b in doc:
+            for row in b.find("_chem_comp.", ["id", "group"]):
+                if row.str(0) in monlib.monomers:
+                    monlib.monomers[row.str(0)].set_group(row.str(1))
 
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
