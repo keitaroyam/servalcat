@@ -472,7 +472,7 @@ class HklData:
             h[0,1] = h[1,0]
             return h
 
-        res = scipy.optimize.minimize(fun=lambda x: sum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
+        res = scipy.optimize.minimize(fun=lambda x: numpy.sum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
                                       jac=grad2,
                                       hess=hess2,
                                       method="Newton-CG",
