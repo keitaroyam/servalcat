@@ -26,6 +26,7 @@ def add_arguments(parser):
     parser.add_argument("opts", nargs="+",
                         help="HKLIN hklin XYZIN xyzin...")
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
+    parser.add_argument('--no_adjust_hydrogen_distances', action='store_true', help="By default it adjusts hydrogen distances using ideal values. This option is to disable it.")
 
     # TODO --prefix to automatically set hklout/xyzout/log file?
     # TODO --cell to override unit cell
@@ -161,7 +162,8 @@ def parse_keywords(inputs):
     return ret
 # parse_keywords()
 
-def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None):
+def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None,
+                no_adjust_hydrogen_distances=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
@@ -217,16 +219,15 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                                                  fix_resimax=True,
                                                  fix_nonpolymer=False)
 
-    if make.get("hydr") == "a":
-        logger.write("generating hydrogen atoms")
+    if make.get("hydr") == "a": logger.write("(re)generating hydrogen atoms")
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False)
     if make.get("hydr") != "n" and st[0].has_hydrogen():
-        if h_pos == "nucl":
+        if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
             resnames = st[0].get_all_residue_names()
             utils.restraints.check_monlib_support_nucleus_distances(monlib, resnames)
             logger.write("adjusting hydrogen position to nucleus")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=1.1)
-        elif make.get("hydr") != "a":
+        elif h_pos == "elec" and make.get("hydr") == "y" and not no_adjust_hydrogen_distances:
             logger.write("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
@@ -307,7 +308,8 @@ def main(args):
         crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
         refmac_fixes = prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
-                                   auto_box_with_padding=args.auto_box_with_padding)
+                                   auto_box_with_padding=args.auto_box_with_padding,
+                                   no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
         opts.extend(["xyzin", crdout])
 
     if keywords["make"].get("exit"):
