@@ -699,20 +699,20 @@ class Refmac:
 
     def make_cmd(self):
         cmd = [self.exe]
-        cmd.extend(["hklin", pipes.quote(self.hklin)])
-        cmd.extend(["hklout", pipes.quote(self.hklout())])
-        cmd.extend(["xyzin", pipes.quote(self.xyzin)])
-        cmd.extend(["xyzout", pipes.quote(self.xyzout())])
+        cmd.extend(["hklin", self.hklin])
+        cmd.extend(["hklout", self.hklout()])
+        cmd.extend(["xyzin", self.xyzin])
+        cmd.extend(["xyzout", self.xyzout()])
         if self.libin:
-            cmd.extend(["libin", pipes.quote(self.libin)])
+            cmd.extend(["libin", self.libin])
         if self.tlsin:
-            cmd.extend(["tlsin", pipes.quote(self.tlsin)])
+            cmd.extend(["tlsin", self.tlsin])
         if self.tlscycle > 0:
-            cmd.extend(["tlsout", pipes.quote(self.tlsout())])
+            cmd.extend(["tlsout", self.tlsout()])
         if self.source == "neutron":
-            cmd.extend(["atomsf", pipes.quote(os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib"))])
+            cmd.extend(["atomsf", os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib")])
         if self.tmpdir:
-            cmd.extend(["scrref", pipes.quote(os.path.join(self.tmpdir, "refmac5_temp1"))])
+            cmd.extend(["scrref", os.path.join(self.tmpdir, "refmac5_temp1")])
             
         return cmd
     # make_cmd()
@@ -723,7 +723,7 @@ class Refmac:
         with open(self.prefix+".inp", "w") as ofs: ofs.write(stdin)
 
         logger.write("Running REFMAC5..")
-        logger.write("{} <<__eof__ > {}".format(" ".join(cmd), self.prefix+".log"))
+        logger.write("{} <<__eof__ > {}".format(" ".join(pipes.quote(x) for x in cmd), self.prefix+".log"))
         logger.write(stdin, end="")
         logger.write("__eof__")
 
