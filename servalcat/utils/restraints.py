@@ -138,13 +138,6 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
     logger.write("")
 
-    if stop_for_unknowns or check_hydrogen or make_newligand:
-        check_monlib_and_model(st, monlib, stop_for_unknowns, check_hydrogen, make_newligand)
-
-    return monlib
-# load_monomer_library()
-
-def check_monlib_and_model(st, monlib, stop_for_unknowns=False, check_hydrogen=False, make_newligand=False):
     logger.write("Checking if unknown atoms exist..")
     st = st.clone()
     sio = io.StringIO()
@@ -209,7 +202,9 @@ def check_monlib_and_model(st, monlib, stop_for_unknowns=False, check_hydrogen=F
 
         logger.write("WARNING: ad-hoc restraints were generated for {}".format(",".join(unknown_cc)))
         logger.write("         it is strongly recommended to generate them using AceDRG.")
-# check_monlib_and_model()
+
+    return monlib
+# load_monomer_library()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True

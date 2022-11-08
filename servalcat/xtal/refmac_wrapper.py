@@ -162,22 +162,6 @@ def parse_keywords(inputs):
     return ret
 # parse_keywords()
 
-def collapse_hd(st, monlib):
-    st.collapse_hd_mixture()
-    for chain in st[0]:
-        for res in chain:
-            if res.name not in monlib.monomers:
-                continue
-            cc = monlib.monomers[res.name]
-            cc_atoms = set(a.id for a in cc.atoms)
-            for atom in res:
-                if (atom.is_hydrogen() and
-                    atom.name.startswith("D") and
-                    atom.name not in cc_atoms and
-                    "H"+atom.name[1:] in cc_atoms):
-                    atom.name = "H" + atom.name[1:]
-# collapse_hd()
-
 def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None,
                 no_adjust_hydrogen_distances=False):
     assert h_pos in ("elec", "nucl")
@@ -203,20 +187,15 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
             if newname: res.name = newname
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
-    monlib = utils.restraints.load_monomer_library(st,
-                                                   monomer_dir=monlib_path,
-                                                   cif_files=ligand,
-                                                   stop_for_unknowns=False,
-                                                   check_hydrogen=False,
-                                                   make_newligand=False)
-    collapse_hd(st, monlib) # for neutron
     st.entities.clear()
     st.setup_entities()
 
     try:
-        utils.restraints.check_monlib_and_model(st, monlib,
-                                                stop_for_unknowns=not make.get("newligand"),
-                                                make_newligand=make.get("newligand"))
+        monlib = utils.restraints.load_monomer_library(st,
+                                                       monomer_dir=monlib_path,
+                                                       cif_files=ligand,
+                                                       stop_for_unknowns=not make.get("newligand"),
+                                                       make_newligand=make.get("newligand"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
