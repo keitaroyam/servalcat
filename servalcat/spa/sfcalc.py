@@ -118,6 +118,13 @@ def lab_f_suffix(blur):
 def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None): # TODO use hkldata.write_mtz
     if not blurs: blurs = []
     if 0 not in blurs: blurs = [0.] + blurs
+
+    mean_f = hkldata.df[map_labs].abs().mean().min()
+    if mean_f < 1:
+        scale = 10. / mean_f
+        logger.write("Mean(|F|)= {:.2e} may be too small for Refmac. Applying scale= {:.1f}".format(mean_f, scale))
+    else:
+        scale = 1.
     
     nblur = len(blurs)
     ncol = 3+len(map_labs)*(1+nblur)
@@ -127,14 +134,14 @@ def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None): # TODO 
     s2 = 1./hkldata.d_spacings()**2
     for i, lab in enumerate(map_labs):
         for j, b in enumerate(blurs):
-            f = numpy.abs(hkldata.df[lab])
+            f = numpy.abs(hkldata.df[lab]) * scale
             if b != 0: f *= numpy.exp(-b*s2/4.)
             data[:,3+i*(1+nblur)+j] = f
         data[:,3+i*(1+nblur)+nblur] = numpy.angle(hkldata.df[lab], deg=True)
         
     if sig_lab:
         for j, b in enumerate(blurs):
-            sigf = hkldata.df[sig_lab]
+            sigf = hkldata.df[sig_lab] * scale
             if b != 0: sigf *= numpy.exp(-b*s2/4.)
             data[:,3+len(map_labs)*(1+nblur)+j] = sigf
 
