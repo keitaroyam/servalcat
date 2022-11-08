@@ -275,7 +275,7 @@ class HklData:
             self.sort_by_resolution()
         self.df.reset_index(drop=True, inplace=True) # to allow numpy.array indexing
             
-        self.df["bin"] = (max_edge/self.d_spacings()+0.5).astype(numpy.int)
+        self.df["bin"] = (max_edge/self.d_spacings()+0.5).astype(int)
         # Merge inner/outer shells if too few # TODO smarter way
         bin_counts = []
         bin_ranges = {}

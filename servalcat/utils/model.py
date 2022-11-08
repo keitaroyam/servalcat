@@ -362,7 +362,7 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
             # use graph to find connected components
             segs = sorted(set(sum(pairs[key], []))) # index->segid
             segd = dict([(s,i) for i,s in enumerate(segs)]) # reverse lookup
-            g = numpy.zeros((len(segs),len(segs)), dtype=numpy.int)
+            g = numpy.zeros((len(segs),len(segs)), dtype=int)
             for p in pairs[key]:
                 i, j = segd[p[0]], segd[p[1]]
                 g[i,j] = g[j,i] = 1

@@ -48,8 +48,8 @@ def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
     utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
     nref = len(hkldata.df.index)
-    F1w = numpy.zeros(nref, dtype=numpy.complex)
-    F2w = numpy.zeros(nref, dtype=numpy.complex)
+    F1w = numpy.zeros(nref, dtype=complex)
+    F2w = numpy.zeros(nref, dtype=complex)
     F1 = hkldata.df.F_map1.to_numpy()
     F2 = hkldata.df.F_map2.to_numpy()
 
@@ -77,8 +77,8 @@ def add_coeffs_for_model_cc(hkldata, st):
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min=hkldata.d_min_max()[0]-1e-6,
                                                source="electron", miller_array=hkldata.miller_array())
     nref = len(hkldata.df.index)
-    FCw = numpy.zeros(nref, dtype=numpy.complex)
-    FPw = numpy.zeros(nref, dtype=numpy.complex)
+    FCw = numpy.zeros(nref, dtype=complex)
+    FPw = numpy.zeros(nref, dtype=complex)
     FP = hkldata.df.FP.to_numpy()
     FC = hkldata.df.FC.to_numpy()
 
