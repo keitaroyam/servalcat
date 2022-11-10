@@ -196,9 +196,13 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     if unknown_cc and make_newligand:
         for mon in unknown_cc:
             # find most complete residue
-            res_list = [(len(res), res) for chain in st[0] for res in chain if res.name == mon]
-            res = max(res_list, key=lambda x: x[0])[1]
-            monlib.monomers[mon] = gemmi.make_chemcomp_with_restraints(res)
+            res_list = [(res, set(a.name for a in res))
+                        for chain in st[0] for res in chain if res.name == mon]
+            res_max = max(res_list, key=lambda x: len(x[1]))
+            if any(r[1] - res_max[1] for r in res_list):
+                raise RuntimeError("{} in the model ({} residues) are not having the same set of atoms. We cannot create dictionary.".format(mon, len(res_list)))
+
+            monlib.monomers[mon] = gemmi.make_chemcomp_with_restraints(res_max[0])
 
         logger.write("WARNING: ad-hoc restraints were generated for {}".format(",".join(unknown_cc)))
         logger.write("         it is strongly recommended to generate them using AceDRG.")

@@ -220,7 +220,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                                                  fix_nonpolymer=False)
 
     if make.get("hydr") == "a": logger.write("(re)generating hydrogen atoms")
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False)
+    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False) # we should remove logger here??
     if make.get("hydr") != "n" and st[0].has_hydrogen():
         if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
             resnames = st[0].get_all_residue_names()
@@ -292,7 +292,7 @@ def main(args):
 
     xyzin, opts = get_opt(args.opts, "xyzin")
     xyzout = get_opt(args.opts, "xyzout", keep=True)[0]
-    libin, _ = get_opt(opts, "libin")
+    libin, _ = get_opt(opts, "libin") # print libin!!
     keywords = parse_keywords(inputs) # TODO expand @
     if libin: args.ligand.append(libin)
 
