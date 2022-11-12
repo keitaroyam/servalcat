@@ -268,7 +268,7 @@ def modify_output(pdbout, cifout, fixes):
     utils.fileio.rotate_file(cifout, copy=True)
     
     st = utils.fileio.read_structure(cifout)
-    st.raw_remarks = gemmi.read_structure(pdbout).raw_remarks
+    st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
     if fixes is not None:
         fixes.modify_back(st)
 
