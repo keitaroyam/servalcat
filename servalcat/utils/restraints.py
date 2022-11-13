@@ -71,7 +71,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
 # rename_cif_modification_if_necessary()
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False,
-                         ignore_monomer_dir=False, make_newligand=False):
+                         ignore_monomer_dir=False):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None and not ignore_monomer_dir:
@@ -139,26 +139,27 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     logger.write("")
 
     logger.write("Checking if unknown atoms exist..")
+
+    unknown_cc = set()
+    for chain in st[0]: unknown_cc.update(res.name for res in chain if res.name not in monlib.monomers)
+    if unknown_cc:
+        if stop_for_unknowns:
+            raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknown_cc)))
+        else:
+            logger.write("WARNING: ad-hoc restraints will be generated for {}".format(",".join(unknown_cc)))
+            logger.write("         it is strongly recommended to generate them using AceDRG.")
+    
     st = st.clone()
     sio = io.StringIO()
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True,
                                   ignore_unknown_links=True)
 
     # possible warnings:
-    # Warning: unknown chemical component XXX in chain X
     # Warning: no atom X expected in XXX
     # and others?
-    unknown_cc = set()
     unknown_atoms_cc = set()
     link_related = set()
     for l in sio.getvalue().splitlines():
-        r = re.search("Warning: unknown chemical component (.*) in chain", l)
-        if r:
-            unk = r.group(1)
-            if unk not in unknown_cc:
-                logger.write(l)
-                unknown_cc.add(unk)
-            continue
         r = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
         if r:
             unk = r.group(2), r.group(1)
@@ -169,7 +170,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 logger.write(l + " - this atom should have been removed when linking")
                 if check_hydrogen or not cc_atom[0].is_hydrogen():
                     link_related.add(unk[1])
-            elif unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
+            elif unk not in unknown_atoms_cc:
                 logger.write(l)
                 unknown_atoms_cc.add(unk)
             continue
@@ -185,7 +186,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 todel.append(unk)
         unknown_atoms_cc = unknown_atoms_cc - set(todel)
         
-    unknown_cc.update(cc for at, cc in unknown_atoms_cc)
+    unknown_cc = set([cc for at, cc in unknown_atoms_cc])
         
     if stop_for_unknowns and (unknown_cc or link_related):
         msgs = []
@@ -193,20 +194,6 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
     
-    if unknown_cc and make_newligand:
-        for mon in unknown_cc:
-            # find most complete residue
-            res_list = [(res, set(a.name for a in res))
-                        for chain in st[0] for res in chain if res.name == mon]
-            res_max = max(res_list, key=lambda x: len(x[1]))
-            if any(r[1] - res_max[1] for r in res_list):
-                raise RuntimeError("{} in the model ({} residues) are not having the same set of atoms. We cannot create dictionary.".format(mon, len(res_list)))
-
-            monlib.monomers[mon] = gemmi.make_chemcomp_with_restraints(res_max[0])
-
-        logger.write("WARNING: ad-hoc restraints were generated for {}".format(",".join(unknown_cc)))
-        logger.write("         it is strongly recommended to generate them using AceDRG.")
-
     return monlib
 # load_monomer_library()
 

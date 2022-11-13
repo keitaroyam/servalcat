@@ -194,8 +194,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
         monlib = utils.restraints.load_monomer_library(st,
                                                        monomer_dir=monlib_path,
                                                        cif_files=ligand,
-                                                       stop_for_unknowns=not make.get("newligand"),
-                                                       make_newligand=make.get("newligand"))
+                                                       stop_for_unknowns=not make.get("newligand"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
