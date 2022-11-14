@@ -178,13 +178,12 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
             raise SystemExit("Error: unit cell is not defined in the model.")
 
 
-    # fix deuterium monomers
-    d_table = dict(DOD="HOH", ND4="NH4", SPW="SPK")
-    # XXX for ND4 and SPW atom names should be changed.
+    # we do not have DOD. will not change ND4->NH4 and SPW->SPK, as hydrogen atom names are different
     for chain in st[0]:
         for res in chain:
-            newname = d_table.get(res.name)
-            if newname: res.name = newname
+            if res.name == "DOD":
+                logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
+                res.name = "HOH"
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     st.entities.clear()
