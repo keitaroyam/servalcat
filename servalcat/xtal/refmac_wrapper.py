@@ -173,7 +173,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
         if auto_box_with_padding is not None:
             st.cell = utils.model.box_from_model(st[0], auto_box_with_padding)
             st.spacegroup_hm = "P 1"
-            logger.write("Box size from the model with padding of {}: {}".format(auto_box_with_padding, st.cell.parameters))
+            logger.writeln("Box size from the model with padding of {}: {}".format(auto_box_with_padding, st.cell.parameters))
         else:
             raise SystemExit("Error: unit cell is not defined in the model.")
 
@@ -201,38 +201,38 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
     if make.get("cispept", "y") == "y": st.assign_cis_flags()
     if make.get("link", "n") == "y": # TODO support it correctly, and also make link define. what is 0?
         #utils.restraints.find_and_fix_links(st, monlib) # TODO fix for unknown links
-        logger.write("Make link yes specified. Finding links..")
+        logger.writeln("Make link yes specified. Finding links..")
         before = len(st.connections)
         gemmi.add_automatic_links(st[0], st, monlib)
         for i in range(before, len(st.connections)):
             con = st.connections[i]
-            logger.write(" automatic link: {} - {} id= {}".format(con.partner1, con.partner2, con.link_id))
+            logger.writeln(" automatic link: {} - {} id= {}".format(con.partner1, con.partner2, con.link_id))
 
     refmac_fixes = None
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
     if max_seq_num > 9999:
-        logger.write("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
+        logger.writeln("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
         topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
         refmac_fixes = utils.refmac.FixForRefmac(st, topo, 
                                                  fix_microheterogeneity=False,
                                                  fix_resimax=True,
                                                  fix_nonpolymer=False)
 
-    if make.get("hydr") == "a": logger.write("(re)generating hydrogen atoms")
+    if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False) # we should remove logger here??
     if make.get("hydr") != "n" and st[0].has_hydrogen():
         if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
             resnames = st[0].get_all_residue_names()
             utils.restraints.check_monlib_support_nucleus_distances(monlib, resnames)
-            logger.write("adjusting hydrogen position to nucleus")
+            logger.writeln("adjusting hydrogen position to nucleus")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=1.1)
         elif h_pos == "elec" and make.get("hydr") == "y" and not no_adjust_hydrogen_distances:
-            logger.write("adjusting hydrogen position to electron cloud")
+            logger.writeln("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
-    logger.write("crd file written: {}".format(crdout))
+    logger.writeln("crd file written: {}".format(crdout))
     return refmac_fixes
 # prepare_crd()
 
@@ -276,7 +276,7 @@ def modify_output(pdbout, cifout, fixes):
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     seqnums = [res.seqid.num for chain in st[0] for res in chain]
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
-        logger.write("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
+        logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     st.expand_hd_mixture()
     utils.fileio.write_pdb(st, pdbout)
 # modify_output()
@@ -317,11 +317,11 @@ def main(args):
     # Run Refmac
     cmd = [args.exe] + opts
     env = os.environ
-    logger.write("Running REFMAC5..")
+    logger.writeln("Running REFMAC5..")
     if args.monlib:
-        logger.write("CLIBD_MON={}".format(args.monlib))
+        logger.writeln("CLIBD_MON={}".format(args.monlib))
         env["CLIBD_MON"] = os.path.join(args.monlib, "") # should end with /
-    logger.write(" ".join(cmd))
+    logger.writeln(" ".join(cmd))
     p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          universal_newlines=True, env=env)
@@ -329,7 +329,7 @@ def main(args):
     p.stdin.write("".join(inputs))
     p.stdin.close()
     for l in iter(p.stdout.readline, ""):
-        logger.write(l, end="")
+        logger.write(l)
     p.wait()
 
     # Modify output

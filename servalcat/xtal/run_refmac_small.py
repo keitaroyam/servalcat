@@ -94,7 +94,7 @@ def main(args):
     if args.sg:
         try:
             sg_user = gemmi.SpaceGroup(args.sg)
-            logger.write("User-specified space group: {}".format(sg_user.xhm()))
+            logger.writeln("User-specified space group: {}".format(sg_user.xhm()))
         except ValueError:
             raise SystemExit("Error: Unknown space group '{}'".format(args.sg))
     else:
@@ -114,30 +114,30 @@ def main(args):
     else:
         st = utils.fileio.read_small_structure(args.model)
         sg_st = st.find_spacegroup()
-        logger.write(" Cell from model: {}".format(st.cell))
-        logger.write(" Space group from model: {}".format(st.spacegroup_hm))
+        logger.writeln(" Cell from model: {}".format(st.cell))
+        logger.writeln(" Space group from model: {}".format(st.spacegroup_hm))
 
         if args.hklin.endswith(".mtz"): # TODO may be unmerged mtz
-            logger.write("Reading MTZ file: {}".format(args.hklin))
+            logger.writeln("Reading MTZ file: {}".format(args.hklin))
             mtz = gemmi.read_mtz_file(args.hklin)
-            logger.write(" Cell from mtz: {}".format(mtz.cell))
+            logger.writeln(" Cell from mtz: {}".format(mtz.cell))
             if not mtz.cell.approx(st.cell, 1e-3):
-                logger.write(" Warning: unit cell mismatch!")
-            logger.write(" Space group from mtz: {}".format(mtz.spacegroup.hm))
+                logger.writeln(" Warning: unit cell mismatch!")
+            logger.writeln(" Space group from mtz: {}".format(mtz.spacegroup.hm))
             if sg_user:
                 if not mtz.cell.is_compatible_with_spacegroup(sg_user):
                     raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
                                                                                                                                mtz.cell.parameters))
                 mtz.spacegroup = sg_user
-                logger.write(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
+                logger.writeln(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
             elif mtz.spacegroup != sg_st:
-                logger.write(" Warning: space group mismatch between model and mtz")
+                logger.writeln(" Warning: space group mismatch between model and mtz")
                 if mtz.cell.is_compatible_with_spacegroup(sg_st):
-                    logger.write("  Taking space group from model.")
+                    logger.writeln("  Taking space group from model.")
                     mtz.spacegroup = sg_st
-                    logger.write("  Writing {} as space group {}".format(mtz_in, sg_st.xhm()))
+                    logger.writeln("  Writing {} as space group {}".format(mtz_in, sg_st.xhm()))
                 else:
-                    logger.write("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
+                    logger.writeln("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
 
             if args.hklin_labs:
                 try: mtz = utils.hkl.mtz_selected(mtz, args.hklin_labs)
@@ -159,7 +159,7 @@ def main(args):
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
         for f in args.keyword_file:
-            logger.write("Keyword file: {}".format(f))
+            logger.writeln("Keyword file: {}".format(f))
             assert os.path.exists(f)
     else:
         args.keyword_file = []

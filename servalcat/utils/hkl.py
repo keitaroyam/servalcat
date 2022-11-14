@@ -92,11 +92,11 @@ def blur_mtz(mtz, B):
             if sl in mtz.column_labels(): labs.append(sl)
 
     if i_labs:
-        logger.write("Intensities: {}".format(" ".join(i_labs)))
-        logger.write("  exp(-B*s^2/2) will be multiplied (B= {:.2f})".format(B))
+        logger.writeln("Intensities: {}".format(" ".join(i_labs)))
+        logger.writeln("  exp(-B*s^2/2) will be multiplied (B= {:.2f})".format(B))
     if f_labs:
-        logger.write("Amplitudes:  {}".format(" ".join(f_labs)))
-        logger.write("  exp(-B*s^2/4) will be multiplied (B= {:.2f})".format(B))
+        logger.writeln("Amplitudes:  {}".format(" ".join(f_labs)))
+        logger.writeln("  exp(-B*s^2/4) will be multiplied (B= {:.2f})".format(B))
 
     for l in i_labs:
         c = mtz.column_with_label(l)
@@ -234,7 +234,7 @@ class HklData:
         match = gemmi.HklMatch(self.miller_array(), all_hkl)
         missing_hkl_df = pandas.DataFrame(all_hkl[numpy.asarray(match.pos) < 0], columns=["H","K","L"])
         self.df = pandas.concat([self.df, missing_hkl_df])
-        logger.write("Completing hkldata: {} reflections were missing".format(len(missing_hkl_df.index)))
+        logger.writeln("Completing hkldata: {} reflections were missing".format(len(missing_hkl_df.index)))
         self.calc_d()
     # complete()
 
@@ -288,7 +288,7 @@ class HklData:
             if len(bin_counts[i][1]) < 10 and i < len(bin_counts)-1:
                 bin_counts[i+1][1] = bin_counts[i+1][1].union(bin_counts[i][1])
                 modify_table[bin_counts[i][0]] = bin_counts[i+1][0]
-                logger.write("Bin {} only has {} data. Merging with next bin.".format(bin_counts[i][0],
+                logger.writeln("Bin {} only has {} data. Merging with next bin.".format(bin_counts[i][0],
                                                                                       len(bin_counts[i][1])))
             else: break
 
@@ -296,7 +296,7 @@ class HklData:
             if i > 0 and len(bin_counts[i][1])/len(bin_counts[i-1][1]) < 0.5:
                 bin_counts[i-1][1] = bin_counts[i-1][1].union(bin_counts[i][1])
                 modify_table[bin_counts[i][0]] = bin_counts[i-1][0]
-                logger.write("Bin {} only has {} data. Merging with previous bin.".format(bin_counts[i][0],
+                logger.writeln("Bin {} only has {} data. Merging with previous bin.".format(bin_counts[i][0],
                                                                                           len(bin_counts[i][1])))
             else: break
 
@@ -426,7 +426,7 @@ class HklData:
     # hard_sphere_kernel()
 
     def scale_k_and_b(self, lab_ref, lab_scaled):
-        logger.write("Determining k, B scales between {} and {}".format(lab_ref, lab_scaled))
+        logger.writeln("Determining k, B scales between {} and {}".format(lab_ref, lab_scaled))
         s2 = 1/self.d_spacings().to_numpy()**2
         # determine scales that minimize (|f1|-|f2|*k*e^(-b*s2/4))^2
         f1 = self.df[lab_ref].to_numpy()
@@ -448,11 +448,11 @@ class HklData:
         x = -numpy.dot(numpy.linalg.inv(H), g)
         k1 = numpy.exp(x[0])
         B1 = x[1]
-        logger.write(" initial estimate using log: k= {:.2e} B= {:.2e}".format(k1, B1))
+        logger.writeln(" initial estimate using log: k= {:.2e} B= {:.2e}".format(k1, B1))
         f2tmp = f2 * k1 * numpy.exp(-B1*s2/4)
         r_step0 = r_factor(f1, f2)
         r_step1 = r_factor(f1, f2tmp)
-        logger.write(" R= {:.4f} (was: {:.4f})".format(r_step1, r_step0))
+        logger.writeln(" R= {:.4f} (was: {:.4f})".format(r_step1, r_step0))
 
         # 2nd step: - minimize (|f1|-|f2|*k*e^(-b*s2/4))^2 iteratively (TODO with regularisation)
 
@@ -478,12 +478,12 @@ class HklData:
                                       method="Newton-CG",
                                       x0=numpy.array([k1, B1]),
                                       )
-        logger.write(str(res))
+        logger.writeln(str(res))
         k2, B2 = res.x
         f2tmp2 = f2 * k2 * numpy.exp(-B2*s2/4)
         r_step2 = r_factor(f1, f2tmp2)
-        logger.write(" Least-square estimate: k= {:.2e} B= {:.2e}".format(k2, B2))
-        logger.write(" R= {:.4f}".format(r_step2))
+        logger.writeln(" Least-square estimate: k= {:.2e} B= {:.2e}".format(k2, B2))
+        logger.writeln(" R= {:.4f}".format(r_step2))
 
         if 0:
             self.setup_binning(40)        

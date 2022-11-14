@@ -176,8 +176,8 @@ def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=Fals
         hkldata.binned_df.loc[i_bin, D_labs[0]] = D
         hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
 
-    logger.write("Initial estimates:")
-    logger.write(hkldata.binned_df.to_string())
+    logger.writeln("Initial estimates:")
+    logger.writeln(hkldata.binned_df.to_string())
 
     for i_bin, idxes in hkldata.binned():
         x0 = [transD_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [transS_inv(hkldata.binned_df.S[i_bin])]
@@ -209,8 +209,8 @@ def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=Fals
             hkldata.binned_df.loc[i_bin, lab] = transD(res.x[i])
         hkldata.binned_df.loc[i_bin, "S"] = transS(res.x[-1])
 
-    logger.write("Refined estimates:")
-    logger.write(hkldata.binned_df.to_string())
+    logger.writeln("Refined estimates:")
+    logger.writeln(hkldata.binned_df.to_string())
     return D_labs
 # determine_mlf_params()
 
@@ -228,33 +228,33 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     assert source in ["electron", "xray", "neutron"]
     
     mtz = gemmi.read_mtz_file(hklin)
-    logger.write("Input mtz: {}".format(hklin))
-    logger.write("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
-    logger.write("  Space group: {}".format(mtz.spacegroup.hm))
-    logger.write("")
+    logger.writeln("Input mtz: {}".format(hklin))
+    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
+    logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
+    logger.writeln("")
     
     sts = [utils.fileio.read_structure(f) for f in xyzins]
-    logger.write("From model 1:")
-    logger.write("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
-    logger.write("  Space group: {}".format(sts[0].spacegroup_hm))
-    logger.write("")
+    logger.writeln("From model 1:")
+    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
+    logger.writeln("  Space group: {}".format(sts[0].spacegroup_hm))
+    logger.writeln("")
     
     if not mtz.cell.approx(sts[0].cell, 1e-3):
-        logger.write("Warning: unit cell mismatch between model and mtz")
-        logger.write("         using unit cell from mtz")
+        logger.writeln("Warning: unit cell mismatch between model and mtz")
+        logger.writeln("         using unit cell from mtz")
 
     for st in sts: st.cell = mtz.cell # mtz cell is used in any case
 
     sg_st = sts[0].find_spacegroup() # may be None
     sg_use = mtz.spacegroup
     if mtz.spacegroup != sg_st:
-        logger.write("Warning: space group mismatch between model and mtz")
+        logger.writeln("Warning: space group mismatch between model and mtz")
         if sg_st and mtz.spacegroup.point_group_hm() == sg_st.point_group_hm():
-            logger.write("         using space group from model")
+            logger.writeln("         using space group from model")
             sg_use = sg_st
         else:
-            logger.write("         using space group from mtz")
-        logger.write("")
+            logger.writeln("         using space group from mtz")
+        logger.writeln("")
 
     for st in sts: st.spacegroup_hm = sg_use.hm
     mtz.spacegroup = sg_use
@@ -270,7 +270,7 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     hkldata.calc_epsilon()
     hkldata.calc_centric()
     hkldata.setup_binning(n_bins=n_bins)
-    logger.write("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
+    logger.writeln("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
 
     fc_labs = []
     for i, st in enumerate(sts):
@@ -300,10 +300,10 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
     scaleto.value_array["sigma"] = 1. # I guess this would be better.
     fc_asu_total = hkldata.as_asu_data(data=hkldata.df[fc_labs].sum(axis=1).to_numpy())
     if not use_solvent:
-        logger.write("Scaling Fc with no bulk solvent contribution")
+        logger.writeln("Scaling Fc with no bulk solvent contribution")
         scaling.prepare_points(fc_asu_total, scaleto)
     else:
-        logger.write("Calculating solvent contribution..")
+        logger.writeln("Calculating solvent contribution..")
         d_min = hkldata.d_min_max()[0]
         grid = gemmi.FloatGrid()
         grid.setup_from(sts[0], spacing=min(0.4, (d_min-1e-6)/2))
@@ -315,12 +315,12 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
         scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
 
     scaling.fit_isotropic_b_approximately()
-    logger.write(" initial k,b = {:.2e} {:.2e}".format(scaling.k_overall, scaling.b_overall.u11))
+    logger.writeln(" initial k,b = {:.2e} {:.2e}".format(scaling.k_overall, scaling.b_overall.u11))
     scaling.fit_parameters()
     b_aniso = scaling.b_overall
     b_iso = b_aniso.trace() / 3
     b_aniso = b_aniso.added_kI(-b_iso) # subtract isotropic contribution
-    logger.write(" k_ov= {:.2e} B_iso= {:.2e} B_aniso= {}".format(scaling.k_overall, b_iso, b_aniso))
+    logger.writeln(" k_ov= {:.2e} B_iso= {:.2e} B_aniso= {}".format(scaling.k_overall, b_iso, b_aniso))
     k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
     k_aniso = hkldata.debye_waller_factors(b_cart=b_aniso)
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
@@ -427,7 +427,7 @@ $$
                                 numpy.log(numpy.average(DFc**2)),
                                 numpy.log(S), mean_fom[0], mean_fom[1], r, cc) + tuple(Ds + DFcs)))
     ofs.close()
-    logger.write("output log: {}".format(log_out))
+    logger.writeln("output log: {}".format(log_out))
 # calculate_maps()
 
 def main(args):
@@ -448,11 +448,11 @@ def main(args):
     fpa, fca, k = hkldata.as_numpy_arrays(["FP", "FC", "k_aniso"])
     fpa *= k
     fca = numpy.abs(fca) * k
-    logger.write(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
-    logger.write(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
+    logger.writeln(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
+    logger.writeln(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
 
     # Estimate ML parameters and calculate maps
-    logger.write("Estimating sigma-A parameters..")
+    logger.writeln("Estimating sigma-A parameters..")
     D_labs = determine_mlf_params(hkldata, fc_labs, centric_and_selections, args.D_as_exp, args.S_as_exp)
     log_out = "{}.log".format(args.output_prefix)
     calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
@@ -464,7 +464,7 @@ def main(args):
         labs.append("Fmask")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
-    logger.write("output mtz: {}".format(mtz_out))
+    logger.writeln("output mtz: {}".format(mtz_out))
 
     return hkldata
 # main()

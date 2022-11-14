@@ -106,12 +106,12 @@ def main():
         print("specify subcommand.")    
     elif args.command in modules:
         logger.set_file("servalcat.log")
-        logger.write("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
-        logger.write("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
-        logger.write("# Started on {}".format(datetime.datetime.now()))
-        logger.write("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
-        logger.write("# Command-line args:")
-        logger.write("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
+        logger.writeln("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
+        logger.writeln("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
+        logger.writeln("# Started on {}".format(datetime.datetime.now()))
+        logger.writeln("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
+        logger.writeln("# Command-line args:")
+        logger.writeln("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
         try:
             modules[args.command].main(args)
         except SystemExit as e:

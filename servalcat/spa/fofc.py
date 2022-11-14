@@ -136,12 +136,12 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
     for l in labs:
         tmp[l] = numpy.zeros(len(hkldata.df.index), numpy.complex128)
 
-    logger.write("Calculating maps..")
-    logger.write(" sharpening method: ", end="")
+    logger.writeln("Calculating maps..")
+    logger.write(" sharpening method: ")
     if sharpening_b is None:
-        logger.write("1/sqrt(FSC * Mn(Fo)) for Fo and 1/sigma_U,T for Fo-Fc")
+        logger.writeln("1/sqrt(FSC * Mn(Fo)) for Fo and 1/sigma_U,T for Fo-Fc")
     else:
-        logger.write("1/exp(-B*s^2/4) with B= {:.2f}".format(sharpening_b))
+        logger.writeln("1/exp(-B*s^2/4) with B= {:.2f}".format(sharpening_b))
 
     time_t = time.time()
 
@@ -182,7 +182,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
                 tmp["Fupdate_noscale"][idxes] = fup
 
         if not fsc_became_negative and fsc <= 0:
-            logger.write(" WARNING: cutting resolution at {:.2f} A because fsc < 0".format(hkldata.binned_df.d_max[i_bin]))
+            logger.writeln(" WARNING: cutting resolution at {:.2f} A because fsc < 0".format(hkldata.binned_df.d_max[i_bin]))
             fsc_became_negative = True
         if fsc_became_negative:
             continue
@@ -213,7 +213,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
                 w = 1. if no_fsc_weights or not has_halfmaps else S_l/(S_l+varn)            
                 delfwt = (Fo-D*Fc)*w/k_fofc/k_l
                 fup = (w*Fo+(1.-w)*D*Fc)/k/k_l
-                logger.write("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
+                logger.writeln("{:4d} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e} {:.4e}".format(i_bin,
                                                                                       numpy.average(k),
                                                                                       numpy.average(sig_fo),
                                                                                       numpy.average(fsc_l),
@@ -226,7 +226,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
     for l in labs:
         hkldata.df[l] = tmp[l]
 
-    logger.write(" finished in {:.3f} sec.".format(time.time()-time_t))
+    logger.writeln(" finished in {:.3f} sec.".format(time.time()-time_t))
     return labs
 # calc_maps()
 
@@ -239,9 +239,9 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
 def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
               no_fsc_weights=False, sharpening_b=None, omit_proton=False, omit_h_electron=False):
     if no_fsc_weights:
-        logger.write("WARNING: --no_fsc_weights is requested.")
+        logger.writeln("WARNING: --no_fsc_weights is requested.")
     if sharpening_b is not None:
-        logger.write("WARNING: --sharpening_b={} is given".format(sharpening_b))
+        logger.writeln("WARNING: --sharpening_b={} is given".format(sharpening_b))
     
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
@@ -297,20 +297,20 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
     if normalize_map and mask is not None:
         cutoff = 0.5
         if "DELFWT" in hkldata.df:
-            logger.write("Normalized Fo-Fc map requested.")
+            logger.writeln("Normalized Fo-Fc map requested.")
             delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
             masked = delfwt_map.array[mask.array>cutoff]
-            logger.write("   Whole volume: {} voxels".format(delfwt_map.point_count))
-            logger.write("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
+            logger.writeln("   Whole volume: {} voxels".format(delfwt_map.point_count))
+            logger.writeln("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
             global_mean = numpy.average(delfwt_map)
             global_std = numpy.std(delfwt_map)
-            logger.write("    Global mean: {:.3e}".format(global_mean))
-            logger.write("     Global std: {:.3e}".format(global_std))
+            logger.writeln("    Global mean: {:.3e}".format(global_mean))
+            logger.writeln("     Global std: {:.3e}".format(global_std))
             masked_mean = numpy.average(masked)
             masked_std = numpy.std(masked)
-            logger.write("    Masked mean: {:.3e}".format(masked_mean))
-            logger.write("     Masked std: {:.3e}".format(masked_std))
-            #logger.write(" If you want to scale manually: {}".format())
+            logger.writeln("    Masked mean: {:.3e}".format(masked_mean))
+            logger.writeln("     Masked std: {:.3e}".format(masked_std))
+            #logger.writeln(" If you want to scale manually: {}".format())
             scaled = (delfwt_map - masked_mean)/masked_std
             hkldata.df["DELFWT"] /= masked_std # it would work if masked_mean~0
             if omit_h_electron:
@@ -318,7 +318,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
                 filename = "{}_normalized_fofc_flipsign.mrc".format(output_prefix)
             else:
                 filename = "{}_normalized_fofc.mrc".format(output_prefix)
-            logger.write("  Writing {}".format(filename))
+            logger.writeln("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
                                       grid_start=grid_start_for_map, grid_shape=shape_for_map)
 
@@ -331,7 +331,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though
             hkldata.df["FWT"] /= masked_std # it would work if masked_mean~0
             filename = "{}_normalized_fo.mrc".format(output_prefix)
-            logger.write("  Writing {}".format(filename))
+            logger.writeln("  Writing {}".format(filename))
             utils.maps.write_ccp4_map(filename, scaled, cell=hkldata.cell,
                                       grid_start=grid_start_for_map, grid_shape=shape_for_map)
 
@@ -368,7 +368,7 @@ def main(args):
         logger.error("--half1_only specified. Half map 2 is used only for noise estimation")
 
     if args.normalized_map:
-        logger.write("DeprecationWarning: --normalized_map is now on by default. This option will be removed in the future.")
+        logger.writeln("DeprecationWarning: --normalized_map is now on by default. This option will be removed in the future.")
         
     if not args.halfmaps:
         logger.error("Warning: using --halfmaps is strongly recommended!")
@@ -407,7 +407,7 @@ def main(args):
         utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
     else:
         mask = None
-        logger.write("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")
+        logger.writeln("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")
 
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
                                              half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,

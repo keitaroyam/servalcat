@@ -29,12 +29,12 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_contacting=False,
     is_helical = args.twist is not None
     if not is_helical and not args.pg:
         if len(st.ncs) > 0:
-            logger.write("Strict NCS detected from model.")
+            logger.writeln("Strict NCS detected from model.")
             show_ncs_operators_axis_angle(st.ncs)
         return
     
     if len(st.ncs) > 0:
-        logger.write(" WARNING: NCS information in model file will be ignored")
+        logger.writeln(" WARNING: NCS information in model file will be ignored")
 
     ncsops = ncsops_from_args(args, st.cell, map_and_start=map_and_start, st=st,
                               helical_min_n=helical_min_n, helical_max_n=helical_max_n)
@@ -57,7 +57,7 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
     if args.center is None:
         A = numpy.array(cell.orthogonalization_matrix.tolist())
         center = numpy.sum(A, axis=1) / 2 #+ start_xyz
-        logger.write("Center: {}".format(center))
+        logger.writeln("Center: {}".format(center))
     else:
         center = numpy.array(args.center)
         
@@ -66,10 +66,10 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
                                             args.pg, args.twist, args.rise,
                                             axis1=args.axis1, axis2=args.axis2,
                                             st=st, min_n=helical_min_n, max_n=helical_max_n)
-        logger.write("{} helical operators found".format(len(ncsops)))
+        logger.writeln("{} helical operators found".format(len(ncsops)))
     else:
         _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
-        logger.write("{} operators found for {}".format(len(ops), args.pg))
+        logger.writeln("{} operators found for {}".format(len(ops), args.pg))
         show_operators_axis_angle(ops)
         ncsops = make_NcsOps_from_matrices(ops, cell=cell, center=center)
 
@@ -150,7 +150,7 @@ def operators_from_symbol(op, axis1=None, axis2=None):
 def show_operators_axis_angle(ops):
     for i, op in enumerate(ops):
         ax, ang = generate_operators.Rotation2AxisAngle_general(op)
-        logger.write(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
+        logger.writeln(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
 # show_operators_axis_angle()
 
 def show_ncs_operators_axis_angle(ops):
@@ -160,7 +160,7 @@ def show_ncs_operators_axis_angle(ops):
         ax, ang = generate_operators.Rotation2AxisAngle_general(op2)
         axlab = "[{: .4f}, {: .4f}, {: .4f}]".format(*ax)
         trlab = "[{: 9.4f}, {: 9.4f}, {: 9.4f}]".format(*op.tr.vec.tolist())
-        logger.write(" operator {:3s} angle= {:7.3f} deg axis= {} trans= {} {}".format(op.id, numpy.rad2deg(ang),
+        logger.writeln(" operator {:3s} angle= {:7.3f} deg axis= {} trans= {} {}".format(op.id, numpy.rad2deg(ang),
                                                                                        axlab, trlab,
                                                                                        "given" if op.given else ""))
 # show_operators_axis_angle()

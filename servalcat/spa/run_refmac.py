@@ -98,11 +98,11 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     else:
         assert st_sr is None
     
-    logger.write("Calculating map-model FSC..")
+    logger.writeln("Calculating map-model FSC..")
 
     if d_min_fsc is None:
         d_min_fsc = utils.maps.nyquist_resolution(maps[0][0])
-        logger.write("  --fsc_resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min_fsc))
+        logger.writeln("  --fsc_resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min_fsc))
     
     st = st.clone()
     if st_sr is not None: st_sr = st_sr.clone()
@@ -133,7 +133,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         labs_fc.append("FC_sr")
 
     if blur is not None:
-        logger.write(" Unblurring Fc with B={} for FSC calculation".format(blur))
+        logger.writeln(" Unblurring Fc with B={} for FSC calculation".format(blur))
         unblur = numpy.exp(blur/hkldata.d_spacings().to_numpy()**2/4.)
         for lab in labs_fc:
             hkldata.df[lab] *= unblur
@@ -151,7 +151,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         with numpy.errstate(invalid="ignore"): # XXX negative fsc results in nan!
             stats.loc[:,"fsc_full_sqrt"] = numpy.sqrt(2*stats.fsc_half/(1+stats.fsc_half))
 
-    logger.write(stats.to_string()+"\n")
+    logger.writeln(stats.to_string()+"\n")
 
     # remove and rename columns
     for s in (stats, stats2):
@@ -210,8 +210,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         ofs.write("$$\n\n")
         ofs.write(fscavg_text)
     
-    logger.write(fscavg_text, end="")
-    logger.write("Run loggraph {} to see plots.".format(fsc_logfile))
+    logger.write(fscavg_text)
+    logger.writeln("Run loggraph {} to see plots.".format(fsc_logfile))
     
     # write json
     json.dump(stats.to_dict("records"),
@@ -273,7 +273,7 @@ def main(args):
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
         for f in args.keyword_file:
-            logger.write("Keyword file: {}".format(f))
+            logger.writeln("Keyword file: {}".format(f))
             assert os.path.exists(f)
     else:
         args.keyword_file = []
@@ -302,21 +302,21 @@ def main(args):
                 rlmc = (-9.503541, 3.129882, 15.439744)
             else:
                 rlmc = (-8.329418, 3.032409, 14.381907)
-            logger.write("Estimating weight auto scale using resolution and volume ratio")
+            logger.writeln("Estimating weight auto scale using resolution and volume ratio")
             ws = rlmc[0] + reso*rlmc[1] +file_info["vol_ratio"]*rlmc[2]
         else:
             if "d_eff" in file_info:
                 rlmc = (-5.903807, 2.870723)
             else:
                 rlmc = (-4.891140, 2.746791)
-            logger.write("Estimating weight auto scale using resolution")
+            logger.writeln("Estimating weight auto scale using resolution")
             ws =  rlmc[0] + args.resolution*rlmc[1]
         args.weight_auto_scale = max(0.2, min(18.0, ws))
-        logger.write(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
+        logger.writeln(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
 
     # Take care of TLS in
     if args.tlsin and not args.no_shift and "shifts" in file_info:
-        logger.write("Shifting origin in tlsin")
+        logger.writeln("Shifting origin in tlsin")
         tlsgroups = utils.refmac.read_tls_file(args.tlsin)
         spa.shiftback.shift_back_tls(tlsgroups, -file_info["shifts"]) # tlsgroups is modified
         args.tlsin = "shifted.tls"
@@ -361,12 +361,12 @@ def main(args):
         tlsout = refmac.tlsout()
         if os.path.exists(tlsout):
             if not args.no_shift:
-                logger.write("Shifting origin in tlsout")
+                logger.writeln("Shifting origin in tlsout")
                 tlsgroups = utils.refmac.read_tls_file(tlsout)
                 spa.shiftback.shift_back_tls(tlsgroups, file_info["shifts"]) # tlsgroups is modified
                 utils.refmac.write_tls_file(tlsgroups, args.output_prefix+".tls")
             else:
-                logger.write("Copying tlsout")
+                logger.writeln("Copying tlsout")
                 shutil.copyfile(refmac.tlsout(), args.output_prefix+".tls")
 
     # Expand sym here
@@ -377,15 +377,15 @@ def main(args):
                                  cif_ref=cif_ref)
 
     if args.cross_validation and args.cross_validation_method == "shake":
-        logger.write("Cross validation is requested.")
+        logger.writeln("Cross validation is requested.")
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
-        logger.write("Starting refinement using half map 1 (model is shaken first)")
+        logger.writeln("Starting refinement using half map 1 (model is shaken first)")
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
                                  xyzin=refmac_prefix+model_format,
                                  prefix=refmac_prefix_shaken,
                                  shake=args.shake_radius,
                                  jellybody=False) # makes no sense to use jelly body after shaking
-        if args.jellybody: logger.write("  Turning off jelly body")
+        if args.jellybody: logger.writeln("  Turning off jelly body")
         if "lab_f_half1" in file_info:
             refmac_hm1.lab_f = file_info["lab_f_half1"]
             refmac_hm1.lab_phi = file_info["lab_phi_half1"]
@@ -439,14 +439,14 @@ def main(args):
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
     # Calc Fo-Fc (and updated) maps
-    logger.write("Starting Fo-Fc calculation..")
-    if not args.halfmaps: logger.write(" with limited functionality because half maps were not provided")
-    logger.write(" model: {}".format(args.output_prefix+model_format))
+    logger.writeln("Starting Fo-Fc calculation..")
+    if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
+    logger.writeln(" model: {}".format(args.output_prefix+model_format))
 
     # for Fo-Fc in case of helical reconstruction, expand model more
     # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
     if args.twist is not None:
-        logger.write("Generating all helical copies in the box")
+        logger.writeln("Generating all helical copies in the box")
         st_expanded = st.clone()
         utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
         utils.model.expand_ncs(st_expanded)
@@ -454,13 +454,13 @@ def main(args):
                                  cif_ref=cif_ref)
 
     if args.mask_for_fofc:
-        logger.write("  mask: {}".format(args.mask_for_fofc))
+        logger.writeln("  mask: {}".format(args.mask_for_fofc))
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
     elif args.mask_radius_for_fofc:
-        logger.write("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
+        logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
         mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
     else:
-        logger.write("  mask: not used")
+        logger.writeln("  mask: not used")
         mask = None
         
     hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
@@ -498,7 +498,7 @@ def main(args):
             v = [y for x in op.tr.mat.tolist() for y in x] + c.tolist()
             ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
         
-    logger.write("""
+    logger.writeln("""
 =============================================================================
 * Final Summary *
 

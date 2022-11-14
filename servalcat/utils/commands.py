@@ -238,7 +238,7 @@ def symmodel(args):
     st.spacegroup_hm = "P 1"
     map_and_start = None
     if args.map:
-        logger.write("Reading cell from map")
+        logger.writeln("Reading cell from map")
         map_and_start = fileio.read_ccp4_map(args.map)
         st.cell = map_and_start[0].unit_cell
     elif args.cell:
@@ -247,7 +247,7 @@ def symmodel(args):
         raise SystemExit("Error: Unit cell parameters look wrong. Please use --map or --cell")
 
     if args.chains:
-        logger.write("Keep {} chains only".format(" ".join(args.chains)))
+        logger.writeln("Keep {} chains only".format(" ".join(args.chains)))
         chains = set(args.chains)
         for m in st:
             to_del = [c.name for c in m if c.name not in chains]
@@ -296,7 +296,7 @@ def helical_biomt(args):
     st.spacegroup_hm = "P 1"
     map_and_start = None
     if args.map:
-        logger.write("Reading cell from map")
+        logger.writeln("Reading cell from map")
         map_and_start = fileio.read_ccp4_map(args.map)
         st.cell = map_and_start[0].unit_cell
     elif args.cell:
@@ -310,19 +310,19 @@ def helical_biomt(args):
                                        helical_min_n=args.start, helical_max_n=args.end)
     #ncsops = [x for x in ncsops if not x.tr.is_identity()] # remove identity
 
-    logger.write("")
-    logger.write("-------------------------------------------------------------")
-    logger.write("You may need to write following matrices in OneDep interface:")
+    logger.writeln("")
+    logger.writeln("-------------------------------------------------------------")
+    logger.writeln("You may need to write following matrices in OneDep interface:")
     for idx, op in enumerate(ncsops):
-        logger.write("")
-        logger.write("operator {}".format(idx+1))
+        logger.writeln("")
+        logger.writeln("operator {}".format(idx+1))
         mat = op.tr.mat.tolist()
         vec = op.tr.vec.tolist()
         for i in range(3):
             mstr = ["{:10.6f}".format(mat[i][j]) for j in range(3)]
-            logger.write("{} {:14.5f}".format(" ".join(mstr), vec[i]))
-    logger.write("-------------------------------------------------------------")
-    logger.write("")
+            logger.writeln("{} {:14.5f}".format(" ".join(mstr), vec[i]))
+    logger.writeln("-------------------------------------------------------------")
+    logger.writeln("")
 
     # BIOMT
     st.assemblies.clear()
@@ -334,14 +334,14 @@ def helical_biomt(args):
         args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_biomt"
 
     fileio.write_model(st, args.output_prfix, pdb=(model_format == ".pdb"), cif=True, cif_ref=cif_ref)
-    logger.write("")
-    logger.write("These {}.* files may be used for deposition (once OneDep implemented reading BIOMT from file..)".format(args.output_prfix))
-    logger.write("")
+    logger.writeln("")
+    logger.writeln("These {}.* files may be used for deposition (once OneDep implemented reading BIOMT from file..)".format(args.output_prfix))
+    logger.writeln("")
     # BIOMT expand
     st.transform_to_assembly("1", howtoname)
     args.output_prfix += "_expanded"
     fileio.write_model(st, file_name=args.output_prfix+model_format)
-    logger.write(" note that this expanded model file is just for visual inspection, *not* for deposition!")
+    logger.writeln(" note that this expanded model file is just for visual inspection, *not* for deposition!")
 # helical_biomt()
 
 def symexpand(args):
@@ -355,7 +355,7 @@ def symexpand(args):
     st = fileio.read_structure(args.model)
 
     if args.chains:
-        logger.write("Keep {} chains only".format(" ".join(args.chains)))
+        logger.writeln("Keep {} chains only".format(" ".join(args.chains)))
         chains = set(args.chains)
         for m in st:
             to_del = [c.name for c in m if c.name not in chains]
@@ -389,9 +389,9 @@ def symexpand(args):
                 else:
                     fileio.write_model(st_tmp, file_name=output_prfix+model_format)
         else:
-            logger.write("All operators are already expanded (marked as given). Exiting.")
+            logger.writeln("All operators are already expanded (marked as given). Exiting.")
     else:
-        logger.write("No NCS operators found. Exiting.")
+        logger.writeln("No NCS operators found. Exiting.")
     
     if len(st.assemblies) > 0: # should we support BIOMT?
         pass
@@ -404,7 +404,7 @@ def h_add(args):
     if not args.output:
         tmp = fileio.splitext(os.path.basename(args.model))[0]
         args.output = tmp + "_h" + model_format
-    logger.write("Output file: {}".format(args.output))
+    logger.writeln("Output file: {}".format(args.output))
         
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
@@ -446,11 +446,11 @@ def h_density_analysis(args):
         raise SystemExit("Invalid input")
 
     if args.oversample_pixel is not None:
-        logger.write("--oversample_pixel= {} is requested.".format(args.oversample_pixel))
-        logger.write(" recalculated grid:")
-        logger.write("  {:4d} {:4d} {:4d}".format(*gr.shape))
-        logger.write(" spacings:")
-        logger.write("  {:.6f} {:.6f} {:.6f}".format(*gr.spacing))
+        logger.writeln("--oversample_pixel= {} is requested.".format(args.oversample_pixel))
+        logger.writeln(" recalculated grid:")
+        logger.writeln("  {:4d} {:4d} {:4d}".format(*gr.shape))
+        logger.writeln(" spacings:")
+        logger.writeln("  {:.6f} {:.6f} {:.6f}".format(*gr.spacing))
         #maps.write_ccp4_map("{}_oversampled.mrc".format(args.output_prefix), gr)
 
     if args.abs_level is not None:
@@ -485,31 +485,31 @@ def h_density_analysis(args):
                     del st2[0][ic][ir][ia]
 
     found.sort(key=lambda x: x[1], reverse=True)
-    logger.write("")
-    logger.write("Found hydrogen peaks:")
-    logger.write("dist map  vol  atom")
+    logger.writeln("")
+    logger.writeln("Found hydrogen peaks:")
+    logger.writeln("dist map  vol  atom")
     for _, map_val, dist, volume, chain, resi, resn, atom, alt in found:
-        logger.write("{:.2f} {:.2f} {:.2f} {}/{} {}/{}{}".format(dist, map_val, volume,
+        logger.writeln("{:.2f} {:.2f} {:.2f} {}/{} {}/{}{}".format(dist, map_val, volume,
                                                                  chain, resn, resi,
                                                                  atom, "."+alt if alt else ""))
 
-    logger.write("")
-    logger.write("Result:")
-    logger.write(" number of hydrogen in the model  : {}".format(n_hydr))
-    logger.write(" number of peaks close to hydrogen: {} ({:.1%})".format(len(found), len(found)/n_hydr))
-    logger.write("")
+    logger.writeln("")
+    logger.writeln("Result:")
+    logger.writeln(" number of hydrogen in the model  : {}".format(n_hydr))
+    logger.writeln(" number of peaks close to hydrogen: {} ({:.1%})".format(len(found), len(found)/n_hydr))
+    logger.writeln("")
 
     st_peaks = model.st_from_positions([getpos(b) for b in blobs],
                                        bs=[gr.interpolate_value(getpos(b)) for b in blobs],
                                        qs=h_assigned)
     fileio.write_model(st_peaks, file_name="{}_peaks.mmcif".format(args.output_prefix))
-    logger.write(" this file includes peak positions")
-    logger.write(" occ=1: hydrogen assigned, occ=0: unassigned.")
-    logger.write(" B: density value at {}".format(args.blob_pos))
-    logger.write("")
+    logger.writeln(" this file includes peak positions")
+    logger.writeln(" occ=1: hydrogen assigned, occ=0: unassigned.")
+    logger.writeln(" B: density value at {}".format(args.blob_pos))
+    logger.writeln("")
     
     fileio.write_model(st2, file_name="{}_h_with_peak{}".format(args.output_prefix, model_format))
-    logger.write(" this file is a copy of input model, where hydrogen atoms without peaks are removed.")
+    logger.writeln(" this file is a copy of input model, where hydrogen atoms without peaks are removed.")
 # h_density_analysis()
 
 def fix_link(args):
@@ -519,7 +519,7 @@ def fix_link(args):
     if not args.output:
         tmp = fileio.splitext(os.path.basename(args.model))[0]
         args.output = tmp + "_fixlink" + model_format
-    logger.write("Output file: {}".format(args.output))
+    logger.writeln("Output file: {}".format(args.output))
         
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
@@ -531,20 +531,20 @@ def fix_link(args):
 # fix_link()
     
 def merge_models(args):
-    logger.write("Reading file   1: {}".format(args.models[0]))
+    logger.writeln("Reading file   1: {}".format(args.models[0]))
     st = fileio.read_structure(args.models[0])
-    logger.write("                  chains {}".format(" ".join([c.name for c in st[0]])))
+    logger.writeln("                  chains {}".format(" ".join([c.name for c in st[0]])))
 
     for i, f in enumerate(args.models[1:]):
-        logger.write("Reading file {:3d}: {}".format(i+2, f))
+        logger.writeln("Reading file {:3d}: {}".format(i+2, f))
         st2 = fileio.read_structure(f)
         for c in st2[0]:
             org_id = c.name
             c2 = st[0].add_chain(c, unique_name=True)
             if c.name != c2.name:
-                logger.write("                  chain {} merged (ID changed to {})".format(c.name, c2.name))
+                logger.writeln("                  chain {} merged (ID changed to {})".format(c.name, c2.name))
             else:
-                logger.write("                  chain {} merged".format(c.name))
+                logger.writeln("                  chain {} merged".format(c.name))
 
     fileio.write_model(st, file_name=args.output)
 # merge_models()
@@ -570,11 +570,11 @@ def geometry(args):
     restr = restraints.Restraints(st, monlib)
     for k in restr.outlier_sigmas: restr.outlier_sigmas[k] = args.sigma
     dfs = restr.show_all()
-    logger.write("")
+    logger.writeln("")
     for k in dfs:
         json_out = "{}_{}.json".format(args.output_prefix, k)
         with open(json_out, "w") as ofs: dfs[k].to_json(ofs, indent=2, orient="index")
-        logger.write("written: {}".format(json_out))
+        logger.writeln("written: {}".format(json_out))
 
     for k in args.write_z_per_atom:
         for cra in st[0].all(): cra.atom.b_iso = 0
@@ -623,7 +623,7 @@ def show_power(args):
         d_min = args.resolution
         if d_min is None:
             d_min = maps.nyquist_resolution(ms[0][0])
-            logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min))
+            logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(d_min))
         tmp = maps.mask_and_fft_maps(ms, d_min, mask)
         labs.append("F{:02d}".format(len(labs)+1))
         tmp.df.rename(columns=dict(FP=labs[-1]), inplace=True)
@@ -682,7 +682,7 @@ def fcalc(args):
     elif args.auto_box_with_padding is not None:
         st.cell = model.box_from_model(st[0], args.auto_box_with_padding)
         st.spacegroup_hm = "P 1"
-        logger.write("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
+        logger.writeln("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
         
     if not st.cell.is_crystal():
         raise SystemExit("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
@@ -705,7 +705,7 @@ def fcalc(args):
     else:
         hkldata.write_mtz(args.output_prefix+".mtz", ["FC"])
 
-    logger.write("{} written.".format(args.output_prefix+".mtz"))
+    logger.writeln("{} written.".format(args.output_prefix+".mtz"))
 # fcalc()
 
 def nemap(args):
@@ -722,7 +722,7 @@ def nemap(args):
     halfmaps = fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     if args.resolution is None:
         args.resolution = maps.nyquist_resolution(halfmaps[0][0])
-        logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
+        logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
 
     hkldata = maps.mask_and_fft_maps(halfmaps, args.resolution, mask)
     hkldata.setup_relion_binning()
@@ -743,7 +743,7 @@ def blur(args):
         hkl.blur_mtz(mtz, args.B)
         suffix = ("_blur" if args.B > 0 else "_sharpen") + "_{:.2f}.mtz".format(abs(args.B))
         mtz.write_to_file(args.output_prefix+suffix)
-        logger.write("Written: {}".format(args.output_prefix+suffix))
+        logger.writeln("Written: {}".format(args.output_prefix+suffix))
     else:
         raise SystemExit("ERROR: Unsupported file type: {}".format(args.hklin))
 # blur()
@@ -763,16 +763,16 @@ def applymask(args):
 
     grid, grid_start = fileio.read_ccp4_map(args.map)
     mask = fileio.read_ccp4_map(args.mask)[0]
-    logger.write("Applying mask")
-    logger.write(" mask min: {:.3f} max: {:.3f}".format(numpy.min(mask), numpy.max(mask)))
+    logger.writeln("Applying mask")
+    logger.writeln(" mask min: {:.3f} max: {:.3f}".format(numpy.min(mask), numpy.max(mask)))
     grid.array[:] *= mask.array
 
     if args.normalize:
         masked = grid.array[mask.array>args.mask_cutoff]
         masked_mean = numpy.average(masked)
         masked_std = numpy.std(masked)
-        logger.write("Normalizing map values within mask")
-        logger.write(" masked volume: {} mean: {:.3e} sd: {:.3e}".format(len(masked), masked_mean, masked_std))
+        logger.writeln("Normalizing map values within mask")
+        logger.writeln(" masked volume: {} mean: {:.3e} sd: {:.3e}".format(len(masked), masked_mean, masked_std))
         grid.array[:] = (grid.array - masked_mean) / masked_std
 
     maps.write_ccp4_map(args.output_prefix+".mrc", grid,
@@ -786,7 +786,7 @@ def show(args):
         ext = fileio.splitext(filename)[1]
         if ext in (".mrc", ".ccp4", ".map"):
             fileio.read_ccp4_map(filename)
-            logger.write("\n")
+            logger.writeln("\n")
 # show()
 
 def json2csv(args):
@@ -795,7 +795,7 @@ def json2csv(args):
         
     df = pandas.read_json(args.json)
     df.to_csv(args.output_prefix+".csv", index=False)
-    logger.write("Output: {}".format(args.output_prefix+".csv"))
+    logger.writeln("Output: {}".format(args.output_prefix+".csv"))
 # json2csv()
 
 def main(args):

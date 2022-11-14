@@ -53,8 +53,8 @@ def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
     F1 = hkldata.df.F_map1.to_numpy()
     F2 = hkldata.df.F_map2.to_numpy()
 
-    logger.write("Calculating weights for half map correlation.")
-    logger.write(" weight = sqrt(FSChalf / (2*var_noise + var_signal))")
+    logger.writeln("Calculating weights for half map correlation.")
+    logger.writeln(" weight = sqrt(FSChalf / (2*var_noise + var_signal))")
     hkldata.binned_df["w2_half_varsignal"] = 0.
     for i_bin, idxes in hkldata.binned():
         fscfull = hkldata.binned_df.FSCfull[i_bin]
@@ -82,9 +82,9 @@ def add_coeffs_for_model_cc(hkldata, st):
     FP = hkldata.df.FP.to_numpy()
     FC = hkldata.df.FC.to_numpy()
 
-    logger.write("Calculating weights for map-model correlation.")
-    logger.write(" weight for Fo = sqrt(FSCfull / var(Fo))")
-    logger.write(" weight for Fc = sqrt(FSCfull / var(Fc))")
+    logger.writeln("Calculating weights for map-model correlation.")
+    logger.writeln(" weight for Fo = sqrt(FSCfull / var(Fo))")
+    logger.writeln(" weight for Fc = sqrt(FSCfull / var(Fc))")
     hkldata.binned_df["w_mapmodel_c"] = 0.
     hkldata.binned_df["w_mapmodel_o"] = 0.
     hkldata.binned_df["var_fc"] = 0.
@@ -161,7 +161,7 @@ def main(args):
                                      knl, method="simple" if args.kernel is None else "scipy")
 
     halfcc_map_in_mask = halfcc_map.array[mask.array>0.5] if mask is not None else halfcc_map
-    logger.write("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
+    logger.writeln("Half map CC: min/max= {:.4f} {:.4f}".format(numpy.min(halfcc_map_in_mask), numpy.max(halfcc_map_in_mask)))
     utils.maps.write_ccp4_map(prefix+"_half.mrc", halfcc_map, hkldata.cell, hkldata.sg,
                               mask_for_extent=mask if args.trim else None)
 
@@ -175,7 +175,7 @@ def main(args):
                                           hkldata.fft_map("FCw", grid_size=grid_shape),
                                           knl, method="simple" if args.kernel is None else "scipy")
         modelcc_map_in_mask = modelcc_map.array[mask.array>0.5] if mask is not None else modelcc_map
-        logger.write("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
+        logger.writeln("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
         utils.maps.write_ccp4_map(prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
                                   mask_for_extent=mask if args.trim else None)
         model_stats(st, modelcc_map, halfcc_map, loggraph_out=prefix+"_byresidue.log")

@@ -88,16 +88,16 @@ def shift_back_tls(tlsgroups, shifts):
 # shift_back_tls()
 
 def shift_back(xyz_in, shifts_json, refine_mtz=None, out_prefix=None):
-    logger.write("Reading shifts info from {}".format(shifts_json))
+    logger.writeln("Reading shifts info from {}".format(shifts_json))
     info = json.load(open(shifts_json))
     for k in info:
-        logger.write(" {}= {}".format(k, info[k]))
+        logger.writeln(" {}= {}".format(k, info[k]))
 
     org_cell = gemmi.UnitCell(*info["cell"])
     shifts = gemmi.Position(*info["shifts"])
 
     if refine_mtz:
-        logger.write("Transforming MTZ: {}".format(refine_mtz))
+        logger.writeln("Transforming MTZ: {}".format(refine_mtz))
         if out_prefix:
             mtz_out = out_prefix+".mtz"
         else:
@@ -111,7 +111,7 @@ def shift_back(xyz_in, shifts_json, refine_mtz=None, out_prefix=None):
                                     mtz_out)
 
     if xyz_in:
-        logger.write("Shifting back model: {}".format(xyz_in))
+        logger.writeln("Shifting back model: {}".format(xyz_in))
         st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(xyz_in)
 
         st.cell = org_cell

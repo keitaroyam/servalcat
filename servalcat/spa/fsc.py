@@ -124,7 +124,7 @@ def main(args):
 
     if args.resolution is None and not args.mtz:
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])
-        logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
+        logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
         
     sts = []
     for xyzin in args.model:
@@ -137,7 +137,7 @@ def main(args):
         sts.append(st)
     
     if args.mask:
-        logger.write("Input mask file: {}".format(args.mask))
+        logger.writeln("Input mask file: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
         mask = utils.maps.mask_from_model(st, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
@@ -146,10 +146,10 @@ def main(args):
     
     if mask is not None:
         if args.no_sharpen_before_mask or len(maps) < 2:
-            logger.write("Applying mask..")
+            logger.writeln("Applying mask..")
             for ma in maps: ma[0].array[:] *= mask
         else:
-            logger.write("Sharpen-mask-unsharpen..")
+            logger.writeln("Sharpen-mask-unsharpen..")
             b_before_mask = args.b_before_mask
             if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
@@ -176,11 +176,11 @@ def main(args):
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
             if k.startswith("fsc_FC_"):
-                logger.write("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.writeln("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
             if k.startswith("Rcmplx_FC_"):
-                logger.write("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.writeln("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
 
-    logger.write("See {}".format(args.fsc_out))
+    logger.writeln("See {}".format(args.fsc_out))
 # main()
 
 if __name__ == "__main__":

@@ -56,18 +56,18 @@ def calc_fsc(hkldata, lab1, lab2):
 # calc_fsc()
 
 def find_peak(tf_map, ini_pos):
-    logger.write("Finding peak using interpolation..")
+    logger.writeln("Finding peak using interpolation..")
 
     x = tf_map.unit_cell.fractionalize(ini_pos)
-    logger.write("       x0: [{}, {}, {}]".format(*x.tolist()))
-    logger.write("       f0: {}".format(-tf_map.tricubic_interpolation(x)))
+    logger.writeln("       x0: [{}, {}, {}]".format(*x.tolist()))
+    logger.writeln("       f0: {}".format(-tf_map.tricubic_interpolation(x)))
     
     res = scipy.optimize.minimize(fun=lambda x:-tf_map.tricubic_interpolation(gemmi.Fractional(*x)),
                                   x0=x.tolist(),
                                   jac=lambda x:-numpy.array(tf_map.tricubic_interpolation_der(gemmi.Fractional(*x))[1:]))
-    logger.write(str(res))
+    logger.writeln(str(res))
     final_pos = tf_map.unit_cell.orthogonalize(gemmi.Fractional(*res.x))
-    logger.write(" Move from initial: [{:.3f}, {:.3f}, {:.3f}] A".format(*(final_pos-ini_pos).tolist()))
+    logger.writeln(" Move from initial: [{:.3f}, {:.3f}, {:.3f}] A".format(*(final_pos-ini_pos).tolist()))
     return final_pos
 # find_peak()
 
@@ -96,8 +96,8 @@ def main(args):
     hkldata.setup_relion_binning()
 
     stats, fscavg = calc_fsc(hkldata, "FP", "FC")
-    logger.write(stats.to_string())
-    logger.write("FSCaverage before translation = {:.4f}".format(fscavg))
+    logger.writeln(stats.to_string())
+    logger.writeln("FSCaverage before translation = {:.4f}".format(fscavg))
 
     hkldata.df["TF"] = hkldata.df.FP.to_numpy() * numpy.conj(hkldata.df.FC.to_numpy())
 
@@ -108,14 +108,14 @@ def main(args):
     if not args.no_interpolation:
         shift = utils.maps.optimize_peak(tf_map, shift)
 
-    logger.write("shift= {:.4f}, {:.4f}, {:.4f} ".format(*shift))
+    logger.writeln("shift= {:.4f}, {:.4f}, {:.4f} ".format(*shift))
 
     # phase shift for translation
     hkldata.df.FC *= numpy.exp(2.j*numpy.pi*numpy.dot(hkldata.miller_array(),
                                                       hkldata.cell.fractionalize(shift).tolist()))
     stats, fscavg = calc_fsc(hkldata, "FP", "FC")
-    logger.write(stats.to_string())
-    logger.write("FSCaverage after translation = {:.4f}".format(fscavg))
+    logger.writeln(stats.to_string())
+    logger.writeln("FSCaverage after translation = {:.4f}".format(fscavg))
 
     tr = gemmi.Transform(gemmi.Mat33(), shift)
     st[0].transform_pos_and_adp(tr)
