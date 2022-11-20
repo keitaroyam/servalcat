@@ -48,18 +48,18 @@ class XtalTests(unittest.TestCase):
         os.remove("sigmaa.log")
         os.remove("sigmaa.mtz")
 
-        numpy.testing.assert_array_almost_equal(hkldata.binned_df.d_min,
-                                                [5.0834,3.6631,3.0103,2.6155,2.3440,2.1426,1.9855,1.8586,1.7532,1.6640],
-                                                decimal=4)
-        numpy.testing.assert_array_almost_equal(hkldata.binned_df.D0,
-                                                [0.844600,0.983733,1.022023,0.965324,0.996962,1.009091,0.997227,0.989490,0.937605,0.928479],
-                                                decimal=4)
-        numpy.testing.assert_array_almost_equal(hkldata.binned_df.D1,
-                                                [0.297493,0.000004,0.000081,0.000075,0.996606,0.999243,1.000051,0.999999,1.000000,1.000001],
-                                                decimal=4)
-        numpy.testing.assert_array_almost_equal(hkldata.binned_df.S,
-                                                [ 84.857641, 95.794294, 68.853409, 96.124315, 74.231890,110.065386,116.446683, 95.913027, 81.069189, 43.255406],
-                                                decimal=4)
+        numpy.testing.assert_allclose(hkldata.binned_df.d_min,
+                                      [5.0834,3.6631,3.0103,2.6155,2.3440,2.1426,1.9855,1.8586,1.7532,1.6640],
+                                      rtol=1e-5)
+        numpy.testing.assert_allclose(hkldata.binned_df.D0,
+                                      [0.844600,0.983733,1.022023,0.965324,0.996962,1.009091,0.997227,0.989490,0.937605,0.928479],
+                                      rtol=1e-5)
+        numpy.testing.assert_allclose(hkldata.binned_df.D1,
+                                      [0.297493,0.000004,0.000081,0.000075,0.996606,0.999243,1.000051,0.999999,1.000000,1.000001],
+                                      rtol=1e-5)
+        numpy.testing.assert_allclose(hkldata.binned_df.S,
+                                      [ 84.857641, 95.794294, 68.853409, 96.124315, 74.231890,110.065386,116.446683, 95.913027, 81.069189, 43.255406],
+                                      rtol=1e-5)
 
     # test_sigmaa()
         
