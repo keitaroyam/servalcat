@@ -342,7 +342,9 @@ def main(args):
 
     # Modify output
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
-    
+    st.entities.clear()
+    st.setup_entities()
+
     if not args.no_trim:
         st.cell = maps[0][0].unit_cell
         if not args.no_shift:
@@ -396,6 +398,8 @@ def main(args):
         
         # Modify output
         st_sr, cif_ref_sr = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix_shaken+model_format)
+        st_sr.entities.clear()
+        st_sr.setup_entities()
         if not args.no_trim:
             st_sr.cell = maps[0][0].unit_cell
             if not args.no_shift:

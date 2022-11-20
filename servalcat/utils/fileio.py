@@ -49,6 +49,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.cell = True
         groups.scale = True
         groups.assembly = True
+        groups.entity = True
         # FIXME is this all? 
         try:
             doc = read_cif_safe(cif_ref)
@@ -69,7 +70,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         block.find_mmcif_category("_atom_sites.").erase()
         st_new.update_mmcif_block(block, groups)
         st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
-        doc.write_file(cif_out)
+        doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
@@ -78,7 +79,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         doc = gemmi.cif.Document()
         block = doc.add_new_block("new")
         st_new.update_mmcif_block(block, groups)
-        doc.write_file(cif_out)
+        doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
 # write_mmcif()
 
 def write_pdb(st, pdb_out):
