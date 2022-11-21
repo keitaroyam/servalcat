@@ -14,7 +14,7 @@ We need the pdb (or mmcif) file, half maps and mask:
     Half maps must be unsharpened and unweighted. In this case ones from Refine3D job of RELION are used. Mask file is only used for map calculation after the refinement (thus it does not affect the refinement).
 
 
-**In this example please use Refmac5 from CCP4 8.0 (Refmac5.8.0349 or newer) and Servalcat from CCP-EM 1.6 (Servalcat 0.2.85 or newer).**
+**In this example please use Refmac5 from CCP4 8.0.007 (Refmac5.8.0403 or newer) and Servalcat from CCP-EM 1.7 (Servalcat 0.3.0 or newer).**
 
 Run refinement from command-line
 --------------------------------
@@ -91,7 +91,11 @@ Final summary is like this:
                  If you want to change the weight, give larger (looser restraints)
                  or smaller (tighter) value to --weight_auto_scale=.
 
-    Open refined.pdb and diffmap.mtz with COOT.
+    Open refined model and diffmap.mtz with COOT:
+    coot --script refined_coot.py
+
+    List Fo-Fc map peaks in the ASU:
+    servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model refined.pdb --abs_level 4.0
     =============================================================================
 
 .. _chrmine-check-fsc:
@@ -127,10 +131,9 @@ Let us open the refined model and maps with COOT:
 
 .. code-block:: console
 
-    $ coot --pdb refined.pdb --auto diffmap.mtz
+    $ coot --script refined_coot.py
 
-You may feel maps are too noisy - but it is just a matter of contour level. Please increase the level until you see features. Default contour level in COOT (0.9.8.1) for MTZ file is adjusted with "rmsd" (so-called sigma) value. In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
-
+Do not look at contour levels in "rmsd" (so-called sigma). In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
 In this example we gave a mask file (with ``--mask_for_fofc``) so these maps are normalised within the mask. So raw map values can be considered "sigma level" in usual (crystallographic) sense. In COOT raw map values are shown with e/A^3 or V unit (these units are not right). Again, do not see values with rmsd unit in case of SPA!
 
 You may find something interesting from the Fo-Fc map. Below is putative hydrogen densities (shown at 3 sigma level). Note that the map is calculated without hydrogen contribution (thus hydrogen omit Fo-Fc map) unless ``--hout`` is specified.
@@ -150,6 +153,10 @@ If you want to check Ramachandran plots, rotamer outliers, clash scores etc for 
     $ molprobity.molprobity refined_expanded.pdb nqh=false
 
 It writes molprobity_coot.py which can be opened with COOT (from Calculate - Run Script...) to see "ToDo list". Note that the outliers are not always wrong - you should check them with density.
+
+.. code-block:: console
+
+    $ coot --script refined_coot.py --script molprobity_coot.py
 
 Run refinement from GUI
 -----------------------

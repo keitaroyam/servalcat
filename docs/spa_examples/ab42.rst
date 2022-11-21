@@ -10,7 +10,7 @@ We need the pdb (or mmcif) file and half maps:
     wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-13809/other/emd_13809_half_map_1.map.gz
     wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-13809/other/emd_13809_half_map_2.map.gz
 
-**In this example please use Refmac5 from CCP4 8.0 (Refmac5.8.0349 or newer) and Servalcat from CCP-EM 1.6 (Servalcat 0.2.85 or newer).**
+**In this example please use Refmac5 from CCP4 8.0.007 (Refmac5.8.0403 or newer) and Servalcat from CCP-EM 1.7 (Servalcat 0.3.0 or newer).**
 
 Obtaining ASU model
 -------------------
@@ -81,7 +81,11 @@ Final summary is like this:
                  If you want to change the weight, give larger (looser restraints)
                  or smaller (tighter) value to --weight_auto_scale=.
              
-    Open refined.pdb and diffmap.mtz with COOT.
+    Open refined model and diffmap.mtz with COOT:
+    coot --script refined_coot.py
+
+    List Fo-Fc map peaks in the ASU:
+    servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model refined.pdb --abs_level 4.0
     =============================================================================
 
 Check FSC
@@ -94,10 +98,105 @@ Let us open the refined model and maps with COOT:
 
 .. code-block:: console
 
-    $ coot --pdb refined.pdb --auto diffmap.mtz
+    $ coot --script refined_coot.py
 
-You may feel maps are too noisy - but it is just a matter of contour level. Please increase the level until you see features. Default contour level in COOT (0.9.8.1) for MTZ file is adjusted with "rmsd" (so-called sigma) value. In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
+If you feel maps are too noisy, it may be just because of inappropriate contour level. Please increase the level until you see features. In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
 
 You only see one chain, because this is a unique part and you only need to fix this model. If you want to see symmetry-expanded model, you can open ``refined_expanded.pdb``.
 
-I think there is a lot of room for improvement in the refinement with helical symmetry. If you have any request, please let the authors know.
+Using symmetry-related beta-sheet restraints
+----------------------------------------------
+In 7q4m case, resolution was sufficiently high and no extra restraints were needed. However, at lower resolutions, the use of secondary structure restraints may be required to stabilise the refinement. Here the same structure at 3.7 Å (`PDB 8azt <https://www.rcsb.org/structure/8azt>`_, `EMD-15771 <https://www.emdataresource.org/EMD-15771>`_) is used for demonstration.
+
+Preparing external restraints
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+We need to prepare a text file that describes Refmac external restraint keywords. Here is the file actually used for the refinement:
+
+.. code-block:: none
+
+    exte alphall 2
+    exte symall y exclude self
+    exte sgmx 0.05
+    exte dist first chain B resi 12 ins . atom  O   second chain B resi 13 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 13 ins . atom  O   second chain B resi 14 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 14 ins . atom  O   second chain B resi 15 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 17 ins . atom  O   second chain B resi 18 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 18 ins . atom  O   second chain B resi 19 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 20 ins . atom  O   second chain B resi 21 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 24 ins . atom  O   second chain B resi 25 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 27 ins . atom  O   second chain B resi 28 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 29 ins . atom  O   second chain B resi 30 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 31 ins . atom  O   second chain B resi 32 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 32 ins . atom  O   second chain B resi 33 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 38 ins . atom  O   second chain B resi 39 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 39 ins . atom  O   second chain B resi 40 ins . atom  N   value 2.8 sigma 0.1
+    exte dist first chain B resi 41 ins . atom  O   second chain B resi 42 ins . atom  N   value 2.8 sigma 0.1
+
+All external restraint keywords start with ``exte``. ``alphall 2`` means least-square type function to be used in restraints. See `Barron (2019) <https://arxiv.org/abs/1701.03077>`_ for the meaning of alpha. ``symall y exclude self`` is to look for atoms considering symmetry (in this case helical symmetry) excluding ASU. This keyword is absolutely needed since we want *symmetry related* beta-sheet restraints. ``sgmx 0.05`` to set maximum sigma value to 0.05 Å so that this sigma will be actually used. You may need to play with this value.
+
+``dist`` is to define distance restraints. Here we define bonds between main chain's O and N with the length of 2.8 Å, which is ProSmart's default hydrogen bond distance value and sigma of 0.1 Å - but sigma values are overridden by ``sgmx`` keyword above.
+
+It is too tedious to manually prepare ``exte dist`` lines. I actually used the following python script to generate all bonds between i and i+1 residues from i = 12 to 41, and then manually remove unnecessary lines (or add ! at the beginning of a line) by inspecting model and density.
+
+.. code-block:: python
+
+    chain = "B"
+    for i in range(12, 42):
+        print("exte dist first chain {} resi {} ins . atom O second chain {} resi {} ins . atom N value 2.8 sigma 0.1".format(chain, i, chain, i+1))
+
+Using external restraints in refinement
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use ``--keyword_file`` option to specify the name of external restraint file. Here ``--keywords "vdwr 2"`` is specified together, which increases the weight of nonbonded interactions. At low resolution this option would greatly reduce clashes.
+
+.. code-block:: console
+
+    $ servalcat refine_spa \
+      --model ../8azt.pdb \
+      --halfmaps ../emd_15771_half_map_1.map.gz ../emd_15771_half_map_2.map.gz \
+      --mask_for_fofc ../emd_15771_msk_1.map \
+      --pg C2 --twist -2.825 --rise 4.806 \
+      --resolution 3.7 \
+      --keywords "vdwr 2" \
+      --keyword_file exte.txt
+
+
+Generate symmetry copies
+-------------------------------------
+You may want to generate arbitrary number of helical copies for visual inspection or making figures.
+As explained above, ``servalcat util symmodel`` command will give you fully expanded model within a box.
+
+If you want to have more copies, you can manually increase box size along z axis (c of unit cell parameter):
+
+.. code-block:: console
+
+    $ servalcat util symmodel --model 7q4m.pdb --chains A \
+      --cell 186.88 186.88 600 90 90 90 \
+      --pg C2 --twist -2.9 --rise 4.9 
+
+Too many copies may exceed a limit of pdb file. Add ``--cif`` to write an mmcif file.
+If you prefer PDB format, you can have copies as multiple files:
+
+.. code-block:: console
+
+    $ servalcat util expand --model 7q4m_asu.pdb --split
+
+and then you will have 7q4m_asu_ncs\_*.pdb files.
+
+
+Generate assembly operators for PDB deposition
+-----------------------------------------------
+
+There is a utility command ``servalcat util helical_biomt`` to prepare matrices for PDB deposition from servalcat-refined ASU models.
+To use this command, you need helical parameters (as always) and ``--start`` and ``--end`` numbers, to specify how many helical copies are needed starting from the input model.
+For example, in 8azt case, the following command is used to generate 3 rungs:
+
+.. code-block:: console
+
+    $ servalcat util helical_biomt --model refined.pdb \
+      --pg C2 --twist -2.825 --rise 4.806 --start -1 --end 1
+
+Check \*_biomt_expanded.pdb (or .mmcif) file with a molecular viewer. This file is *not* for deposition, but just to see if it worked as intended.
+In the standard output and servalcat.log you can find matrices for PDB deposition.
+The other output file \*_biomt.pdb (or .mmcif) embeds matrices for biological assemblies and may be used for PDB deposition.
+There is a plan for the PDB deposition system to support embedded matrices in the coordinate file but I don't know when it will happen.
