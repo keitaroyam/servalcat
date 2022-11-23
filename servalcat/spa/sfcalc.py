@@ -19,8 +19,6 @@ def add_sfcalc_args(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
     group.add_argument("--map", help="Use this only if you really do not have half maps.")
-    parser.add_argument('--mapref',
-                        help='Reference map file')
     parser.add_argument('--mask',
                         help='Mask file')
     parser.add_argument('--model',
@@ -45,16 +43,8 @@ def add_sfcalc_args(parser):
                         action='store_true',
                         help='Keep original box (not recommended)')
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('--no_shift',
-                       action='store_true',
-                       help='Keep map origin so that output maps overlap with the input maps. '
-                            'Now this is on by default. Use --shift_if_trim if you want the previous default behavior.')
-    group.add_argument('--shift_if_trim',
-                       action='store_true',
-                       help='Shift model and map origin if map is trimmed. This option is to emulate previous default behavior.')
     parser.add_argument('--blur',
-                        nargs="+", # XXX probably no need to be multiple
-                        type=float,
+                        type=float, default=0,
                         help='Sharpening or blurring B')
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
@@ -76,15 +66,7 @@ def add_sfcalc_args(parser):
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
     parser.add_argument('--no_check_mask_with_model', action='store_true', 
                         help='Disable mask test using model')
-
 # add_sfcalc_args()
-
-"""
-Possible choices:
- - no mask => no shift AND no trim
- - mask AND trim => shift OR no shift
- - mask AND no trim => no shift
-"""
 
 def add_arguments(parser):
     parser.description = 'Structure factor calculation for Refmac'
@@ -115,95 +97,34 @@ def lab_f_suffix(blur):
         return "Sharp_{:.2f}".format(-blur)
 # lab_f_suffix()
 
-def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blurs=None): # TODO use hkldata.write_mtz
-    if not blurs: blurs = []
-    if 0 not in blurs: blurs = [0.] + blurs
-
+def write_map_mtz(hkldata, mtz_out, map_labs, sig_lab=None, blur=0):
+    nblur = 2 if blur != 0 else 1
     mean_f = hkldata.df[map_labs].abs().mean().min()
+    data_labs = map_labs + ([sig_lab] if sig_lab else [])
+
     if mean_f < 1:
         scale = 10. / mean_f
         logger.writeln("Mean(|F|)= {:.2e} may be too small for Refmac. Applying scale= {:.1f}".format(mean_f, scale))
-    else:
-        scale = 1.
-    
-    nblur = len(blurs)
-    ncol = 3+len(map_labs)*(1+nblur)
-    if sig_lab: ncol += nblur
-    data = numpy.empty((len(hkldata.df.index), ncol))
-    data[:,:3] = hkldata.df[["H","K","L"]]
-    s2 = 1./hkldata.d_spacings()**2
-    for i, lab in enumerate(map_labs):
-        for j, b in enumerate(blurs):
-            f = numpy.abs(hkldata.df[lab]) * scale
-            if b != 0: f *= numpy.exp(-b*s2/4.)
-            data[:,3+i*(1+nblur)+j] = f
-        data[:,3+i*(1+nblur)+nblur] = numpy.angle(hkldata.df[lab], deg=True)
-        
-    if sig_lab:
-        for j, b in enumerate(blurs):
-            sigf = hkldata.df[sig_lab] * scale
-            if b != 0: sigf *= numpy.exp(-b*s2/4.)
-            data[:,3+len(map_labs)*(1+nblur)+j] = sigf
+        for lab in data_labs:
+            hkldata.df[lab] *= scale
 
-    mtz = gemmi.Mtz()
-    mtz.spacegroup = hkldata.sg
-    mtz.cell = hkldata.cell
-    mtz.add_dataset('HKL_base')
-    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
+    mtz_labs = data_labs + []
+    mtz_types = {}
+    if sig_lab: mtz_types[sig_lab] = "Q"
 
-    for lab in map_labs:
-        lab_root = lab[1:] if lab[0]=="F" else lab
-        for b in blurs:
-            labf = lab
-            if b != 0: labf = "{}{}".format(labf, lab_f_suffix(b))
-            mtz.add_column(labf, "F")
-        mtz.add_column("P"+lab_root, "P")
-    if sig_lab:
-        for b in blurs:
-            labsigf = sig_lab
-            if b != 0: labsigf = "{}{}".format(labsigf, lab_f_suffix(b))
-            mtz.add_column(labsigf, "Q")
-        
-    mtz.set_data(data)
-    mtz.write_to_file(mtz_out)
+    if blur != 0:
+        temp = hkldata.debye_waller_factors(b_iso=blur)
+        for lab in data_labs:
+            data = hkldata.df[lab]
+            newlab = lab + lab_f_suffix(blur)
+            if numpy.iscomplexobj(data): data = numpy.abs(data)
+            hkldata.df[newlab] = data * temp
+            mtz_labs.append(newlab)
+            mtz_types[newlab] = "F" if lab != sig_lab else "Q"
+
+    hkldata.write_mtz(mtz_out, labs=mtz_labs, types=mtz_types,
+                      phase_label_decorator=lambda x: "P"+x[1:])
 # write_map_mtz()
-
-def scale_maps(maps_in, map_ref, d_min):
-    fs = []
-    for m in [[map_ref,None]]+maps_in:
-        asu = gemmi.transform_map_to_f_phi(m[0]).prepare_asu_data(dmin=d_min)
-        fs.append(asu)
-
-    binner = utils.hkl.Binner(fs[0], style="relion")
-    #fs, binner = fft_and_binning([map_ref]+maps_in, d_min)
-    f_ref, f_inps = fs[0], fs[1:]
-    d_array = f_ref.make_d_array()
-    f_inps_scaled = [f_obs.copy() for f_obs in f_inps]
-    logger.writeln(" Saving sf stats as f_stats.dat")
-    ofs = open("f_stats.dat", "w")
-    lab_fos = " ".join(["F_obs.{n} F_scaled.{n}".format(n=i+1) for i in range(len(f_inps))])
-    ofs.write("bin count d_min F_ref {}\n".format(lab_fos))
-    for i_bin, c_bin in zip(binner.bins, binner.bin_counts):
-        sel = binner.bin_array == i_bin
-        fr = f_ref.value_array[sel]
-        s_fr = numpy.std(fr)
-        d = min(d_array[sel])
-        avg_strs = []
-        for f_obs, f_obs_scaled in zip(f_inps, f_inps_scaled):
-            fo = f_obs.value_array[sel]
-            s_fo = numpy.std(fo)
-            fo_scaled = fo*s_fr/s_fo
-            f_obs_scaled.value_array[sel] = fo_scaled
-            avg_strs.append("{:e} {:e}".format(numpy.average(numpy.abs(fo)), numpy.average(numpy.abs(fo_scaled))))
-
-        ofs.write("{:3d} {:6d} {:7.3f} {:e} {}\n".format(i_bin, c_bin, d,
-                                                         numpy.average(numpy.abs(fr)), " ".join(avg_strs)))
-                                                                
-
-    maps_scaled = [gemmi.transform_f_phi_grid_to_map(f.get_f_phi_on_grid(size=map_ref.shape))
-                   for f in f_inps_scaled]
-    return [[x]+y[1:] for x,y in zip(maps_scaled, maps_in)]
-# scale_maps()
 
 def determine_b_before_mask(st, maps, grid_start, mask, resolution):
     logger.writeln("Determining b_before_mask..")
@@ -241,11 +162,6 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
 
 def main(args, monlib=None):
     ret = {} # instructions for refinement
-
-    if args.no_shift:
-        logger.writeln("DeprecationWarning: --no_shift is now on by default, and this option will be removed in the future.")
-    if not args.shift_if_trim:
-        args.no_shift = True
     
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
@@ -254,18 +170,12 @@ def main(args, monlib=None):
         args.contacting_only = True
     if args.no_mask:
         args.mask_radius = None
-        if not args.no_shift:
-            logger.writeln("WARNING: setting --no_shift because --no_mask is given")
-            args.no_shift = True
         if not args.no_trim:
             logger.writeln("WARNING: setting --no_trim because --no_mask is given")
             args.no_trim = True
         if args.mask:
             logger.writeln("WARNING: Your --mask is ignored because --no_mask is given")
             args.mask = None
-    elif args.no_trim and not args.no_shift:
-        logger.writeln("WARNING: setting --no_shift because --no_trim is given (and --no_mask not given)")
-        args.no_shift = True
 
     #if args.mask_soft_edge > 0:
     #    logger.writeln("INFO: --mask_soft_edge={} is given. Turning off sharpen_before_mask.".format(args.mask_soft_edge))
@@ -278,11 +188,10 @@ def main(args, monlib=None):
         block = doc.sole_block()
         reso_str = block.find_value("_em_3d_reconstruction.resolution")
         try:
-            float(reso_str)
+            args.resolution = float(reso_str)
         except:
             raise SystemExit("ERROR: _em_3d_reconstruction.resolution is invalid. Give --resolution")
         logger.writeln("WARNING: --resolution not given. Using _em_3d_reconstruction.resolution = {}".format(reso_str))
-        args.resolution = float(reso_str)
 
     if args.resolution is None:
         raise SystemExit("ERROR: --resolution is needed.")
@@ -300,17 +209,6 @@ def main(args, monlib=None):
     start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
     A = numpy.array(unit_cell.orthogonalization_matrix.tolist())
     center = numpy.sum(A, axis=1) / 2 #+ start_xyz
-
-    if args.mapref:
-        logger.writeln("Reference map: {}".format(args.mapref))
-        map_ref, ref_start = utils.fileio.read_ccp4_map(args.mapref, pixel_size=args.pixel_size)
-        assert unit_cell == map_ref.unit_cell
-        assert maps[0][0].shape == map_ref.shape
-        assert maps[0][1] == ref_start
-
-        # Overwrite input_maps
-        logger.writeln("Scaling maps..")
-        maps = scale_maps(maps, map_ref, resolution)
 
     # Create mask
     mask = None
@@ -361,14 +259,9 @@ def main(args, monlib=None):
             for i in reversed(range(1, len(st))):
                 del st[i]
 
-        if len(st.ncs) > 0:
-            if args.ignore_symmetry:
-                logger.writeln("Removing symmetry information from model.")
-                st.ncs.clear()
-            else:
-                # remove already-applied symmetries, which can confuse refmac
-                for i in reversed(range(len(st.ncs))):
-                    if st.ncs[i].given: del st.ncs[i]
+        if len(st.ncs) > 0 and args.ignore_symmetry:
+            logger.writeln("Removing symmetry information from model.")
+            st.ncs.clear()
         utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_contacting=args.contacting_only)
         st_new = st.clone()
         if len(st.ncs) > 0:
@@ -376,10 +269,7 @@ def main(args, monlib=None):
                 raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
                                  "It is very likely you gave symmetry-expanded model along with symmetry operators.")
             
-            logger.writeln(" Writing NCS file")
-            utils.symmetry.write_NcsOps_for_refmac(st.ncs, "ncsc.txt")
-            ret["ncsc_file"] = "ncsc.txt"
-        
+            ret["ncsc"] = utils.symmetry.ncs_ops_for_refmac(st.ncs)
             utils.model.expand_ncs(st)
             logger.writeln(" Saving expanded model: input_model_expanded.*")
             utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
@@ -396,7 +286,7 @@ def main(args, monlib=None):
     else:
         model_format = None
         
-    if args.no_shift and st_new:
+    if st_new:
         logger.writeln(" Saving input model with unit cell information")
         utils.fileio.write_model(st_new, "starting_model", pdb=True, cif=True)
         ret["model_file"] = "starting_model" + model_format
@@ -427,7 +317,7 @@ def main(args, monlib=None):
                                                                                        mask_cutoff=0.5,
                                                                                        noncentered=True,
                                                                                        noncubic=True,
-                                                                                       json_out="shifts.json")
+                                                                                       json_out=None)
             ret["shifts"] = shifts
             vol_mask = numpy.count_nonzero(mask.array>0.5)
             vol_map = new_shape[0] * new_shape[1] * new_shape[2] # XXX assuming all orthogonal
@@ -438,24 +328,9 @@ def main(args, monlib=None):
                 st_new.cell = new_cell
                 st_new.spacegroup_hm = "P 1"
 
-                if not args.no_shift:
-                    for cra in st_new[0].all():
-                        cra.atom.pos += shifts
-                
-                if not args.no_shift and len(st_new.ncs) > 0:
-                    new_ops = utils.symmetry.apply_shift_for_ncsops(st_new.ncs, shifts)
-                    st_new.ncs.clear()
-                    st_new.ncs.extend(new_ops)
-                    logger.writeln(" Writing NCS file for shifted model")
-                    utils.symmetry.write_NcsOps_for_refmac(st_new.ncs, "ncsc_{}.txt".format(args.shifted_model_prefix))
-                    ret["ncsc_file"] = "ncsc_{}.txt".format(args.shifted_model_prefix)
-                    logger.writeln(" Writing symmetry expanded model for shifted model")
-                    utils.symmetry.write_symmetry_expanded_model(st_new, "{}_expanded".format(args.shifted_model_prefix),
-                                                                 pdb=True, cif=True)
-
                 logger.writeln(" Saving model in trimmed map..")
                 utils.fileio.write_model(st_new, args.shifted_model_prefix, pdb=True, cif=True)
-                ret["model_file"] = args.shifted_model_prefix + model_format # the same name whether --no_shift given or not
+                ret["model_file"] = args.shifted_model_prefix + model_format
 
             logger.writeln(" Trimming maps..")
             for i in range(len(maps)): # Update maps
@@ -463,18 +338,17 @@ def main(args, monlib=None):
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    blur0 = args.blur[0] if args.blur else None
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
         logger.writeln(" Calculating noise variances..")
         map_labs = ["Fmap1", "Fmap2", "Fout"]
         sig_lab = "SIGFout"
-        ret["lab_sigf"] = sig_lab + lab_f_suffix(blur0)
-        ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(blur0)
+        ret["lab_sigf"] = sig_lab + lab_f_suffix(args.blur)
+        ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(args.blur)
         # TODO Add SIGF in case of half maps, when refmac is ready
         ret["lab_phi_half1"] = "Pmap1"
-        ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(blur0)
+        ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(args.blur)
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
         hkldata.df[sig_lab] = 0.
@@ -496,15 +370,15 @@ def main(args, monlib=None):
         mtzout = args.output_masked_prefix+"_obs.mtz"
 
     hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
-    if "shifts" in ret and args.no_shift:
+    if "shifts" in ret:
         for lab in map_labs: # apply phase shift
             logger.writeln("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
             hkldata.translate(lab, -ret["shifts"])
         
     write_map_mtz(hkldata, mtzout,
-                  map_labs=map_labs, sig_lab=sig_lab, blurs=args.blur)
+                  map_labs=map_labs, sig_lab=sig_lab, blur=args.blur)
     ret["mtz_file"] = mtzout
-    ret["lab_f"] = "Fout" + lab_f_suffix(blur0)
+    ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
     ret["lab_phi"] = "Pout"
     return ret
 # main()

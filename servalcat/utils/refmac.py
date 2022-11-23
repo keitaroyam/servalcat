@@ -590,7 +590,6 @@ class Refmac:
         self.jellybody_sigma, self.jellybody_dmax = args.jellybody_params
         self.resolution = args.resolution
         self.weight_auto_scale = args.weight_auto_scale
-        self.weight_matrix = args.weight_matrix
         self.keyword_files = args.keyword_file
         self.keywords = args.keywords
         self.external_restraints_json = args.external_restraints_json

@@ -53,8 +53,6 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--weight_auto_scale', type=float,
                        help="'weight auto' scale value. automatically determined from resolution and mask/box volume ratio if unspecified")
-    group.add_argument('--weight_matrix', type=float,
-                       help="weight matrix value")
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -88,7 +86,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
-             blur=None, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
+             blur=0, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
         assert len(maps) == 2
@@ -132,7 +130,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
                                                       miller_array=hkldata.miller_array())
         labs_fc.append("FC_sr")
 
-    if blur is not None:
+    if blur != 0:
         logger.writeln(" Unblurring Fc with B={} for FSC calculation".format(blur))
         unblur = numpy.exp(blur/hkldata.d_spacings().to_numpy()**2/4.)
         for lab in labs_fc:
@@ -280,14 +278,16 @@ def main(args):
             
     if args.keywords:
         args.keywords = sum(args.keywords, [])
+    else:
+        args.keywords = []
 
     chain_id_lens = [len(x) for x in utils.model.all_chain_ids(st)]
     keep_chain_ids = (chain_id_lens and max(chain_id_lens) == 1) # always kept unless one-letter chain IDs
 
     # FIXME if mtz is given and sfcalc() not ran?
-    has_ncsc = "ncsc_file" in file_info
+    has_ncsc = "ncsc" in file_info
     if has_ncsc:
-        args.keyword_file.append(file_info["ncsc_file"])
+        args.keywords.extend(file_info["ncsc"]) # will change this later (not a file)
 
     if not args.no_trim:
         refmac_prefix = "{}_{}".format(args.shifted_model_prefix, args.output_prefix)
@@ -295,7 +295,7 @@ def main(args):
         refmac_prefix = args.output_prefix # XXX this should be different name (nomask etc?)
 
     # Weight auto scale
-    if args.weight_matrix is None and args.weight_auto_scale is None:
+    if args.weight_auto_scale is None:
         reso = file_info["d_eff"] if "d_eff" in file_info else args.resolution
         if "vol_ratio" in file_info:
             if "d_eff" in file_info:
@@ -313,14 +313,6 @@ def main(args):
             ws =  rlmc[0] + args.resolution*rlmc[1]
         args.weight_auto_scale = max(0.2, min(18.0, ws))
         logger.writeln(" Will use weight auto {:.2f}".format(args.weight_auto_scale))
-
-    # Take care of TLS in
-    if args.tlsin and not args.no_shift and "shifts" in file_info:
-        logger.writeln("Shifting origin in tlsin")
-        tlsgroups = utils.refmac.read_tls_file(args.tlsin)
-        spa.shiftback.shift_back_tls(tlsgroups, -file_info["shifts"]) # tlsgroups is modified
-        args.tlsin = "shifted.tls"
-        utils.refmac.write_tls_file(tlsgroups, args.tlsin)
         
     # Run Refmac
     refmac = utils.refmac.Refmac(prefix=refmac_prefix, args=args, global_mode="spa",
@@ -347,8 +339,6 @@ def main(args):
 
     if not args.no_trim:
         st.cell = maps[0][0].unit_cell
-        if not args.no_shift:
-            spa.shiftback.shift_back_model(st, file_info["shifts"]) # st is modified
     
     if "refmac_fixes" in file_info:
         file_info["refmac_fixes"].modify_back(st)
@@ -360,14 +350,8 @@ def main(args):
     if not args.no_trim: # if no_trim, there is nothing to do.
         tlsout = refmac.tlsout()
         if os.path.exists(tlsout):
-            if not args.no_shift:
-                logger.writeln("Shifting origin in tlsout")
-                tlsgroups = utils.refmac.read_tls_file(tlsout)
-                spa.shiftback.shift_back_tls(tlsgroups, file_info["shifts"]) # tlsgroups is modified
-                utils.refmac.write_tls_file(tlsgroups, args.output_prefix+".tls")
-            else:
-                logger.writeln("Copying tlsout")
-                shutil.copyfile(refmac.tlsout(), args.output_prefix+".tls")
+            logger.writeln("Copying tlsout")
+            shutil.copyfile(refmac.tlsout(), args.output_prefix+".tls")
 
     # Expand sym here
     st_expanded = st.clone()
@@ -402,8 +386,6 @@ def main(args):
         st_sr.setup_entities()
         if not args.no_trim:
             st_sr.cell = maps[0][0].unit_cell
-            if not args.no_shift:
-                spa.shiftback.shift_back_model(st_sr, file_info["shifts"])
             
         if "refmac_fixes" in file_info:
             file_info["refmac_fixes"].modify_back(st_sr)
@@ -434,7 +416,7 @@ def main(args):
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
                            make_hydrogen=args.hydrogen,
                            monlib=monlib, cross_validation=args.cross_validation,
-                           blur=args.blur[0] if args.blur else None,
+                           blur=args.blur,
                            d_min_fsc=args.fsc_resolution,
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 

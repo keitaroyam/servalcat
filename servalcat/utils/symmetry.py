@@ -206,28 +206,6 @@ def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1
     return ops
 # generate_helical_operators()
 
-"""
-def write_ncsc_for_refmac(file_name, matrices, xyz_in=None, map_in=None):
-    if xyz_in:
-        st = gemmi.read_structure(xyz_in)
-        cell = st.cell
-    if map_in:
-        ma = gemmi.read_ccp4_map(map_in)
-        cell = ma.grid.unit_cell
-        
-    A = numpy.array(cell.orthogonalization_matrix.tolist())
-    center = numpy.sum(A,axis=1) / 2
-    
-    ofs = open(file_name, "w")
-    for m in matrices:
-        transl = numpy.dot(m, -center) + center
-        m_str = " ".join([str(x) for x in m.flatten()])
-        t_str = " ".join([str(x) for x in transl])
-        ofs.write("ncsc matrix {} {}\n".format(m_str, t_str))
-    ofs.close()
-# write_ncsc_for_refmac()
-"""
-
 def make_NcsOps_from_matrices(matrices, cell=None, center=None):
     if center is None:
         A = numpy.array(cell.orthogonalization_matrix.tolist())
@@ -250,23 +228,22 @@ def find_center_of_origin(mat, vec): # may not be unique.
     return gemmi.Vec3(*ret)
 # find_center_of_origin()
 
-def write_NcsOps_for_refmac(ncs_ops, file_name):
+def ncs_ops_for_refmac(ncs_ops):
     def make_line(tr):
         m = tr.mat.tolist()
         m_str = " ".join([str(m[i][j]) for i in range(3) for j in range(3)])
         t_str = " ".join([str(x) for x in tr.vec.tolist()])
-        return "ncsc matrix {} {}\n".format(m_str, t_str)
+        return "ncsc matrix {} {}".format(m_str, t_str)
     
-    ofs = open(file_name, "w")
-
+    ret = []
     # REFMAC requires identity op
-    if not any([x.tr.is_identity() for x in ncs_ops]):
-        ofs.write(make_line(gemmi.Transform()))
+    if not any(x.tr.is_identity() for x in ncs_ops):
+        ret.append(make_line(gemmi.Transform()))
 
     for op in ncs_ops:
-        if not op.given: ofs.write(make_line(op.tr))
-    ofs.close()
-# write_NcsOps_for_refmac()
+        if not op.given: ret.append(make_line(op.tr))
+    return ret
+# ncs_ops_for_refmac()
 
 # TODO def euler2matrix(euler):
 # TODO def polar2matrix(polar):

@@ -523,7 +523,7 @@ class HklData:
                                                          self.cell.fractionalize(shift).tolist()))
     # translate()
 
-    def write_mtz(self, mtz_out, labs, types=None):
+    def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None):
         if types is None: types = {}
         ndata = sum(2 if numpy.iscomplexobj(self.df[lab]) else 1 for lab in labs)
 
@@ -548,7 +548,11 @@ class HklData:
         for lab in labs:
             if numpy.iscomplexobj(self.df[lab]):
                 mtz.add_column(lab, "F")
-                mtz.add_column(("PH"+lab).replace("FWT", "WT"), "P")
+                if phase_label_decorator is None:
+                    plab = ("PH"+lab).replace("FWT", "WT")
+                else:
+                    plab = phase_label_decorator(lab)
+                mtz.add_column(plab, "P")
             else:
                 typ = types.get(lab)
                 if typ is None:
