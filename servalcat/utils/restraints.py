@@ -297,7 +297,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             m.conn.link_id = m.chem_link.id
             if m.conn in conns: # may not be found if id duplicated
                 conns.pop(conns.index(m.conn))
-        else:
+        elif add_found:
             # Known link is only accepted when in LINK record
             if not m.chem_link or m.chem_link.id in known_links:
                 continue

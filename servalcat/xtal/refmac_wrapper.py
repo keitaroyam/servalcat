@@ -93,14 +93,12 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
         raise SystemExit("Error: {}".format(e))
 
     if make.get("cispept", "y") == "y": st.assign_cis_flags()
-    if make.get("link", "n") == "y": # TODO support it correctly, and also make link define. what is 0?
-        #utils.restraints.find_and_fix_links(st, monlib) # TODO fix for unknown links
-        logger.writeln("Make link yes specified. Finding links..")
-        before = len(st.connections)
-        gemmi.add_automatic_links(st[0], st, monlib)
-        for i in range(before, len(st.connections)):
-            con = st.connections[i]
-            logger.writeln(" automatic link: {} - {} id= {}".format(con.partner1, con.partner2, con.link_id))
+
+    utils.restraints.find_and_fix_links(st, monlib, add_found=(make.get("link", "n")=="y"))
+    for con in st.connections:
+        if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
+            logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
+            con.link_id = ""
 
     refmac_fixes = None
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
@@ -164,6 +162,12 @@ def modify_output(pdbout, cifout, fixes):
     st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
     if fixes is not None:
         fixes.modify_back(st)
+
+    # setup entities
+    st.add_entity_types(True)
+    st.assign_subchains(True)
+    st.ensure_entities()
+    st.deduplicate_entities()
 
     utils.fileio.write_mmcif(st, cifout, cifout)
     
