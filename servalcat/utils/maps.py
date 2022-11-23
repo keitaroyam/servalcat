@@ -24,13 +24,19 @@ def new_grid_like(gr):
 def copy_maps(maps):
     return [[type(m[0])(m[0].array, m[0].unit_cell, m[0].spacegroup)]+copy.deepcopy(m[1:]) for m in maps]
 
-def mask_from_model(st, radius, soft_edge=0, grid=None, unit_cell=None, spacegroup=None, grid_shape=None):
+def mask_from_model(st, radius, soft_edge=0, grid=None, unit_cell=None, spacegroup=None, grid_shape=None,
+                    ignore_hydrogen=True):
     if grid is not None:
         mask = new_grid_like(grid)
     else:
         mask = gemmi.FloatGrid(grid_shape)
         mask.set_unit_cell(unit_cell)
         mask.spacegroup = spacegroup
+
+    if ignore_hydrogen and st[0].has_hydrogen():
+        st = st.clone()
+        st.remove_hydrogens()
+
     mask.mask_points_in_constant_radius(st[0], radius, 1.)
     if soft_edge > 0: mask.add_soft_edge_to_mask(soft_edge)
     return mask

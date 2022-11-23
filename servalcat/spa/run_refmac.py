@@ -74,6 +74,8 @@ def add_arguments(parser):
                         help='Disable mask test using model')
     parser.add_argument("--prepare_only", action='store_true',
                         help="Stop before refinement")
+    parser.add_argument("--gemmi_prep", action='store_true',
+                        help="Use gemmi for crd/rst file preparation (do not use makecif)")
     # run_refmac options
     # TODO use group! like refmac options
     parser.add_argument('--ligand', nargs="*", action="append",
@@ -361,59 +363,62 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     
     st.cell = unit_cell
     st.spacegroup_hm = "P 1"
-    model_format = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
+    ret["model_format"] = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
 
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
-    if max_seq_num > 9999 and model_format == ".pdb":
+    if max_seq_num > 9999 and ret["model_format"] == ".pdb":
         logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
-        model_format = ".mmcif"
+        ret["model_format"] = ".mmcif"
 
-    if 1: # workaround for Refmac
-        # TODO need to check external restraints
-        st.entities.clear()
-        st.setup_entities()
+    # workaround for Refmac
+    # TODO need to check external restraints
+    st.entities.clear()
+    st.setup_entities()
+    if args.gemmi_prep:
+        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                    "yes":gemmi.HydrogenChange.NoChange,
+                    "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+        topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
+                                      reorder=True, ignore_unknown_links=False)
+    else:
         topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
-        ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                        fix_microheterogeneity=not args.no_fix_microheterogeneity,
-                                                        fix_resimax=not args.no_fix_resi9999,
-                                                        fix_nonpolymer=False)
-        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
-        if chain_id_len_max > 1 and model_format == ".pdb":
-            logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
-            model_format = ".mmcif"
-        if model_format == ".mmcif": ret["refmac_fixes"].fix_nonpolymer(st)
-        st.entities.clear()
-
-    ret["model_format"] = model_format
+    ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                    fix_microheterogeneity=not args.no_fix_microheterogeneity and not args.gemmi_prep,
+                                                    fix_resimax=not args.no_fix_resi9999,
+                                                    fix_nonpolymer=False)
+    chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+    if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
+        logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+        ret["model_format"] = ".mmcif"
+    if ret["model_format"] == ".mmcif" and not args.gemmi_prep: ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
         logger.writeln("Removing symmetry information from model.")
         st.ncs.clear()
     utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_contacting=args.contacting_only)
-    st_new = st.clone()
+    st_expanded = st.clone()
     if len(st.ncs) > 0:
         if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
             raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
                              "It is very likely you gave symmetry-expanded model along with symmetry operators.")
-
-        ret["ncsc"] = utils.symmetry.ncs_ops_for_refmac(st.ncs)
-        utils.model.expand_ncs(st)
+        args.keywords.extend(utils.symmetry.ncs_ops_for_refmac(st.ncs))
+        utils.model.expand_ncs(st_expanded)
         logger.writeln(" Saving expanded model: input_model_expanded.*")
-        utils.fileio.write_model(st, "input_model_expanded", pdb=True, cif=True)
+        utils.fileio.write_model(st_expanded, "input_model_expanded", pdb=True, cif=True)
 
     if mask is not None and not args.no_check_mask_with_model:
-        if not utils.maps.test_mask_with_model(mask, st):
+        if not utils.maps.test_mask_with_model(mask, st_expanded):
             raise SystemExit("\nError: Model is out of mask.\n"
                              "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
 
     if mask is None and args.mask_radius:
         logger.writeln("Creating mask..")
-        mask = utils.maps.mask_from_model(st, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
+        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
         utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
         
     logger.writeln(" Saving input model with unit cell information")
-    utils.fileio.write_model(st_new, "starting_model", pdb=True, cif=True)
-    ret["model_file"] = "starting_model" + model_format
+    utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+    ret["model_file"] = "starting_model" + ret["model_format"]
 
     if mask is not None:
         if args.invert_mask:
@@ -448,19 +453,29 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
             ret["vol_ratio"] = vol_mask/vol_map
             logger.writeln(" Vol_mask/Vol_map= {:.2e}".format(ret["vol_ratio"]))
             
-            if st_new:
-                st_new.cell = new_cell
-                st_new.spacegroup_hm = "P 1"
+            st.cell = new_cell
+            st.spacegroup_hm = "P 1"
 
-                logger.writeln(" Saving model in trimmed map..")
-                utils.fileio.write_model(st_new, shifted_model_prefix, pdb=True, cif=True)
-                ret["model_file"] = shifted_model_prefix + model_format
+            logger.writeln(" Saving model in trimmed map..")
+            utils.fileio.write_model(st, shifted_model_prefix, pdb=True, cif=True)
+            ret["model_file"] = shifted_model_prefix + ret["model_format"]
 
             logger.writeln(" Trimming maps..")
             for i in range(len(maps)): # Update maps
                 suba = maps[i][0].get_subarray(starts, new_shape)
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
+
+    if args.gemmi_prep:
+        # TODO: make cispept, make link, remove unknown link id
+        # TODO: cross validation?
+        crdout = os.path.splitext(ret["model_file"])[0] + ".crd"
+        ret["model_file"] = crdout
+        ret["model_format"] = ".mmcif"
+        args.keywords.append("make cr prepared")
+        doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
+        doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
+        logger.writeln("crd file written: {}".format(crdout))
 
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
@@ -521,6 +536,19 @@ def check_args(args):
         raise SystemExit("Error: --trim_fofc_mtz is specified but --mask_for_fofc is not given")
 
     if args.ligand: args.ligand = sum(args.ligand, [])
+
+    if args.keywords:
+        args.keywords = sum(args.keywords, [])
+    else:
+        args.keywords = []
+
+    if args.keyword_file:
+        args.keyword_file = sum(args.keyword_file, [])
+        for f in args.keyword_file:
+            logger.writeln("Keyword file: {}".format(f))
+            assert os.path.exists(f)
+    else:
+        args.keyword_file = []
 
     if (args.twist, args.rise).count(None) == 1:
         raise SystemExit("ERROR: give both helical paramters --twist and --rise")
@@ -601,7 +629,7 @@ def main(args):
     args.lab_phi = file_info["lab_phi"]  #"Pout0"
     args.lab_f = file_info["lab_f"]
     args.lab_sigf = None
-    args.model = file_info["model_file"]
+    args.model = file_info["model_file"] # refmac xyzin
     model_format = file_info["model_format"]
 
     if args.cross_validation and args.cross_validation_method == "throughout":
@@ -609,26 +637,10 @@ def main(args):
         args.lab_phi = file_info["lab_phi_half1"]
         # XXX args.lab_sigf?
 
-    if args.keyword_file:
-        args.keyword_file = sum(args.keyword_file, [])
-        for f in args.keyword_file:
-            logger.writeln("Keyword file: {}".format(f))
-            assert os.path.exists(f)
-    else:
-        args.keyword_file = []
-            
-    if args.keywords:
-        args.keywords = sum(args.keywords, [])
-    else:
-        args.keywords = []
-
     chain_id_lens = [len(x) for x in utils.model.all_chain_ids(st)]
     keep_chain_ids = (chain_id_lens and max(chain_id_lens) == 1) # always kept unless one-letter chain IDs
 
     # FIXME if mtz is given and sfcalc() not ran?
-    has_ncsc = "ncsc" in file_info
-    if has_ncsc:
-        args.keywords.extend(file_info["ncsc"]) # will change this later (not a file)
 
     if not args.no_trim:
         refmac_prefix = "{}_{}".format(shifted_model_prefix, args.output_prefix)
@@ -691,7 +703,7 @@ def main(args):
 
     # Expand sym here
     st_expanded = st.clone()
-    if has_ncsc:
+    if not all(op.given for op in st.ncs):
         utils.model.expand_ncs(st_expanded)
         utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded"+model_format,
                                  cif_ref=cif_ref)
@@ -731,7 +743,7 @@ def main(args):
 
         # Expand sym here
         st_sr_expanded = st_sr.clone()
-        if has_ncsc:
+        if not all(op.given for op in st_sr.ncs):
             utils.model.expand_ncs(st_sr_expanded)
             utils.fileio.write_model(st_sr_expanded, file_name=args.output_prefix+"shaken_refined_expanded"+model_format,
                                      cif_ref=cif_ref_sr)
