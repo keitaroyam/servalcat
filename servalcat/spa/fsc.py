@@ -151,7 +151,7 @@ def main(args):
         else:
             logger.writeln("Sharpen-mask-unsharpen..")
             b_before_mask = args.b_before_mask
-            if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
+            if b_before_mask is None: b_before_mask = spa.run_refmac.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
 
     if not args.mtz:

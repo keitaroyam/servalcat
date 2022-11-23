@@ -17,7 +17,6 @@ import gemmi
 import numpy
 import scipy
 import pandas
-import servalcat.spa.sfcalc
 import servalcat.spa.shiftback
 import servalcat.spa.run_refmac
 import servalcat.spa.fsc
@@ -78,8 +77,7 @@ def main():
                                                                                              deps=", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
     subparsers = parser.add_subparsers(dest="command")
 
-    modules = dict(sfcalc=servalcat.spa.sfcalc,
-                   shiftback=servalcat.spa.shiftback,
+    modules = dict(shiftback=servalcat.spa.shiftback,
                    refine_spa=servalcat.spa.run_refmac,
                    refine_cx=servalcat.xtal.run_refmac_small,
                    fsc=servalcat.spa.fsc,

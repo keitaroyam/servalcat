@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import copy
 import scipy.optimize
 import scipy.signal
 from servalcat.utils import logger
@@ -19,6 +20,9 @@ def new_grid_like(gr):
     newgr.spacegroup = gr.spacegroup
     return newgr
 # new_grid_like()
+
+def copy_maps(maps):
+    return [[type(m[0])(m[0].array, m[0].unit_cell, m[0].spacegroup)]+copy.deepcopy(m[1:]) for m in maps]
 
 def mask_from_model(st, radius, soft_edge=0, grid=None, unit_cell=None, spacegroup=None, grid_shape=None):
     if grid is not None:
