@@ -518,6 +518,9 @@ Weight used: {final_weight}
              
 Open refined model and diffmap.mtz with COOT:
 coot --script {prefix}_coot.py
+
+List Fo-Fc map peaks in the ASU:
+servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model refined.pdb --abs_level 4.0
 =============================================================================
 """.format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
            rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
