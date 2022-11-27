@@ -22,28 +22,19 @@ def add_arguments(parser):
     parser.add_argument('--map',
                         help='Input map file(s)')
     parser.add_argument('--mtz',
-                        help='Input mtz file. Mask is not supported.')
+                        help='Input mtz file.')
     parser.add_argument('--labin', nargs=2,
-                        help='label for mtz')
+                        help='label (F and PHI) for mtz')
     parser.add_argument("--halfmaps",  nargs=2)
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--mask', help='Mask file')
-    parser.add_argument('-r', '--mask_radius',
-                        type=float,
-                        help='')
-    parser.add_argument('--mask_soft_edge',
-                        type=float, default=0,
-                        help='Add soft edge to model mask')
     parser.add_argument('-d', '--resolution',
                         type=float,
                         help='Default: Nyquist')
     parser.add_argument('-o', '--fsc_out',
-                        default="fsc.dat",
+                        default="fsc.dat", # TODO csv
                         help='')
-    parser.add_argument("--b_before_mask", type=float)
-    parser.add_argument('--no_sharpen_before_mask', action='store_true',
-                        help='By default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -99,30 +90,38 @@ def calc_fsc(hkldata, labs_fc, lab_f, labs_half=None):
 
 def main(args):
     args.model = sum(args.model, [])
+    
+    if args.mask:
+        logger.write("Input mask file: {}".format(args.mask))
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
+    else:
+        mask = None
+        
     if args.halfmaps:
         maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
-        assert maps[0][0].shape == maps[1][0].shape
-        assert maps[0][0].unit_cell == maps[1][0].unit_cell
-        assert maps[0][1] == maps[1][1]
         unit_cell = maps[0][0].unit_cell
     elif args.map:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         unit_cell = maps[0][0].unit_cell
     elif args.mtz:
-        if args.mask or args.mask_radius is not None:
-            raise SystemExit("mask for mtz input not supported.")
-        f = utils.fileio.read_asu_data_from_mtz(args.mtz, args.labin)
-        hkldata = utils.hkl.hkldata_from_asu_data(f, "FP")
-        maps = []
-        unit_cell = hkldata.cell
-        if args.resolution is not None:
-            hkldata = hkldata.copy(d_min=args.resolution)
-        else:
-            args.resolution = hkldata.d_min_max()[0] # plus eps maybe
+        mtz = gemmi.read_mtz_file(args.mtz)
+        if mask is not None and mask.unit_cell != mtz.cell:
+            raise SystemExit("Error: Inconsistent unit cell between mtz and mask")
+        gr = mtz.transform_f_phi_to_map(f=args.labin[0],
+                                        phi=args.labin[1],
+                                        exact_size=mask.shape if mask is not None else (0,0,0),
+                                        sample_rate=3 if mask is None else 0)
+        maps = [[gr, [0,0,0]]]
+        unit_cell = mtz.cell # TODO check cell of given label
+        d_min = numpy.min(mtz.make_d_array()[~numpy.isnan(mtz.column_with_label(args.labin[0]).array)])
+        if args.resolution is None:
+            args.resolution = d_min
+        elif args.resolution < d_min:
+            raise SystemExit("Error: --resolution ({}) is higher than actual resolution in mtz ({:.2f}).".format(args.resolution, d_min))
     else:
-        raise SystemExit("No input map/mtz found.")
+        raise SystemExit("Error: No input map/mtz found.")
 
-    if args.resolution is None and not args.mtz:
+    if args.resolution is None:
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])
         logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
         
@@ -136,26 +135,11 @@ def main(args):
             
         sts.append(st)
     
-    if args.mask:
-        logger.write("Input mask file: {}".format(args.mask))
-        mask = utils.fileio.read_ccp4_map(args.mask)[0]
-    elif args.mask_radius is not None: # TODO use different mask for different model! by chain as well!
-        mask = utils.maps.mask_from_model(st, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
-    else:
-        mask = None
-    
     if mask is not None:
-        if args.no_sharpen_before_mask or len(maps) < 2:
-            logger.write("Applying mask..")
-            for ma in maps: ma[0].array[:] *= mask
-        else:
-            logger.write("Sharpen-mask-unsharpen..")
-            b_before_mask = args.b_before_mask
-            if b_before_mask is None: b_before_mask = spa.sfcalc.determine_b_before_mask(st, maps, maps[0][1], mask, args.resolution)
-            maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=b_before_mask)
+        logger.write("Applying mask..")
+        for ma in maps: ma[0].array[:] *= mask
 
-    if not args.mtz:
-        hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
+    hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution)
 
     labs_fc = []
     for i, st in enumerate(sts): 
@@ -168,8 +152,6 @@ def main(args):
     with open(args.fsc_out, "w") as ofs:
         if args.mask:
             ofs.write("# Mask= {}\n".format(args.mask))
-        elif args.mask_radius:
-            ofs.write("# Mask_radius= {} soft_edge= {}\n".format(args.mask_radius, args.mask_soft_edge))
         for lab, xyzin in zip(labs_fc, args.model):
             ofs.write("# {} from {}\n".format(lab, xyzin))
 
