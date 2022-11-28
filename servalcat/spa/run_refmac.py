@@ -139,13 +139,13 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             hkldata.df[lab] *= unblur
     
     hkldata.setup_relion_binning()
-    stats = spa.fsc.calc_fsc(hkldata, labs_fc=labs_fc, lab_f="FP",
-                             labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
+    stats = spa.fsc.calc_fsc_all(hkldata, labs_fc=labs_fc, lab_f="FP",
+                                 labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
 
     hkldata2 = hkldata.copy(d_min=d_min) # for FSCaverage at resolution for refinement # XXX more efficient way
     hkldata2.setup_relion_binning()
-    stats2 = spa.fsc.calc_fsc(hkldata2, labs_fc=labs_fc, lab_f="FP",
-                              labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
+    stats2 = spa.fsc.calc_fsc_all(hkldata2, labs_fc=labs_fc, lab_f="FP",
+                                  labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
     
     if "fsc_half" in stats:
         with numpy.errstate(invalid="ignore"): # XXX negative fsc results in nan!
