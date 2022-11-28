@@ -281,6 +281,7 @@ class HklData:
         bin_ranges = {}
         modify_table = {}
         for i_bin, g in self.df.groupby("bin", sort=True):
+            if i_bin == 0: continue # ignore DC component
             bin_counts.append([i_bin, g.index])
             bin_ranges[i_bin] = (numpy.max(g.d), numpy.min(g.d))
 

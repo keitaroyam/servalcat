@@ -29,6 +29,7 @@ def add_arguments(parser):
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--mask', help='Mask file')
+    utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('-d', '--resolution',
                         type=float,
                         help='Default: Nyquist')
@@ -127,7 +128,7 @@ def calc_phase_randomized_fsc(hkldata, mask, labs_half, labs_half_masked, random
 
     # Multiply mask
     for i in range(2):
-        g = hkldata.fft_map(data=f_rands[i], grid_size=mask.shape) # XXX F000
+        g = hkldata.fft_map(data=f_rands[i], grid_size=mask.shape)
         g.array[:] *= mask
         fg = gemmi.transform_map_to_f_phi(g)
         f_rands[i] = fg.get_value_by_hkl(hkldata.miller_array())
@@ -251,6 +252,7 @@ def main(args):
         st = utils.fileio.read_structure(xyzin)
         st.cell = unit_cell
         st.spacegroup_hm = "P1"
+        utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0])
         if len(st.ncs) > 0:
             utils.model.expand_ncs(st)
             
@@ -271,7 +273,7 @@ def main(args):
             f_grid = gemmi.transform_map_to_f_phi(g)
 
             if hkldata is None:
-                asudata = f_grid.prepare_asu_data(dmin=args.resolution)
+                asudata = f_grid.prepare_asu_data(dmin=args.resolution, with_000=True)
                 hkldata = utils.hkl.hkldata_from_asu_data(asudata, lab + lab_suffix)
             else:
                 hkldata.df[lab + lab_suffix] = f_grid.get_value_by_hkl(hkldata.miller_array())
@@ -295,8 +297,12 @@ def main(args):
         labs_fc.append("FC_{}".format(i) if len(sts)>1 else "FC")
         hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st, args.resolution - 1e-6, source="electron",
                                                           miller_array=hkldata.miller_array())
-        # TODO apply mask to Fc map
-        
+        if mask is not None: # TODO F000
+            g = hkldata.fft_map(labs_fc[-1], grid_size=mask.shape)
+            g.array[:] *= mask
+            fg = gemmi.transform_map_to_f_phi(g)
+            hkldata.df[labs_fc[-1]] = fg.get_value_by_hkl(hkldata.miller_array())
+
     hkldata.setup_relion_binning()
     stats = calc_fsc_all(hkldata, labs_fc=labs_fc, lab_f=lab_f,
                          labs_half=labs_half_masked if mask is not None else labs_half,
