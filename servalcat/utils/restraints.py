@@ -321,12 +321,24 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             i = con_idxes.get(con)
             if i is not None: rm_idxes.append(i)
             
-        at1, at2 = st[0].find_cra(con.partner1).atom, st[0].find_cra(con.partner2).atom
-        if None in (at1, at2):
+        cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
+        if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
             continue
-        dist = at1.pos.dist(at2.pos)
-        logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
+        dist = cra1.atom.pos.dist(cra2.atom.pos)
+        m, swap = monlib.match_link(cra1.residue, cra1.atom.name, cra2.residue, cra2.atom.name,
+                                    cra1.atom.altloc if cra1.atom.altloc!="\0" else cra2.atom.altloc)
+        if m:
+            if swap:
+                con.partner1 = model.cra_to_atomaddress(cra2)
+                con.partner2 = model.cra_to_atomaddress(cra1)
+            con.link_id = m.id
+            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.id,
+                                                                                                       cra1, cra2,
+                                                                                                       dist,
+                                                                                                       m.rt.bonds[0].value))
+        else:
+            logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
 
     if remove_unknown:
         for i in sorted(rm_idxes, reverse=True):
