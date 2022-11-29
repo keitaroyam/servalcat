@@ -815,19 +815,12 @@ def main(args):
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
 
     # Create Coot script
-    with open("{}_coot.py".format(args.output_prefix), "w") as ofs:
-        ofs.write('imol = read_pdb("{}.pdb")\n'.format(args.output_prefix)) # as Coot is not good at mmcif file..
-        ofs.write('imol_fo = make_and_draw_map("diffmap.mtz", "FWT", "PHWT", "", 0, 0)\n')
-        ofs.write('imol_fofc = make_and_draw_map("diffmap.mtz", "DELFWT", "PHDELWT", "", 0, 1)\n')
-        if mask is not None:
-            ofs.write('set_contour_level_absolute(imol_fo, 1.2)\n')
-            ofs.write('set_contour_level_absolute(imol_fofc, 3.0)\n')
-        for op in st.ncs:
-            if op.given: continue
-            c = utils.symmetry.find_center_of_origin(op.tr.mat, op.tr.vec)
-            v = [y for x in op.tr.mat.tolist() for y in x] + c.tolist()
-            ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
-        
+    spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
+                               model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
+                               mtz_file="diffmap.mtz",
+                               contour_fo=None if mask is None else 1.2,
+                               contour_fofc=None if mask is None else 3.0,
+                               ncs_ops=st.ncs)
     logger.writeln("""
 =============================================================================
 * Final Summary *

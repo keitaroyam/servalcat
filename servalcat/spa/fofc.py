@@ -355,6 +355,23 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
     if stats_str: open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
 # write_files()
 
+def write_coot_script(py_out, model_file, mtz_file, contour_fo=1.2, contour_fofc=3.0, ncs_ops=None):
+    with open(py_out, "w") as ofs:
+        ofs.write('imol = read_pdb("{}")\n'.format(model_file)) # TODO safer
+        ofs.write('imol_fo = make_and_draw_map("{}", "FWT", "PHWT", "", 0, 0)\n'.format(mtz_file))
+        ofs.write('imol_fofc = make_and_draw_map("{}", "DELFWT", "PHDELWT", "", 0, 1)\n'.format(mtz_file))
+        if contour_fo is not None:
+            ofs.write('set_contour_level_absolute(imol_fo, {:.1f})\n'.format(contour_fo))
+        if contour_fofc is not None:
+            ofs.write('set_contour_level_absolute(imol_fofc, {:.1f})\n'.format(contour_fofc))
+        if ncs_ops is not None:
+            for op in ncs_ops:
+                if op.given: continue
+                c = utils.symmetry.find_center_of_origin(op.tr.mat, op.tr.vec)
+                v = [y for x in op.tr.mat.tolist() for y in x] + c.tolist()
+                ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
+# write_coot_script()
+
 def main(args):
     if not args.halfmaps and not args.map:
         raise SystemExit("Error: give --halfmaps or --map")
@@ -374,6 +391,7 @@ def main(args):
         logger.error("Warning: using --halfmaps is strongly recommended!")
 
     st = utils.fileio.read_structure(args.model)
+    ncs_org = gemmi.NcsOpList(st.ncs)
     utils.model.expand_ncs(st)
 
     if (args.omit_proton or args.omit_h_electron) and not st[0].has_hydrogen():
@@ -416,7 +434,18 @@ def main(args):
     write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=mask, output_prefix=args.output_prefix,
                 trim_map=args.trim, trim_mtz=args.trim_mtz, omit_h_electron=args.omit_h_electron)
-    
+
+    py_out = "{}_coot.py".format(args.output_prefix)
+    write_coot_script(py_out, model_file=args.model,
+                      mtz_file=args.output_prefix+".mtz",
+                      contour_fo=None if mask is None else 1.2,
+                      contour_fofc=None if mask is None else 3.0,
+                      ncs_ops=ncs_org)
+    logger.writeln("\nOpen model and diffmap.mtz with COOT:")
+    logger.writeln("coot --script " + py_out)
+    if mask is not None:
+        logger.writeln("\nWant to list Fo-Fc map peaks? Try:")
+        logger.writeln("servalcat util map_peaks --map {}_normalized_fofc.mrc --model {} --abs_level 4.0".format(args.output_prefix, args.model))
 # main()
 
 if __name__ == "__main__":
