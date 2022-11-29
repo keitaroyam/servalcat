@@ -93,6 +93,23 @@ def add_arguments(p):
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
+    # map_peaks
+    parser = subparsers.add_parser("map_peaks", description = 'List density peaks and write a coot script')
+    parser.add_argument('--model', required=True, help="Model")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--map', help="Map file")
+    group.add_argument('--mtz', help="MTZ for map file")
+    parser.add_argument('--mtz_labels', default="DELFWT,PHDELWT", help='F,PHI labels (default: %(default)s)')
+    parser.add_argument('--oversample_pixel', type=float, help='Desired pixel spacing in map (Angstrom)')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--sigma_level', type=float, help="Threshold map level in sigma unit")
+    group.add_argument('--abs_level', type=float, help="Threshold map level in absolute unit")
+    parser.add_argument('--blob_pos', choices=["peak", "centroid"], default="centroid",
+                       help="default: %(default)s")
+    parser.add_argument('--min_volume', type=float, default=0.3, help="minimum blob volume (default: %(default).1f)")
+    parser.add_argument('--max_volume', type=float, help="maximum blob volume (default: none)")
+    parser.add_argument('-o','--output_prefix', default="peaks")
+    
     # h_density
     parser = subparsers.add_parser("h_density", description = 'Hydrogen density analysis')
     parser.add_argument('--model', required=True, help="Model with hydrogen atoms")
@@ -414,6 +431,148 @@ def h_add(args):
     fileio.write_model(st, file_name=args.output)
 # h_add()
 
+def read_map_and_oversample(map_in=None, mtz_in=None, mtz_labs=None, oversample_pixel=None):
+    if mtz_in is not None:
+        mtz = gemmi.read_mtz_file(mtz_in)
+        lab_f, lab_phi = mtz_labs.split(",")
+        asu = mtz.get_f_phi(lab_f, lab_phi)
+        if oversample_pixel is not None:
+            d_min = numpy.min(asu.make_d_array())
+            sample_rate = d_min / oversample_pixel
+        else:
+            sample_rate = 3
+        gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
+    elif map_in is not None:
+        gr = fileio.read_ccp4_map(map_in)[0]
+        if oversample_pixel is not None:
+            asu = gemmi.transform_map_to_f_phi(gr).prepare_asu_data()
+            d_min = numpy.min(asu.make_d_array())
+            sample_rate = d_min / oversample_pixel
+            gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
+    else:
+        raise SystemExit("Invalid input")
+    
+    if oversample_pixel is not None:
+        logger.writeln("--oversample_pixel= {} is requested.".format(oversample_pixel))
+        logger.writeln(" recalculated grid:")
+        logger.writeln("  {:4d} {:4d} {:4d}".format(*gr.shape))
+        logger.writeln(" spacings:")
+        logger.writeln("  {:.6f} {:.6f} {:.6f}".format(*gr.spacing))
+        #maps.write_ccp4_map("{}_oversampled.mrc".format(output_prefix), gr)
+
+    return gr
+# read_map_and_oversample()    
+
+def map_peaks(args):
+    st = fileio.read_structure(args.model)
+    gr = read_map_and_oversample(map_in=args.map, mtz_in=args.mtz, mtz_labs=args.mtz_labels,
+                                 oversample_pixel=args.oversample_pixel)
+    if args.abs_level is not None:
+        cutoff = args.abs_level
+    else:
+        cutoff = args.sigma_level * numpy.std(gr) # assuming mean(gr) = 0
+        
+    blobs = gemmi.find_blobs_by_flood_fill(gr, cutoff,
+                                           min_volume=args.min_volume, min_score=0)
+    getpos = dict(peak=lambda x: x.peak_pos,
+                  centroid=lambda x: x.centroid)[args.blob_pos]
+    st_peaks = model.st_from_positions([getpos(b) for b in blobs])
+    st_peaks.cell = st.cell
+    st_peaks.ncs = st.ncs
+    st_peaks.setup_cell_images()
+    logger.writeln("{} peaks detected".format(len(blobs)))
+    #st_peaks.write_pdb("peaks.pdb")
+    
+    # Filter symmetry related
+    ns = gemmi.NeighborSearch(st_peaks[0], st_peaks.cell, 5.).populate()
+    cs = gemmi.ContactSearch(1.)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+    results = cs.find_contacts(ns)
+    del_idxes = set()
+    for r in results:
+        if r.partner1.residue.seqid.num not in del_idxes:
+            del_idxes.add(r.partner2.residue.seqid.num)
+    for i in reversed(sorted(del_idxes)):
+        del st_peaks[0][0][i]
+        del blobs[i]
+    #st_peaks.write_pdb("peaks_asu.pdb")
+    logger.writeln("{} peaks after removing symmetry equivalents".format(len(blobs)))
+
+    # Assign to nearest atom
+    ns = gemmi.NeighborSearch(st[0], st.cell, 10.).populate() # blob is rejected if > 10 A. ok?
+    peaks = []
+    for b in blobs:
+        bpos = getpos(b)
+        map_val = gr.interpolate_value(bpos)
+        if (args.max_volume is not None and b.volume > args.max_volume) or map_val < cutoff: continue
+        x = ns.find_nearest_atom(bpos)
+        if x is None:
+            logger.writeln("too far from model: value={:.2f} volume= {} pos= {}".format(map_val, b.volume, bpos))
+            continue
+        chain = st[0][x.chain_idx]
+        res = chain[x.residue_idx]
+        atom = res[x.atom_idx]
+        mpos = st.cell.find_nearest_pbc_position(atom.pos, bpos, x.image_idx) # does it work with image_idx!=0?
+        dist = atom.pos.dist(mpos)
+        peaks.append((map_val, b.volume, mpos, dist, chain, res, atom))
+
+    if len(peaks) == 0:
+        logger.writeln("No peaks found. Change parameter(s).")
+        return
+        
+    # Print and write coot script
+    peaks.sort(reverse=True)
+    for_coot = []
+    for i, p in enumerate(peaks):
+        map_val, volume, mpos, dist, chain, res, atom = p
+        mpos_str = "({: 7.2f},{: 7.2f},{: 7.2f})".format(mpos.x, mpos.y, mpos.z)
+        atom_str = "{}/{}/{}{}".format(chain.name, res.seqid, atom.name, "."+atom.altloc if atom.altloc!="\0" else "")
+        lab_str = "Peak {:4d} value= {:5.2f} volume= {:5.1f} pos= {} closest= {:10s} dist= {:.2f}".format(i+1, map_val, volume, mpos_str, atom_str, dist)
+        logger.writeln(lab_str)
+        for_coot.append((lab_str, (mpos.x, mpos.y, mpos.z)))
+    coot_out = args.output_prefix + "_coot.py"
+    with open(coot_out, "w") as ofs:
+        ofs.write("""\
+from __future__ import absolute_import, division, print_function
+import gtk
+""")
+        ofs.write("data = {}\n".format(for_coot))
+        ofs.write("""\
+class coot_serval_map_peak_list:
+  def __init__(self):
+    window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+    window.set_title("Map peaks (Servalcat)")
+    window.set_default_size(600, 600)
+    scrolled_win = gtk.ScrolledWindow()
+    scrolled_win.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
+    vbox = gtk.VBox(False, 2)
+    frame_vbox = gtk.VBox(False, 0)
+    frame_vbox.set_border_width(3)
+    self.btns = []
+    self.add_data(frame_vbox)
+    scrolled_win.add_with_viewport(frame_vbox)
+    vbox.pack_start(scrolled_win, True, True, 0)
+    window.add(vbox)
+    window.show_all()
+    self.toggled(self.btns[0], 0)
+
+  def toggled(self, btn, i):
+    if btn.get_active():
+      set_rotation_centre(*data[i][1])
+      add_status_bar_text(data[i][0])
+
+  def add_data(self, vbox):
+    for i, d in enumerate(data):
+      self.btns.append(gtk.RadioButton(None if i == 0 else self.btns[0], d[0]))
+      vbox.pack_start(self.btns[-1], False, False, 0)
+      self.btns[-1].connect('toggled', self.toggled, i)
+
+gui = coot_serval_map_peak_list()
+""")
+    logger.writeln("\nRun:")
+    logger.writeln("coot --script {}".format(coot_out))
+# map_peaks()
+
 def h_density_analysis(args):
     #if args.source != "electron":
     #    raise SystemExit("Only electron source is supported.")
@@ -425,34 +584,9 @@ def h_density_analysis(args):
     if args.output_prefix is None:
         args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_hana"
 
-    if args.mtz is not None:
-        mtz = gemmi.read_mtz_file(args.mtz)
-        lab_f, lab_phi = args.mtz_labels.split(",")
-        asu = mtz.get_f_phi(lab_f, lab_phi)
-        if args.oversample_pixel is not None:
-            d_min = numpy.min(asu.make_d_array())
-            sample_rate = d_min / args.oversample_pixel
-        else:
-            sample_rate = 3
-        gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
-    elif args.map is not None:
-        gr = fileio.read_ccp4_map(args.map)[0]
-        if args.oversample_pixel is not None:
-            asu = gemmi.transform_map_to_f_phi(gr).prepare_asu_data()
-            d_min = numpy.min(asu.make_d_array())
-            sample_rate = d_min / args.oversample_pixel
-            gr = asu.transform_f_phi_to_map(sample_rate=sample_rate)
-    else:
-        raise SystemExit("Invalid input")
-
-    if args.oversample_pixel is not None:
-        logger.writeln("--oversample_pixel= {} is requested.".format(args.oversample_pixel))
-        logger.writeln(" recalculated grid:")
-        logger.writeln("  {:4d} {:4d} {:4d}".format(*gr.shape))
-        logger.writeln(" spacings:")
-        logger.writeln("  {:.6f} {:.6f} {:.6f}".format(*gr.spacing))
-        #maps.write_ccp4_map("{}_oversampled.mrc".format(args.output_prefix), gr)
-
+    gr = read_map_and_oversample(map_in=args.map, mtz_in=args.mtz, mtz_labs=args.mtz_labels,
+                                 oversample_pixel=args.oversample_pixel)
+                            
     if args.abs_level is not None:
         cutoff = args.abs_level
     else:
@@ -805,6 +939,7 @@ def main(args):
                  helical_biomt=helical_biomt,
                  expand=symexpand,
                  h_add=h_add,
+                 map_peaks=map_peaks,
                  h_density=h_density_analysis,
                  fix_link=fix_link,
                  merge_models=merge_models,

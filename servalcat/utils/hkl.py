@@ -30,7 +30,7 @@ class Binner:
 # class Binner    
 
 def r_factor(fo, fc):
-    return numpy.sum(numpy.abs(fo-fc)) / numpy.sum(fo)
+    return numpy.nansum(numpy.abs(fo-fc)) / numpy.nansum(fo)
 
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,
@@ -281,6 +281,7 @@ class HklData:
         bin_ranges = {}
         modify_table = {}
         for i_bin, g in self.df.groupby("bin", sort=True):
+            if i_bin == 0: continue # ignore DC component
             bin_counts.append([i_bin, g.index])
             bin_ranges[i_bin] = (numpy.max(g.d), numpy.min(g.d))
 
@@ -434,7 +435,7 @@ class HklData:
         if numpy.iscomplexobj(f1): f1 = numpy.abs(f1)
         if numpy.iscomplexobj(f2): f2 = numpy.abs(f2)
 
-        sel_pos = numpy.logical_and(f1 > 0, f2 > 0)
+        sel_pos = numpy.logical_and(f1 > 0, f2 > 0) # this filters nan as well
         f1p, f2p, s2p = f1[sel_pos], f2[sel_pos], s2[sel_pos]
 
         # 1st step: minimize (log(|f1|)-log(|f2|*e^k*e^(-b*s2/4)))^2 starting with k=1, b=0.
@@ -459,20 +460,20 @@ class HklData:
         def grad2(x):
             t = numpy.exp(-x[1]*s2/4)
             tmp = (f1-f2*x[0]*t)*f2*t
-            return numpy.array([-2.*numpy.sum(tmp),
-                                0.5*x[0]*numpy.sum(tmp*s2)])
+            return numpy.array([-2.*numpy.nansum(tmp),
+                                0.5*x[0]*numpy.nansum(tmp*s2)])
 
         def hess2(x):
             h = numpy.zeros((2, 2))
             t = numpy.exp(-x[1]*s2/4)
             t2 = t**2
-            h[0,0] = numpy.sum(f2**2 * t2) * 2
-            h[1,1] = numpy.sum(f2 * s2**2/4 * (-f1/2*t + f2*x[0]*t2)) * x[0]
-            h[1,0] = numpy.sum(f2 * s2 * (f1/2*t - f2*x[0]*t2))
+            h[0,0] = numpy.nansum(f2**2 * t2) * 2
+            h[1,1] = numpy.nansum(f2 * s2**2/4 * (-f1/2*t + f2*x[0]*t2)) * x[0]
+            h[1,0] = numpy.nansum(f2 * s2 * (f1/2*t - f2*x[0]*t2))
             h[0,1] = h[1,0]
             return h
 
-        res = scipy.optimize.minimize(fun=lambda x: numpy.sum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
+        res = scipy.optimize.minimize(fun=lambda x: numpy.nansum((f1-f2*x[0]*numpy.exp(-x[1]*s2/4))**2),
                                       jac=grad2,
                                       hess=hess2,
                                       method="Newton-CG",
