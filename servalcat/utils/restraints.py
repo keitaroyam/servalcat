@@ -317,10 +317,6 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     con_idxes = dict((c,i) for i,c in enumerate(st.connections))
     for con in conns:
         if con.link_id in known_links: continue
-        if remove_unknown:
-            i = con_idxes.get(con)
-            if i is not None: rm_idxes.append(i)
-            
         cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
@@ -339,6 +335,9 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
                                                                                                        m.rt.bonds[0].value))
         else:
             logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
+            if remove_unknown: # should we just remove id?
+                i = con_idxes.get(con)
+                if i is not None: rm_idxes.append(i)
 
     if remove_unknown:
         for i in sorted(rm_idxes, reverse=True):
@@ -352,12 +351,10 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
 
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
+    # perhaps this should be done outside..
     st.entities.clear()
     st.setup_entities()
 
-    # Check links. XXX Is it ok to update st?
-    find_and_fix_links(st, monlib, remove_unknown=True)
-    
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger, ignore_unknown_links=True)
     if pos == "nucl":
         logger.writeln("Generating hydrogens at nucleus positions")
