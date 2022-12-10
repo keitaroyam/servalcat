@@ -375,6 +375,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     st.entities.clear()
     st.setup_entities()
     if args.gemmi_prep:
+        st.assign_cis_flags()
         h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                     "yes":gemmi.HydrogenChange.NoChange,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]

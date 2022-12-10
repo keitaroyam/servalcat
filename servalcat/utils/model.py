@@ -37,6 +37,18 @@ def shake_structure(st, sigma, copy=True):
     return st2
 # shake_structure()
 
+def reset_entities(st):
+    for m in st:
+        for c in m:
+            for r in c:
+                r.entity_type = gemmi.EntityType.Unknown
+    st.entities.clear()
+    st.add_entity_types(True)
+    st.assign_subchains(True)
+    st.ensure_entities()
+    st.deduplicate_entities()
+# reset_entities()
+
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
     eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]

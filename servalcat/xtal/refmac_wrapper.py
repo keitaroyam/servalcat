@@ -163,12 +163,7 @@ def modify_output(pdbout, cifout, fixes):
     if fixes is not None:
         fixes.modify_back(st)
 
-    # setup entities
-    st.add_entity_types(True)
-    st.assign_subchains(True)
-    st.ensure_entities()
-    st.deduplicate_entities()
-
+    utils.model.reset_entities(st) # XXX this does not work for e.g. 5n91
     utils.fileio.write_mmcif(st, cifout, cifout)
     
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
