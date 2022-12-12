@@ -37,6 +37,27 @@ def check_version(exe="refmac5"):
     return ver
 # check_version()
 
+def ensure_ccp4scr():
+    tmpdir = os.environ.get("CCP4_SCR")
+    if tmpdir:
+        if os.path.isdir(tmpdir): # TODO check writability
+            try:
+                t = tempfile.TemporaryFile(dir=tmpdir)
+                t.close()
+                return
+            except OSError:
+                logger.writeln("Warning: cannot write files in CCP4_SCR= {}".format(tmpdir))
+        else:
+            try:
+                os.makedirs(tmpdir)
+                return
+            except:
+                logger.writeln("Warning: cannot create CCP4_SCR= {}".format(tmpdir))
+
+    os.environ["CCP4_SCR"] = tempfile.mkdtemp(prefix="ccp4tmp")
+    logger.writeln("Updated CCP4_SCR= {}".format(os.environ["CCP4_SCR"]))
+# ensure_ccp4scr()
+
 def external_restraints_json_to_keywords(json_in):
     ret = []
     with open(json_in) as f: exte_list = json.load(f)
@@ -560,7 +581,6 @@ class Refmac:
         self.monlib_path = None
         self.keep_chain_ids = False
         self.show_log = False # summary only if false
-        self.tmpdir = None # set path if CCP4_SCR does not work
         self.global_mode = kwargs.get("global_mode")
         
         for k in kwargs:
@@ -569,7 +589,7 @@ class Refmac:
             else:
                 setattr(self, k, kwargs[k])
 
-        self.check_tmpdir()
+        ensure_ccp4scr()
     # __init__()
 
     def init_from_args(self, args):
@@ -605,20 +625,6 @@ class Refmac:
             
         return ret
     # copy()
-
-    def check_tmpdir(self):
-        tmpdir = os.environ.get("CCP4_SCR")
-        if tmpdir:
-            if os.path.isdir(tmpdir): # TODO check writability
-                return
-            try:
-                os.makedirs(tmpdir)
-                return
-            except:
-                logger.writeln("Warning: cannot create CCP4_SCR= {}".format(tmpdir))
-
-        self.tmpdir = tempfile.mkdtemp(prefix="ccp4tmp")
-    # check_tmpdir()
 
     def set_libin(self, ligands):
         if not ligands: return
@@ -710,8 +716,6 @@ class Refmac:
             cmd.extend(["tlsout", self.tlsout()])
         if self.source == "neutron":
             cmd.extend(["atomsf", os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib")])
-        if self.tmpdir:
-            cmd.extend(["scrref", os.path.join(self.tmpdir, "refmac5_temp1")])
             
         return cmd
     # make_cmd()

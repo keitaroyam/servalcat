@@ -14,6 +14,7 @@ import sys
 import tempfile
 import subprocess
 import argparse
+from collections import OrderedDict
 from servalcat.utils import logger
 from servalcat import utils
 
@@ -27,9 +28,10 @@ def add_arguments(parser):
                         help="HKLIN hklin XYZIN xyzin...")
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('--no_adjust_hydrogen_distances', action='store_true', help="By default it adjusts hydrogen distances using ideal values. This option is to disable it.")
+    parser.add_argument('--keep_original_output', action='store_true', help="with .org extension")
+    parser.add_argument('--prefix', help="output prefix")
 
-    # TODO --prefix to automatically set hklout/xyzout/log file?
-    # TODO --cell to override unit cell
+    # TODO --cell to override unit cell?
 
 # add_arguments()
                         
@@ -38,13 +40,6 @@ def parse_args(arg_list):
     add_arguments(parser)
     return parser.parse_args(arg_list)
 # parse_args()
-
-def get_opt(opts, kwd, keep=False):
-    for i in range(len(opts)-1):
-        if opts[i].lower() == kwd.lower():
-            return opts[i+1], opts if keep else (opts[:i] + opts[i+2:])
-    return None, opts
-# get_opt()
 
 def parse_keywords(inputs):
     # these make keywords will be ignored (just passed to refmac): hout,ribo,valu,spec,form,sdmi,segi
@@ -154,24 +149,27 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes):
-    utils.fileio.rotate_file(pdbout, copy=True)
-    utils.fileio.rotate_file(cifout, copy=True)
-    
+def modify_output(pdbout, cifout, fixes, keep_original_output=False):
     st = utils.fileio.read_structure(cifout)
-    st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
+    if os.path.exists(pdbout):
+        st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
     if fixes is not None:
         fixes.modify_back(st)
 
     utils.model.reset_entities(st) # XXX this does not work for e.g. 5n91
-    utils.fileio.write_mmcif(st, cifout, cifout)
+    os.rename(cifout, cifout + ".bak")
+    utils.fileio.write_mmcif(st, cifout, cifout + ".bak")
     
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     seqnums = [res.seqid.num for chain in st[0] for res in chain]
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     st.expand_hd_mixture()
+    os.rename(pdbout, pdbout + ".bak")
     utils.fileio.write_pdb(st, pdbout)
+    if not keep_original_output:
+        os.remove(pdbout + ".bak")
+        os.remove(cifout + ".bak")
 # modify_output()
 
 def main(args):
@@ -179,14 +177,26 @@ def main(args):
     inputs = []
     for l in sys.stdin:
         inputs.append(l)
-        if l.strip().lower() == "end":
+        if l.strip().lower().startswith("end"):
             break
 
-    xyzin, opts = get_opt(args.opts, "xyzin")
-    xyzout = get_opt(args.opts, "xyzout", keep=True)[0]
-    libin, _ = get_opt(opts, "libin") # print libin!!
-    keywords = parse_keywords(inputs) # TODO expand @
+    if len(args.opts) % 2 != 0:
+        raise SystemExit("Invalid number of args")
+    opts = OrderedDict((args.opts[2*i].lower(), args.opts[2*i+1]) for i in range(len(args.opts)//2))
+    xyzin = opts.get("xyzin")
+    xyzout = opts.get("xyzout")
+    libin = opts.pop("libin", None)
     if libin: args.ligand.append(libin)
+    if not args.monlib:
+        # if --monlib is given, it has priority.
+        args.monlib = opts.pop("clibd_mon", None)
+    for k in ("temp1", "scrref"): # scrref has priority
+        if k in opts:
+            logger.writeln("updating CCP4_SCR from {}={}".format(k, opts[k]))
+            os.environ["CCP4_SCR"] = os.path.dirname(opts[k]) # XXX "." may be given, which causes problem (os.path.isdir("") is False)
+    utils.refmac.ensure_ccp4scr()
+    
+    keywords = parse_keywords(inputs) # TODO expand @, read psrestin also?
 
     # TODO what if restin is given or make cr prepared is given?
     # TODO check make pept/link/suga/ss/conn/symm/chain
@@ -202,13 +212,19 @@ def main(args):
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
                                    auto_box_with_padding=args.auto_box_with_padding,
                                    no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
-        opts.extend(["xyzin", crdout])
+        opts["xyzin"] = crdout
 
     if keywords["make"].get("exit"):
         return
+
+    if args.prefix:
+        if "xyzin" in opts and "xyzout" not in opts: opts["xyzout"] = args.prefix + ".pdb"
+        if "hklin" in opts and "hklout" not in opts: opts["hklout"] = args.prefix + ".mtz"
+        if "tlsin" in opts and "tlsout" not in opts: opts["tlsout"] = args.prefix + ".tls"
+        # todo log file?
         
     # Run Refmac
-    cmd = [args.exe] + opts
+    cmd = [args.exe] + list(sum(tuple(opts.items()), ()))
     env = os.environ
     logger.writeln("Running REFMAC5..")
     if args.monlib:
@@ -223,11 +239,14 @@ def main(args):
     p.stdin.close()
     for l in iter(p.stdout.readline, ""):
         logger.write(l)
-    p.wait()
+    retcode = p.wait()
+    logger.writeln("\nRefmac finished with exit code= {}".format(retcode))
 
     # Modify output
-    pdbout, cifout = get_output_model_names(xyzout)
-    modify_output(pdbout, cifout, refmac_fixes)
+    if xyzin is not None:
+        pdbout, cifout = get_output_model_names(xyzout)
+        if os.path.exists(cifout):
+            modify_output(pdbout, cifout, refmac_fixes, args.keep_original_output)
 # main()
 
 if __name__ == "__main__":
