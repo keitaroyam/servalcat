@@ -10,6 +10,7 @@ import argparse
 import gemmi
 import numpy
 import pandas
+import itertools
 import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
@@ -201,16 +202,26 @@ def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
         print("v=", v)
         print("sol=", numpy.linalg.solve(A, v))
         print("fac=",  numpy.sqrt(mean_Fo2 / mean_Fk2))
-        print()
         #Dj = numpy.linalg.solve(mat, est_fsc_fo_fj)
         #Dj = numpy.linalg.solve(A, v) * numpy.sqrt(mean_Fo2 / mean_Fk2)
-        Dj = numpy.dot(numpy.linalg.pinv(A), v) * numpy.sqrt(mean_Fo2 / mean_Fk2)
-        
+
+        # test all signs, fixing first Fc positive.
+        cc_max = -2
+        for v_test in itertools.product(*((x, -x) for x in v[1:])):
+            v_test = numpy.array((v[0],)+v_test)
+            Dj_test = numpy.dot(numpy.linalg.pinv(A), v_test) * numpy.sqrt(mean_Fo2 / mean_Fk2)
+            DFc_test = calc_abs_DFc(Dj_test, Fcs)
+            cc_test = numpy.corrcoef(Fo, numpy.abs(DFc_test))[1,0]
+            if cc_test > cc_max:
+                cc_max = cc_test
+                v_max = v_test
+                DFc = DFc_test
+                Dj = Dj_test
+        print("v_with_max=", v_max)
         for lab, D in zip(D_labs, Dj):
             hkldata.binned_df.loc[i_bin, lab] = D #* numpy.sqrt(mean_Fo2 / numpy.mean(numpy.abs(fk)**2))
 
         # estimate S
-        DFc = calc_abs_DFc(Dj, Fcs)
         mean_DFc2 = numpy.mean(DFc**2)
         est_fsc_fo_fc = numpy.interp(numpy.corrcoef(Fo, DFc)[1,0], table_cc[0], table_fsc)
         S = mean_Fo2 - 2 * numpy.sqrt(mean_Fo2 * mean_DFc2) * est_fsc_fo_fc + mean_DFc2 - numpy.mean(SigFo**2)
