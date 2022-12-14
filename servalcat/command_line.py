@@ -9,9 +9,6 @@ from __future__ import absolute_import, division, print_function, generators
 import argparse
 import sys
 import traceback
-import datetime
-import pipes
-import getpass
 import platform
 import gemmi
 import numpy
@@ -26,20 +23,13 @@ import servalcat.spa.translate
 import servalcat.spa.localcc
 import servalcat.xtal.run_refmac_small
 import servalcat.xtal.sigmaa
-import servalcat.xtal.refmac_wrapper
+import servalcat.refmac.refmac_wrapper
 import servalcat.utils.commands
 
 from servalcat.utils import logger
 
-def dependency_versions():
-    return dict(gemmi=gemmi.__version__,
-                scipy=scipy.version.full_version,
-                numpy=numpy.version.full_version,
-                pandas=pandas.__version__)
-# dependency_versions()
-
 def test_installation():
-    vers = dependency_versions()
+    vers = logger.dependency_versions()
     pandas_ver = [int(x) for x in vers["pandas"].split(".")]
     numpy_ver = [int(x) for x in vers["numpy"].split(".")]
     msg_unknown = "Unexpected error occurred (related to numpy+pandas). Please report to authors with the result of servalcat -v."
@@ -74,7 +64,7 @@ def main():
     parser.add_argument("-v", "--version", action="version",
                         version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
                                                                                              python=platform.python_version(),
-                                                                                             deps=", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
+                                                                                             deps=", ".join([x[0]+" "+x[1] for x in logger.dependency_versions().items()])))
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(shiftback=servalcat.spa.shiftback,
@@ -88,7 +78,7 @@ def main():
                    sigmaa=servalcat.xtal.sigmaa,
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
-                   refmac5=servalcat.xtal.refmac_wrapper,
+                   refmac5=servalcat.refmac.refmac_wrapper,
                    )
 
     for n in modules:
@@ -104,12 +94,7 @@ def main():
         print("specify subcommand.")    
     elif args.command in modules:
         logger.set_file("servalcat.log")
-        logger.writeln("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
-        logger.writeln("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
-        logger.writeln("# Started on {}".format(datetime.datetime.now()))
-        logger.writeln("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
-        logger.writeln("# Command-line args:")
-        logger.writeln("# {}".format(" ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
+        logger.write_header()
         try:
             modules[args.command].main(args)
         except SystemExit as e:

@@ -16,6 +16,7 @@ import subprocess
 import argparse
 from collections import OrderedDict
 from servalcat.utils import logger
+from servalcat.refmac import refmac_keywords
 from servalcat import utils
 
 def add_arguments(parser):
@@ -43,7 +44,7 @@ def parse_args(arg_list):
 
 def parse_keywords(inputs):
     # these make keywords will be ignored (just passed to refmac): hout,ribo,valu,spec,form,sdmi,segi
-    ret = utils.refmac_keywords.parse_keywords(inputs)
+    ret = refmac_keywords.parse_keywords(inputs)
     def sorry(s): raise SystemExit("Sorry, {} is not supported".format(s))
     if ret["make"].get("hydr") == "f":
         sorry("make hydr full")
@@ -249,8 +250,13 @@ def main(args):
             modify_output(pdbout, cifout, refmac_fixes, args.keep_original_output)
 # main()
 
-if __name__ == "__main__":
+def command_line():
     import sys
     args = parse_args(sys.argv[1:])
+    if args.prefix:
+        logger.set_file(args.prefix + ".log")
+    logger.write_header(command="refmac")
     main(args)
-    
+
+if __name__ == "__main__":
+    command_line()

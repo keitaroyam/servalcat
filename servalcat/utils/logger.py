@@ -8,8 +8,12 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import sys
 import datetime
+import platform
+import getpass
 import traceback
 import atexit
+import pipes
+import servalcat
 
 class Logger(object):
     def __init__(self, file_out=None, append=True):
@@ -65,6 +69,26 @@ close = _logger.close
 flush = _logger.flush
 stop = _logger.stop_logging
 start = _logger.start_logging
+
+def dependency_versions():
+    import gemmi
+    import scipy
+    import numpy
+    import pandas
+    return dict(gemmi=gemmi.__version__,
+                scipy=scipy.version.full_version,
+                numpy=numpy.version.full_version,
+                pandas=pandas.__version__)
+# dependency_versions()
+
+def write_header(command="servalcat"):
+    writeln("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
+    writeln("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
+    writeln("# Started on {}".format(datetime.datetime.now()))
+    writeln("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
+    writeln("# Command-line:")
+    writeln("# {} {}".format(command, " ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
+# write_header()
 
 def exit_success():
     _logger.writeln("\n# Finished on {}\n".format(datetime.datetime.now()))

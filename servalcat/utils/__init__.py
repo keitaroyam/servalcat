@@ -14,6 +14,5 @@ from . import hkl
 from . import model
 from . import maps
 from . import refmac
-from . import refmac_keywords
 from . import restraints
 from . import commands

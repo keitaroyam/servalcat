@@ -14,6 +14,7 @@ setup(name='servalcat',
     entry_points={
       'console_scripts': [
           'servalcat = servalcat.command_line:main',
+          'refmacat  = servalcat.refmac.refmac_wrapper:command_line',
                           ],
       },
     zip_safe= False)
