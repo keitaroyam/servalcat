@@ -158,18 +158,18 @@ def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
         for j in range(i+1, len(fc_labs)):
             labj = fc_labs[j]
             stats["CC({},{})".format(labi, labj)] = numpy.nan
-        
-    
+
+    # sqrt of eps * c; c = 1 for acentrics and 2 for centrics
+    inv_sqrt_c_eps = 1. / numpy.sqrt(hkldata.df.epsilon.to_numpy() * (hkldata.df.centric.to_numpy() + 1))
     for i_bin, _ in hkldata.binned():
         # assume they are all acentrics..
         cidxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
-        #for c, cidxes, _ in centric_and_selections[i_bin]:
-        sqrt_eps = numpy.sqrt(hkldata.df.epsilon.to_numpy()[cidxes])
-        Fo = hkldata.df.FP.to_numpy()[cidxes] #/ sqrt_eps
+        factor = inv_sqrt_c_eps[cidxes]
+        Fo = hkldata.df.FP.to_numpy()[cidxes] * factor
         mean_Fo2 = numpy.mean(Fo**2)
         SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
-        #Fcs = [hkldata.df[lab].to_numpy()[cidxes] / sqrt_eps for lab in fc_labs]
-        Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
+        Fcs = [hkldata.df[lab].to_numpy()[cidxes] * factor for lab in fc_labs]
+        #Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
         mean_Fk2 = numpy.array([numpy.mean(numpy.abs(fk)**2) for fk in Fcs])
         # estimate D
         cc_fo_fj = [numpy.corrcoef(numpy.abs(fj), Fo)[1,0] for fj in Fcs]
