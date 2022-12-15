@@ -45,7 +45,7 @@ def parse_args(arg_list):
 def parse_keywords(inputs):
     # these make keywords will be ignored (just passed to refmac): hout,ribo,valu,spec,form,sdmi,segi
     ret = refmac_keywords.parse_keywords(inputs)
-    def sorry(s): raise SystemExit("Sorry, {} is not supported".format(s))
+    def sorry(s): raise SystemExit("Sorry, '{}' is not supported".format(s))
     if ret["make"].get("hydr") == "f":
         sorry("make hydr full")
     if ret["make"].get("buil") == "y":
@@ -174,15 +174,24 @@ def modify_output(pdbout, cifout, fixes, keep_original_output=False):
 # modify_output()
 
 def main(args):
+    if len(args.opts) % 2 != 0: raise SystemExit("Invalid number of args")
     args.ligand = sum(args.ligand, []) if args.ligand else []
+    try:
+        refmac_ver = utils.refmac.check_version(args.exe)
+    except OSError as e:
+        raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
+    if not refmac_ver:
+        raise SystemExit("Error: Cannot get Refmac version.")
+    if refmac_ver < (5, 8, 403):
+        raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.403 or newer")
+    logger.writeln("Refmac{} will be used".format(".".join(str(x) for x in refmac_ver)))
+    print("Waiting for input..")
     inputs = []
     for l in sys.stdin:
         inputs.append(l)
         if l.strip().lower().startswith("end"):
             break
 
-    if len(args.opts) % 2 != 0:
-        raise SystemExit("Invalid number of args")
     opts = OrderedDict((args.opts[2*i].lower(), args.opts[2*i+1]) for i in range(len(args.opts)//2))
     xyzin = opts.get("xyzin")
     xyzout = opts.get("xyzout")
@@ -222,7 +231,6 @@ def main(args):
         if "xyzin" in opts and "xyzout" not in opts: opts["xyzout"] = args.prefix + ".pdb"
         if "hklin" in opts and "hklout" not in opts: opts["hklout"] = args.prefix + ".mtz"
         if "tlsin" in opts and "tlsout" not in opts: opts["tlsout"] = args.prefix + ".tls"
-        # todo log file?
         
     # Run Refmac
     cmd = [args.exe] + list(sum(tuple(opts.items()), ()))
