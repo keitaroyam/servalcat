@@ -41,6 +41,8 @@ def add_arguments(parser):
                         help="estimate variance of unexplained signal through exp(x) as a positivity constraint")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
+    parser.add_argument('--use_cc',  action='store_true',
+                        help="Use CC(|F1|,|F2|) to CC(F1,F2) conversion to derive D and S")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -144,13 +146,16 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel):
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
-def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
+def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
     # theorhetical values
     cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
     cc_c = lambda cc: 2/(numpy.pi-2) * (cc**2*numpy.sqrt(1-cc**2) + cc * numpy.arctan(cc/numpy.sqrt(1-cc**2)) + (1-cc**2)**(3/2)-1)
     table_fsc = numpy.arange(0, 1, 1e-3)
     table_cc = [cc_a(table_fsc), cc_c(table_fsc)]
 
+    for lab in D_labs: hkldata.binned_df[lab] = 1.
+    hkldata.binned_df["S"] = 1.
+    
     stats = hkldata.binned_df[["d_max", "d_min"]].copy()
     for i, labi in enumerate(fc_labs):
         stats["CC(FP,{})".format(labi)] = numpy.nan
@@ -162,21 +167,18 @@ def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
     # sqrt of eps * c; c = 1 for acentrics and 2 for centrics
     inv_sqrt_c_eps = 1. / numpy.sqrt(hkldata.df.epsilon.to_numpy() * (hkldata.df.centric.to_numpy() + 1))
     for i_bin, _ in hkldata.binned():
-        # assume they are all acentrics..
+        # assume they are all acentrics.. only correct by c
         cidxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
         factor = inv_sqrt_c_eps[cidxes]
         Fo = hkldata.df.FP.to_numpy()[cidxes] * factor
         mean_Fo2 = numpy.mean(Fo**2)
         SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
         Fcs = [hkldata.df[lab].to_numpy()[cidxes] * factor for lab in fc_labs]
-        #Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
         mean_Fk2 = numpy.array([numpy.mean(numpy.abs(fk)**2) for fk in Fcs])
+        
         # estimate D
         cc_fo_fj = [numpy.corrcoef(numpy.abs(fj), Fo)[1,0] for fj in Fcs]
         for i in range(len(fc_labs)): stats.loc[i_bin, "CC(FP,{})".format(fc_labs[i])] = cc_fo_fj[i]
-        #est_fsc_fo_fj = numpy.interp(cc_fo_fj, table_cc[0], table_fsc)
-        #print(" cc=", cc_fo_fj)
-        #print("fsc=", est_fsc_fo_fj)
         mat = [[numpy.sqrt(numpy.mean(numpy.abs(fk)**2)/mean_Fo2) * numpy.real(numpy.corrcoef(fk, fj)[1,0])
                 for fk in Fcs]
                for fj in Fcs]
@@ -192,19 +194,6 @@ def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
                 labj = fc_labs[j]
                 stats.loc[i_bin, "CC({},{})".format(labi, labj)] = numpy.real(numpy.corrcoef(Fcs[i], Fcs[j])[1,0])
 
-        
-        #print(numpy.array(mat))
-        #print(numpy.array([[numpy.corrcoef(fk, fj)[1,0] for fk in Fcs] for fj in Fcs]))
-        #print(est_fsc_fo_fj)
-        #print()
-        print(A)
-        print("cc=", cc_fo_fj)
-        print("v=", v)
-        print("sol=", numpy.linalg.solve(A, v))
-        print("fac=",  numpy.sqrt(mean_Fo2 / mean_Fk2))
-        #Dj = numpy.linalg.solve(mat, est_fsc_fo_fj)
-        #Dj = numpy.linalg.solve(A, v) * numpy.sqrt(mean_Fo2 / mean_Fk2)
-
         # test all signs, fixing first Fc positive.
         cc_max = -2
         for v_test in itertools.product(*((x, -x) for x in v[1:])):
@@ -217,22 +206,23 @@ def mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
                 v_max = v_test
                 DFc = DFc_test
                 Dj = Dj_test
-        print("v_with_max=", v_max)
+
         for lab, D in zip(D_labs, Dj):
-            hkldata.binned_df.loc[i_bin, lab] = D #* numpy.sqrt(mean_Fo2 / numpy.mean(numpy.abs(fk)**2))
+            hkldata.binned_df.loc[i_bin, lab] = D
 
         # estimate S
         mean_DFc2 = numpy.mean(DFc**2)
         est_fsc_fo_fc = numpy.interp(numpy.corrcoef(Fo, DFc)[1,0], table_cc[0], table_fsc)
         S = mean_Fo2 - 2 * numpy.sqrt(mean_Fo2 * mean_DFc2) * est_fsc_fo_fc + mean_DFc2 - numpy.mean(SigFo**2)
         hkldata.binned_df.loc[i_bin, "S"] = S
-        #print("S", S)
 
-    print(stats)
-
-    print(hkldata.binned_df)
-
-def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=False, S_as_exp=False):
+    logger.write("\nCC:")
+    logger.write(stats.to_string())
+    logger.write("\nEstimates:")
+    logger.write(hkldata.binned_df.to_string())
+# determine_mlf_params_from_cc()
+    
+def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_exp=False, S_as_exp=False):
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
         transD_deriv = numpy.exp # dD/dx
@@ -251,13 +241,9 @@ def determine_mlf_params(hkldata, fc_labs, centric_and_selections, D_as_exp=Fals
         transS_deriv = lambda x: 1
         transS_inv = lambda x: x
     
-    D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
     # Initial values
     for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
-    mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections)
-    return D_labs
-
     for i_bin, _ in hkldata.binned():
         idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
         FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
@@ -541,9 +527,17 @@ def main(args):
     logger.write(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
     logger.write(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
 
-    # Estimate ML parameters and calculate maps
-    logger.write("Estimating sigma-A parameters..")
-    D_labs = determine_mlf_params(hkldata, fc_labs, centric_and_selections, args.D_as_exp, args.S_as_exp)
+    # Estimate ML parameters
+    D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
+
+    if args.use_cc:
+        logger.write("Estimating sigma-A parameters from CC..")
+        determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections)
+    else:
+        logger.write("Estimating sigma-A parameters using ML..")
+        determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_as_exp, args.S_as_exp)
+
+    # Calculate maps
     log_out = "{}.log".format(args.output_prefix)
     calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
 
