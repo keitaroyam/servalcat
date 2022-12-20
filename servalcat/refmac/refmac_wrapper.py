@@ -118,6 +118,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
             logger.writeln("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
+    gemmi.rename_subchains_for_crd(st[0])
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -157,20 +158,21 @@ def modify_output(pdbout, cifout, fixes, keep_original_output=False):
     if fixes is not None:
         fixes.modify_back(st)
 
-    utils.model.reset_entities(st) # XXX this does not work for e.g. 5n91
-    os.rename(cifout, cifout + ".bak")
-    utils.fileio.write_mmcif(st, cifout, cifout + ".bak")
+    #utils.model.reset_entities(st) # XXX this does not work for e.g. 5n91
+    suffix = ".org"
+    os.rename(cifout, cifout + suffix)
+    utils.fileio.write_mmcif(st, cifout, cifout + suffix)
     
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     seqnums = [res.seqid.num for chain in st[0] for res in chain]
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     st.expand_hd_mixture()
-    os.rename(pdbout, pdbout + ".bak")
+    os.rename(pdbout, pdbout + suffix)
     utils.fileio.write_pdb(st, pdbout)
     if not keep_original_output:
-        os.remove(pdbout + ".bak")
-        os.remove(cifout + ".bak")
+        os.remove(pdbout + suffix)
+        os.remove(cifout + suffix)
 # modify_output()
 
 def main(args):
@@ -182,8 +184,8 @@ def main(args):
         raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
     if not refmac_ver:
         raise SystemExit("Error: Cannot get Refmac version.")
-    if refmac_ver < (5, 8, 403):
-        raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.403 or newer")
+    if refmac_ver < (5, 8, 404):
+        raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
     logger.writeln("Refmac{} will be used".format(".".join(str(x) for x in refmac_ver)))
     print("Waiting for input..")
     inputs = []
