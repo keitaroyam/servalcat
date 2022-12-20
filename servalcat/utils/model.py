@@ -148,9 +148,9 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     grid = gemmi.transform_map_to_f_phi(dc.grid)
 
     if miller_array is None:
-        return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
+        return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)#, with_000=True, sum_ab=dc.sum_ab)
     else:
-        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur)
+        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur, sum_ab=dc.sum_ab)
 
 # calc_fc_fft()
 
