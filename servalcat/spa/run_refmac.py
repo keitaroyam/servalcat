@@ -707,7 +707,7 @@ def main(args):
     st_expanded = st.clone()
     if not all(op.given for op in st.ncs):
         utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded"+model_format,
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True,
                                  cif_ref=cif_ref)
 
     if args.cross_validation and args.cross_validation_method == "shake":
@@ -747,8 +747,8 @@ def main(args):
         st_sr_expanded = st_sr.clone()
         if not all(op.given for op in st_sr.ncs):
             utils.model.expand_ncs(st_sr_expanded)
-            utils.fileio.write_model(st_sr_expanded, file_name=args.output_prefix+"shaken_refined_expanded"+model_format,
-                                     cif_ref=cif_ref_sr)
+            utils.fileio.write_model(st_sr_expanded, args.output_prefix+"shaken_refined_expanded",
+                                     pdb=True, cif=True, cif_ref=cif_ref_sr)
 
     else:
         st_sr_expanded = None
@@ -782,7 +782,7 @@ def main(args):
         st_expanded = st.clone()
         utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
         utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, file_name=args.output_prefix+"_expanded_all"+model_format,
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded_all", pdb=True, cif=True,
                                  cif_ref=cif_ref)
 
     if args.mask_for_fofc:
