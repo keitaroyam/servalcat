@@ -76,10 +76,9 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                 logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
                 res.name = "HOH"
 
-    # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
-    st.entities.clear()
-    st.setup_entities()
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
 
+    # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
         monlib = utils.restraints.load_monomer_library(st,
                                                        monomer_dir=monlib_path,
@@ -118,7 +117,6 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
             logger.writeln("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
-    gemmi.rename_subchains_for_crd(st[0])
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -158,7 +156,6 @@ def modify_output(pdbout, cifout, fixes, keep_original_output=False):
     if fixes is not None:
         fixes.modify_back(st)
 
-    #utils.model.reset_entities(st) # XXX this does not work for e.g. 5n91
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
     utils.fileio.write_mmcif(st, cifout, cifout + suffix)
