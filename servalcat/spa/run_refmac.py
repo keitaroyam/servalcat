@@ -16,6 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat import spa # this is not a right style
 from servalcat.spa import shift_maps
+from servalcat.refmac.refmac_wrapper import prepare_crd
 
 def add_arguments(parser):
     parser.description = 'Run REFMAC5 for SPA'
@@ -714,8 +715,14 @@ def main(args):
         logger.writeln("Cross validation is requested.")
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         logger.writeln("Starting refinement using half map 1 (model is shaken first)")
+        if args.gemmi_prep:
+            xyzin = refmac_prefix + ".crd"
+            prepare_crd(refmac_prefix+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+                        make={"hydr":args.hydrogen[0]}) # but we should not use hydrogen after shaking - no?
+        else:
+            xyzin = refmac_prefix + model_format
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
-                                 xyzin=refmac_prefix+model_format,
+                                 xyzin=xyzin,
                                  prefix=refmac_prefix_shaken,
                                  shake=args.shake_radius,
                                  jellybody=False) # makes no sense to use jelly body after shaking
