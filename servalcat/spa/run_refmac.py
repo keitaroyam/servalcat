@@ -474,6 +474,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
         ret["model_file"] = crdout
         ret["model_format"] = ".mmcif"
         args.keywords.append("make cr prepared")
+        gemmi.rename_subchains_for_crd(st[0])
         doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
         doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
         logger.writeln("crd file written: {}".format(crdout))
