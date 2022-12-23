@@ -61,6 +61,17 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
+def calc_sum_ab(st):
+    sum_ab = dict()
+    ret = 0.
+    for cra in st[0].all():
+        if cra.atom.element not in sum_ab:
+            it92 = cra.atom.element.it92
+            sum_ab[cra.atom.element] = sum(x*y for x,y in zip(it92.a, it92.b))
+        ret += sum_ab[cra.atom.element] * cra.atom.occ
+    return ret
+# calc_sum_ab()
+
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron")
@@ -142,18 +153,21 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
                     dc.add_c_contribution_to_grid(cra.atom, -1)
 
         dc.grid.symmetrize_sum()
+        sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
+        mb_000 = sum_ab * 0.023933660963366372 # 1 / (8 * pi() * pi() * bohrradius()
     else:
         logger.writeln("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
+        mb_000 = 0
 
     logger.writeln(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
     grid = gemmi.transform_map_to_f_phi(dc.grid)
-
+    
     if miller_array is None:
-        return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)#, with_000=True, sum_ab=dc.sum_ab)
+        return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
     else:
-        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur, sum_ab=dc.sum_ab)
-
+        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur,
+                                     mott_bethe_000=mb_000)
 # calc_fc_fft()
 
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None):
