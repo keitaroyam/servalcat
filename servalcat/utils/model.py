@@ -37,6 +37,20 @@ def shake_structure(st, sigma, copy=True):
     return st2
 # shake_structure()
 
+def setup_entities(st, clear=False, clear_entity_type=False, overwrite_entity_type=False, force_subchain_names=False):
+    if clear: st.entities.clear()
+    if clear_entity_type:
+        for m in st:
+            for c in m:
+                for r in c:
+                    r.entity_type = gemmi.EntityType.Unknown
+
+    st.add_entity_types(overwrite_entity_type)
+    st.assign_subchains(force_subchain_names)
+    st.ensure_entities()
+    st.deduplicate_entities()
+# setup_entities()
+
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
     eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]
@@ -47,6 +61,17 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
+def calc_sum_ab(st):
+    sum_ab = dict()
+    ret = 0.
+    for cra in st[0].all():
+        if cra.atom.element not in sum_ab:
+            it92 = cra.atom.element.it92
+            sum_ab[cra.atom.element] = sum(x*y for x,y in zip(it92.a, it92.b))
+        ret += sum_ab[cra.atom.element] * cra.atom.occ
+    return ret
+# calc_sum_ab()
+
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron")
@@ -54,17 +79,17 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     if omit_proton or omit_h_electron:
         assert mott_bethe
         if not st[0].has_hydrogen():
-            logger.write("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
+            logger.writeln("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
             omit_proton = omit_h_electron = False
         elif omit_proton and omit_h_electron:
-            logger.write("omit_proton and omit_h_electron requested. removing hydrogens")
+            logger.writeln("omit_proton and omit_h_electron requested. removing hydrogens")
             st = st.clone()
             st.remove_hydrogens()
             omit_proton = omit_h_electron = False
     
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
-    logger.write("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
+    logger.writeln("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].has_hydrogen():
         st = st.clone()
@@ -105,7 +130,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         else:
             method_str = "Fc"
 
-        logger.write("Calculating {} using Mott-Bethe formula".format(method_str))
+        logger.writeln("Calculating {} using Mott-Bethe formula".format(method_str))
         
         dc.initialize_grid()
         dc.addends.subtract_z(except_hydrogen=True)
@@ -128,18 +153,21 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
                     dc.add_c_contribution_to_grid(cra.atom, -1)
 
         dc.grid.symmetrize_sum()
+        sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
+        mb_000 = sum_ab * 0.023933660963366372 # 1 / (8 * pi() * pi() * bohrradius()
     else:
-        logger.write("Calculating Fc")
+        logger.writeln("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
+        mb_000 = 0
 
-    logger.write(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
+    logger.writeln(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
     grid = gemmi.transform_map_to_f_phi(dc.grid)
-
+    
     if miller_array is None:
         return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
     else:
-        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur)
-
+        return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur,
+                                     mott_bethe_000=mb_000)
 # calc_fc_fft()
 
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None):
@@ -196,7 +224,7 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
     assert st[0].has_hydrogen()
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     blur = max(0, blur)
-    logger.write("Setting blur= {:.2f} in density calculation".format(blur))
+    logger.writeln("Setting blur= {:.2f} in density calculation".format(blur))
 
     st = st.clone()
     topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
@@ -216,9 +244,9 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
 
     # Decide box_size
     max_r = max([dc.estimate_radius(cra.atom) for cra in st[0].all()])
-    logger.write("max_r= {:.2f}".format(max_r))
+    logger.writeln("max_r= {:.2f}".format(max_r))
     box_size = max_r*2 + 1 # padding
-    logger.write("box_size= {:.2f}".format(box_size))
+    logger.writeln("box_size= {:.2f}".format(box_size))
     mode_all = False #True
     if mode_all:
         dc.set_grid_cell_and_spacegroup(st)
@@ -330,7 +358,7 @@ def cra_to_atomaddress(cra):
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     if len(st.ncs) == 0: return
     
-    logger.write("Expanding symmetry..")
+    logger.writeln("Expanding symmetry..")
     # Take care of special positions
     if special_pos_threshold >= 0:
         # First expand ncs with Dup regardless of the choice
@@ -355,10 +383,10 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
                 cra_dict[key1+(segi1,)] = cra_to_atomaddress(r.partner1)
                 cra_dict[key1+(segi2,)] = cra_to_atomaddress(r.partner2)
 
-        if pairs: logger.write("Atoms on special position detected.")
+        if pairs: logger.writeln("Atoms on special position detected.")
         res_to_be_removed = []
         for key in sorted(pairs):
-            logger.write(" Site: chain='{}' seq='{}{}' atom='{}' elem='{}' altloc='{}'".format(*key))
+            logger.writeln(" Site: chain='{}' seq='{}{}' atom='{}' elem='{}' altloc='{}'".format(*key))
             # use graph to find connected components
             segs = sorted(set(sum(pairs[key], []))) # index->segid
             segd = dict([(s,i) for i,s in enumerate(segs)]) # reverse lookup
@@ -372,7 +400,7 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
             for group in groups:
                 group.sort() # first segid will be kept
                 sum_occ = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.occ for i in group])
-                logger.write("  multiplicity= {} occupancies_total= {:.2f} segids= {}".format(len(group), sum_occ, group))
+                logger.writeln("  multiplicity= {} occupancies_total= {:.2f} segids= {}".format(len(group), sum_occ, group))
                 sum_pos = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.pos for i in group], gemmi.Position(0,0,0))
                 if len(group) < 2: continue # should never happen
                 # modify first atom
@@ -444,21 +472,21 @@ def prepare_assembly(name, chains, ops, is_helical=False):
 
 def filter_contacting_ncs(st, cutoff=5.):
     if len(st.ncs) == 0: return
-    logger.write("Filtering out non-contacting NCS copies with cutoff={:.2f} A".format(cutoff))
+    logger.writeln("Filtering out non-contacting NCS copies with cutoff={:.2f} A".format(cutoff))
     st.setup_cell_images()
     ns = gemmi.NeighborSearch(st[0], st.cell, cutoff*2).populate() # This is considered crystallographic cell if not 1 1 1. Undesirable result may be seen.
     cs = gemmi.ContactSearch(cutoff)
     cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
     results = cs.find_contacts(ns)
     indices = set([r.image_idx for r in results])
-    logger.write(" contacting copies: {}".format(indices))
+    logger.writeln(" contacting copies: {}".format(indices))
     ops = [st.ncs[i-1] for i in indices] # XXX is this correct? maybe yes as long as identity operator is not there
     st.ncs.clear()
     st.ncs.extend(ops)
 # filter_contacting_ncs()
 
 def check_symmetry_related_model_duplication(st, distance_cutoff=0.5, max_allowed_ratio=0.5):
-    logger.write("Checking if model in asu is given.")
+    logger.writeln("Checking if model in asu is given.")
     n_atoms = st[0].count_atom_sites()
     st.setup_cell_images()
     ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
@@ -466,23 +494,23 @@ def check_symmetry_related_model_duplication(st, distance_cutoff=0.5, max_allowe
     cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
     results = cs.find_contacts(ns)
     n_contacting_atoms = len(set([a for r in results for a in (r.partner1.atom, r.partner2.atom)]))
-    logger.write(" N_atoms= {} N_contacting_atoms= {}".format(n_atoms, n_contacting_atoms))
+    logger.writeln(" N_atoms= {} N_contacting_atoms= {}".format(n_atoms, n_contacting_atoms))
     return n_contacting_atoms / n_atoms > max_allowed_ratio # return True if too many contacts
 # check_symmetry_related_model_duplication()
 
 def adp_analysis(st, ignore_zero_occ=True):
-    logger.write("= ADP analysis =")
+    logger.writeln("= ADP analysis =")
     if ignore_zero_occ:
-        logger.write("(zero-occupancy atoms are ignored)")
+        logger.writeln("(zero-occupancy atoms are ignored)")
 
     all_B = []
     for i, mol in enumerate(st):
-        if len(st) > 1: logger.write("Model {}:".format(i))
-        logger.write("            min    Q1   med    Q3   max")
+        if len(st) > 1: logger.writeln("Model {}:".format(i))
+        logger.writeln("            min    Q1   med    Q3   max")
         stats = adp_stats_per_chain(mol, ignore_zero_occ)
         for chain, natoms, qs in stats:
-            logger.write(("Chain {:3s}".format(chain) if chain!="*" else "All      ") + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
-    logger.write("")
+            logger.writeln(("Chain {:3s}".format(chain) if chain!="*" else "All      ") + " {:5.1f} {:5.1f} {:5.1f} {:5.1f} {:5.1f}".format(*qs))
+    logger.writeln("")
 # adp_analysis()
 
 def adp_stats_per_chain(model, ignore_zero_occ=True):

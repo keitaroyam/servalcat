@@ -36,24 +36,21 @@ def decide_new_mod_id(mod_id, mods):
 
 def rename_cif_modification_if_necessary(doc, known_ids):
     # FIXME Problematic if other file refers to modification that is renamed in this function - but how can we know?
-    
-    mod_list = doc.find_block("mod_list")
-    if not mod_list: return {}
-    
     trans = {}
-    for row in mod_list.find("_chem_mod.", ["id"]):
-        mod_id = row.str(0)
-        if mod_id in known_ids:
-            new_id = decide_new_mod_id(mod_id, known_ids)
-            trans[mod_id] = new_id
-            row[0] = new_id # modify id
-            logger.write("INFO:: renaming modification id {} to {}".format(mod_id, new_id))
+    for b in doc:
+        for row in b.find("_chem_mod.", ["id"]):
+            mod_id = row.str(0)
+            if mod_id in known_ids:
+                new_id = decide_new_mod_id(mod_id, known_ids)
+                trans[mod_id] = new_id
+                row[0] = new_id # modify id
+                logger.writeln("INFO:: renaming modification id {} to {}".format(mod_id, new_id))
 
     # modify ids in mod_* blocks
     for mod_id in trans:
         b = doc.find_block("mod_{}".format(mod_id))
         if not b: # should raise error?
-            logger.write("WARNING:: inconsistent data_mod_list for {} in {}".format(mod_id, f))
+            logger.writeln("WARNING:: inconsistent mod description for {} in {}".format(mod_id, f))
             continue
         b.name = "mod_{}".format(trans[mod_id]) # modify name
         for item in b:
@@ -63,12 +60,12 @@ def rename_cif_modification_if_necessary(doc, known_ids):
                         row[0] = trans[mod_id]
 
     # Update mod id in links
-    link_list = doc.find_block("link_list")
-    if trans and link_list:
-        for row in link_list.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
-            for i in range(2):
-                if row.str(i) in trans:
-                    row[i] = trans[row.str(i)]
+    if trans:
+        for b in doc:
+            for row in b.find("_chem_link.", ["mod_id_1", "mod_id_2"]):
+                for i in range(2):
+                    if row.str(i) in trans:
+                        row[i] = trans[row.str(i)]
 
     return trans
 # rename_cif_modification_if_necessary()
@@ -91,82 +88,78 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             logger.error("ERROR: not a directory: {}".format(monomer_dir))
             return
 
-        logger.write("Reading monomers from {}".format(monomer_dir))
+        logger.writeln("Reading monomers from {}".format(monomer_dir))
         monlib = gemmi.read_monomer_lib(monomer_dir, resnames, ignore_missing=True)
     else:
         monlib = gemmi.MonLib()
 
     for f in cif_files:
-        logger.write("Reading monomer: {}".format(f))
+        logger.writeln("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
-        comp_list = doc.find_block("comp_list")
         for b in doc:
             if b.find_values("_chem_comp_atom.atom_id"):
                 name = b.name.replace("comp_", "")
                 if name in monlib.monomers:
-                    logger.write("WARNING:: updating monomer {} using {}".format(name, f))
+                    logger.writeln("WARNING:: updating monomer {} using {}".format(name, f))
                     del monlib.monomers[name]
-                monlib.add_monomer_if_present(b)
 
-                if comp_list:
-                    tab = comp_list.find("_chem_comp.", ["id", "group"])
-                    if tab:
-                        monlib.monomers[name].group = tab.find_row(name).str(1)
-                
                 # Check if bond length values are included
                 # This is to fail if cif file is e.g. from PDB website
-                for b in monlib.monomers[name].rt.bonds:
-                    if b.value != b.value:
-                        raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
+                if not b.find_values("_chem_comp_bond.value_dist"):
+                    raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
                     
-        link_list = doc.find_block("link_list")
-        if link_list:
-            for row in link_list.find("_chem_link.", ["id"]):
+            for row in b.find("_chem_link.", ["id"]):
                 link_id = row.str(0)
                 if link_id in monlib.links:
-                    logger.write("WARNING:: updating link {} using {}".format(link_id, f))
+                    logger.writeln("WARNING:: updating link {} using {}".format(link_id, f))
                     del monlib.links[link_id]
 
         # If modification id is duplicated, need to rename
         rename_cif_modification_if_necessary(doc, monlib.modifications)
         
+        monlib.insert_chemcomps(doc)
         monlib.insert_chemlinks(doc)
         monlib.insert_chemmods(doc)
-        monlib.insert_comp_list(doc)
+        
+        for b in doc:
+            for row in b.find("_chem_comp.", ["id", "group"]):
+                if row.str(0) in monlib.monomers:
+                    monlib.monomers[row.str(0)].set_group(row.str(1))
 
     not_loaded = set(resnames).difference(monlib.monomers)
     if not_loaded:
-        logger.write("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
+        logger.writeln("WARNING: monomers not loaded: {}".format(" ".join(not_loaded)))
         
-    logger.write("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
+    logger.writeln("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
                                                                                           len(monlib.links),
                                                                                           len(monlib.modifications)))
-    logger.write("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
-    logger.write("          Links: {}".format(" ".join([x for x in monlib.links])))
-    logger.write("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
-    logger.write("")
+    logger.writeln("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
+    logger.writeln("          Links: {}".format(" ".join([x for x in monlib.links])))
+    logger.writeln("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
+    logger.writeln("")
 
-    logger.write("Checking if unknown atoms exist..")
+    logger.writeln("Checking if unknown atoms exist..")
+
+    unknown_cc = set()
+    for chain in st[0]: unknown_cc.update(res.name for res in chain if res.name not in monlib.monomers)
+    if unknown_cc:
+        if stop_for_unknowns:
+            raise RuntimeError("Provide restraint cif file(s) for {}".format(",".join(unknown_cc)))
+        else:
+            logger.writeln("WARNING: ad-hoc restraints will be generated for {}".format(",".join(unknown_cc)))
+            logger.writeln("         it is strongly recommended to generate them using AceDRG.")
+    
     st = st.clone()
     sio = io.StringIO()
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True,
                                   ignore_unknown_links=True)
 
     # possible warnings:
-    # Warning: unknown chemical component XXX in chain X
     # Warning: no atom X expected in XXX
     # and others?
-    unknown_cc = set()
     unknown_atoms_cc = set()
     link_related = set()
     for l in sio.getvalue().splitlines():
-        r = re.search("Warning: unknown chemical component (.*) in chain", l)
-        if r:
-            unk = r.group(1)
-            if unk not in unknown_cc:
-                logger.write(l)
-                unknown_cc.add(unk)
-            continue
         r = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
         if r:
             unk = r.group(2), r.group(1)
@@ -174,16 +167,16 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             cc = monlib.monomers[unk[1]] if unk[1] in monlib.monomers else None
             cc_atom = [x for x in cc.atoms if x.id == unk[0]] if cc else None
             if cc and cc_atom: # if atom is found in chemcomp, it must be an atom that should be removed.
-                logger.write(l + " - this atom should have been removed when linking")
+                logger.writeln(l + " - this atom should have been removed when linking")
                 if check_hydrogen or not cc_atom[0].is_hydrogen():
                     link_related.add(unk[1])
-            elif unk[1] not in unknown_cc and unk not in unknown_atoms_cc:
-                logger.write(l)
+            elif unk not in unknown_atoms_cc:
+                logger.writeln(l)
                 unknown_atoms_cc.add(unk)
             continue
 
         # something else
-        logger.write(l)
+        logger.writeln(l)
 
     if not check_hydrogen:
         todel = []
@@ -193,14 +186,14 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
                 todel.append(unk)
         unknown_atoms_cc = unknown_atoms_cc - set(todel)
         
-    unknown_cc.update(cc for at, cc in unknown_atoms_cc)
+    unknown_cc = set([cc for at, cc in unknown_atoms_cc])
         
     if stop_for_unknowns and (unknown_cc or link_related):
         msgs = []
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
-   
+    
     return monlib
 # load_monomer_library()
 
@@ -224,8 +217,8 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
                 good = False
 
     if nucl_not_found:
-        logger.write("WARNING: nucleus distance is not found for: {}".format(" ".join(nucl_not_found)))
-        logger.write("         default scale ({}) is used for nucleus distances.".format(default_proton_scale))
+        logger.writeln("WARNING: nucleus distance is not found for: {}".format(" ".join(nucl_not_found)))
+        logger.writeln("         default scale ({}) is used for nucleus distances.".format(default_proton_scale))
     return good
 # check_monlib_support_nucleus_distances()
 
@@ -282,7 +275,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     """
     from servalcat.utils import model
 
-    logger.write("Checking links in model")
+    logger.writeln("Checking links in model")
     hunt = gemmi.LinkHunt()
     hunt.index_chem_links(monlib)
     matches = hunt.find_possible_links(st, bond_margin, 0)
@@ -292,7 +285,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
 
     for m in matches:
         if m.conn:
-            logger.write(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
                                                                                                     m.bond_length,
                                                                                                     m.chem_link.rt.bonds[0].value))
@@ -304,12 +297,12 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             m.conn.link_id = m.chem_link.id
             if m.conn in conns: # may not be found if id duplicated
                 conns.pop(conns.index(m.conn))
-        else:
+        elif add_found:
             # Known link is only accepted when in LINK record
             if not m.chem_link or m.chem_link.id in known_links:
                 continue
 
-            logger.write(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
+            logger.writeln(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
                                                                                                     m.cra1, m.cra2,
                                                                                                     m.bond_length,
                                                                                                     m.chem_link.rt.bonds[0].value))
@@ -324,16 +317,27 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     con_idxes = dict((c,i) for i,c in enumerate(st.connections))
     for con in conns:
         if con.link_id in known_links: continue
-        if remove_unknown:
-            i = con_idxes.get(con)
-            if i is not None: rm_idxes.append(i)
-            
-        at1, at2 = st[0].find_cra(con.partner1).atom, st[0].find_cra(con.partner2).atom
-        if None in (at1, at2):
-            logger.write(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+        cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
+        if None in (cra1.atom, cra2.atom):
+            logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
             continue
-        dist = at1.pos.dist(at2.pos)
-        logger.write(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
+        dist = cra1.atom.pos.dist(cra2.atom.pos)
+        m, swap = monlib.match_link(cra1.residue, cra1.atom.name, cra2.residue, cra2.atom.name,
+                                    cra1.atom.altloc if cra1.atom.altloc!="\0" else cra2.atom.altloc)
+        if m:
+            if swap:
+                con.partner1 = model.cra_to_atomaddress(cra2)
+                con.partner2 = model.cra_to_atomaddress(cra1)
+            con.link_id = m.id
+            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.id,
+                                                                                                       cra1, cra2,
+                                                                                                       dist,
+                                                                                                       m.rt.bonds[0].value))
+        else:
+            logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
+            if remove_unknown: # should we just remove id?
+                i = con_idxes.get(con)
+                if i is not None: rm_idxes.append(i)
 
     if remove_unknown:
         for i in sorted(rm_idxes, reverse=True):
@@ -347,20 +351,18 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
 
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
+    # perhaps this should be done outside..
     st.entities.clear()
     st.setup_entities()
 
-    # Check links. XXX Is it ok to update st?
-    find_and_fix_links(st, monlib, remove_unknown=True)
-    
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger, ignore_unknown_links=True)
     if pos == "nucl":
-        logger.write("Generating hydrogens at nucleus positions")
+        logger.writeln("Generating hydrogens at nucleus positions")
         resnames = st[0].get_all_residue_names()
         check_monlib_support_nucleus_distances(monlib, resnames)
         topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=default_proton_scale)
     else:
-        logger.write("Generating hydrogens at electron positions")
+        logger.writeln("Generating hydrogens at electron positions")
 # add_hydrogens()
 
 def plane_deviations(atoms):
@@ -444,7 +446,7 @@ class Restraints:
                 e = self.enerlib.get(at)
                 if e:
                     maxr = max(maxr, e["vdw_radius"])
-        logger.write("maximum vdw_radius in this model= {}".format(maxr))
+        logger.writeln("maximum vdw_radius in this model= {}".format(maxr))
         return maxr
     # max_vdwr()
 
@@ -457,7 +459,7 @@ class Restraints:
         sigma = 0.2
         if None in (ene1, ene2):
             for t, e in ((type1, ene1), (type2, ene2)):
-                if e is None: logger.write("WARNING: unknwon energy type: {}".format(t))
+                if e is None: logger.writeln("WARNING: unknwon energy type: {}".format(t))
             return default_min_dist, sigma, vdwtype
 
         # Test hbond
@@ -589,11 +591,11 @@ class Restraints:
                 df = df.loc[(df.z > self.outlier_sigmas[k])].sort_values("z", ascending=False)
 
             n_outl = len(df.index.unique(0)) if k == "plane" else len(df.index)
-            logger.write("\n{} {} outliers (> {} sigma)".format(n_outl, k, self.outlier_sigmas[k]))
+            logger.writeln("\n{} {} outliers (> {} sigma)".format(n_outl, k, self.outlier_sigmas[k]))
             if n_outl > 0:
-                logger.write(df.to_string(index=(k=="plane")))
+                logger.writeln(df.to_string(index=(k=="plane")))
 
-        logger.write("\nSummary:")
+        logger.writeln("\nSummary:")
         tmp = []
         for k in dfs:
             df = dfs[k]
@@ -609,12 +611,12 @@ class Restraints:
                             numpy.mean(df.esd), numpy.sqrt(numpy.mean(df.z**2))])
 
             
-        logger.write(pandas.DataFrame(tmp,
+        logger.writeln(pandas.DataFrame(tmp,
                                       columns=["Restraint type", "number", "rmsd", "mean(esd)", "rmsz"],
                                       ).to_string(index=False, float_format="%.3f"))
 
-        logger.write("\n!WARNING!: this function has problems at the moment. Will be sorted out later.")
-        logger.write("""\
+        logger.writeln("\n!WARNING!: this function has problems at the moment. Will be sorted out later.")
+        logger.writeln("""\
 TODO
 - nbc distance for metals (e.g. Mg-O) and hydrogen atoms are not correct
 - redundant restraint definitions should be sorted out (e.g. A has C2e-nyu0 and C3e-nyu0 for the same atoms)

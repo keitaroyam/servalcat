@@ -57,7 +57,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def check_maps(map_files, pixel_size=None, disable_cell_check=False):
-    logger.write("Input map files:")
+    logger.writeln("Input map files:")
     params = []
     for f in map_files:
         g, gs = utils.fileio.read_ccp4_map(f, pixel_size=pixel_size)
@@ -74,7 +74,7 @@ def check_maps(map_files, pixel_size=None, disable_cell_check=False):
     cells = set([x[0] for x in params])
     if len(cells) > 1:
         if disable_cell_check:
-            logger.write("WARNING: Cells are different. Using the first one.")
+            logger.writeln("WARNING: Cells are different. Using the first one.")
         else:
             raise RuntimeError("Error: different cell parameters included")
 
@@ -101,8 +101,8 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
     grid_start = numpy.array(grid_start)
     grid_end = grid_start + grid_shape # for indexing grid_end-1 is the end
     cell = mask.unit_cell
-    logger.write("Original grid start: {:4d} {:4d} {:4d}".format(*grid_start))
-    logger.write("         grid   end: {:4d} {:4d} {:4d}".format(*(grid_end-1)))
+    logger.writeln("Original grid start: {:4d} {:4d} {:4d}".format(*grid_start))
+    logger.writeln("         grid   end: {:4d} {:4d} {:4d}".format(*(grid_end-1)))
     if sts:
         # here model is used to define region and mask content is ignored.
         allpos = numpy.array([cra.atom.pos.tolist() for st in sts for cra in st[0].all()])
@@ -116,11 +116,11 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
     limits = [(min(x), max(x)) for x in tmp]
 
     p = numpy.ceil(padding / spacing).astype(int)
-    logger.write("Limits: {} {} {}".format(*limits))
-    logger.write("Padding: {} {} {}".format(*p))
+    logger.writeln("Limits: {} {} {}".format(*limits))
+    logger.writeln("Padding: {} {} {}".format(*p))
     slices = [0, 0, 0]
     if noncentered:
-        logger.write("Non-centered trimming will be performed.")
+        logger.writeln("Non-centered trimming will be performed.")
         for i in range(3):
             start = max(grid_start[i], limits[i][0]-p[i])
             stop = min(limits[i][1]+p[i]+1, grid_end[i])
@@ -129,17 +129,17 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
                 elif stop < grid_end[i]: stop += 1
             slices[i] = slice(start, stop)
     else:
-        logger.write("Centered trimming will be performed.")
+        logger.writeln("Centered trimming will be performed.")
         for i in range(3):
             ctr = (grid_shape[i]-1)/2 + grid_start[i]
             rad = max(ctr-(limits[i][0]-p[i]), (limits[i][1]+p[i])-ctr)
-            logger.write("Rad{}= {}".format(i, rad))
+            logger.writeln("Rad{}= {}".format(i, rad))
             if rad < grid_shape[i]/2:
                 slices[i] = slice(int(ctr-rad), int(ctr+rad)+1, None)
             else:
                 slices[i] = slice(grid_start[i], grid_end[i], None)
             
-    logger.write("Slices: {}".format(slices))
+    logger.writeln("Slices: {}".format(slices))
     if not noncubic:
         # only works when input grid is cubic; otherwise need to expand
         if len(set(mask.shape)) > 1:
@@ -147,13 +147,13 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
         min_s = min([slices[i].start for i in range(3)])
         max_s = max([slices[i].stop for i in range(3)])
         slices = [slice(min_s, max_s, None) for i in range(3)]
-        logger.write("Cubic Slices: {}".format(slices))
+        logger.writeln("Cubic Slices: {}".format(slices))
 
     starts = [slices[i].start for i in range(3)]
         
     # Shifts for model
     shifts = -mask.get_position(slices[0].start, slices[1].start, slices[2].start)
-    logger.write("Shift for model: {} {} {}".format(*shifts.tolist()))
+    logger.writeln("Shift for model: {} {} {}".format(*shifts.tolist()))
 
     new_shape = [slices[0].stop-slices[0].start,
                  slices[1].stop-slices[1].start,
@@ -161,8 +161,8 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
     tmp = mask.get_position(*new_shape)
     new_cell = gemmi.UnitCell(tmp[0], tmp[1], tmp[2], cell.alpha, cell.beta, cell.gamma)
     
-    logger.write("New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
-    logger.write("New grid: {} {} {}".format(*new_shape))
+    logger.writeln("New Cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*new_cell.parameters))
+    logger.writeln("New grid: {} {} {}".format(*new_shape))
 
     if json_out:
         write_shifts_json(json_out,
@@ -182,7 +182,7 @@ def main(args):
         raise SystemExit("--padding must be > 0 if you want to create a mask from the model.")
 
     if args.no_shift_keep_cell and not args.no_shift:
-        logger.write("WARNING: --no_shift_keep_cell has no effect when --no_shift not given")
+        logger.writeln("WARNING: --no_shift_keep_cell has no effect when --no_shift not given")
     
     if args.maps:
         args.maps = sum(args.maps, [])
@@ -216,7 +216,7 @@ def main(args):
             cif_refs.append(cif_ref)
         
     if args.mask:
-        logger.write("Using mask to decide border: {}".format(args.mask))
+        logger.writeln("Using mask to decide border: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
         assert mask.shape == grid_shape
         mask.set_unit_cell(cell)
@@ -224,7 +224,7 @@ def main(args):
         if args.mask not in args.maps: # need to check with normalized paths?
             args.maps.append(args.mask)
     elif args.model and not args.shifts:
-        logger.write("Using model to decide border: {}".format(args.model))
+        logger.writeln("Using model to decide border: {}".format(args.model))
         mask = gemmi.FloatGrid(*grid_shape) # this is just dummy. values will not be seen.
         mask.set_unit_cell(cell)
         mask.spacegroup = gemmi.SpaceGroup(1)
@@ -262,7 +262,7 @@ def main(args):
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
                 st.ncs.clear()
                 st.ncs.extend(new_ops)
-                logger.write(" Writing symmetry expanded model for shifted model")
+                logger.writeln(" Writing symmetry expanded model for shifted model")
                 utils.symmetry.write_symmetry_expanded_model(st, spext[0]+"_trimmed_local_expanded",
                                                              pdb=True, cif=True)
 
@@ -270,7 +270,7 @@ def main(args):
             utils.fileio.write_model(st, file_name=spext[0]+"_trimmed"+spext[1], cif_ref=cif_refs[i])
     
     for f in args.maps:
-        logger.write("Slicing {}".format(f))
+        logger.writeln("Slicing {}".format(f))
         outf = os.path.basename(utils.fileio.splitext(f)[0])+"_trimmed.mrc"
         g = utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size)[0]
         if args.no_shift:

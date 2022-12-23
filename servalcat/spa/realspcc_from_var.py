@@ -69,7 +69,7 @@ def calc_var(hkldata, kind="noise", sharpen_signal=False, weight=None):
 
 def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): # XXX unfinished
     bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
-    logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
+    logger.writeln("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     for B in -numpy.arange(0,100,5):
         cov_xx = integ_var(0., bin_s, wsq, B)
@@ -79,7 +79,7 @@ def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): #
 
 def calc_cc_from_var(hkldata, x_list, kind="noise", sharpen_signal=False, weight=None, B=None):
     bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
-    logger.write("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
+    logger.writeln("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     cov_xx = integ_var(0., bin_s, wsq, B)
     cov_xy = integ_var(x_list[:,None], bin_s, wsq, B)

@@ -37,6 +37,27 @@ def check_version(exe="refmac5"):
     return ver
 # check_version()
 
+def ensure_ccp4scr():
+    tmpdir = os.environ.get("CCP4_SCR")
+    if tmpdir:
+        if os.path.isdir(tmpdir): # TODO check writability
+            try:
+                t = tempfile.TemporaryFile(dir=tmpdir)
+                t.close()
+                return
+            except OSError:
+                logger.writeln("Warning: cannot write files in CCP4_SCR= {}".format(tmpdir))
+        else:
+            try:
+                os.makedirs(tmpdir)
+                return
+            except:
+                logger.writeln("Warning: cannot create CCP4_SCR= {}".format(tmpdir))
+
+    os.environ["CCP4_SCR"] = tempfile.mkdtemp(prefix="ccp4tmp")
+    logger.writeln("Updated CCP4_SCR= {}".format(os.environ["CCP4_SCR"]))
+# ensure_ccp4scr()
+
 def external_restraints_json_to_keywords(json_in):
     ret = []
     with open(json_in) as f: exte_list = json.load(f)
@@ -145,7 +166,7 @@ def read_exte_line(l):
         elif s[1].lower().startswith("use"):
             ret["use_atoms"] = s[2][0].lower()
             if ret["use_atoms"] not in ("a", "m", "h"):
-                logger.write("invalid exte use keyword: {}".format(s[2]))
+                logger.writeln("invalid exte use keyword: {}".format(s[2]))
                 ret["use_atoms"] = "a"
         elif s[1].lower().startswith("conv"):
             if s[2].lower().startswith("pref"):
@@ -168,7 +189,7 @@ def read_exte_line(l):
                     except ValueError:
                         ret["itype_in"] = dict(o=0, f=2).get(s[itk+1][0].lower(), 1)
                     if not (0 <= ret["itype_in"] <= 2):
-                        logger.write("WARNING: wrong type is given. setting to 2.\n=> {}".format(l))
+                        logger.writeln("WARNING: wrong type is given. setting to 2.\n=> {}".format(l))
                         ret["itype_in"] = 2
                     itk += 2
                 elif s[itk].lower().startswith("symm"):
@@ -182,7 +203,7 @@ def read_exte_line(l):
                         ret["restr"][d[k]] = float(s[itk+1])
                         itk += 2
                     else:
-                        logger.write("unrecognised key: {}\n=> {}".format(s[itk], l))
+                        logger.writeln("unrecognised key: {}\n=> {}".format(s[itk], l))
         elif s[1].lower().startswith("stac"):
             ret["rest_type"] = "stac"
             ret["restr"] = {}
@@ -204,10 +225,10 @@ def read_exte_line(l):
                     ret["restr"][k] = float(s[itk+1]) if k != "type_r" else int(s[itk+1])
                     itk += 2
                 else:
-                    logger.write("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], l))
+                    logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], l))
                     itk += 1
         else:
-            logger.write("WARNING: cannot parse: {}".format(l))
+            logger.writeln("WARNING: cannot parse: {}".format(l))
     return ret
 # read_exte_line
 
@@ -324,7 +345,7 @@ class FixForRefmac:
                     con.link_id = "gap"
                     con.partner1 = gemmi.AtomAddress(chain.name, res0.seqid, res0.name, "", "\0")
                     con.partner2 = gemmi.AtomAddress(chain.name, res.seqid, res.name, "", "\0")
-                    logger.write("Refmac workaround (gap link): {}".format(con))
+                    logger.writeln("Refmac workaround (gap link): {}".format(con))
                     st.connections.append(con)
 
     def fix_microheterogeneity(self, st, topo):
@@ -341,7 +362,7 @@ class FixForRefmac:
                     chains.append(chain.name)
                     mh_res.append(ress)
                     ress_str = "/".join([str(r) for r in ress])
-                    logger.write("Microheterogeneity detected in chain {}: {}".format(chain.name, ress_str))
+                    logger.writeln("Microheterogeneity detected in chain {}: {}".format(chain.name, ress_str))
 
         if not mh_res: return
 
@@ -391,7 +412,7 @@ class FixForRefmac:
                                       (chain_name, r.seqid.num, chars[ir])])
                 r.seqid.icode = chars[ir]
 
-        logger.write("DEBUG: mh_link= {}".format(mh_link))
+        logger.writeln("DEBUG: mh_link= {}".format(mh_link))
         # Update connections (LINKR)
         for chain_name, rr in zip(chains, mh_res):
             for r in rr:
@@ -410,7 +431,7 @@ class FixForRefmac:
 
                         con.partner1 = p1
                         con.partner2 = p2
-                        logger.write(" Adding link: {}".format(con))
+                        logger.writeln(" Adding link: {}".format(con))
                         st.connections.append(con)
             for r1, r2 in itertools.combinations(rr, 2):
                 for a1 in set([a.altloc for a in r1]):
@@ -437,7 +458,7 @@ class FixForRefmac:
             if len(polymer) == 0: continue
             del_idxes = []
             newchains.append(gemmi.Chain(self.new_chain_id(chain.name)))
-            logger.write("Refmac workaround (nonpolymer-fix) {} => {} ({} residues)".format(chain.name, newchains[-1].name,
+            logger.writeln("Refmac workaround (nonpolymer-fix) {} => {} ({} residues)".format(chain.name, newchains[-1].name,
                                                                                             len(chain) - len(polymer)))
             for i, res in enumerate(chain):
                 if res in polymer: continue
@@ -477,7 +498,7 @@ class FixForRefmac:
                         offset = res.seqid.num - 1
                         # need to keep link to previous residue if exists
                         for link in topo.links_to_previous(res):
-                            logger.write("Link: {} {} {} alt= {} {}".format(link.link_id, link.res1, link.res2, 
+                            logger.writeln("Link: {} {} {} alt= {} {}".format(link.link_id, link.res1, link.res2, 
                                                                             link.alt1, link.alt2))
 
                             con = gemmi.Connection()
@@ -496,7 +517,7 @@ class FixForRefmac:
                     prev = chain[ires-1].seqid if ires > 0 else None
                     changes.append([(chain.name, res.seqid.num, res.seqid.icode),
                                     (newchains[-1].name, newchains[-1][-1].seqid.num, newchains[-1][-1].seqid.icode)])
-                    logger.write("Refmac workaround (too large seq) {} => {} {}".format(changes[-1][0], changes[-1][1], res.name))
+                    logger.writeln("Refmac workaround (too large seq) {} => {} {}".format(changes[-1][0], changes[-1][1], res.name))
 
                 for i in reversed(del_idxes):
                     del chain[i]
@@ -514,7 +535,7 @@ class FixForRefmac:
             for res in chain:
                 changeto = changedict.get((chain.name, res.seqid.num, res.seqid.icode))
                 if changeto is not None:
-                    logger.write("back: {} {} to {}".format(chain.name, res.seqid, changeto))
+                    logger.writeln("back: {} {} to {}".format(chain.name, res.seqid, changeto))
                     #chain.name = changeto[0] # this is ok when modify back
                     chain_newid.add((chain, changeto[0]))
                     res.seqid.num = changeto[1]
@@ -560,7 +581,6 @@ class Refmac:
         self.monlib_path = None
         self.keep_chain_ids = False
         self.show_log = False # summary only if false
-        self.tmpdir = None # set path if CCP4_SCR does not work
         self.global_mode = kwargs.get("global_mode")
         
         for k in kwargs:
@@ -569,7 +589,7 @@ class Refmac:
             else:
                 setattr(self, k, kwargs[k])
 
-        self.check_tmpdir()
+        ensure_ccp4scr()
     # __init__()
 
     def init_from_args(self, args):
@@ -590,7 +610,6 @@ class Refmac:
         self.jellybody_sigma, self.jellybody_dmax = args.jellybody_params
         self.resolution = args.resolution
         self.weight_auto_scale = args.weight_auto_scale
-        self.weight_matrix = args.weight_matrix
         self.keyword_files = args.keyword_file
         self.keywords = args.keywords
         self.external_restraints_json = args.external_restraints_json
@@ -607,25 +626,11 @@ class Refmac:
         return ret
     # copy()
 
-    def check_tmpdir(self):
-        tmpdir = os.environ.get("CCP4_SCR")
-        if tmpdir:
-            if os.path.isdir(tmpdir): # TODO check writability
-                return
-            try:
-                os.makedirs(tmpdir)
-                return
-            except:
-                logger.write("Warning: cannot create CCP4_SCR= {}".format(tmpdir))
-
-        self.tmpdir = tempfile.mkdtemp(prefix="ccp4tmp")
-    # check_tmpdir()
-
     def set_libin(self, ligands):
         if not ligands: return
         if len(ligands) > 1:
             mcif = "merged_ligands.cif" # XXX directory!
-            logger.write("Merging ligand cif files: {}".format(ligands))
+            logger.writeln("Merging ligand cif files: {}".format(ligands))
             fileio.merge_ligand_cif(ligands, mcif)
             self.libin = mcif
         else:
@@ -711,8 +716,6 @@ class Refmac:
             cmd.extend(["tlsout", self.tlsout()])
         if self.source == "neutron":
             cmd.extend(["atomsf", os.path.join(os.environ["CLIBD"], "atomsf_neutron.lib")])
-        if self.tmpdir:
-            cmd.extend(["scrref", os.path.join(self.tmpdir, "refmac5_temp1")])
             
         return cmd
     # make_cmd()
@@ -722,10 +725,10 @@ class Refmac:
         stdin = self.make_keywords()
         with open(self.prefix+".inp", "w") as ofs: ofs.write(stdin)
 
-        logger.write("Running REFMAC5..")
-        logger.write("{} <<__eof__ > {}".format(" ".join(pipes.quote(x) for x in cmd), self.prefix+".log"))
-        logger.write(stdin, end="")
-        logger.write("__eof__")
+        logger.writeln("Running REFMAC5..")
+        logger.writeln("{} <<__eof__ > {}".format(" ".join(pipes.quote(x) for x in cmd), self.prefix+".log"))
+        logger.write(stdin)
+        logger.writeln("__eof__")
 
         env = os.environ
         if self.monlib_path: env["CLIBD_MON"] = os.path.join(self.monlib_path, "") # should end with /
@@ -742,7 +745,7 @@ class Refmac:
         rmsbond = ""
         rmsangle = ""
         log_delay = []
-        summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.write
+        summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.writeln
         outlier_flag = False
         last_table_flag = False
         last_table_keys = []
@@ -853,15 +856,15 @@ class Refmac:
         retcode = p.wait()
         log.close()
         if log_delay:
-            logger.write("== Summary of Refmac ==")
-            logger.write("\n".join(log_delay))
+            logger.writeln("== Summary of Refmac ==")
+            logger.writeln("\n".join(log_delay))
                          
         if rmsbond:
-            logger.write("                      Initial    Final")
-            logger.write(rmsbond.rstrip())
-            logger.write(rmsangle.rstrip())
+            logger.writeln("                      Initial    Final")
+            logger.writeln(rmsbond.rstrip())
+            logger.writeln(rmsangle.rstrip())
             
-        logger.write("REFMAC5 finished with exit code= {}".format(retcode))
+        logger.writeln("REFMAC5 finished with exit code= {}".format(retcode))
 
         # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):

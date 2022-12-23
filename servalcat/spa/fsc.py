@@ -120,7 +120,7 @@ def calc_phase_randomized_fsc(hkldata, mask, labs_half, labs_half_masked, random
         fsc_half = stats["fsc_half_unmasked"][i_bin]
         if rand_start_bin is None and fsc_half < randomize_fsc_at:
             rand_start_bin = i_bin
-            logger.write(" randomize phase beyond {:.2f} A (bin {})".format(stats["d_max"][i_bin], i_bin))
+            logger.writeln(" randomize phase beyond {:.2f} A (bin {})".format(stats["d_max"][i_bin], i_bin))
 
         if rand_start_bin is not None:
             for i in range(2):
@@ -152,7 +152,7 @@ def calc_phase_randomized_fsc(hkldata, mask, labs_half, labs_half_masked, random
             break
         global_res = 1./(0.5*(1./stats["d_min"][i_bin]+1./stats["d_max"][i_bin])) # definition is slightly different from RELION
 
-    logger.write("resolution from mask corrected FSC = {:.2f} A".format(global_res))
+    logger.writeln("resolution from mask corrected FSC = {:.2f} A".format(global_res))
 
     return stats, global_res
 # calc_maskphase_randomized_fsc()
@@ -214,7 +214,7 @@ def main(args):
         args.model = []
         
     if args.mask:
-        logger.write("Input mask file: {}".format(args.mask))
+        logger.writeln("Input mask file: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
     else:
         mask = None
@@ -245,7 +245,7 @@ def main(args):
 
     if args.resolution is None:
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])
-        logger.write("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
+        logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
         
     sts = []
     for xyzin in args.model:
@@ -316,21 +316,21 @@ def main(args):
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
             if k.startswith("fsc_FC_"):
-                logger.write("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.writeln("# FSCaverage of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
             if k.startswith("Rcmplx_FC_"):
-                logger.write("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
+                logger.writeln("# Average of {} = {:.4f}".format(k, fsc_average(stats.ncoeffs, stats[k])), fs=ofs)
 
-    logger.write("Data file: {}".format(args.fsc_out))
+    logger.writeln("Data file: {}".format(args.fsc_out))
 
     if args.csv:
         csv_out = os.path.splitext(args.fsc_out)[0] + ".csv"
         stats.to_csv(csv_out)
-        logger.write("CSV file: {}".format(csv_out))
+        logger.writeln("CSV file: {}".format(csv_out))
 
     log_out = os.path.splitext(args.fsc_out)[0] + ".log"
     with open(log_out, "w") as ofs:
         ofs.write(loggraph_str(stats, labs_fc))
-    logger.write("Run loggraph {} to see plots.".format(log_out))
+    logger.writeln("Run loggraph {} to see plots.".format(log_out))
 # main()
 
 if __name__ == "__main__":

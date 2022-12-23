@@ -29,12 +29,12 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_contacting=False,
     is_helical = args.twist is not None
     if not is_helical and not args.pg:
         if len(st.ncs) > 0:
-            logger.write("Strict NCS detected from model.")
+            logger.writeln("Strict NCS detected from model.")
             show_ncs_operators_axis_angle(st.ncs)
         return
     
     if len(st.ncs) > 0:
-        logger.write(" WARNING: NCS information in model file will be ignored")
+        logger.writeln(" WARNING: NCS information in model file will be ignored")
 
     ncsops = ncsops_from_args(args, st.cell, map_and_start=map_and_start, st=st,
                               helical_min_n=helical_min_n, helical_max_n=helical_max_n)
@@ -57,7 +57,7 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
     if args.center is None:
         A = numpy.array(cell.orthogonalization_matrix.tolist())
         center = numpy.sum(A, axis=1) / 2 #+ start_xyz
-        logger.write("Center: {}".format(center))
+        logger.writeln("Center: {}".format(center))
     else:
         center = numpy.array(args.center)
         
@@ -66,10 +66,10 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
                                             args.pg, args.twist, args.rise,
                                             axis1=args.axis1, axis2=args.axis2,
                                             st=st, min_n=helical_min_n, max_n=helical_max_n)
-        logger.write("{} helical operators found".format(len(ncsops)))
+        logger.writeln("{} helical operators found".format(len(ncsops)))
     else:
         _, _, ops = operators_from_symbol(args.pg, axis1=args.axis1, axis2=args.axis2)
-        logger.write("{} operators found for {}".format(len(ops), args.pg))
+        logger.writeln("{} operators found for {}".format(len(ops), args.pg))
         show_operators_axis_angle(ops)
         ncsops = make_NcsOps_from_matrices(ops, cell=cell, center=center)
 
@@ -150,7 +150,7 @@ def operators_from_symbol(op, axis1=None, axis2=None):
 def show_operators_axis_angle(ops):
     for i, op in enumerate(ops):
         ax, ang = generate_operators.Rotation2AxisAngle_general(op)
-        logger.write(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
+        logger.writeln(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
 # show_operators_axis_angle()
 
 def show_ncs_operators_axis_angle(ops):
@@ -160,7 +160,7 @@ def show_ncs_operators_axis_angle(ops):
         ax, ang = generate_operators.Rotation2AxisAngle_general(op2)
         axlab = "[{: .4f}, {: .4f}, {: .4f}]".format(*ax)
         trlab = "[{: 9.4f}, {: 9.4f}, {: 9.4f}]".format(*op.tr.vec.tolist())
-        logger.write(" operator {:3s} angle= {:7.3f} deg axis= {} trans= {} {}".format(op.id, numpy.rad2deg(ang),
+        logger.writeln(" operator {:3s} angle= {:7.3f} deg axis= {} trans= {} {}".format(op.id, numpy.rad2deg(ang),
                                                                                        axlab, trlab,
                                                                                        "given" if op.given else ""))
 # show_operators_axis_angle()
@@ -206,28 +206,6 @@ def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1
     return ops
 # generate_helical_operators()
 
-"""
-def write_ncsc_for_refmac(file_name, matrices, xyz_in=None, map_in=None):
-    if xyz_in:
-        st = gemmi.read_structure(xyz_in)
-        cell = st.cell
-    if map_in:
-        ma = gemmi.read_ccp4_map(map_in)
-        cell = ma.grid.unit_cell
-        
-    A = numpy.array(cell.orthogonalization_matrix.tolist())
-    center = numpy.sum(A,axis=1) / 2
-    
-    ofs = open(file_name, "w")
-    for m in matrices:
-        transl = numpy.dot(m, -center) + center
-        m_str = " ".join([str(x) for x in m.flatten()])
-        t_str = " ".join([str(x) for x in transl])
-        ofs.write("ncsc matrix {} {}\n".format(m_str, t_str))
-    ofs.close()
-# write_ncsc_for_refmac()
-"""
-
 def make_NcsOps_from_matrices(matrices, cell=None, center=None):
     if center is None:
         A = numpy.array(cell.orthogonalization_matrix.tolist())
@@ -250,23 +228,22 @@ def find_center_of_origin(mat, vec): # may not be unique.
     return gemmi.Vec3(*ret)
 # find_center_of_origin()
 
-def write_NcsOps_for_refmac(ncs_ops, file_name):
+def ncs_ops_for_refmac(ncs_ops):
     def make_line(tr):
         m = tr.mat.tolist()
         m_str = " ".join([str(m[i][j]) for i in range(3) for j in range(3)])
         t_str = " ".join([str(x) for x in tr.vec.tolist()])
-        return "ncsc matrix {} {}\n".format(m_str, t_str)
+        return "ncsc matrix {} {}".format(m_str, t_str)
     
-    ofs = open(file_name, "w")
-
+    ret = []
     # REFMAC requires identity op
-    if not any([x.tr.is_identity() for x in ncs_ops]):
-        ofs.write(make_line(gemmi.Transform()))
+    if not any(x.tr.is_identity() for x in ncs_ops):
+        ret.append(make_line(gemmi.Transform()))
 
     for op in ncs_ops:
-        if not op.given: ofs.write(make_line(op.tr))
-    ofs.close()
-# write_NcsOps_for_refmac()
+        if not op.given: ret.append(make_line(op.tr))
+    return ret
+# ncs_ops_for_refmac()
 
 # TODO def euler2matrix(euler):
 # TODO def polar2matrix(polar):

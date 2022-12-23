@@ -10,6 +10,8 @@ from servalcat.utils import logger
 from servalcat.utils import model
 from servalcat.utils import restraints
 import os
+import shutil
+import glob
 import re
 import subprocess
 import gemmi
@@ -23,6 +25,36 @@ def splitext(path):
     else:
         return os.path.splitext(path)
 # splitext()
+
+def rotate_file(filename, copy=False):
+    if not os.path.exists(filename): return
+
+    # make list [ [filename, number], ... ]
+    old_list = []
+    dot_files = glob.glob(filename + ".*")
+    for f in dot_files:
+        suffix = f.replace(filename+".", "")
+        try:
+            i = int(suffix)
+            if str(i) == suffix: # ignore if suffix was such as 003...
+                old_list.append([f, i])
+        except ValueError as e:
+            continue
+
+    old_list.sort(key=lambda x: x[1])
+
+    # rotate files
+    for f, i in reversed(old_list):
+        logger.writeln("Rotating file: {}".format(f))
+        os.rename(f, "%s.%d" % (f[:f.rfind(".")], i+1))
+
+    if copy:
+        shutil.copyfile(filename, filename + ".1")
+    else:
+        os.rename(filename, filename + ".1")
+
+    return filename + ".1"
+# rotate_file()
 
 def check_model_format(xyzin):
     # TODO check format actually
@@ -61,8 +93,8 @@ def write_mmcif(st, cif_out, cif_ref=None):
             
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
         if len(blocks) == 0:
-            logger.write("No _atom_site found in {}".format(cif_ref))
-            logger.write("  Give up using cif reference.")
+            logger.writeln("No _atom_site found in {}".format(cif_ref))
+            logger.writeln("  Give up using cif reference.")
             return write_mmcif(st, cif_out)
         block = blocks[0]
         # to remove fract_transf_matrix. maybe we should keep some (like _atom_sites.solution_hydrogens)?
@@ -83,7 +115,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
 # write_mmcif()
 
 def write_pdb(st, pdb_out):
-    logger.write("Writing PDB file: {}".format(pdb_out))
+    logger.writeln("Writing PDB file: {}".format(pdb_out))
     chain_id_lens = [len(x) for x in model.all_chain_ids(st)]
     if chain_id_lens and max(chain_id_lens) > 2:
         st = st.clone()
@@ -132,21 +164,21 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     origin = [m.header_float(x) for x in (50,51,52)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
-    logger.write("Reading CCP4/MRC map file {}".format(filename))
-    logger.write("   Cell Grid: {:4d} {:4d} {:4d}".format(*grid_cell))
-    logger.write("    Map mode: {}".format(m.header_i32(4)))
-    logger.write("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
-    logger.write("       Shape: {:4d} {:4d} {:4d}".format(*grid_shape))
-    logger.write("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
-    logger.write("  Axis order: {}".format(" ".join(axis_letters)))
-    logger.write(" Space group: {}".format(m.header_i32(23)))
-    logger.write("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
-    logger.write("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
-    logger.write("      Origin: {:.6e} {:.6e} {:.6e}".format(*origin))
+    logger.writeln("Reading CCP4/MRC map file {}".format(filename))
+    logger.writeln("   Cell Grid: {:4d} {:4d} {:4d}".format(*grid_cell))
+    logger.writeln("    Map mode: {}".format(m.header_i32(4)))
+    logger.writeln("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
+    logger.writeln("       Shape: {:4d} {:4d} {:4d}".format(*grid_shape))
+    logger.writeln("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
+    logger.writeln("  Axis order: {}".format(" ".join(axis_letters)))
+    logger.writeln(" Space group: {}".format(m.header_i32(23)))
+    logger.writeln("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
+    logger.writeln("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
+    logger.writeln("      Origin: {:.6e} {:.6e} {:.6e}".format(*origin))
     if not numpy.allclose(origin, [0,0,0]):
-        logger.write("             ! WARNNING: ORIGIN header is not supported.")
-    logger.write("       Label: {}".format(label))
-    logger.write("")
+        logger.writeln("             ! WARNNING: ORIGIN header is not supported.")
+    logger.writeln("       Label: {}".format(label))
+    logger.writeln("")
 
     if setup:
         if default_value is None: default_value = float("nan")
@@ -159,12 +191,12 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
         except TypeError:
             pixel_size = [pixel_size, pixel_size, pixel_size]
             
-        logger.write("Overriding pixel size with {:.6f} {:.6f} {:.6f}".format(*pixel_size))
+        logger.writeln("Overriding pixel size with {:.6f} {:.6f} {:.6f}".format(*pixel_size))
         orgc = m.grid.unit_cell.parameters
         new_abc = [orgc[i]*pixel_size[i]/voxel_size[i] for i in (0,1,2)]
         m.grid.unit_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2],
                                           orgc[3], orgc[4], orgc[5])
-        logger.write(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
+        logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
 
     return [m.grid, grid_start] # TODO should return grid_shape so that the same region can be written
 # read_ccp4_map()
@@ -222,7 +254,7 @@ def read_cif_safe(cif_in):
     ifs = gzip.open(cif_in, "rt") if cif_in.endswith(".gz") else open(cif_in)
     s = ifs.read()
     if "\0" in s: # Refmac occasionally writes \0 in some fileds..
-        logger.write(" WARNING: null character detected. Replacing with '.'")
+        logger.writeln(" WARNING: null character detected. Replacing with '.'")
         s = s.replace("\0", ".")
     doc = gemmi.cif.read_string(s)
     return doc
@@ -231,16 +263,16 @@ def read_cif_safe(cif_in):
 def read_structure(xyz_in):
     spext = splitext(xyz_in)
     if spext[1].lower() in (".pdb", ".ent"):
-        logger.write("Reading PDB file: {}".format(xyz_in))
+        logger.writeln("Reading PDB file: {}".format(xyz_in))
         return gemmi.read_pdb(xyz_in)
     elif spext[1].lower() in (".cif", ".mmcif"):
-        logger.write("Reading mmCIF file: {}".format(xyz_in))
+        logger.writeln("Reading mmCIF file: {}".format(xyz_in))
         doc = read_cif_safe(xyz_in)
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
         if len(blocks) == 0:
             raise RuntimeError("No block having _atom_site found")
         if len(blocks) > 1:
-            logger.write(" WARNING: more than one block having _atom_site found. Will use first one.")
+            logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
         return gemmi.make_structure_from_block(blocks[0])
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
@@ -288,7 +320,7 @@ def merge_ligand_cif(cifs_in, cif_out):
     for k in names:
         if len(names[k]) > 1:
             for i,j in reversed(names[k][:-1]):
-                logger.write("WARNING: removing duplicated {} from {}".format(k, cifs_in[i]))
+                logger.writeln("WARNING: removing duplicated {} from {}".format(k, cifs_in[i]))
                 todel.append((i,j))
                 for t in "comp", "link":
                     if k.startswith("{}_".format(t)):
@@ -348,10 +380,10 @@ def merge_ligand_cif(cifs_in, cif_out):
 def read_small_structure(xyz_in):
     spext = splitext(xyz_in)
     if spext[1].lower() in (".ins", ".res"):
-        logger.write("Reading SHELX ins/res file: {}".format(xyz_in))
+        logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
         return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
     elif spext[1].lower() in (".pdb", ".ent"):
-        logger.write("Reading PDB file: {}".format(xyz_in))
+        logger.writeln("Reading PDB file: {}".format(xyz_in))
         st = gemmi.read_pdb(xyz_in)
         for m in st:
             for chain in m:
@@ -365,7 +397,7 @@ def read_small_structure(xyz_in):
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
         if len(blocks) > 0:
             if len(blocks) > 1:
-                logger.write(" WARNING: more than one block having _atom_site found. Will use first one.")
+                logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
             return gemmi.make_structure_from_block(blocks[0])
         else:
             ss = gemmi.read_small_structure(xyz_in)
@@ -446,7 +478,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
             info["hklf"] = int(sp[1])
         elif not re_kwd.search(ins):
             if not 4 < len(sp) < 13:
-                logger.write("cannot parse this line: {}".format(l))
+                logger.writeln("cannot parse this line: {}".format(l))
                 continue
             site = gemmi.SmallStructure.Site()
             site.label = sp[0]
@@ -457,7 +489,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
                 continue
 
             if site.label.startswith("Q"):
-                logger.write("skip Q peak: {}".format(l))
+                logger.writeln("skip Q peak: {}".format(l))
                 continue
             
             site.fract.fromlist(list(map(float, sp[2:5])))
@@ -506,7 +538,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
         sgops = set(gemmi.SpaceGroup(ss.spacegroup_hm).operations())
         opdiffs = sgops.symmetric_difference(symms)
         if opdiffs:
-            logger.write("ops= {}".format(" ".join([x.triplet() for x in symms])))
+            logger.writeln("ops= {}".format(" ".join([x.triplet() for x in symms])))
 
     return ss, info
 # read_shelx_ins()
@@ -520,7 +552,7 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
         try:
             hkl = int(l[:4]), int(l[4:8]), int(l[8:12])
         except ValueError:
-            logger.write("Error while parsing HKL part: {}".format(l))
+            logger.writeln("Error while parsing HKL part: {}".format(l))
             break
             
         if hkl == (0,0,0): break
@@ -533,7 +565,7 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
     ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
-    logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
+    logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
     i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
@@ -547,14 +579,14 @@ def read_smcif_hkl(cif_in):
     # Very crude support for smcif - just because I do not know other varieties.
     # TODO other possible data types? (amplitudes?)
     # TODO check _refln_observed_status?
-    logger.write("Reading hkl data from small molecule cif: {}".format(cif_in))
+    logger.writeln("Reading hkl data from small molecule cif: {}".format(cif_in))
     b = gemmi.cif.read(cif_in).sole_block()
     try:
         cell_par = [float(b.find_value("_cell_length_{}".format(x))) for x in ("a", "b", "c")]
         cell_par += [float(b.find_value("_cell_angle_{}".format(x))) for x in ("alpha", "beta", "gamma")]
         cell = gemmi.UnitCell(*cell_par)
     except:
-        logger.write(" WARNING: no unit cell in this file")
+        logger.writeln(" WARNING: no unit cell in this file")
         cell = None
 
     ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop("_space_group_symop_operation_xyz")]
@@ -574,7 +606,7 @@ def read_smcif_hkl(cif_in):
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
     ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
-    logger.write(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
+    logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
     i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
@@ -585,7 +617,7 @@ def read_smcif_hkl(cif_in):
 # read_smcif_hkl()
     
 def read_smcif_shelx(cif_in):
-    logger.write("Reading small molecule cif: {}".format(cif_in))
+    logger.writeln("Reading small molecule cif: {}".format(cif_in))
     b = gemmi.cif.read(cif_in).sole_block()
     res_str = b.find_value("_shelx_res_file")
     hkl_str = b.find_value("_shelx_hkl_file")

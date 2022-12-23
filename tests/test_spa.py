@@ -149,7 +149,7 @@ class TestSPACommands(unittest.TestCase):
     def test_refine(self):
         sys.argv = ["", "refine_spa", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
                     "--model", pipes.quote(data["pdb"]), "--mask_for_fofc", pipes.quote(data["mask"]),
-                    "--no_shift", "--trim_fofc_mtz", "--resolution", "1.9", "--ncycle", "5", "--cross_validation"]
+                    "--trim_fofc_mtz", "--resolution", "1.9", "--ncycle", "5", "--cross_validation"]
         command_line.main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))
