@@ -30,6 +30,8 @@ def add_arguments(parser):
     parser.add_argument('--resolution',
                         type=float,
                         help='')
+    parser.add_argument('--ligand', nargs="*", action="append",
+                        help="restraint dictionary cif file(s)")
     parser.add_argument('--ncycle', type=int, default=10)
     #parser.add_argument('--jellybody', action='store_true')
     #parser.add_argument('--jellybody_params', nargs=2, type=float,
@@ -46,6 +48,7 @@ def add_arguments(parser):
     
     parser.add_argument('--bref', choices=["aniso","iso","iso_then_aniso"], default="aniso")
     parser.add_argument('--unrestrained', action='store_true')
+    parser.add_argument('--bulk_solvent', action='store_true')
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="electron") #FIXME
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
@@ -173,6 +176,8 @@ def main(args):
     # FIXME in some cases mtz space group should be modified. 
     utils.fileio.write_model(st, prefix="input", pdb=True, cif=True)
 
+    if args.ligand: args.ligand = sum(args.ligand, [])
+
     prefix = "refined"
     if args.bref == "aniso":
         args.keywords.append("refi bref aniso")
@@ -183,8 +188,12 @@ def main(args):
         args.keywords.append("refi type unre")
         args.hout = False
     else:
-        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, #cif_files=args.ligand, 
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                        stop_for_unknowns=False)#, check_hydrogen=(args.hydrogen=="yes"))
+
+    # no bulk solvent by default
+    if not args.bulk_solvent:
+        args.keywords.append("solvent no")
 
     # Run Refmac
     refmac = utils.refmac.Refmac(prefix=prefix, global_mode="cx",
@@ -201,7 +210,7 @@ def main(args):
                                  resolution=args.resolution,
                                  keyword_files=args.keyword_file,
                                  keywords=args.keywords)
-    #refmac.set_libin(args.ligand)
+    refmac.set_libin(args.ligand)
     refmac_summary = refmac.run_refmac()
 
     if args.bref == "iso_then_aniso":
