@@ -181,9 +181,9 @@ def main(args):
         raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
     if not refmac_ver:
         raise SystemExit("Error: Cannot get Refmac version.")
+    logger.writeln("Refmac version: {}".format(".".join(str(x) for x in refmac_ver)))
     if refmac_ver < (5, 8, 404):
         raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
-    logger.writeln("Refmac{} will be used".format(".".join(str(x) for x in refmac_ver)))
     print("Waiting for input..")
     inputs = []
     for l in sys.stdin:
@@ -205,7 +205,7 @@ def main(args):
             os.environ["CCP4_SCR"] = os.path.dirname(opts[k]) # XXX "." may be given, which causes problem (os.path.isdir("") is False)
     utils.refmac.ensure_ccp4scr()
     
-    keywords = parse_keywords(inputs) # TODO expand @, read psrestin also?
+    keywords = parse_keywords(inputs) # TODO read psrestin also?
 
     # TODO what if restin is given or make cr prepared is given?
     # TODO check make pept/link/suga/ss/conn/symm/chain
