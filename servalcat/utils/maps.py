@@ -149,7 +149,7 @@ def mask_and_fft_maps(maps, d_min, mask=None):
             g.array[:] *= mask
         f_grid = gemmi.transform_map_to_f_phi(g)
         if hkldata is None:
-            asudata = f_grid.prepare_asu_data(dmin=d_min)
+            asudata = f_grid.prepare_asu_data(dmin=d_min, with_000=True)
             hkldata = hkl.hkldata_from_asu_data(asudata, lab)
         else:
             hkldata.df[lab] = f_grid.get_value_by_hkl(hkldata.miller_array())

@@ -524,20 +524,26 @@ class HklData:
                                                          self.cell.fractionalize(shift).tolist()))
     # translate()
 
-    def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None):
+    def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None,
+                  exclude_000=True):
         if types is None: types = {}
-        ndata = sum(2 if numpy.iscomplexobj(self.df[lab]) else 1 for lab in labs)
+        if exclude_000:
+            df = self.df.query("H!=0 | K!=0 | L!=0")
+        else:
+            df = self.df
+            
+        ndata = sum(2 if numpy.iscomplexobj(df[lab]) else 1 for lab in labs)
 
-        data = numpy.empty((len(self.df.index), ndata + 3), dtype=numpy.float32)
-        data[:,:3] = self.df[["H","K","L"]]
+        data = numpy.empty((len(df.index), ndata + 3), dtype=numpy.float32)
+        data[:,:3] = df[["H","K","L"]]
         idx = 3
         for lab in labs:
-            if numpy.iscomplexobj(self.df[lab]):
-                data[:,idx] = numpy.abs(self.df[lab])
-                data[:,idx+1] = numpy.angle(self.df[lab], deg=True)
+            if numpy.iscomplexobj(df[lab]):
+                data[:,idx] = numpy.abs(df[lab])
+                data[:,idx+1] = numpy.angle(df[lab], deg=True)
                 idx += 2
             else:
-                data[:,idx] = self.df[lab]
+                data[:,idx] = df[lab]
                 idx += 1
 
         mtz = gemmi.Mtz()
@@ -547,7 +553,7 @@ class HklData:
         for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
 
         for lab in labs:
-            if numpy.iscomplexobj(self.df[lab]):
+            if numpy.iscomplexobj(df[lab]):
                 mtz.add_column(lab, "F")
                 if phase_label_decorator is None:
                     plab = ("PH"+lab).replace("FWT", "WT")
@@ -557,7 +563,7 @@ class HklData:
             else:
                 typ = types.get(lab)
                 if typ is None:
-                    if issubclass(self.df[lab].dtype.type, numpy.integer):
+                    if issubclass(df[lab].dtype.type, numpy.integer):
                         typ = "I"
                     else:
                         typ = "R"
