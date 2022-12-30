@@ -535,9 +535,6 @@ def map_peaks(args):
         ofs.write("""\
 from __future__ import absolute_import, division, print_function
 import gtk
-""")
-        ofs.write("data = {}\n".format(for_coot))
-        ofs.write("""\
 class coot_serval_map_peak_list:
   def __init__(self):
     window = gtk.Window(gtk.WINDOW_TOPLEVEL)
@@ -549,6 +546,7 @@ class coot_serval_map_peak_list:
     frame_vbox = gtk.VBox(False, 0)
     frame_vbox.set_border_width(3)
     self.btns = []
+    self.data = {}
     self.add_data(frame_vbox)
     scrolled_win.add_with_viewport(frame_vbox)
     vbox.pack_start(scrolled_win, True, True, 0)
@@ -558,17 +556,17 @@ class coot_serval_map_peak_list:
 
   def toggled(self, btn, i):
     if btn.get_active():
-      set_rotation_centre(*data[i][1])
-      add_status_bar_text(data[i][0])
+      set_rotation_centre(*self.data[i][1])
+      add_status_bar_text(self.data[i][0])
 
   def add_data(self, vbox):
-    for i, d in enumerate(data):
+    for i, d in enumerate(self.data):
       self.btns.append(gtk.RadioButton(None if i == 0 else self.btns[0], d[0]))
       vbox.pack_start(self.btns[-1], False, False, 0)
       self.btns[-1].connect('toggled', self.toggled, i)
 
 gui = coot_serval_map_peak_list()
-""")
+""".format(for_coot))
     logger.writeln("\nRun:")
     logger.writeln("coot --script {}".format(coot_out))
 # map_peaks()
