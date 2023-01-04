@@ -713,17 +713,19 @@ def main(args):
         logger.writeln("Cross validation is requested.")
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         logger.writeln("Starting refinement using half map 1 (model is shaken first)")
+        logger.writeln("In this refinement, hydrogen is removed regardless of --hydrogen option")
         if args.gemmi_prep:
             xyzin = refmac_prefix + ".crd"
             prepare_crd(refmac_prefix+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
-                        make={"hydr":args.hydrogen[0]}) # but we should not use hydrogen after shaking - no?
+                        make={"hydr":"n"})
         else:
             xyzin = refmac_prefix + model_format
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
                                  xyzin=xyzin,
                                  prefix=refmac_prefix_shaken,
                                  shake=args.shake_radius,
-                                 jellybody=False) # makes no sense to use jelly body after shaking
+                                 jellybody=False, # makes no sense to use jelly body after shaking
+                                 hydrogen="no") # should not use hydrogen after shaking
         if args.jellybody: logger.writeln("  Turning off jelly body")
         if "lab_f_half1" in file_info:
             refmac_hm1.lab_f = file_info["lab_f_half1"]
@@ -734,6 +736,24 @@ def main(args):
             refmac_hm1.run_refmac()
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
+
+        if args.hydrogen != "no": # does not work properly when 'yes' - we would need to keep hydrogen in input
+            logger.writeln("Cross validation: 2nd run with hydrogen")
+            if args.gemmi_prep:
+                xyzin = refmac_prefix_shaken + ".crd"
+                prepare_crd(refmac_prefix_shaken+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+                            make={"hydr":"a"})
+            else:
+                xyzin = refmac_prefix_shaken + model_format
+            refmac_prefix_shaken = refmac_prefix+"_shaken_refined2"
+            refmac_hm1_2 = refmac_hm1.copy(xyzin=xyzin,
+                                           prefix=refmac_prefix_shaken,
+                                           shake=None,
+                                           hydrogen="all")
+            try:
+                refmac_hm1_2.run_refmac()
+            except RuntimeError as e:
+                raise SystemExit("Error: {}".format(e))
         
         # Modify output
         st_sr, cif_ref_sr = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix_shaken+model_format)
