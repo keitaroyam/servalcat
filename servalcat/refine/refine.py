@@ -29,12 +29,13 @@ def scale_shifts(dx, scale):
     return dx
 
 class Refine:
-    def __init__(self, st, topo, monlib):
+    def __init__(self, st, topo, monlib, ll=None):
         self.monlib = monlib
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
         self.lookup = {x.atom: x for x in self.st[0].all()}
+        self.ll = ll
         self.geom = gemmi.Geometry(self.st)
         # shake here if needed
         self.geom.load_topo(topo)
@@ -56,6 +57,46 @@ class Refine:
         for i, a in enumerate(self.atoms):
             x[3*i:3*(i+1)] = a.pos.tolist()
         return x
+
+    def calc_target(self, w=1, target_only=False):
+        N = len(self.atoms) * 3
+        if self.geom is not None:
+            geom = self.geom.calc(self.use_nucleus, target_only)
+            if not target_only:
+                g_vn = numpy.array(self.geom.target.vn) # don't want copy?
+                coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
+                #print("am=", coo)
+                lil = coo.tolil()
+                rows, cols = lil.nonzero()
+                lil[cols,rows] = lil[rows,cols]
+                g_am = lil
+        else:
+            geom = 0
+
+        if self.ll is not None:
+            self.ll.update_fc()
+            ll = self.ll.calc_target()
+            if not target_only:
+                l_vn, l_am = self.ll.calc_grad()
+        else:
+            ll = 0
+
+        f =  w * ll + geom
+
+        if not target_only:
+            if self.geom is not None and self.ll is not None:
+                vn = w * l_vn + g_vn
+                am = w * l_am + g_am
+            elif self.geom is None:
+                vn = w * l_vn
+                am = w * l_am
+            elif self.ll is None:
+                vn = g_vn
+                am = g_am
+        else:
+            vn, am = None, None
+
+        return f, vn, am
 
     def show_model_stats(self):
         f0 = self.geom.calc(self.use_nucleus, True)
@@ -126,34 +167,29 @@ class Refine:
             logger.writeln(" {} = {:.4f}".format(k, rmsd[k]))
 
     @profile
-    def run_cycle(self):
-        N = len(self.atoms) * 3
+    def run_cycle(self, weight=1):
         self.geom.setup_vdw(self.monlib.ener_lib)
         print("vdws =", len(self.geom.vdws))
         self.geom.setup_target()
-        f0 = self.geom.calc(self.use_nucleus, False)
-        #f0 = self.geom.target.target
-        vn = numpy.array(self.geom.target.vn) # don't want copy?
-        #print("vn=", vn)
-        #am = numpy.array(self.geom.target.am)
-        coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
-        #print("am=", coo)
-        lil = coo.tolil()
-        rows, cols = lil.nonzero()
-        lil[cols,rows] = lil[rows,cols]
+        f0, vn, am = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
 
         if 0:
-            Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
+            logger.writeln("Preconditioning using eigen")
+            #Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
+            N = len(self.atoms) * 3
+            tmp = am.tocoo()
+            Pinv = scipy.sparse.coo_matrix(gemmi.precondition_eigen_coo(tmp.data, tmp.row, tmp.col, N, 1e-4),
+                                           shape=(N, N))
             M = Pinv
             #a = Pinv.T.dot(lil).dot(Pinv)
             #logger.writeln("cond(Pinv^-1 A Pinv)= {}".format(numpy.linalg.cond(a.todense())))
             #logger.writeln("cond(A)= {}".format(numpy.linalg.cond(lil.todense())))
             #quit()
-            M = scipy.sparse.identity(N)
+            #M = scipy.sparse.identity(N)
         else:
-            diag = lil.diagonal()
+            diag = am.diagonal()
             print("diagonal min=", numpy.min(diag))
             diag[diag<=0] = 1.
             diag = numpy.sqrt(diag)
@@ -161,7 +197,7 @@ class Refine:
             rdmat = scipy.sparse.diags(rdiag)
             M = rdmat
             
-        dx, self.gamma = cgsolve.cgsolve_rm(A=lil, v=vn, M=M, gamma=self.gamma)
+        dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
 
         if 0: # to check hessian scale
             with open("minimise_line.dat", "w") as ofs:
@@ -174,8 +210,7 @@ class Refine:
         for i in range(3):
             dx2 = scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
-            f1 = self.geom.calc(self.use_nucleus, True)
-            #f1 = self.geom.target.target
+            f1, _, _ = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:
