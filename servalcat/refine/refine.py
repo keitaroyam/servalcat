@@ -139,8 +139,9 @@ class Refine:
                         if r / sigma > self.outlier_sigmas[k]:
                             outliers.append((a, closest, r, ideal, r / sigma))
                 else:
-                    sum_r += resid**2
-                    n += 1
+                    if k != "bond" or g.type < 2:
+                        sum_r += resid**2
+                        n += 1
                     if abs(resid) / sigma > self.outlier_sigmas[k]:
                         outliers.append((g, closest, resid+ideal, ideal, resid / sigma))
             
@@ -157,7 +158,8 @@ class Refine:
                     if k != "plane": labs.append("ideal={:.2f}".format(ideal))
                     if k == "torsion": labs.append("per={}".format(closest.period))
                     if k == "chirality": labs.append("sign={}".format(chirsstr[g.sign]))
-                    if k == "vdw": labs.append("type={}".format(g.type))
+                    if k in ("vdw", "bond"): labs.append("type={}".format(g.type))
+                    if k == "bond" and g.type == 2: labs.append("alpha={}".format(g.alpha))
                     if k == "vdw": labs.append("sym={}".format(g.sym_idx))
                     labs.append("z={:.2f}".format(z))
                     logger.writeln(" " + " ".join(labs))

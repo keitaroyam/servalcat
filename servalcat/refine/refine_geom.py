@@ -14,6 +14,7 @@ import scipy.sparse
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refine.refine import Refine
+from servalcat.refmac.exte import read_external_restraints
 
 import line_profiler
 import atexit
@@ -34,7 +35,10 @@ def add_arguments(parser):
                         "Default: %(default)s")
     parser.add_argument('--randomize', type=float, default=0,
                         help='Shake coordinates with specified rmsd')
-
+    parser.add_argument('--keywords', nargs='+', action="append",
+                        help="refmac keyword(s)")
+    parser.add_argument('--keyword_file', nargs='+', action="append",
+                        help="refmac keyword file(s)")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -67,6 +71,13 @@ def main(args):
             if cra.atom.is_hydrogen(): cra.atom.occ = 1.
 
     refiner = Refine(st, topo, monlib)
+
+    # FIXME it should read before finalising restraints
+    if args.keywords or args.keyword_file:
+        keywords = []
+        if args.keywords: keywords = sum(args.keywords, [])
+        if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
+        read_external_restraints(keywords, refiner.st, refiner.geom)
 
     if args.randomize > 0:
         numpy.random.seed(0)
