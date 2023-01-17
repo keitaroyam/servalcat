@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import pandas
 import scipy.sparse
 from servalcat.utils import logger
 from . import cgsolve
@@ -51,7 +52,7 @@ class Refine:
         print("  angles =", len(self.geom.angles))
         print("torsions =", len(self.geom.torsions))
         self.gamma = 0
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chirality=5, plane=5)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5)
         self.use_nucleus = False
         self.refine_adp = False if self.ll is None else refine_adp 
 
@@ -122,16 +123,26 @@ class Refine:
         items = dict(bond=self.geom.reporting.bonds,
                      angle=self.geom.reporting.angles,
                      torsion=self.geom.reporting.torsions,
-                     chirality=self.geom.reporting.chirs,
+                     chir=self.geom.reporting.chirs,
                      plane=self.geom.reporting.planes,
                      vdw=self.geom.reporting.vdws)
-        rmsd = {}
+        labs = dict(bond="Bond distances",
+                    angle="Bond angles",
+                    torsion="Torsion angles",
+                    chir="Chiral centres",
+                    plane="Planar groups",
+                    vdw="VDW repulsions")
+        sdata = []
+        skeys = []
         for k in items:
-            sum_r = 0.
-            n = 0
+            if k == "torsion":
+                sum_r, sum_s, n = {}, {}, {}
+            else:
+                sum_r, sum_s = 0., 0 # sum of squared resid and sigma
+                n = 0
             outliers = []
             for rep in items[k]:
-                if k in ("chirality", "plane", "vdw"):
+                if k in ("chir", "plane", "vdw"):
                     g, resid = rep
                     closest = g
                 else:
@@ -139,7 +150,7 @@ class Refine:
                 if k == "bond":
                     ideal = closest.value_nucleus if self.use_nucleus else closest.value
                     sigma = closest.sigma_nucleus if self.use_nucleus else closest.sigma
-                elif k == "chirality":
+                elif k == "chir":
                     ideal, sigma = g.value, g.sigma
                 elif k == "plane":
                     ideal, sigma = 0, g.sigma
@@ -148,43 +159,81 @@ class Refine:
 
                 if k == "plane":
                     sum_r += numpy.sum(numpy.square(resid))
+                    sum_s += sigma * len(resid)
                     n += len(resid)
                     for a, r in zip(g.atoms, resid):
                         r = abs(r)
                         if r / sigma > self.outlier_sigmas[k]:
                             outliers.append((a, closest, r, ideal, r / sigma))
                 else:
-                    if k != "bond" or g.type < 2:
+                    if k == "torsion":
+                        p = closest.period
+                        sum_r[p] = sum_r.get(p, 0) + resid**2
+                        sum_s[p] = sum_s.get(p, 0) + sigma
+                        n[p] = n.get(p, 0) + 1
+                    elif k != "bond" or g.type < 2:
                         sum_r += resid**2
+                        sum_s += sigma
                         n += 1
                     if abs(resid) / sigma > self.outlier_sigmas[k]:
                         outliers.append((g, closest, resid+ideal, ideal, resid / sigma))
-            
-            rmsd[k] = numpy.sqrt(sum_r / n) if n > 0 else 0.
+
+            if k == "torsion":
+                for p in sorted(sum_r):
+                    rmsd = numpy.sqrt(sum_r[p] / n[p]) if n[p] > 0 else 0.
+                    mean_sig = sum_s[p] / n[p] if n[p] > 0 else 0.
+                    sdata.append([n[p], rmsd, mean_sig])
+                    skeys.append("{}, period {} refined".format(labs[k], p))
+            else:
+                rmsd = numpy.sqrt(sum_r / n) if n > 0 else 0.
+                mean_sig = sum_s / n if n > 0 else 0.
+                sdata.append([n, rmsd, mean_sig])
+                skeys.append("{} refined".format(labs[k]))
             if outliers:
                 outliers.sort(key=lambda x: -abs(x[-1]))
-                logger.writeln("{} outliers".format(k))
+                odata = []
                 for g, closest, val, ideal, z in outliers:
+                    odata.append({})
                     if k == "plane":
-                        labs = ["atom={}".format(self.lookup[g])]
+                        odata[-1]["atom"] = str(self.lookup[g])
                     else:
-                        labs = ["atom{}={}".format(i+1, self.lookup[a]) for i, a in enumerate(g.atoms)]
-                    labs.append("value={:.2f}".format(val))
-                    if k != "plane": labs.append("ideal={:.2f}".format(ideal))
-                    if k == "torsion": labs.append("per={}".format(closest.period))
-                    if k == "chirality": labs.append("sign={}".format(chirsstr[g.sign]))
-                    if k in ("vdw", "bond"): labs.append("type={}".format(g.type))
-                    if k == "bond" and g.type == 2: labs.append("alpha={}".format(g.alpha))
-                    if k == "vdw": labs.append("sym={}".format(g.sym_idx))
-                    labs.append("z={:.2f}".format(z))
-                    logger.writeln(" " + " ".join(labs))
-                logger.writeln("")
-        logger.writeln("RMSD:")
-        for k in rmsd:
-            logger.writeln(" {} = {:.4f}".format(k, rmsd[k]))
+                        odata[-1].update({"atom{}".format(i+1):str(self.lookup[a]) for i, a in enumerate(g.atoms)})
+                    odata[-1]["value"] = val
+                    if k != "plane": odata[-1]["ideal"] = ideal
+                    if k == "torsion": odata[-1]["per"] = closest.period
+                    if k == "chir": odata[-1]["sign"] = chirsstr[g.sign]
+                    if k in ("vdw", "bond"): odata[-1]["type"] = g.type
+                    if k == "bond" and g.type == 2: odata[-1]["alpha"] = g.alpha
+                    if k == "vdw": odata[-1]["sym"] = g.sym_idx
+                    odata[-1]["z"] = z
+
+                df = pandas.DataFrame(odata)
+                logger.writeln("{} outliers".format(k))
+                logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
+
+        df = pandas.DataFrame(sdata, index=skeys, columns=["N restraints", "rmsd", "Av(sigma)"])
+        logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
 
     @profile
     def run_cycle(self, weight=1):
+        if 0: # test of grad
+            self.ll.update_fc()
+            x0 = self.get_x()
+            f0 = self.ll.calc_target()
+            ader = self.ll.calc_grad(self.refine_adp)[0]
+            for e in 1e-3, 1e-4, 1e-5, 1e-6:
+                x1 = numpy.copy(x0)
+                x1[0] += e
+                self.set_x(x1)
+                self.ll.update_fc()
+                f1 = self.ll.calc_target()
+                nder = (f1 - f0) / e
+                print("e=", e)
+                print("NUM DER=", nder)
+                print("ANA DER=", ader[0])
+                print("ratio=", nder/ader[0])
+            quit()
+
         # TODO overall scaling
         self.geom.setup_vdw(self.monlib.ener_lib)
         print("vdws =", len(self.geom.vdws))
