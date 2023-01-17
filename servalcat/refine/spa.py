@@ -50,7 +50,7 @@ class LL_SPA:
             Fo = self.hkldata.df.FP.to_numpy()[idxes]
             DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df.D[i_bin]
             ret += numpy.sum(numpy.abs(Fo - DFc)**2) / self.hkldata.binned_df.S[i_bin]
-        return ret
+        return ret * 2 # friedel mates
     # calc_target()
 
     def calc_fsc(self):
@@ -74,8 +74,10 @@ class LL_SPA:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 
+        # strangely, we need V for Hessian and V**2/n for gradient.
+        d2ll_dab2 *= self.hkldata.cell.volume
         dll_dab_den = self.hkldata.fft_map(data=dll_dab)
-        dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count / 2 # why this factor??
+        dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
 
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
