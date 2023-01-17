@@ -68,6 +68,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float, default=1,
                         help="refinement weight")
+    parser.add_argument('--bfactor', type=float,
+                        help="reset all atomic B values to specified value")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -111,6 +113,11 @@ def main(args):
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
                                   reorder=True, ignore_unknown_links=False) # we should remove logger here??
 
+    if args.bfactor is not None:
+        for cra in st[0].all():
+            cra.atom.b_iso = args.bfactor
+            cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
+    
     ll = spa.LL_SPA(hkldata, st, monlib)
     refiner = Refine(st, topo, monlib, ll)
 

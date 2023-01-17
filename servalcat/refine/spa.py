@@ -59,7 +59,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return stats
 
-    def calc_grad(self):
+    def calc_grad(self, refine_adp):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         for i_bin, idxes in self.hkldata.binned():
@@ -82,7 +82,7 @@ class LL_SPA:
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
         ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        vn = ll.calc_grad(dll_dab_den)
+        vn = ll.calc_grad(dll_dab_den, refine_adp)
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
 
@@ -92,5 +92,5 @@ class LL_SPA:
         b_sf_min = 0 #min(min(e.it92.b) for e in elems) # because there is constants
         b_sf_max = max(max(e.it92.b) for e in elems)
         ll.make_fisher_table_diag_fast(b_iso_min + b_sf_min, b_iso_max + b_sf_max, d2dfw_table)
-        am = ll.fisher_diag_from_table()
+        am = ll.fisher_diag_from_table(refine_adp)
         return numpy.array(vn), scipy.sparse.diags(am)

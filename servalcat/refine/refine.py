@@ -17,19 +17,25 @@ import atexit
 profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
 
-def scale_shifts(dx, scale):
+def scale_shifts(dx, scale, n_atoms):
     #ave_shift = numpy.mean(dx)
     #max_shift = numpy.maximum(dx)
     #rms_shift = numpy.std(dx)
     shift_allow_high =  0.5
     shift_allow_low  = -0.5
+    shift_max_allow_B = 30.0
+    shift_min_allow_B = -30.0
     dx = scale * dx
-    dx[dx > shift_allow_high] = shift_allow_high
-    dx[dx < shift_allow_low] = shift_allow_low
+    dxx = dx[:n_atoms*3]
+    dxx[dxx > shift_allow_high] = shift_allow_high
+    dxx[dxx < shift_allow_low] = shift_allow_low
+    dxb = dx[n_atoms*3:]
+    dxb[dxb > shift_max_allow_B] = shift_max_allow_B
+    dxb[dxb < shift_min_allow_B] = shift_min_allow_B
     return dx
 
 class Refine:
-    def __init__(self, st, topo, monlib, ll=None):
+    def __init__(self, st, topo, monlib, ll=None, refine_adp=True):
         self.monlib = monlib
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
@@ -47,23 +53,32 @@ class Refine:
         self.gamma = 0
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chirality=5, plane=5)
         self.use_nucleus = False
+        self.refine_adp = False if self.ll is None else refine_adp 
 
     def set_x(self, x):
-        for i in range(len(x)//3):
+        for i in range(len(self.atoms)):
             self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
+            if self.refine_adp: # only isotropic for now
+                self.atoms[i].b_iso = max(0.5, x[len(self.atoms) * 3 + i]) # minimum B = 0.5
 
     def get_x(self):
-        x = numpy.zeros(len(self.atoms) * 3)
+        x = numpy.zeros(len(self.atoms) * (4 if self.refine_adp else 3))
         for i, a in enumerate(self.atoms):
             x[3*i:3*(i+1)] = a.pos.tolist()
+            if self.refine_adp: # only isotropic for now
+                x[len(self.atoms) * 3 + i] = self.atoms[i].b_iso
+
         return x
 
     def calc_target(self, w=1, target_only=False):
-        N = len(self.atoms) * 3
+        N = len(self.atoms) * (4 if self.refine_adp else 3)
         if self.geom is not None:
             geom = self.geom.calc(self.use_nucleus, target_only)
             if not target_only:
-                g_vn = numpy.array(self.geom.target.vn) # don't want copy?
+                # for now we do not implement adp restraints
+                g_vn = numpy.zeros(N)
+                #g_vn = numpy.array(self.geom.target.vn) # don't want copy?
+                g_vn[:len(self.geom.target.vn)] = self.geom.target.vn
                 coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
                 #print("am=", coo)
                 lil = coo.tolil()
@@ -77,7 +92,7 @@ class Refine:
             self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad()
+                l_vn, l_am = self.ll.calc_grad(self.refine_adp)
         else:
             ll = 0
 
@@ -170,6 +185,7 @@ class Refine:
 
     @profile
     def run_cycle(self, weight=1):
+        # TODO overall scaling
         self.geom.setup_vdw(self.monlib.ener_lib)
         print("vdws =", len(self.geom.vdws))
         self.geom.setup_target()
@@ -178,6 +194,7 @@ class Refine:
         logger.writeln("f0= {:.4e}".format(f0))
 
         if 0:
+            assert not self.refine_adp # not supported!
             logger.writeln("Preconditioning using eigen")
             #Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
             N = len(self.atoms) * 3
@@ -200,7 +217,18 @@ class Refine:
             M = rdmat
             
         dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
-
+        dxx = dx[:len(self.atoms)*3]
+        logger.writeln("dx = {}".format(dxx))
+        logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
+        logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
+        logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
+        if self.refine_adp:
+            db = dx[len(self.atoms)*3:]
+            logger.writeln("dB = {}".format(db))
+            logger.writeln("min(dB) = {}".format(numpy.min(db)))
+            logger.writeln("max(dB) = {}".format(numpy.max(db)))
+            logger.writeln("mean(dB)= {}".format(numpy.mean(db)))
+            
         if 0: # to check hessian scale
             with open("minimise_line.dat", "w") as ofs:
                 ofs.write("s f\n")
@@ -210,7 +238,7 @@ class Refine:
             quit()
 
         for i in range(3):
-            dx2 = scale_shifts(dx, 1/2**i)
+            dx2 = scale_shifts(dx, 1/2**i, len(self.atoms))
             self.set_x(x0 - dx2)
             f1, _, _ = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
