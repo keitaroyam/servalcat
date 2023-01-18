@@ -76,7 +76,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                 logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
                 res.name = "HOH"
 
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    gemmi.setup_for_crd(st)
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
