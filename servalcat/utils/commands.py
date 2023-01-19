@@ -474,6 +474,8 @@ def map_peaks(args):
         
     blobs = gemmi.find_blobs_by_flood_fill(gr, cutoff,
                                            min_volume=args.min_volume, min_score=0)
+    blobs.extend(gemmi.find_blobs_by_flood_fill(gr, cutoff, negate=True,
+                                                min_volume=args.min_volume, min_score=0))
     getpos = dict(peak=lambda x: x.peak_pos,
                   centroid=lambda x: x.centroid)[args.blob_pos]
     st_peaks = model.st_from_positions([getpos(b) for b in blobs])
@@ -504,7 +506,7 @@ def map_peaks(args):
     for b in blobs:
         bpos = getpos(b)
         map_val = gr.interpolate_value(bpos)
-        if (args.max_volume is not None and b.volume > args.max_volume) or map_val < cutoff: continue
+        if (args.max_volume is not None and b.volume > args.max_volume) or abs(map_val) < cutoff: continue
         x = ns.find_nearest_atom(bpos)
         if x is None:
             logger.writeln("too far from model: value={:.2f} volume= {} pos= {}".format(map_val, b.volume, bpos))
@@ -512,7 +514,8 @@ def map_peaks(args):
         chain = st[0][x.chain_idx]
         res = chain[x.residue_idx]
         atom = res[x.atom_idx]
-        mpos = st.cell.find_nearest_pbc_position(atom.pos, bpos, x.image_idx) # does it work with image_idx!=0?
+        im = st.cell.find_nearest_image(atom.pos, bpos, gemmi.Asu.Any)
+        mpos = st.cell.find_nearest_pbc_position(atom.pos, bpos, im.sym_idx)
         dist = atom.pos.dist(mpos)
         peaks.append((map_val, b.volume, mpos, dist, chain, res, atom))
 
@@ -521,7 +524,7 @@ def map_peaks(args):
         return
         
     # Print and write coot script
-    peaks.sort(reverse=True)
+    peaks.sort(reverse=True, key=lambda x:(abs(x[0]),)+x[1:])
     for_coot = []
     for i, p in enumerate(peaks):
         map_val, volume, mpos, dist, chain, res, atom = p
