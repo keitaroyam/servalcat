@@ -49,7 +49,8 @@ def parse_args(arg_list):
 
 def main(args):
     st = utils.fileio.read_structure(args.model)
-    logger.writeln("NCS= {}".format([x for x in st.ncs]))
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    st.assign_cis_flags()
     if st.ncs:
         st2 = st.clone()
         logger.writeln("Take NCS constraints into account.")
@@ -60,6 +61,7 @@ def main(args):
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True,
                                                    check_hydrogen=(args.hydrogen=="yes"))
+    utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "full":gemmi.HydrogenChange.ReAdd,
                 "yes":gemmi.HydrogenChange.NoChange,
