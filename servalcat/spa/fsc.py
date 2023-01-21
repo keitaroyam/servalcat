@@ -49,38 +49,58 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def loggraph_str(stats, labs_fc):
-    model_labs = [l for l in stats if any(l.startswith("fsc_"+fc) for fc in labs_fc)]
-    power_labs = [l for l in stats if l.startswith("power_")]
-    half_labs = ["fsc_half_unmasked", "fsc_half_masked", "fsc_half_masked_rand", "fsc_half_masked_corrected"]
-    if not all(l in stats for l in half_labs):
-        if "fsc_half" in stats:
-            half_labs = ["fsc_half"]
-        else:
-            half_labs = []
-
-    stats2 = stats.copy()
-    stats2.insert(0, "1/resol^2", 1./stats["d_min"]**2)
-    stats2.insert(1, "bin", stats.index)
-    all_labs = ["1/resol^2", "bin", "ncoeffs", "d_max", "d_min"] + half_labs + model_labs + power_labs
-    for l in power_labs: stats2[l] = numpy.log(stats2[l])
-    
-    ret = "$TABLE: FSC :\n"
+# go to utils?
+def make_loggraph_str(df, main_title, title_labs):
+    ret = "$TABLE: {} :\n".format(main_title)
     ret += "$GRAPHS\n"
-    if half_labs:
-        ret += ": Phase randomized FSC " if len(half_labs) > 1 else ": Half map FSC "
-        ret += ":A:1,{}:\n".format(",".join(str(1+all_labs.index(x)) for x in half_labs))
-    if model_labs:
-        ret += ": Map-model FSC :A:1,{}:\n".format(",".join(str(1+all_labs.index(x)) for x in model_labs))
-    if power_labs:
-        ret += ": log(Power) :A:1,{}:\n".format(",".join(str(1+all_labs.index(x)) for x in power_labs))
-    ret += ": number of Fourier coefficients :A:1,3\n:"
+    #all_labs = []
+    all_labs = list(df.columns)
+    for t, labs in title_labs:
+        ret += ": {} :A:{}:\n".format(t, ",".join(str(all_labs.index(l)+1) for l in labs))
+        #all_labs.extend(l for l in labs if l not in all_labs)
     ret += "$$\n"
     ret += " ".join(all_labs) + "\n"
     ret += "$$\n$$\n"
-    ret += stats2.to_string(columns=all_labs, index=False, index_names=False, header=False) + "\n"
+    #ret += df.to_string(columns=all_labs, index=False, index_names=False, header=False) + "\n"
+    ret += df.to_string(index=False, index_names=False, header=False) + "\n"
     return ret
-# loggraph_str()
+# make_loggraph_str()
+
+def write_loggraph(stats, labs_fc, log_out):
+    model_labs1 = [l for l in stats if any(l.startswith("fsc_"+fc) for fc in labs_fc)]
+    model_labs2 = [l for l in stats if any(l.startswith(("cc_"+fc, "mcos_"+fc)) for fc in labs_fc)]
+    power_labs = [l for l in stats if l.startswith("power_")]
+    half_labs1 = ["fsc_half_unmasked", "fsc_half_masked", "fsc_half_masked_rand", "fsc_half_masked_corrected"]
+    half_labs2 = ["cc_half", "mcos_half"]
+    if not all(l in stats for l in half_labs1):
+        if "fsc_half" in stats:
+            half_labs1 = ["fsc_half"]
+        else:
+            half_labs1 = []
+
+    s2lab = "1/resol^2"
+    stats2 = stats.copy()
+    stats2.insert(0, s2lab, 1./stats["d_min"]**2)
+    stats2.insert(1, "bin", stats.index)
+    for l in power_labs: stats2[l] = numpy.log(stats2[l])
+    title_labs = []
+    if half_labs1:
+        title_labs.append(("Phase randomized FSC" if len(half_labs1) > 1 else "Half map FSC",
+                           [s2lab] + half_labs1))
+    if half_labs2:
+        title_labs.append(("Half map amplitude CC and Mean(cos(dphi))",
+                           [s2lab] + half_labs2))
+    if model_labs1:
+        title_labs.append(("Map-model FSC", [s2lab] + model_labs1))
+    if model_labs2:
+        title_labs.append(("Map-model amplitude CC and Mean(cos(dphi))", [s2lab] + model_labs2))
+    if power_labs:
+        title_labs.append(("log(Power)", [s2lab] + power_labs))
+
+    title_labs.append(("number of Fourier coefficients", [s2lab, "ncoeffs"]))
+    with open(log_out, "w") as ofs:
+        ofs.write(make_loggraph_str(stats2, main_title="FSC", title_labs=title_labs))
+# write_loggraph()
 
 def fsc_average(n, fsc):
     return numpy.nansum(n * fsc) / numpy.nansum(n)
@@ -173,11 +193,16 @@ def calc_fsc_all(hkldata, labs_fc, lab_f, labs_half=None,
         
     stats["ncoeffs"] = 0
     stats["power_{}".format(lab_f)] = 0.
-    for lab in labs_fc: stats["power_{}".format(lab)] = 0.
-    for lab in labs_fc: stats["fsc_{}_full".format(lab)] = 0.
-    for lab in labs_fc: stats["Rcmplx_{}_full".format(lab)] = 0.
+    for lab in labs_fc:
+        stats["power_{}".format(lab)] = 0.
+        stats["fsc_{}_full".format(lab)] = 0.
+        stats["Rcmplx_{}_full".format(lab)] = 0.
+        stats["cc_{}_full".format(lab)] = 0.
+        stats["mcos_{}_full".format(lab)] = 0.
     if labs_half:
         if not half_fsc_done: stats["fsc_half"] = 0.
+        stats["cc_half"] = 0.
+        stats["mcos_half"] = 0.
         for lab in labs_fc:
             stats["fsc_{}_half1".format(lab)] = 0.
             stats["fsc_{}_half2".format(lab)] = 0.
@@ -189,15 +214,23 @@ def calc_fsc_all(hkldata, labs_fc, lab_f, labs_half=None,
         if labs_half:
             F1, F2 = hkldata.df[labs_half[0]].to_numpy()[idxes], hkldata.df[labs_half[1]].to_numpy()[idxes]
             if not half_fsc_done: stats.loc[i_bin, "fsc_half"] = numpy.real(numpy.corrcoef(F1, F2)[1,0])
+            cc_half = numpy.corrcoef(numpy.abs(F1), numpy.abs(F2))[1,0]
+            mcos_half = numpy.mean(numpy.cos(numpy.angle(F1) - numpy.angle(F2))) # f1*f2.conj()/abs(f1)/abs(f2) is much faster, but in case zero..
+            stats.loc[i_bin, "cc_half"] = cc_half
+            stats.loc[i_bin, "mcos_half"] = mcos_half
         else:
             F1, F2 = None, None
 
         for labfc in labs_fc:
             Fc = hkldata.df[labfc].to_numpy()[idxes]
             fsc_model = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
+            cc_model = numpy.corrcoef(numpy.abs(Fo), numpy.abs(Fc))[1,0]
+            mcos_model = numpy.mean(numpy.cos(numpy.angle(Fo) - numpy.angle(Fc)))
             D = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
             rcmplx_model = numpy.sum(numpy.abs(Fo-D*Fc))/numpy.sum(numpy.abs(Fo))
             stats.loc[i_bin, "fsc_{}_full".format(labfc)] = fsc_model
+            stats.loc[i_bin, "cc_{}_full".format(labfc)] = cc_model
+            stats.loc[i_bin, "mcos_{}_full".format(labfc)] = mcos_model
             stats.loc[i_bin, "Rcmplx_{}_full".format(labfc)] = rcmplx_model
             stats.loc[i_bin, "power_{}".format(labfc)] = numpy.average(numpy.abs(Fc)**2)
             if labs_half:
@@ -328,8 +361,7 @@ def main(args):
         logger.writeln("CSV file: {}".format(csv_out))
 
     log_out = os.path.splitext(args.fsc_out)[0] + ".log"
-    with open(log_out, "w") as ofs:
-        ofs.write(loggraph_str(stats, labs_fc))
+    write_loggraph(stats, labs_fc, log_out)
     logger.writeln("Run loggraph {} to see plots.".format(log_out))
 # main()
 
