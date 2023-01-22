@@ -68,6 +68,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float, default=1,
                         help="refinement weight")
+    parser.add_argument('--adp_weight', type=float, default=1,
+                        help="refinement ADP weight (experimental)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
 # add_arguments()
@@ -136,7 +138,7 @@ def main(args):
     for i in range(args.ncycle):
         logger.writeln("==== CYCLE {:2d}".format(i))
         ll.update_ml_params()
-        refiner.run_cycle(weight=args.weight)
+        refiner.run_cycle(weight=args.weight, adp_weight=args.adp_weight)
         utils.fileio.write_model(refiner.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
         ll.update_fc()
         ll.calc_fsc()

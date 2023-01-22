@@ -11,6 +11,7 @@ import numpy
 import pandas
 import scipy.sparse
 from servalcat.utils import logger
+from servalcat import utils
 from . import cgsolve
 
 import line_profiler
@@ -70,11 +71,15 @@ class Refine:
                 x[len(self.atoms) * 3 + i] = self.atoms[i].b_iso
 
         return x
-
-    def calc_target(self, w=1, target_only=False):
+    @profile
+    def calc_target(self, w=1, wadp=1, target_only=False):
         N = len(self.atoms) * (4 if self.refine_adp else 3)
         if self.geom is not None:
-            geom = self.geom.calc(self.use_nucleus, target_only)
+            geom_x = self.geom.calc(self.use_nucleus, target_only)
+            geom_a = self.geom.calc_adp_restraint(target_only, wadp) if self.refine_adp else 0
+            logger.writeln(" geom_x = {}".format(geom_x))
+            logger.writeln(" geom_a = {}".format(geom_a))
+            geom = geom_x + geom_a
             if not target_only:
                 # for now we do not implement adp restraints
                 g_vn = numpy.zeros(N)
@@ -215,7 +220,7 @@ class Refine:
         logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
 
     @profile
-    def run_cycle(self, weight=1):
+    def run_cycle(self, weight=1, adp_weight=1):
         if 0: # test of grad
             self.ll.update_fc()
             x0 = self.get_x()
@@ -237,8 +242,8 @@ class Refine:
         # TODO overall scaling
         self.geom.setup_vdw(self.monlib.ener_lib)
         print("vdws =", len(self.geom.vdws))
-        self.geom.setup_target()
-        f0, vn, am = self.calc_target(weight)
+        self.geom.setup_target(True, self.refine_adp)
+        f0, vn, am = self.calc_target(weight, adp_weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
 
@@ -289,7 +294,7 @@ class Refine:
         for i in range(3):
             dx2 = scale_shifts(dx, 1/2**i, len(self.atoms))
             self.set_x(x0 - dx2)
-            f1, _, _ = self.calc_target(weight, target_only=True)
+            f1, _, _ = self.calc_target(weight, adp_weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:
@@ -297,4 +302,5 @@ class Refine:
             self.set_x(x0)
 
         self.show_model_stats()
+        utils.model.adp_analysis(self.st)
 # class Refine
