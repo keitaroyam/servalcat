@@ -450,9 +450,20 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                                                                                        json_out=None)
             ret["shifts"] = shifts
             vol_mask = numpy.count_nonzero(mask.array>0.5)
-            vol_map = new_shape[0] * new_shape[1] * new_shape[2] # XXX assuming all orthogonal
-            ret["vol_ratio"] = vol_mask/vol_map
+            vol_map = new_shape[0] * new_shape[1] * new_shape[2]
+            ret["vol_ratio"] = vol_mask / vol_map
             logger.writeln(" Vol_mask/Vol_map= {:.2e}".format(ret["vol_ratio"]))
+
+            # Model may be built out of the box (with 'unit cell' translation symmetry)
+            # It is only valid with original unit cell, but no longer valid with the new cell
+            # It still would not work if model is built over multiple 'cells'.
+            extra_shift = utils.model.translate_into_box(st,
+                                                         origin=gemmi.Position(*start_xyz),
+                                                         apply_shift=False)
+            if numpy.linalg.norm(extra_shift) > 0:
+                logger.writeln("Input model is out of the box. Required shift= {}".format(extra_shift))
+                ret["shifts"] += gemmi.Position(*extra_shift)
+                logger.writeln("Shift for model has been adjusted: {}".format(numpy.array(ret["shifts"].tolist())))
             
             st.cell = new_cell
             st.spacegroup_hm = "P 1"
