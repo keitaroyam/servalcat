@@ -54,7 +54,7 @@ def setup_entities(st, clear=False, clear_entity_type=False, overwrite_entity_ty
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
     eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]
-    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * 8*numpy.pi**2)
+    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins))
 
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
@@ -88,7 +88,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
             omit_proton = omit_h_electron = False
     
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
-    blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
+    #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
     logger.writeln("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].has_hydrogen():
