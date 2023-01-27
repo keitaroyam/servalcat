@@ -19,25 +19,8 @@ import atexit
 profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
 
-def scale_shifts(dx, scale, n_atoms):
-    #ave_shift = numpy.mean(dx)
-    #max_shift = numpy.maximum(dx)
-    #rms_shift = numpy.std(dx)
-    shift_allow_high =  0.5
-    shift_allow_low  = -0.5
-    shift_max_allow_B = 30.0
-    shift_min_allow_B = -30.0
-    dx = scale * dx
-    dxx = dx[:n_atoms*3]
-    dxx[dxx > shift_allow_high] = shift_allow_high
-    dxx[dxx < shift_allow_low] = shift_allow_low
-    dxb = dx[n_atoms*3:]
-    dxb[dxb > shift_max_allow_B] = shift_max_allow_B
-    dxb[dxb < shift_min_allow_B] = shift_min_allow_B
-    return dx
-
 class Refine:
-    def __init__(self, st, topo, monlib, ll=None, refine_adp=True):
+    def __init__(self, st, topo, monlib, ll=None, refine_xyz=True, refine_adp=True):
         self.monlib = monlib
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
@@ -55,42 +38,78 @@ class Refine:
         self.gamma = 0
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5)
         self.use_nucleus = False
-        self.refine_adp = False if self.ll is None else refine_adp 
+        self.refine_adp = False if self.ll is None else refine_adp
+        self.refine_xyz = refine_xyz
+
+    def scale_shifts(self, dx, scale):
+        n_atoms = len(self.atoms)
+        #ave_shift = numpy.mean(dx)
+        #max_shift = numpy.maximum(dx)
+        #rms_shift = numpy.std(dx)
+        shift_allow_high =  0.5
+        shift_allow_low  = -0.5
+        shift_max_allow_B = 30.0
+        shift_min_allow_B = -30.0
+        dx = scale * dx
+        offset_b = 0
+        if self.refine_xyz:
+            dxx = dx[:n_atoms*3]
+            dxx[dxx > shift_allow_high] = shift_allow_high
+            dxx[dxx < shift_allow_low] = shift_allow_low
+            offset_b = n_atoms*3
+        if self.refine_adp:
+            dxb = dx[offset_b:]
+            dxb[dxb > shift_max_allow_B] = shift_max_allow_B
+            dxb[dxb < shift_min_allow_B] = shift_min_allow_B
+        return dx
+
+    def n_params(self):
+        n_atoms = len(self.atoms)
+        n_params = 0
+        if self.refine_xyz: n_params += 3 * n_atoms
+        if self.refine_adp: n_params += n_atoms
+        return n_params
 
     def set_x(self, x):
+        n_atoms = len(self.atoms)
+        offset_b = n_atoms * 3 if self.refine_xyz else 0
         for i in range(len(self.atoms)):
-            self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
+            if self.refine_xyz:
+                self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
             if self.refine_adp: # only isotropic for now
-                self.atoms[i].b_iso = max(0.5, x[len(self.atoms) * 3 + i]) # minimum B = 0.5
+                self.atoms[i].b_iso = max(0.5, x[offset_b + i]) # minimum B = 0.5
 
     def get_x(self):
-        x = numpy.zeros(len(self.atoms) * (4 if self.refine_adp else 3))
+        n_atoms = len(self.atoms)
+        offset_b = n_atoms * 3 if self.refine_xyz else 0
+        x = numpy.zeros(self.n_params())
         for i, a in enumerate(self.atoms):
-            x[3*i:3*(i+1)] = a.pos.tolist()
+            if self.refine_xyz:
+                x[3*i:3*(i+1)] = a.pos.tolist()
             if self.refine_adp: # only isotropic for now
-                x[len(self.atoms) * 3 + i] = self.atoms[i].b_iso
+                x[offset_b + i] = self.atoms[i].b_iso
 
         return x
     @profile
     def calc_target(self, w=1, wadp=1, target_only=False):
-        N = len(self.atoms) * (4 if self.refine_adp else 3)
+        N = self.n_params()
         if self.geom is not None:
-            geom_x = self.geom.calc(self.use_nucleus, target_only)
+            self.geom.clear_target()
+            geom_x = self.geom.calc(self.use_nucleus, target_only) if self.refine_xyz else 0
             geom_a = self.geom.calc_adp_restraint(target_only, wadp) if self.refine_adp else 0
             logger.writeln(" geom_x = {}".format(geom_x))
             logger.writeln(" geom_a = {}".format(geom_a))
             geom = geom_x + geom_a
             if not target_only:
-                # for now we do not implement adp restraints
-                g_vn = numpy.zeros(N)
-                #g_vn = numpy.array(self.geom.target.vn) # don't want copy?
-                g_vn[:len(self.geom.target.vn)] = self.geom.target.vn
+                g_vn = numpy.array(self.geom.target.vn) # don't want copy?
                 coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
                 #print("am=", coo)
                 lil = coo.tolil()
                 rows, cols = lil.nonzero()
                 lil[cols,rows] = lil[rows,cols]
                 g_am = lil
+                #print("am=", g_am)
+                #print("eigsh_SA=", scipy.sparse.linalg.eigsh(g_am, which="SA"))
         else:
             geom = 0
 
@@ -98,7 +117,7 @@ class Refine:
             self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad(self.refine_adp)
+                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.refine_adp)
         else:
             ll = 0
 
@@ -239,10 +258,14 @@ class Refine:
                 print("ratio=", nder/ader[0])
             quit()
 
-        # TODO overall scaling
-        self.geom.setup_vdw(self.monlib.ener_lib)
-        print("vdws =", len(self.geom.vdws))
-        self.geom.setup_target(True, self.refine_adp)
+        if self.ll is not None:
+            self.ll.update_fc()
+            self.ll.overall_scale()
+            self.ll.update_ml_params()
+
+        self.geom.setup_vdw(self.monlib.ener_lib, 100) # if refine_xyz=False, no need to do it every time
+        logger.writeln("vdws = {}".format(len(self.geom.vdws)))
+        self.geom.setup_target(self.refine_xyz, self.refine_adp)
         f0, vn, am = self.calc_target(weight, adp_weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
@@ -263,7 +286,8 @@ class Refine:
             #M = scipy.sparse.identity(N)
         else:
             diag = am.diagonal()
-            print("diagonal min=", numpy.min(diag))
+            logger.writeln("diagonal min= {:3e} max= {:3e}".format(numpy.min(diag),
+                                                                   numpy.max(diag)))
             diag[diag<=0] = 1.
             diag = numpy.sqrt(diag)
             rdiag = 1./diag # sk
@@ -271,13 +295,14 @@ class Refine:
             M = rdmat
             
         dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
-        dxx = dx[:len(self.atoms)*3]
-        logger.writeln("dx = {}".format(dxx))
-        logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
-        logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
-        logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
+        if self.refine_xyz:
+            dxx = dx[:len(self.atoms)*3]
+            logger.writeln("dx = {}".format(dxx))
+            logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
+            logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
+            logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
         if self.refine_adp:
-            db = dx[len(self.atoms)*3:]
+            db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
             logger.writeln("dB = {}".format(db))
             logger.writeln("min(dB) = {}".format(numpy.min(db)))
             logger.writeln("max(dB) = {}".format(numpy.max(db)))
@@ -291,16 +316,23 @@ class Refine:
                     ofs.write("{} {}\n".format(s, fval))
             quit()
 
+        ret = True # success
         for i in range(3):
-            dx2 = scale_shifts(dx, 1/2**i, len(self.atoms))
+            dx2 = self.scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
+            #if self.ll is not None: self.ll.update_fc()
             f1, _, _ = self.calc_target(weight, adp_weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:
+            ret = False
             logger.writeln("function not minimised")
             self.set_x(x0)
 
-        self.show_model_stats()
-        utils.model.adp_analysis(self.st)
+        if self.refine_xyz:
+            self.show_model_stats()
+        if self.refine_adp:
+            utils.model.adp_analysis(self.st)
+        
+        return ret
 # class Refine

@@ -26,9 +26,13 @@ class LL_SPA:
         self.calc_fsc()
 
     def update_ml_params(self):
-        # FIXME S should include variance of noise. 
+        # FIXME S should include variance of noise.
+        # FIXME make sure D > 0 and S > 0
         # following function needs half maps - but they are actually not needed absolutely
         fofc.calc_D_and_S(self.hkldata)
+        # quick fix
+        self.hkldata.binned_df.S += self.hkldata.binned_df.var_noise
+        logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min", "D", "S"]))
 
     def update_fc(self):
         if self.st.ncs:
@@ -43,6 +47,18 @@ class LL_SPA:
                                                         source=self.source,
                                                         mott_bethe=self.mott_bethe,
                                                         miller_array=self.hkldata.miller_array())
+
+    def overall_scale(self):
+        k, b = self.hkldata.scale_k_and_b(lab_ref="FP", lab_scaled="FC")
+        logger.writeln("Applying overall B to model: {:.2f}".format(b))
+        for cra in self.st[0].all():
+            # aniso not considered!
+            cra.atom.b_iso += b
+
+        # adjust Fc
+        k_iso = self.hkldata.debye_waller_factors(b_iso=b)
+        self.hkldata.df["FC"] *= k_iso
+    # overall_scale()
 
     def calc_target(self): # -LL target for SPA
         ret = 0
@@ -59,7 +75,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return stats
 
-    def calc_grad(self, refine_adp):
+    def calc_grad(self, refine_xyz, refine_adp):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         for i_bin, idxes in self.hkldata.binned():
@@ -84,7 +100,7 @@ class LL_SPA:
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
         ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        vn = ll.calc_grad(dll_dab_den, refine_adp)
+        vn = ll.calc_grad(dll_dab_den, refine_xyz, refine_adp)
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
 
@@ -94,5 +110,5 @@ class LL_SPA:
         b_sf_min = 0 #min(min(e.it92.b) for e in elems) # because there is constants
         b_sf_max = max(max(e.it92.b) for e in elems)
         ll.make_fisher_table_diag_fast(b_iso_min + b_sf_min, b_iso_max + b_sf_max, d2dfw_table)
-        am = ll.fisher_diag_from_table(refine_adp)
+        am = ll.fisher_diag_from_table(refine_xyz, refine_adp)
         return numpy.array(vn), scipy.sparse.diags(am)

@@ -14,7 +14,7 @@ import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.spa.run_refmac import prepare_files
+from servalcat.spa.run_refmac import check_args, prepare_files
 from servalcat.spa import fofc
 from servalcat.refine import spa
 from servalcat.refine.refine import Refine
@@ -32,6 +32,7 @@ def add_arguments(parser):
     parser.add_argument('--padding',
                         type=float, 
                         help='Default: 2*mask_radius')
+    parser.add_argument('--no_mask', action='store_true')
     parser.add_argument('--no_trim',
                         action='store_true',
                         help='Keep original box (not recommended)')
@@ -72,6 +73,8 @@ def add_arguments(parser):
                         help="refinement ADP weight (experimental)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
+    parser.add_argument('--fix_xyz', action="store_true")
+    parser.add_argument('--fix_adp', action="store_true")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -81,25 +84,22 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    if args.ligand: args.ligand = sum(args.ligand, [])
-
-    if args.keywords:
-        args.keywords = sum(args.keywords, [])
-    else:
-        args.keywords = []
+    shifted_model_prefix = "shifted"
+    args.mask = None
+    args.invert_mask = False
+    args.gemmi_prep = False
+    args.no_fix_microheterogeneity = False
+    args.no_fix_resi9999 = False
+    args.mask_for_fofc = None
+    args.trim_fofc_mtz = None
+    check_args(args)
+    
     st = utils.fileio.read_structure(args.model)
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True,
                                                    check_hydrogen=(args.hydrogen=="yes"))
 
-    shifted_model_prefix = "shifted"
-    args.mask = None
-    args.no_mask = False
-    args.invert_mask = False
-    args.gemmi_prep = False
-    args.no_fix_microheterogeneity = False
-    args.no_fix_resi9999 = False
     file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
                               shifted_model_prefix=shifted_model_prefix)
@@ -121,7 +121,9 @@ def main(args):
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
     
     ll = spa.LL_SPA(hkldata, st, monlib)
-    refiner = Refine(st, topo, monlib, ll)
+    refiner = Refine(st, topo, monlib, ll,
+                     refine_xyz=not args.fix_xyz,
+                     refine_adp=not args.fix_adp)
 
     if args.randomize > 0:
         numpy.random.seed(0)
@@ -137,11 +139,12 @@ def main(args):
 
     for i in range(args.ncycle):
         logger.writeln("==== CYCLE {:2d}".format(i))
-        ll.update_ml_params()
-        refiner.run_cycle(weight=args.weight, adp_weight=args.adp_weight)
+        success = refiner.run_cycle(weight=args.weight, adp_weight=args.adp_weight)
         utils.fileio.write_model(refiner.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
         ll.update_fc()
         ll.calc_fsc()
+        if not success:
+            raise SystemExit("Function not minimised. Stop.")
 
 # main()
 
