@@ -150,7 +150,7 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
+def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignore_origin=True):
     m = gemmi.read_ccp4_map(filename)
     g = m.grid
     grid_cell = [m.header_i32(x) for x in (8,9,10)]
@@ -177,6 +177,9 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None):
     logger.writeln("      Origin: {:.6e} {:.6e} {:.6e}".format(*origin))
     if not numpy.allclose(origin, [0,0,0]):
         logger.writeln("             ! WARNNING: ORIGIN header is not supported.")
+        if ignore_origin:
+            logger.writeln("             ! WARNNING: removing ORIGIN values. It may cause a problem.")
+            for i in (50,51,52): m.set_header_float(i, 0.)
     logger.writeln("       Label: {}".format(label))
     logger.writeln("")
 
