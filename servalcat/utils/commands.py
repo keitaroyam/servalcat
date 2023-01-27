@@ -37,7 +37,8 @@ def add_arguments(p):
     parser.add_argument('--model', required=True)
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--map', help="Take box size from the map")
-    group.add_argument('--cell', type=float, nargs=6, help="Box size")
+    group.add_argument('--cell', type=float, nargs=6, metavar=("a", "b", "c", "alpha", "beta", "gamma"),
+                       help="Box size")
     sym_group = parser.add_argument_group("symmetry")
     symmetry.add_symmetry_args(sym_group, require_pg=True)
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
@@ -57,7 +58,8 @@ def add_arguments(p):
     parser.add_argument('--model', required=True)
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--map', help="Take box size from the map")
-    group.add_argument('--cell', type=float, nargs=6, help="Box size")
+    group.add_argument('--cell', type=float, nargs=6, metavar=("a", "b", "c", "alpha", "beta", "gamma"),
+                       help="Box size")
     sym_group = parser.add_argument_group("symmetry")
     symmetry.add_symmetry_args(sym_group, require_pg=True)
     parser.add_argument('--start', type=int)
@@ -179,7 +181,8 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
-    parser.add_argument('--cell', type=float, nargs=6, help="Override unit cell")
+    parser.add_argument('--cell', type=float, nargs=6, metavar=("a", "b", "c", "alpha", "beta", "gamma"),
+                        help="Override unit cell")
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('--cutoff', type=float, default=1e-7)
     parser.add_argument('--rate', type=float, default=1.5)

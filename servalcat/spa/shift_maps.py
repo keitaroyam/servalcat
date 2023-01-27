@@ -44,6 +44,7 @@ def add_arguments(parser):
                         action='store_true',
                         help='Keep original unit cell when --no_shift is given')
     parser.add_argument('--force_cell', type=float, nargs=6,
+                        metavar=("a", "b", "c", "alpha", "beta", "gamma"),
                         help='Use specified unit cell parameter')
     parser.add_argument('--disable_cell_check', action='store_true',
                         help="Turn off unit cell consistency test")
