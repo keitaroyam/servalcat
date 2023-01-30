@@ -688,10 +688,6 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    json.dump(refmac_summary,
-              open("{}_summary.json".format(refmac_prefix), "w"),
-              indent=True)
-
     # Modify output
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
     st.entities.clear()

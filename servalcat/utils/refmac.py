@@ -720,7 +720,7 @@ class Refmac:
         return cmd
     # make_cmd()
 
-    def run_refmac(self):
+    def run_refmac(self, write_summary_json=True):
         cmd = self.make_cmd()
         stdin = self.make_keywords()
         with open(self.prefix+".inp", "w") as ofs: ofs.write(stdin)
@@ -806,6 +806,7 @@ class Refmac:
             if "Overall R factor                     =" in l and cycle > 0:
                 rfac = l[l.index("=")+1:].strip()
                 if self.global_mode != "spa":
+                    ret["cycles"][cycle-1]["r_factor"] = rfac
                     summary_write(" cycle= {:3d} R= {}".format(cycle-1, rfac))
             elif "Average Fourier shell correlation    =" in l and cycle > 0:
                 fsc = l[l.index("=")+1:].strip()
@@ -820,8 +821,8 @@ class Refmac:
                 else:
                     note = ""
 
-                ret["cycles"][cycle-1]["fsc_average"] = fsc
                 if self.global_mode == "spa":
+                    ret["cycles"][cycle-1]["fsc_average"] = fsc
                     summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
             elif "Rms BondLength" in l:
                 rmsbond = l
@@ -865,6 +866,11 @@ class Refmac:
             logger.writeln(rmsangle.rstrip())
             
         logger.writeln("REFMAC5 finished with exit code= {}".format(retcode))
+
+        if write_summary_json:
+            json.dump(ret,
+                      open("{}_summary.json".format(self.prefix), "w"),
+                      indent=True)
 
         # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):
