@@ -19,7 +19,7 @@ from servalcat.spa import fofc
 from servalcat.refine import spa
 from servalcat.refine.refine import Geom, Refine
 
-logger.set_file("servalcat_test_refine.log")
+#logger.set_file("servalcat_test_refine.log")
 
 def add_arguments(parser):
     parser.add_argument("--halfmaps", nargs=2, required=True)
@@ -76,6 +76,7 @@ def add_arguments(parser):
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--fix_adp', action="store_true")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
+    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -122,7 +123,7 @@ def main(args):
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize)#, exte_keywords=keywords)
-    ll = spa.LL_SPA(hkldata, st, monlib)
+    ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
                      refine_adp=not args.fix_adp)

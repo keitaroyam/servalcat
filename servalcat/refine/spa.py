@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import json
 import scipy.sparse
 from servalcat.utils import logger
 from servalcat import utils
@@ -16,6 +17,7 @@ from servalcat.spa import fsc
 
 class LL_SPA:
     def __init__(self, hkldata, st, monlib, source="electron", mott_bethe=True):
+        assert source in ("electron", "xray")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
@@ -109,6 +111,8 @@ class LL_SPA:
         elems = set(cra.atom.element for cra in self.st[0].all())
         b_sf_min = 0 #min(min(e.it92.b) for e in elems) # because there is constants
         b_sf_max = max(max(e.it92.b) for e in elems)
-        ll.make_fisher_table_diag_fast(b_iso_min + b_sf_min, b_iso_max + b_sf_max, d2dfw_table)
+        ll.make_fisher_table_diag_fast(b_iso_min + b_sf_min, 2 * (b_iso_max + b_sf_max), d2dfw_table)
+        #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
+        #          open("ll_fisher.json", "w"), indent=True)
         am = ll.fisher_diag_from_table(refine_xyz, refine_adp)
         return numpy.array(vn), scipy.sparse.diags(am)
