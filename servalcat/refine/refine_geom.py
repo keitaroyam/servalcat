@@ -13,8 +13,7 @@ import scipy.optimize
 import scipy.sparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Refine
-from servalcat.refmac.exte import read_external_restraints
+from servalcat.refine.refine import Geom, Refine
 
 import line_profiler
 import atexit
@@ -72,19 +71,13 @@ def main(args):
         for cra in st[0].all():
             if cra.atom.is_hydrogen(): cra.atom.occ = 1.
 
-    refiner = Refine(st, topo, monlib)
-
-    # FIXME it should read before finalising restraints
+    keywords = []
     if args.keywords or args.keyword_file:
-        keywords = []
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
-        read_external_restraints(keywords, refiner.st, refiner.geom)
 
-    if args.randomize > 0:
-        numpy.random.seed(0)
-        from servalcat.utils import model
-        utils.model.shake_structure(refiner.st, args.randomize, copy=False)
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, exte_keywords=keywords)
+    refiner = Refine(st, geom)
 
     for i in range(args.ncycle):
         logger.writeln("==== CYCLE {:2d}".format(i))

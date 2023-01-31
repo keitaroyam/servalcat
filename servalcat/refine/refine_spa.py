@@ -17,7 +17,7 @@ from servalcat import utils
 from servalcat.spa.run_refmac import check_args, prepare_files
 from servalcat.spa import fofc
 from servalcat.refine import spa
-from servalcat.refine.refine import Refine
+from servalcat.refine.refine import Geom, Refine
 
 logger.set_file("servalcat_test_refine.log")
 
@@ -75,6 +75,7 @@ def add_arguments(parser):
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--fix_adp', action="store_true")
+    parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
 # add_arguments()
 
 def parse_args(arg_list):
@@ -120,18 +121,13 @@ def main(args):
             cra.atom.b_iso = args.bfactor
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
     
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize)#, exte_keywords=keywords)
     ll = spa.LL_SPA(hkldata, st, monlib)
-    refiner = Refine(st, topo, monlib, ll,
+    refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
                      refine_adp=not args.fix_adp)
 
-    if args.randomize > 0:
-        numpy.random.seed(0)
-        from servalcat.utils import model
-        utils.model.shake_structure(refiner.st, args.randomize, copy=False)
-        utils.fileio.write_model(refiner.st, "shaken", pdb=True)#, cif=True)
-        ll.update_fc()
-        ll.calc_fsc()
+    refiner.max_distsq_for_adp = args.max_dist_for_adp_restraint**2
 
     #logger.writeln("TEST: shift x+0.3 A")
     #for cra in st[0].all():
