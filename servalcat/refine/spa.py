@@ -50,8 +50,13 @@ class LL_SPA:
                                                         mott_bethe=self.mott_bethe,
                                                         miller_array=self.hkldata.miller_array())
 
-    def overall_scale(self):
+    def overall_scale(self, min_b=0.5):
         k, b = self.hkldata.scale_k_and_b(lab_ref="FP", lab_scaled="FC")
+        min_b_iso = min(cra.atom.b_iso for cra in self.st[0].all())
+        tmp = min_b_iso + b
+        if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
+            logger.writeln("Adjusting overall B to avoid too small value")
+            b += min_b - tmp
         logger.writeln("Applying overall B to model: {:.2f}".format(b))
         for cra in self.st[0].all():
             # aniso not considered!
