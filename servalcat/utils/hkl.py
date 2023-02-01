@@ -164,7 +164,8 @@ class HklData:
         else:
             if d_min is None: d_min = 0
             if d_max is None: d_max = float("inf")
-            sel = self.d_spacings().between(d_min, d_max, inclusive=True)
+            d = self.d_spacings()
+            sel = (d >= d_min) & (d <= d_max)
             df = self.df[sel].copy()
             binned_df = None # no way to keep it
         
