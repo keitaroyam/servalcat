@@ -54,7 +54,7 @@ def setup_entities(st, clear=False, clear_entity_type=False, overwrite_entity_ty
 def determine_blur_for_dencalc(st, grid):
     b_min = min((cra.atom.b_iso for cra in st[0].all()))
     eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]
-    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins))
+    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * 8*numpy.pi**2) # aniso is in U unit
 
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
