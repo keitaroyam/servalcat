@@ -367,7 +367,8 @@ def write_coot_script(py_out, model_file, mtz_file, contour_fo=1.2, contour_fofc
         if ncs_ops is not None:
             for op in ncs_ops:
                 if op.given: continue
-                c = utils.symmetry.find_center_of_origin(op.tr.mat, op.tr.vec)
+                c, resid = utils.symmetry.find_center_of_origin(op.tr.mat, op.tr.vec)
+                if resid.length() > 1e-6: continue # coot does not support translation..
                 v = [y for x in op.tr.mat.tolist() for y in x] + c.tolist()
                 ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
 # write_coot_script()
