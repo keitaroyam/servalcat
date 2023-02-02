@@ -175,7 +175,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
     logger.writeln("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
     logger.writeln("  Voxel size: {:.6f} {:.6f} {:.6f}".format(*voxel_size))
     logger.writeln("      Origin: {:.6e} {:.6e} {:.6e}".format(*origin))
-    if not numpy.allclose(origin, [0,0,0]):
+    if not numpy.all(numpy.asarray(origin) == 0.):
         logger.writeln("             ! WARNING: ORIGIN header is not supported.")
         if ignore_origin:
             logger.writeln("             ! WARNING: removing ORIGIN values. This might cause a misalignment between map and model.")
