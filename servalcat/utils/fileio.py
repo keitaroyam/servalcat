@@ -592,8 +592,12 @@ def read_smcif_hkl(cif_in):
         logger.writeln(" WARNING: no unit cell in this file")
         cell = None
 
-    ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop("_space_group_symop_operation_xyz")]
-    sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(ops))
+    for optag in ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"):
+        ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop(optag)]
+        sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(ops))
+        if sg: break
+    else:
+        raise RuntimeError("symmetry operations not found in {}".format(cif_in))
         
     l = b.find_values("_refln_index_h").get_loop()
     i_hkl = [l.tags.index("_refln_index_{}".format(h)) for h in "hkl"]
