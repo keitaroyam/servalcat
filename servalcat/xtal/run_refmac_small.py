@@ -45,7 +45,7 @@ def add_arguments(parser):
                        help="'weight auto' scale value. automatically determined from resolution and mask/box volume ratio if unspecified")
     group.add_argument('--weight_matrix', type=float,
                        help="weight matrix value")
-    
+    parser.add_argument('--invert', action='store_true', help="invert handednes")
     parser.add_argument('--bref', choices=["aniso","iso","iso_then_aniso"], default="aniso")
     parser.add_argument('--unrestrained', action='store_true')
     parser.add_argument('--bulk_solvent', action='store_true')
@@ -89,6 +89,19 @@ def write_mtz(mtz_out, asudata, hklf, blur=None):
     if blur is not None: utils.hkl.blur_mtz(mtz, blur)
     mtz.write_to_file(mtz_out)
 # write_mtz()
+
+def make_invert_tr(sg, cell):
+    ops = sg.operations()
+    coh = sg.change_of_hand_op()
+    ops.change_basis_forward(sg.change_of_hand_op())
+    new_sg = gemmi.find_spacegroup_by_ops(ops)
+    frc = gemmi.Transform(cell.fractionalization_matrix, gemmi.Vec3(0,0,0))
+    ort = gemmi.Transform(cell.orthogonalization_matrix, gemmi.Vec3(0,0,0))
+    coh_tr = gemmi.Transform(gemmi.Mat33([[y/coh.DEN for y in x] for x in coh.rot]),
+                             gemmi.Vec3(*[x/coh.DEN for x in coh.tran]))
+    tr = ort.combine(coh_tr).combine(frc)
+    return new_sg, tr
+# make_invert_tr()
     
 def main(args):
     if not args.cif and not (args.model and args.hklin):
@@ -158,6 +171,19 @@ def main(args):
             st.spacegroup_hm = asudata.spacegroup.hm
         else:
             raise SystemExit("Error: unsupported hkl file: {}".format(args.hklin))
+
+    if args.invert:
+        logger.writeln("Inversion of structure is requested.")
+        old_sg = st.find_spacegroup()
+        new_sg, tr = make_invert_tr(old_sg, st.cell)
+        logger.writeln(" new space group = {} (no. {})".format(new_sg.hm, new_sg.number))
+        st[0].transform_pos_and_adp(tr)
+        if old_sg != new_sg:
+            st.spacegroup_hm = new_sg.hm
+            # overwrite mtz
+            mtz = gemmi.read_mtz_file(mtz_in)
+            mtz.spacegroup = new_sg
+            mtz.write_to_file(mtz_in)
 
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
