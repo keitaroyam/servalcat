@@ -14,6 +14,8 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.spa import fofc
 from servalcat.spa import fsc
+b_to_u = utils.model.b_to_u
+u_to_b = utils.model.u_to_b
 
 class LL_SPA:
     def __init__(self, hkldata, st, monlib, source="electron", mott_bethe=True):
@@ -52,15 +54,18 @@ class LL_SPA:
 
     def overall_scale(self, min_b=0.5):
         k, b = self.hkldata.scale_k_and_b(lab_ref="FP", lab_scaled="FC")
-        min_b_iso = min(cra.atom.b_iso for cra in self.st[0].all())
+        min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
         tmp = min_b_iso + b
         if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
             logger.writeln("Adjusting overall B to avoid too small value")
             b += min_b - tmp
         logger.writeln("Applying overall B to model: {:.2f}".format(b))
         for cra in self.st[0].all():
-            # aniso not considered!
             cra.atom.b_iso += b
+            if cra.atom.aniso.nonzero():
+                cra.atom.aniso.u11 += b * b_to_u
+                cra.atom.aniso.u22 += b * b_to_u
+                cra.atom.aniso.u33 += b * b_to_u
 
         # adjust Fc
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
@@ -82,7 +87,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return stats
 
-    def calc_grad(self, refine_xyz, refine_adp):
+    def calc_grad(self, refine_xyz, adp_mode):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         for i_bin, idxes in self.hkldata.binned():
@@ -105,19 +110,29 @@ class LL_SPA:
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
-        ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe)
+        ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        vn = ll.calc_grad(dll_dab_den, refine_xyz, refine_adp)
+        vn = ll.calc_grad(dll_dab_den)
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
 
-        b_iso_min = min(cra.atom.b_iso for cra in self.st[0].all())
-        b_iso_max = max(cra.atom.b_iso for cra in self.st[0].all())
+        b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso
+                     for cra in self.st[0].all()]
+        b_iso_min = min(b_iso_all)
+        b_iso_max = max(b_iso_all)
         elems = set(cra.atom.element for cra in self.st[0].all())
         b_sf_min = 0 #min(min(e.it92.b) for e in elems) # because there is constants
         b_sf_max = max(max(e.it92.b) for e in elems)
-        ll.make_fisher_table_diag_fast(b_iso_min + b_sf_min, 2 * (b_iso_max + b_sf_max), d2dfw_table)
+        fisher_b_min = b_iso_min + b_sf_min
+        fisher_b_max = 2 * (b_iso_max + b_sf_max)
+        logger.writeln("preparing fast Fisher table for B= {:.2f} - {:.2f}".format(fisher_b_min, fisher_b_max))
+        ll.make_fisher_table_diag_fast(fisher_b_min, fisher_b_max, d2dfw_table)
         #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
-        am = ll.fisher_diag_from_table(refine_xyz, refine_adp)
-        return numpy.array(vn), scipy.sparse.diags(am)
+        #a, (b,c) = ll.fisher_for_coo()
+        #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
+        coo = scipy.sparse.coo_matrix(ll.fisher_for_coo())
+        lil = coo.tolil()
+        rows, cols = lil.nonzero()
+        lil[cols,rows] = lil[rows,cols]
+        return numpy.array(vn), lil

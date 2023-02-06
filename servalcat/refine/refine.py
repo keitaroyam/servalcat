@@ -14,6 +14,8 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
 from . import cgsolve
+u_to_b = utils.model.u_to_b
+b_to_u = utils.model.b_to_u
 
 import line_profiler
 import atexit
@@ -167,7 +169,8 @@ class Geom:
         logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
         
 class Refine:
-    def __init__(self, st, geom=None, ll=None, refine_xyz=True, refine_adp=True):
+    def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1):
+        assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -175,7 +178,7 @@ class Refine:
         self.ll = ll
         self.gamma = 0
         self.use_nucleus = False
-        self.refine_adp = False if self.ll is None else refine_adp
+        self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
         self.max_distsq_for_adp = 0. # need interface
 
@@ -195,17 +198,25 @@ class Refine:
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
             offset_b = n_atoms*3
-        if self.refine_adp:
+        if self.adp_mode == 1:
             dxb = dx[offset_b:]
             dxb[dxb > shift_max_allow_B] = shift_max_allow_B
             dxb[dxb < shift_min_allow_B] = shift_min_allow_B
+        elif self.adp_mode == 2: # FIXME aniso. need to find eigenvalues..
+            dxb = dx[offset_b:]
+            dxb[dxb > shift_max_allow_B] = shift_max_allow_B
+            dxb[dxb < shift_min_allow_B] = shift_min_allow_B
+            
         return dx
 
     def n_params(self):
         n_atoms = len(self.atoms)
         n_params = 0
         if self.refine_xyz: n_params += 3 * n_atoms
-        if self.refine_adp: n_params += n_atoms
+        if self.adp_mode == 1:
+            n_params += n_atoms
+        elif self.adp_mode == 2:
+            n_params += 6 * n_atoms
         return n_params
 
     def set_x(self, x):
@@ -214,8 +225,18 @@ class Refine:
         for i in range(len(self.atoms)):
             if self.refine_xyz:
                 self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
-            if self.refine_adp: # only isotropic for now
+            if self.adp_mode == 1:
                 self.atoms[i].b_iso = max(0.5, x[offset_b + i]) # minimum B = 0.5
+            elif self.adp_mode == 2:
+                a = x[offset_b + 6 * i: offset_b + 6 * (i+1)]
+                a = gemmi.SMat33d(*a)
+                M = numpy.array(a.as_mat33())
+                v, Q = numpy.linalg.eigh(M) # eig() may return complex due to numerical precision?
+                v = numpy.maximum(v, 0.5) # avoid NPD with minimum B = 0.5
+                M2 = Q.dot(numpy.diag(v)).dot(Q.T)
+                self.atoms[i].b_iso = M2.trace() / 3
+                M2 *= b_to_u
+                self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
 
     def get_x(self):
         n_atoms = len(self.atoms)
@@ -224,8 +245,11 @@ class Refine:
         for i, a in enumerate(self.atoms):
             if self.refine_xyz:
                 x[3*i:3*(i+1)] = a.pos.tolist()
-            if self.refine_adp: # only isotropic for now
+            if self.adp_mode == 1:
                 x[offset_b + i] = self.atoms[i].b_iso
+            elif self.adp_mode == 2:
+                x[offset_b + 6*i : offset_b + 6*(i+1)] = self.atoms[i].aniso.elements_pdb()
+                x[offset_b + 6*i : offset_b + 6*(i+1)] *= u_to_b
 
         return x
     @profile
@@ -234,7 +258,7 @@ class Refine:
         if self.geom is not None:
             self.geom.geom.clear_target()
             geom_x = self.geom.geom.calc(self.use_nucleus, target_only) if self.refine_xyz else 0
-            geom_a = self.geom.geom.calc_adp_restraint(target_only, wadp) if self.refine_adp else 0
+            geom_a = self.geom.geom.calc_adp_restraint(target_only, wadp) if self.adp_mode > 0 else 0
             logger.writeln(" geom_x = {}".format(geom_x))
             logger.writeln(" geom_a = {}".format(geom_a))
             geom = geom_x + geom_a
@@ -259,7 +283,7 @@ class Refine:
             self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.refine_adp)
+                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode)
                 diag = l_am.diagonal()
                 logger.writeln("diag(data) min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                          numpy.max(diag)))
@@ -290,7 +314,7 @@ class Refine:
             self.ll.update_fc()
             x0 = self.get_x()
             f0 = self.ll.calc_target()
-            ader = self.ll.calc_grad(self.refine_adp)[0]
+            ader = self.ll.calc_grad()[0]
             for e in 1e-3, 1e-4, 1e-5, 1e-6:
                 x1 = numpy.copy(x0)
                 x1[0] += e
@@ -312,14 +336,14 @@ class Refine:
         if self.geom is not None:
             self.geom.geom.setup_vdw(self.geom.monlib.ener_lib, self.max_distsq_for_adp) # if refine_xyz=False, no need to do it every time
             logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
-            self.geom.geom.setup_target(self.refine_xyz, self.refine_adp)
+            self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
         f0, vn, am = self.calc_target(weight, adp_weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
 
         if 0:
-            assert not self.refine_adp # not supported!
+            assert self.adp_mode == 0 # not supported!
             logger.writeln("Preconditioning using eigen")
             #Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
             N = len(self.atoms) * 3
@@ -349,7 +373,7 @@ class Refine:
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
-        if self.refine_adp:
+        if self.adp_mode > 0: # TODO for aniso
             db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
             logger.writeln("dB = {}".format(db))
             logger.writeln("min(dB) = {}".format(numpy.min(db)))
@@ -379,7 +403,7 @@ class Refine:
 
         if self.refine_xyz and self.geom is not None:
             self.geom.show_model_stats()
-        if self.refine_adp:
+        if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
         
         return ret

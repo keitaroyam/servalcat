@@ -18,6 +18,7 @@ from servalcat.spa.run_refmac import check_args, prepare_files
 from servalcat.spa import fofc
 from servalcat.refine import spa
 from servalcat.refine.refine import Geom, Refine
+b_to_u = utils.model.b_to_u
 
 #logger.set_file("servalcat_test_refine.log")
 
@@ -74,7 +75,7 @@ def add_arguments(parser):
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
-    parser.add_argument('--fix_adp', action="store_true")
+    parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
 # add_arguments()
@@ -116,17 +117,22 @@ def main(args):
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
                                   reorder=True, ignore_unknown_links=False) # we should remove logger here??
-
-    if args.bfactor is not None:
-        for cra in st[0].all():
+    # initialize ADP
+    for cra in st[0].all():
+        if args.bfactor is not None:
             cra.atom.b_iso = args.bfactor
+        if args.adp == "iso":
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
+        elif args.adp == "aniso":
+            if not cra.atom.aniso.nonzero() or args.bfactor is not None:
+                u = cra.atom.b_iso * b_to_u
+                cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize)#, exte_keywords=keywords)
     ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
-                     refine_adp=not args.fix_adp)
+                     adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp])
 
     refiner.max_distsq_for_adp = args.max_dist_for_adp_restraint**2
 
