@@ -215,7 +215,7 @@ def main(args):
         args.no_hout = False
     else:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                       stop_for_unknowns=False)#, check_hydrogen=(args.hydrogen=="yes"))
+                                                       stop_for_unknowns=False)
 
     # no bulk solvent by default
     if not args.bulk_solvent:

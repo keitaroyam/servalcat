@@ -609,12 +609,17 @@ def main(args):
 
     try:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                       stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
+                                                       stop_for_unknowns=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
     if not args.no_link_check:
         utils.restraints.find_and_fix_links(st, monlib)
+
+    try:
+        utils.restraints.check_restraints(st, monlib, check_hydrogen=(args.hydrogen=="yes"))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
 
     if args.mask_for_fofc and not args.no_check_mask_with_model:
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]

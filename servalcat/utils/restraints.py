@@ -70,7 +70,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
     return trans
 # rename_cif_modification_if_necessary()
 
-def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False,
+def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False,
                          ignore_monomer_dir=False):
     resnames = st[0].get_all_residue_names()
 
@@ -147,53 +147,46 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             logger.writeln("WARNING: ad-hoc restraints will be generated for {}".format(",".join(unknown_cc)))
             logger.writeln("         it is strongly recommended to generate them using AceDRG.")
     
+    return monlib
+# load_monomer_library()
+
+def check_restraints(st, monlib, raise_error=True, check_hydrogen=False):
+    # these checks can be done after sorting links
+    logger.writeln("Checking restraints..")
     st = st.clone()
     sio = io.StringIO()
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True,
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=False,
                                   ignore_unknown_links=True)
 
-    # possible warnings:
-    # Warning: no atom X expected in XXX
-    # and others?
     unknown_atoms_cc = set()
     link_related = set()
-    for l in sio.getvalue().splitlines():
-        r = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
-        if r:
-            unk = r.group(2), r.group(1)
+    for cinfo in topo.chain_infos:
+        for rinfo in cinfo.res_infos:
+            cc_org = monlib.monomers[rinfo.res.name] if rinfo.res.name in monlib.monomers else None
+            for atom in rinfo.res:
+                cc = rinfo.get_final_chemcomp(atom.altloc)
+                if not cc.find_atom(atom.name):
+                    msg = " Warning: definition not found for {}/{} {}/{}".format(cinfo.chain_ref.name,
+                                                                                  rinfo.res.name,
+                                                                                  rinfo.res.seqid,
+                                                                                  atom.name)
+                    if cc_org and cc_org.find_atom(atom.name):
+                        logger.writeln(msg + " - this atom should have been removed when linking")
+                        if check_hydrogen or not atom.is_hydrogen():
+                            link_related.add(rinfo.res.name)
+                    else:
+                        logger.writeln(msg)
+                        if check_hydrogen or not atom.is_hydrogen():
+                            unknown_atoms_cc.add((atom.name, rinfo.res.name))
 
-            cc = monlib.monomers[unk[1]] if unk[1] in monlib.monomers else None
-            cc_atom = [x for x in cc.atoms if x.id == unk[0]] if cc else None
-            if cc and cc_atom: # if atom is found in chemcomp, it must be an atom that should be removed.
-                logger.writeln(l + " - this atom should have been removed when linking")
-                if check_hydrogen or not cc_atom[0].is_hydrogen():
-                    link_related.add(unk[1])
-            elif unk not in unknown_atoms_cc:
-                logger.writeln(l)
-                unknown_atoms_cc.add(unk)
-            continue
-
-        # something else
-        logger.writeln(l)
-
-    if not check_hydrogen:
-        todel = []
-        for unk in unknown_atoms_cc:
-            elements = [cra.atom.element for cra in st[0].all() if cra.residue.name==unk[1] and cra.atom.name==unk[0]]
-            if elements and elements[0].is_hydrogen:
-                todel.append(unk)
-        unknown_atoms_cc = unknown_atoms_cc - set(todel)
-        
     unknown_cc = set([cc for at, cc in unknown_atoms_cc])
         
-    if stop_for_unknowns and (unknown_cc or link_related):
+    if raise_error and (unknown_cc or link_related):
         msgs = []
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
-    
-    return monlib
-# load_monomer_library()
+# check_restraints()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True
@@ -315,6 +308,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     con_idxes = dict((c,i) for i,c in enumerate(st.connections))
     for con in conns:
         if con.link_id in known_links: continue
+        if con.type == gemmi.ConnectionType.Hydrog: continue
         cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))

@@ -701,7 +701,7 @@ def geometry(args):
     st = fileio.read_structure(args.model)
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                 stop_for_unknowns=True, check_hydrogen=True)
+                                                 stop_for_unknowns=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
@@ -826,7 +826,7 @@ def fcalc(args):
         raise SystemExit("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
 
     monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                             stop_for_unknowns=False, check_hydrogen=True)
+                                             stop_for_unknowns=False)
 
     if args.method == "fft":
         fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,

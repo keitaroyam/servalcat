@@ -95,6 +95,12 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
             logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
             con.link_id = ""
 
+    try:
+        utils.restraints.check_restraints(st, monlib, 
+                                          check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     refmac_fixes = None
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
     if max_seq_num > 9999:
