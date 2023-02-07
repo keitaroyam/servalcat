@@ -50,7 +50,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
     for mod_id in trans:
         b = doc.find_block("mod_{}".format(mod_id))
         if not b: # should raise error?
-            logger.writeln("WARNING:: inconsistent mod description for {} in {}".format(mod_id, f))
+            logger.writeln("WARNING:: inconsistent mod description for {}".format(mod_id))
             continue
         b.name = "mod_{}".format(trans[mod_id]) # modify name
         for item in b:
