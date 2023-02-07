@@ -87,7 +87,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return stats
 
-    def calc_grad(self, refine_xyz, adp_mode):
+    def calc_grad(self, refine_xyz, adp_mode, refine_h):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         for i_bin, idxes in self.hkldata.binned():
@@ -110,7 +110,7 @@ class LL_SPA:
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
-        ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode)
+        ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         vn = ll.calc_grad(dll_dab_den)
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())

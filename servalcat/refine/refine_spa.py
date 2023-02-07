@@ -77,6 +77,7 @@ def add_arguments(parser):
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
+    parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
 # add_arguments()
 
@@ -132,7 +133,8 @@ def main(args):
     ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
-                     adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp])
+                     adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+                     refine_h=args.refine_h)
 
     refiner.max_distsq_for_adp = args.max_dist_for_adp_restraint**2
 

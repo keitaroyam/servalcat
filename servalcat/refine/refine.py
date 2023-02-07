@@ -40,6 +40,17 @@ class Geom:
         print("torsions =", len(self.geom.torsions))
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, stac=5)
         self.use_nucleus = False
+        self.parents = {}
+    # __init__()
+    
+    def set_h_parents(self):
+        self.parents = {}
+        for bond in self.geom.bonds:
+            if bond.atoms[0].is_hydrogen():
+                self.parents[bond.atoms[0]] = bond.atoms[1]
+            elif bond.atoms[1].is_hydrogen():
+                self.parents[bond.atoms[1]] = bond.atoms[0]
+    # set_h_parents()
 
     def show_model_stats(self): # TODO messy. separate stac table
         f0 = self.geom.calc(self.use_nucleus, True)
@@ -169,7 +180,7 @@ class Geom:
         logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
         
 class Refine:
-    def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1):
+    def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1, refine_h=False):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
@@ -180,7 +191,12 @@ class Refine:
         self.use_nucleus = False
         self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
+        self.refine_h = refine_h
         self.max_distsq_for_adp = 0. # need interface
+
+        if self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen():
+            self.geom.set_h_parents()
+    # __init__()
 
     def scale_shifts(self, dx, scale):
         n_atoms = len(self.atoms)
@@ -238,6 +254,13 @@ class Refine:
                 M2 *= b_to_u
                 self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
 
+        # Copy B of hydrogen from parent
+        if self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen():
+            for h in self.geom.parents:
+                p = self.geom.parents[h]
+                h.b_iso = p.b_iso
+                h.aniso = p.aniso
+
     def get_x(self):
         n_atoms = len(self.atoms)
         offset_b = n_atoms * 3 if self.refine_xyz else 0
@@ -283,7 +306,7 @@ class Refine:
             self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode)
+                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h)
                 diag = l_am.diagonal()
                 logger.writeln("diag(data) min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                          numpy.max(diag)))
