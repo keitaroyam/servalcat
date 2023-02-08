@@ -154,7 +154,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
         dc.grid.symmetrize_sum()
         sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
-        mb_000 = sum_ab * 0.023933660963366372 # 1 / (8 * pi() * pi() * bohrradius()
+        mb_000 = sum_ab * gemmi.mott_bethe_const() / 4
     else:
         logger.writeln("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
