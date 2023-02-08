@@ -276,12 +276,12 @@ class Refine:
 
         return x
     @profile
-    def calc_target(self, w=1, wadp=1, target_only=False):
+    def calc_target(self, w=1, sigma_b=30, target_only=False):
         N = self.n_params()
         if self.geom is not None:
             self.geom.geom.clear_target()
             geom_x = self.geom.geom.calc(self.use_nucleus, target_only) if self.refine_xyz else 0
-            geom_a = self.geom.geom.calc_adp_restraint(target_only, wadp) if self.adp_mode > 0 else 0
+            geom_a = self.geom.geom.calc_adp_restraint(target_only, sigma_b) if self.adp_mode > 0 else 0
             logger.writeln(" geom_x = {}".format(geom_x))
             logger.writeln(" geom_a = {}".format(geom_a))
             geom = geom_x + geom_a
@@ -332,7 +332,7 @@ class Refine:
         return f, vn, am
 
     @profile
-    def run_cycle(self, weight=1, adp_weight=1):
+    def run_cycle(self, weight=1, sigma_b=30):
         if 0: # test of grad
             self.ll.update_fc()
             x0 = self.get_x()
@@ -361,7 +361,7 @@ class Refine:
             logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
             self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
-        f0, vn, am = self.calc_target(weight, adp_weight)
+        f0, vn, am = self.calc_target(weight, sigma_b)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
 
@@ -416,7 +416,7 @@ class Refine:
             dx2 = self.scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
             #if self.ll is not None: self.ll.update_fc()
-            f1, _, _ = self.calc_target(weight, adp_weight, target_only=True)
+            f1, _, _ = self.calc_target(weight, sigma_b, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:
