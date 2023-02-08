@@ -88,18 +88,11 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
         raise SystemExit("Error: {}".format(e))
 
     if make.get("cispept", "y") == "y": st.assign_cis_flags()
-
     utils.restraints.find_and_fix_links(st, monlib, add_found=(make.get("link", "n")=="y"))
     for con in st.connections:
         if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
             logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
             con.link_id = ""
-
-    try:
-        utils.restraints.check_restraints(st, monlib, 
-                                          check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
 
     refmac_fixes = None
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
@@ -112,7 +105,12 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                                                  fix_nonpolymer=False)
 
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False) # we should remove logger here??
+    try:
+        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
+                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     if make.get("hydr") != "n" and st[0].has_hydrogen():
         if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
             resnames = st[0].get_all_residue_names()

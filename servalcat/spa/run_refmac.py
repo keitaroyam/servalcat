@@ -617,7 +617,8 @@ def main(args):
         utils.restraints.find_and_fix_links(st, monlib)
 
     try:
-        utils.restraints.check_restraints(st, monlib, check_hydrogen=(args.hydrogen=="yes"))
+        utils.restraints.prepare_topology(st.clone(), monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                          check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 

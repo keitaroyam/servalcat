@@ -430,7 +430,11 @@ def h_add(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
-    restraints.add_hydrogens(st, monlib, args.pos)
+    try:
+        restraints.add_hydrogens(st, monlib, args.pos)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     fileio.write_model(st, file_name=args.output)
 # h_add()
 

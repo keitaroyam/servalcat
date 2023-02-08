@@ -150,26 +150,24 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     return monlib
 # load_monomer_library()
 
-def check_restraints(st, monlib, raise_error=True, check_hydrogen=False):
+def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False):
     # these checks can be done after sorting links
-    logger.writeln("Checking restraints..")
-    st = st.clone()
+    logger.writeln("Creating restraints..")
     sio = io.StringIO()
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=False,
-                                  ignore_unknown_links=True)
+    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=sio, reorder=False,
+                                  ignore_unknown_links=ignore_unknown_links)
 
-    unknown_atoms_cc = set()
+    unknown_cc = set()
     link_related = set()
     for cinfo in topo.chain_infos:
         for rinfo in cinfo.res_infos:
             cc_org = monlib.monomers[rinfo.res.name] if rinfo.res.name in monlib.monomers else None
-            for atom in rinfo.res:
+            for ia in reversed(range(len(rinfo.res))):
+                atom = rinfo.res[ia]
+                atom_str = "{}/{} {}/{}".format(cinfo.chain_ref.name, rinfo.res.name, rinfo.res.seqid, atom.name)
                 cc = rinfo.get_final_chemcomp(atom.altloc)
                 if not cc.find_atom(atom.name):
-                    msg = " Warning: definition not found for {}/{} {}/{}".format(cinfo.chain_ref.name,
-                                                                                  rinfo.res.name,
-                                                                                  rinfo.res.seqid,
-                                                                                  atom.name)
+                    msg = " Warning: definition not found for " + atom_str
                     if cc_org and cc_org.find_atom(atom.name):
                         logger.writeln(msg + " - this atom should have been removed when linking")
                         if check_hydrogen or not atom.is_hydrogen():
@@ -177,16 +175,24 @@ def check_restraints(st, monlib, raise_error=True, check_hydrogen=False):
                     else:
                         logger.writeln(msg)
                         if check_hydrogen or not atom.is_hydrogen():
-                            unknown_atoms_cc.add((atom.name, rinfo.res.name))
+                            unknown_cc.add(rinfo.res.name)
+                
+                if atom.is_hydrogen() and atom.calc_flag == gemmi.CalcFlag.Dummy:
+                    logger.writeln(" Warning: hydrogen {} could not be added - Check dictionary".format(atom_str))
+                    unknown_cc.add(rinfo.res.name)
+                    del rinfo.res[ia]
 
-    unknown_cc = set([cc for at, cc in unknown_atoms_cc])
-        
+    # reset serial
+    for i, cra in enumerate(st[0].all()):
+        cra.atom.serial = i + 1
+
     if raise_error and (unknown_cc or link_related):
         msgs = []
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
-# check_restraints()
+    return topo
+# prepare_topology()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True
@@ -352,7 +358,8 @@ def add_hydrogens(st, monlib, pos="elec"):
     st.entities.clear()
     st.setup_entities()
 
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger, ignore_unknown_links=True)
+    topo = prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, ignore_unknown_links=True)
+    
     if pos == "nucl":
         logger.writeln("Generating hydrogens at nucleus positions")
         resnames = st[0].get_all_residue_names()
