@@ -133,9 +133,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     logger.writeln("Monomer library loaded: {} monomers, {} links, {} modifications".format(len(monlib.monomers),
                                                                                           len(monlib.links),
                                                                                           len(monlib.modifications)))
-    logger.writeln("       Monomers: {}".format(" ".join([x for x in monlib.monomers])))
-    logger.writeln("          Links: {}".format(" ".join([x for x in monlib.links])))
-    logger.writeln("  Modifications: {}".format(" ".join([x for x in monlib.modifications])))
+    logger.writeln("       loaded monomers: {}".format(" ".join([x for x in monlib.monomers])))
     logger.writeln("")
 
     logger.writeln("Checking if unknown atoms exist..")
