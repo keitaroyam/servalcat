@@ -38,7 +38,7 @@ def add_arguments(parser):
     #                    metavar=("sigma", "dmax"), default=[0.01, 4.2])
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input")
-    parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
+    parser.add_argument('--no_hout', action='store_true', help="do not write hydrogen atoms in the output model")
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--weight_auto_scale', type=float,
@@ -186,7 +186,7 @@ def main(args):
         
     if args.unrestrained:
         args.keywords.append("refi type unre")
-        args.hout = False
+        args.no_hout = False
     else:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                        stop_for_unknowns=False)#, check_hydrogen=(args.hydrogen=="yes"))
@@ -206,7 +206,7 @@ def main(args):
                                  weight_matrix=args.weight_matrix,
                                  weight_auto_scale=args.weight_auto_scale,
                                  hydrogen=args.hydrogen,
-                                 hout=args.hout,
+                                 hout=not args.no_hout,
                                  resolution=args.resolution,
                                  keyword_files=args.keyword_file,
                                  keywords=args.keywords)
