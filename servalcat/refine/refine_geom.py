@@ -11,6 +11,7 @@ import gemmi
 import numpy
 import scipy.optimize
 import scipy.sparse
+import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refine.refine import Geom, Refine
@@ -21,8 +22,11 @@ profile = line_profiler.LineProfiler()
 #atexit.register(profile.print_stats)
 
 def add_arguments(parser):
-    parser.add_argument('--model', required=True,
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--model',
                         help='Input atomic model file')
+    group.add_argument('--update_dictionary', 
+                       help="Dictionary file to be updated")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--ligand', nargs="*", action="append",
@@ -38,6 +42,7 @@ def add_arguments(parser):
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
+    
 # add_arguments()
 
 def parse_args(arg_list):
@@ -47,26 +52,42 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    st = utils.fileio.read_structure(args.model)
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    st.assign_cis_flags()
-    if st.ncs:
-        st2 = st.clone()
-        logger.writeln("Take NCS constraints into account.")
-        st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
-        utils.fileio.write_model(st2, file_name="input_expanded.pdb")
+    if args.model:
+        st = utils.fileio.read_structure(args.model)
+        utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+        st.assign_cis_flags()
+        if st.ncs:
+            st2 = st.clone()
+            logger.writeln("Take NCS constraints into account.")
+            st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
+            utils.fileio.write_model(st2, file_name="input_expanded.pdb")
 
-    if args.ligand: args.ligand = sum(args.ligand, [])
-    monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                   stop_for_unknowns=True,
-                                                   check_hydrogen=(args.hydrogen=="yes"))
-    utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
-    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                "full":gemmi.HydrogenChange.ReAdd,
-                "yes":gemmi.HydrogenChange.NoChange,
-                "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+        if args.ligand: args.ligand = sum(args.ligand, [])
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
+                                                       stop_for_unknowns=True,
+                                                       check_hydrogen=(args.hydrogen=="yes"))
+        utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
+        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                    "full":gemmi.HydrogenChange.ReAdd,
+                    "yes":gemmi.HydrogenChange.NoChange,
+                    "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+    else:
+        doc = gemmi.cif.read(args.update_dictionary)
+        for block in doc: # this block will be reused below
+            st = gemmi.make_structure_from_chemcomp_block(block)
+            if len(st) > 0: break
+        else:
+            raise SystemExit("No model in the cif file")
+        if args.ligand:
+            logger.writeln("WARNING: monlib and ligand are ignored in the dictionary updating mode")
+            args.ligand = [args.update_dictionary]
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, # monlib is needed for ener_lib
+                                                       cif_files=[args.update_dictionary],
+                                                       stop_for_unknowns=True)
+        h_change = gemmi.HydrogenChange.NoChange
+        
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                  reorder=True, ignore_unknown_links=False) # we should remove logger here??
+                                  ignore_unknown_links=False) # we should remove logger here??
     if args.hydrogen == "full":
         for cra in st[0].all():
             if cra.atom.is_hydrogen(): cra.atom.occ = 1.
@@ -83,6 +104,30 @@ def main(args):
         logger.writeln("==== CYCLE {:2d}".format(i))
         refiner.run_cycle()
         utils.fileio.write_model(refiner.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
+
+    if args.update_dictionary:
+        # replace xyz
+        pos = {cra.atom.name: cra.atom.pos.tolist() for cra in st[0].all()}
+        for row in block.find("_chem_comp_atom.", ["atom_id", "x", "y", "z"]):
+            p = pos[row.str(0)]
+            for i in range(3):
+                row[i+1] = "{:.3f}".format(p[i])
+        # add description
+        loop = block.find_loop("_pdbx_chem_comp_description_generator.comp_id").get_loop()
+        if not loop:
+            loop = block.init_loop("_pdbx_chem_comp_description_generator.", ["comp_id",
+                                                                              "program_name",
+                                                                              "program_version",
+                                                                              "descriptor"])
+        tags = [x[x.index(".")+1:] for x in loop.tags]
+        row = ["" for _ in range(len(tags))]
+        for tag, val in (("comp_id", st[0][0][0].name),
+                         ("program_name", "servalcat"),
+                         ("program_version", servalcat.__version__),
+                         ("descriptor", "optimization tool")):
+            if tag in tags: row[tags.index(tag)] = val
+        loop.add_row(gemmi.cif.quote_list(row))
+        doc.write_file("updated.cif", style=gemmi.cif.Style.Aligned)
 # main()
 
 if __name__ == "__main__":
