@@ -95,11 +95,7 @@ def make_invert_tr(sg, cell):
     coh = sg.change_of_hand_op()
     ops.change_basis_forward(sg.change_of_hand_op())
     new_sg = gemmi.find_spacegroup_by_ops(ops)
-    frc = gemmi.Transform(cell.fractionalization_matrix, gemmi.Vec3(0,0,0))
-    ort = gemmi.Transform(cell.orthogonalization_matrix, gemmi.Vec3(0,0,0))
-    coh_tr = gemmi.Transform(gemmi.Mat33([[y/coh.DEN for y in x] for x in coh.rot]),
-                             gemmi.Vec3(*[x/coh.DEN for x in coh.tran]))
-    tr = ort.combine(coh_tr).combine(frc)
+    tr = cell.op_as_transform(coh)
     return new_sg, tr
 # make_invert_tr()
     
