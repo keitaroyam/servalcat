@@ -43,7 +43,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def parse_keywords(inputs):
-    # these make keywords will be ignored (just passed to refmac): hout,ribo,valu,spec,form,sdmi,segi
+    # these make keywords will be ignored (just passed to refmac): ribo,valu,spec,form,sdmi,segi
     ret = refmac_keywords.parse_keywords(inputs)
     def sorry(s): raise SystemExit("Sorry, '{}' is not supported".format(s))
     if ret["make"].get("hydr") == "f":
@@ -149,7 +149,7 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes, keep_original_output=False):
+def modify_output(pdbout, cifout, fixes, hout, keep_original_output=False):
     st = utils.fileio.read_structure(cifout)
     if os.path.exists(pdbout):
         st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
@@ -164,7 +164,11 @@ def modify_output(pdbout, cifout, fixes, keep_original_output=False):
     seqnums = [res.seqid.num for chain in st[0] for res in chain]
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
-    st.expand_hd_mixture()
+    if hout:
+        st.expand_hd_mixture()
+    else:
+        st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
+        
     os.rename(pdbout, pdbout + suffix)
     utils.fileio.write_pdb(st, pdbout)
     if not keep_original_output:
@@ -254,7 +258,7 @@ def main(args):
     if xyzin is not None:
         pdbout, cifout = get_output_model_names(xyzout)
         if os.path.exists(cifout):
-            modify_output(pdbout, cifout, refmac_fixes, args.keep_original_output)
+            modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), args.keep_original_output)
 # main()
 
 def command_line():

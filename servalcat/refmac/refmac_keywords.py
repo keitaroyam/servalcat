@@ -12,7 +12,7 @@ def parse_line(l, ret):
     s = l.split()
     ntok = len(s)
     if ntok == 0: return
-    if s[0].lower().startswith("make"): # TODO: hout,ribo,valu,spec,form,sdmi,segi
+    if s[0].lower().startswith("make"): # TODO: ribo,valu,spec,form,sdmi,segi
         itk = 1
         r = ret["make"]
         while itk < ntok:
@@ -20,6 +20,13 @@ def parse_line(l, ret):
                 r["hydr"] = s[itk+1][0].lower()
                 if r["hydr"] not in "yanf":
                     raise SystemExit("Invalid make instruction: {}".format(l))
+                itk += 2
+            elif s[itk].lower().startswith("hout"):
+                # In refmac, make_hflag_o, make_hout_proton_flag, and write_hydrogens_flag exist
+                tmp = s[itk+1][0].lower()
+                if tmp not in "yn": # p not supported.
+                    raise SystemExit("Invalid make instruction: {}".format(l))
+                r["hout"] = tmp == "y"
                 itk += 2
             elif s[itk].lower().startswith("chec"): # default n?
                 tmp = s[itk+1].lower()
