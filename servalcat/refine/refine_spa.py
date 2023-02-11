@@ -79,6 +79,7 @@ def add_arguments(parser):
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument('-o','--output_prefix', default="refined")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -129,7 +130,7 @@ def main(args):
                 u = cra.atom.b_iso * b_to_u
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
     
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize)#, exte_keywords=keywords)
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b)#, exte_keywords=keywords)
     ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
@@ -142,15 +143,8 @@ def main(args):
     #for cra in st[0].all():
     #    cra.atom.pos += gemmi.Position(0.3,0,0)
 
-    for i in range(args.ncycle):
-        logger.writeln("==== CYCLE {:2d}".format(i))
-        success = refiner.run_cycle(weight=args.weight, sigma_b=args.sigma_b)
-        utils.fileio.write_model(refiner.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
-        ll.update_fc()
-        ll.calc_fsc()
-        if not success:
-            raise SystemExit("Function not minimised. Stop.")
-
+    refiner.run_cycles(args.ncycle, weight=args.weight)
+    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 # main()
 
 if __name__ == "__main__":

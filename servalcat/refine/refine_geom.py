@@ -42,7 +42,8 @@ def add_arguments(parser):
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
-    
+    parser.add_argument('-o','--output_prefix', default="refined")
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -99,15 +100,12 @@ def main(args):
 
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, exte_keywords=keywords)
     refiner = Refine(st, geom)
-
-    for i in range(args.ncycle):
-        logger.writeln("==== CYCLE {:2d}".format(i))
-        refiner.run_cycle()
-        utils.fileio.write_model(refiner.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
+    refiner.run_cycles(args.ncycle)
+    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 
     if args.update_dictionary:
         # replace xyz
-        pos = {cra.atom.name: cra.atom.pos.tolist() for cra in st[0].all()}
+        pos = {cra.atom.name: cra.atom.pos.tolist() for cra in refiner.st[0].all()}
         for row in block.find("_chem_comp_atom.", ["atom_id", "x", "y", "z"]):
             p = pos[row.str(0)]
             for i in range(3):

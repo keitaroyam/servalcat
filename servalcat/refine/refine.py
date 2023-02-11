@@ -23,11 +23,12 @@ profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, shake_rms=0, exte_keywords=None):
+    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, exte_keywords=None):
         self.monlib = monlib
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.geom = gemmi.Geometry(self.st)
+        self.sigma_b = sigma_b
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
@@ -97,7 +98,9 @@ class Geom:
                         logger.writeln(df.to_string(float_format="{:.3f}".format, index=False) + "\n")
 
         df = pandas.DataFrame(self.geom.reporting.get_summary_table(self.use_nucleus))
-        logger.writeln(df.set_index("Restraint type").rename_axis(index=None).to_string(float_format="{:.3f}".format) + "\n")
+        df = df.set_index("Restraint type").rename_axis(index=None)
+        logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
+        return df
         
 class Refine:
     def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1, refine_h=False):
@@ -201,7 +204,7 @@ class Refine:
         if self.geom is not None:
             self.geom.geom.clear_target()
             geom_x = self.geom.geom.calc(self.use_nucleus, target_only) if self.refine_xyz else 0
-            geom_a = self.geom.geom.calc_adp_restraint(target_only, sigma_b) if self.adp_mode > 0 else 0
+            geom_a = self.geom.geom.calc_adp_restraint(target_only, self.geom.sigma_b) if self.adp_mode > 0 else 0
             logger.writeln(" geom_x = {}".format(geom_x))
             logger.writeln(" geom_a = {}".format(geom_a))
             geom = geom_x + geom_a
@@ -252,7 +255,7 @@ class Refine:
         return f, vn, am
 
     @profile
-    def run_cycle(self, weight=1, sigma_b=30):
+    def run_cycle(self, weight=1):
         if 0: # test of grad
             self.ll.update_fc()
             x0 = self.get_x()
@@ -281,7 +284,7 @@ class Refine:
             logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
             self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
-        f0, vn, am = self.calc_target(weight, sigma_b)
+        f0, vn, am = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
 
@@ -336,7 +339,7 @@ class Refine:
             dx2 = self.scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
             #if self.ll is not None: self.ll.update_fc()
-            f1, _, _ = self.calc_target(weight, sigma_b, target_only=True)
+            f1, _, _ = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:
@@ -344,10 +347,40 @@ class Refine:
             logger.writeln("function not minimised")
             self.set_x(x0)
 
-        if self.refine_xyz and self.geom is not None:
-            self.geom.show_model_stats()
-        if self.adp_mode > 0:
-            utils.model.adp_analysis(self.st)
-        
         return ret
+    
+    def run_cycles(self, ncycles, weight=1, debug=True):
+        stats = []
+        stats.append({"geom": self.geom.show_model_stats(show_outliers=True)})
+        if self.ll is not None:
+            self.ll.update_fc()
+            stats[-1]["fsca"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
+            
+        for i in range(ncycles):
+            logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
+            self.run_cycle(weight=weight) # check ret?
+            if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
+            if self.refine_xyz and self.geom is not None:
+                stats.append({"geom": self.geom.show_model_stats(show_outliers=(i==ncycles-1))})
+            if self.adp_mode > 0:
+                utils.model.adp_analysis(self.st)
+            logger.writeln("")
+
+            if self.ll is not None:
+                self.ll.update_fc()
+                stats[-1]["fsca"] = self.ll.calc_fsc()[1]
+
+        df = pandas.DataFrame({"Ncyc": range(ncycles+1),
+                               "FSCaverage": [s.get("fsca", numpy.nan) for s in stats],
+                               "rmsBOND": [s["geom"].loc["Bond distances, non H", "r.m.s.d."] for s in stats],
+                               "zBOND": [s["geom"].loc["Bond distances, non H", "r.m.s.Z"] for s in stats],
+                               "rmsANGL": [s["geom"].loc["Bond angles, non H", "r.m.s.d."] for s in stats],
+                               "zANGL": [s["geom"].loc["Bond angles, non H", "r.m.s.Z"] for s in stats],
+                               })
+        lstr = utils.make_loggraph_str(df, "stats vs cycle", [["FSC average", ["Ncyc", "FSCaverage"]],
+                                                        ["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
+                                                        ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]],
+                                 float_format="{:.4f}".format)
+        logger.writeln(lstr)
+    
 # class Refine

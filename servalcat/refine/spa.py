@@ -85,7 +85,7 @@ class LL_SPA:
         stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f="FP")
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
-        return stats
+        return stats, fsca
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
