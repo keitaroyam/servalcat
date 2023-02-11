@@ -38,7 +38,7 @@ class Geom:
         print("   bonds =", len(self.geom.bonds))
         print("  angles =", len(self.geom.angles))
         print("torsions =", len(self.geom.torsions))
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, stac=5)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=1, stacd=1)
         self.use_nucleus = False
         self.parents = {}
     # __init__()
@@ -52,132 +52,52 @@ class Geom:
                 self.parents[bond.atoms[1]] = bond.atoms[0]
     # set_h_parents()
 
-    def show_model_stats(self): # TODO messy. separate stac table
+    def show_model_stats(self, show_outliers=True):
         f0 = self.geom.calc(self.use_nucleus, True)
-        chirsstr = {gemmi.ChiralityType.Positive:"positive",
-                    gemmi.ChiralityType.Negative:"negative",
-                    gemmi.ChiralityType.Both:"both"}
+        if show_outliers:
+            get_table = dict(bond=self.geom.reporting.get_bond_outliers,
+                             angle=self.geom.reporting.get_angle_outliers,
+                             torsion=self.geom.reporting.get_torsion_outliers,
+                             chir=self.geom.reporting.get_chiral_outliers,
+                             plane=self.geom.reporting.get_plane_outliers,
+                             staca=self.geom.reporting.get_stacking_angle_outliers,
+                             stacd=self.geom.reporting.get_stacking_dist_outliers,
+                             vdw=self.geom.reporting.get_vdw_outliers,
+                             )
+            labs = dict(bond="Bond distances",
+                        angle="Bond angles",
+                        torsion="Torsion angles",
+                        chir="Chiral centres",
+                        plane="Planar groups",
+                        staca="Stacking plane angles",
+                        stacd="Stacking plane distances",
+                        vdw="VDW repulsions")
 
-        items = dict(bond=self.geom.reporting.bonds,
-                     angle=self.geom.reporting.angles,
-                     torsion=self.geom.reporting.torsions,
-                     chir=self.geom.reporting.chirs,
-                     plane=self.geom.reporting.planes,
-                     stac=self.geom.reporting.stackings,
-                     vdw=self.geom.reporting.vdws)
-        labs = dict(bond="Bond distances",
-                    angle="Bond angles",
-                    torsion="Torsion angles",
-                    chir="Chiral centres",
-                    plane="Planar groups",
-                    stac="Stacking planes",
-                    vdw="VDW repulsions")
-        sdata = []
-        skeys = []
-        for k in items:
-            if k in ("torsion", "stac"):
-                sum_r, sum_s, n = {}, {}, {}
-            else:
-                sum_r, sum_s = 0., 0 # sum of squared resid and sigma
-                n = 0
-            outliers = []
-            for rep in items[k]:
-                if k in ("chir", "plane", "vdw"):
-                    g, resid = rep
-                    closest = g
-                elif k == "stac": # TODO dist
-                    g = closest = rep[0]
-                    resid = rep[1]
-                else:
-                    g, closest, resid = rep
-                if k == "bond":
-                    ideal = closest.value_nucleus if self.use_nucleus else closest.value
-                    sigma = closest.sigma_nucleus if self.use_nucleus else closest.sigma
-                elif k == "chir":
-                    ideal, sigma = g.value, g.sigma
-                elif k == "plane":
-                    ideal, sigma = 0, g.sigma
-                elif k == "stac":
-                    ideal, sigma = g.angle, g.sd_angle
-                else:
-                    ideal, sigma = closest.value, closest.sigma
-
-                if k == "plane":
-                    sum_r += numpy.sum(numpy.square(resid))
-                    sum_s += sigma * len(resid)
-                    n += len(resid)
-                    for a, r in zip(g.atoms, resid):
-                        r = abs(r)
-                        if r / sigma > self.outlier_sigmas[k]:
-                            outliers.append((a, closest, r, ideal, r / sigma))
-                elif k == "stac":
-                    sum_r["a"] = sum_r.get("a", 0) + rep[1]**2
-                    sum_r["d"] = sum_r.get("d", 0) + (rep[2]**2 + rep[3]**2) * 0.5
-                    sum_s["a"] = sum_s.get("a", 0) + g.sd_angle
-                    sum_s["d"] = sum_s.get("d", 0) + g.sd_dist
-                    n["all"] = n.get("all", 0) + 1
-                    if abs(rep[1]) / g.sd_angle > self.outlier_sigmas[k]:
-                        outliers.append((g, g, rep[1]+g.angle, g.angle, rep[1] / g.sd_angle))
-                    for i in (2, 3):
-                        if g.dist > 0 and abs(rep[i]) / g.sd_dist > self.outlier_sigmas[k]:
-                            outliers.append((g, g, rep[i]+g.dist, g.dist, rep[i] / g.sd_dist))
-                else:
-                    if k == "torsion":
-                        p = closest.period
-                        sum_r[p] = sum_r.get(p, 0) + resid**2
-                        sum_s[p] = sum_s.get(p, 0) + sigma
-                        n[p] = n.get(p, 0) + 1
-                    elif k != "bond" or g.type < 2:
-                        sum_r += resid**2
-                        sum_s += sigma
-                        n += 1
-                    if abs(resid) / sigma > self.outlier_sigmas[k]:
-                        outliers.append((g, closest, resid+ideal, ideal, resid / sigma))
-
-            if k == "torsion":
-                for p in sorted(sum_r):
-                    rmsd = numpy.sqrt(sum_r[p] / n[p]) if n[p] > 0 else 0.
-                    mean_sig = sum_s[p] / n[p] if n[p] > 0 else 0.
-                    sdata.append([n[p], rmsd, mean_sig])
-                    skeys.append("{}, period {} refined".format(labs[k], p))
-            elif k == "stac":
-                for p in sorted(sum_r):
-                    rmsd = numpy.sqrt(sum_r[p] / n["all"]) if n["all"] > 0 else 0.
-                    mean_sig = sum_s[p] / n["all"] if n["all"] > 0 else 0.
-                    sdata.append([n["all"], rmsd, mean_sig])
-                    skeys.append("{}, {} refined".format(labs[k], dict(a="angle", d="distance")[p]))
-            else:
-                rmsd = numpy.sqrt(sum_r / n) if n > 0 else 0.
-                mean_sig = sum_s / n if n > 0 else 0.
-                sdata.append([n, rmsd, mean_sig])
-                skeys.append("{} refined".format(labs[k]))
-            if outliers:
-                outliers.sort(key=lambda x: -abs(x[-1]))
-                odata = []
-                for g, closest, val, ideal, z in outliers:
-                    odata.append({})
-                    if k == "plane":
-                        odata[-1]["atom"] = str(self.lookup[g])
-                    elif k == "stac":
-                        odata[-1]["plane1"] = str(self.lookup[g.planes[0][0]])
-                        odata[-1]["plane2"] = str(self.lookup[g.planes[1][0]])
+            for k in get_table:
+                kwgs = {"min_z": self.outlier_sigmas[k]}
+                if k == "bond": kwgs["use_nucleus"] = self.use_nucleus
+                table = get_table[k](**kwgs)
+                if table["z"]:
+                    for kk in table:
+                        if kk.startswith(("atom", "plane")):
+                            table[kk] = [str(self.lookup[x]) for x in table[kk]]
+                    df = pandas.DataFrame(table)
+                    df = df.reindex(df.z.abs().sort_values(ascending=False).index)
+                    if k == "bond":
+                        df0 = df[df.type < 2].drop(columns=["type", "alpha"])
+                        if len(df0.index) > 0:
+                            logger.writeln(" *** {} outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
+                            logger.writeln(df0.to_string(float_format="{:.3f}".format, index=False) + "\n")
+                        df0 = df[df.type == 2].drop(columns=["type"])
+                        if len(df0.index) > 0:
+                            logger.writeln(" *** External bond outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
+                            logger.writeln(df0.to_string(float_format="{:.3f}".format, index=False) + "\n")
                     else:
-                        odata[-1].update({"atom{}".format(i+1):str(self.lookup[a]) for i, a in enumerate(g.atoms)})
-                    odata[-1]["value"] = val
-                    if k != "plane": odata[-1]["ideal"] = ideal
-                    if k == "torsion": odata[-1]["per"] = closest.period
-                    if k == "chir": odata[-1]["sign"] = chirsstr[g.sign]
-                    if k in ("vdw", "bond"): odata[-1]["type"] = g.type
-                    if k == "bond" and g.type == 2: odata[-1]["alpha"] = g.alpha
-                    if k == "vdw": odata[-1]["sym"] = g.sym_idx
-                    odata[-1]["z"] = z
+                        logger.writeln(" *** {} outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
+                        logger.writeln(df.to_string(float_format="{:.3f}".format, index=False) + "\n")
 
-                df = pandas.DataFrame(odata)
-                logger.writeln("{} outliers".format(k))
-                logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
-
-        df = pandas.DataFrame(sdata, index=skeys, columns=["N restraints", "rmsd", "Av(sigma)"])
-        logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
+        df = pandas.DataFrame(self.geom.reporting.get_summary_table(self.use_nucleus))
+        logger.writeln(df.set_index("Restraint type").rename_axis(index=None).to_string(float_format="{:.3f}".format) + "\n")
         
 class Refine:
     def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1, refine_h=False):
