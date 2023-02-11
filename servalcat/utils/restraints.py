@@ -319,6 +319,12 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
             continue
+        if cra1.atom.altloc != cra2.atom.altloc and "\0" not in (cra1.atom.altloc, cra2.atom.altloc):
+            logger.writeln(" WARNING: link between different altlocs (atom1= {} atom2= {} id= {}) is not allowed. Removing.".format(con.partner1, con.partner2, con.link_id))
+            i = con_idxes.get(con)
+            if i is not None: rm_idxes.append(i)
+            continue
+        
         dist = cra1.atom.pos.dist(cra2.atom.pos)
         m, swap = monlib.match_link(cra1.residue, cra1.atom.name, cra2.residue, cra2.atom.name,
                                     cra1.atom.altloc if cra1.atom.altloc!="\0" else cra2.atom.altloc)
@@ -337,9 +343,8 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
                 i = con_idxes.get(con)
                 if i is not None: rm_idxes.append(i)
 
-    if remove_unknown:
-        for i in sorted(rm_idxes, reverse=True):
-            st.connections.pop(i)
+    for i in sorted(rm_idxes, reverse=True):
+        st.connections.pop(i)
 
     if add_found:
         for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
