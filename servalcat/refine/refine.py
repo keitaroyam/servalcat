@@ -116,8 +116,8 @@ class Refine:
         self.refine_xyz = refine_xyz
         self.refine_h = refine_h
         self.max_distsq_for_adp = 0. # need interface
-
-        if self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen():
+        self.h_inherit_parent_adp = self.geom is not None and self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
+        if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
     # __init__()
 
@@ -178,7 +178,7 @@ class Refine:
                 self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
 
         # Copy B of hydrogen from parent
-        if self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen():
+        if self.h_inherit_parent_adp:
             for h in self.geom.parents:
                 p = self.geom.parents[h]
                 h.b_iso = p.b_iso
@@ -256,24 +256,6 @@ class Refine:
 
     @profile
     def run_cycle(self, weight=1):
-        if 0: # test of grad
-            self.ll.update_fc()
-            x0 = self.get_x()
-            f0 = self.ll.calc_target()
-            ader = self.ll.calc_grad()[0]
-            for e in 1e-3, 1e-4, 1e-5, 1e-6:
-                x1 = numpy.copy(x0)
-                x1[0] += e
-                self.set_x(x1)
-                self.ll.update_fc()
-                f1 = self.ll.calc_target()
-                nder = (f1 - f0) / e
-                print("e=", e)
-                print("NUM DER=", nder)
-                print("ANA DER=", ader[0])
-                print("ratio=", nder/ader[0])
-            quit()
-
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -284,6 +266,24 @@ class Refine:
             logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
             self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
+        if 0: # test of grad
+            self.ll.update_fc()
+            x0 = self.get_x()
+            f0,ader,_ = self.calc_target(weight)
+            i = 1
+            for e in 1e-1,1e-2,1e-3, 1e-4, 1e-5:
+                x1 = numpy.copy(x0)
+                x1[i] += e
+                self.set_x(x1)
+                self.ll.update_fc()
+                f1,_,_ = self.calc_target(weight, target_only=True)
+                nder = (f1 - f0) / e
+                print("e=", e)
+                print("NUM DER=", nder)
+                print("ANA DER=", ader[i])
+                print("ratio=", nder/ader[i])
+            quit()
+
         f0, vn, am = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
@@ -344,14 +344,15 @@ class Refine:
             if f1 < f0: break
         else:
             ret = False
-            logger.writeln("function not minimised")
-            self.set_x(x0)
+            logger.writeln("WARNING: function not minimised")
+            #self.set_x(x0) # Refmac accepts it even when function increases
 
         return ret
     
     def run_cycles(self, ncycles, weight=1, debug=True):
-        stats = []
-        stats.append({"geom": self.geom.show_model_stats(show_outliers=True)})
+        stats = [{"Ncyc": 0}]
+        if self.geom is not None:
+            stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)
         if self.ll is not None:
             self.ll.update_fc()
             stats[-1]["fsca"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
@@ -359,9 +360,14 @@ class Refine:
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             self.run_cycle(weight=weight) # check ret?
-            if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i), pdb=True)#, cif=True)
+            stats.append({})
+            if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and self.geom is not None:
-                stats.append({"geom": self.geom.show_model_stats(show_outliers=(i==ncycles-1))})
+                stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
+                #stats[-1]["rmsBOND"] = g.loc["Bond distances, non H", "r.m.s.d."]
+                #stats[-1]["zBOND"] = g.loc["Bond distances, non H", "r.m.s.Z"]
+                #stats[-1]["rmsANGL"] = g.loc["Bond angles, non H", "r.m.s.d."]
+                #stats[-1]["zANGL"] = g.loc["Bond angles, non H", "r.m.s.Z"]
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             logger.writeln("")
@@ -371,16 +377,22 @@ class Refine:
                 stats[-1]["fsca"] = self.ll.calc_fsc()[1]
 
         df = pandas.DataFrame({"Ncyc": range(ncycles+1),
-                               "FSCaverage": [s.get("fsca", numpy.nan) for s in stats],
-                               "rmsBOND": [s["geom"].loc["Bond distances, non H", "r.m.s.d."] for s in stats],
-                               "zBOND": [s["geom"].loc["Bond distances, non H", "r.m.s.Z"] for s in stats],
-                               "rmsANGL": [s["geom"].loc["Bond angles, non H", "r.m.s.d."] for s in stats],
-                               "zANGL": [s["geom"].loc["Bond angles, non H", "r.m.s.Z"] for s in stats],
-                               })
-        lstr = utils.make_loggraph_str(df, "stats vs cycle", [["FSC average", ["Ncyc", "FSCaverage"]],
-                                                        ["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
-                                                        ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]],
-                                 float_format="{:.4f}".format)
+                               "FSCaverage": [s.get("fsca", numpy.nan) for s in stats]})
+        if self.geom is not None:
+            df["rmsBOND"] =[s["geom"].loc["Bond distances, non H", "r.m.s.d."] for s in stats]
+            df["zBOND"] = [s["geom"].loc["Bond distances, non H", "r.m.s.Z"] for s in stats]
+            df["rmsANGL"] = [s["geom"].loc["Bond angles, non H", "r.m.s.d."] for s in stats]
+            df["zANGL"] = [s["geom"].loc["Bond angles, non H", "r.m.s.Z"] for s in stats]
+
+        forplot = []
+        if self.ll is not None:
+            forplot.append(["FSC average", ["Ncyc", "FSCaverage"]])
+        if self.geom is not None:
+            forplot.extend([["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
+                            ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]])
+
+        lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
+                                       float_format="{:.4f}".format)
         logger.writeln(lstr)
     
 # class Refine

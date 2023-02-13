@@ -108,7 +108,7 @@ def main(args):
     file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
                               shifted_model_prefix=shifted_model_prefix)
-
+    st.setup_cell_images()
     hkldata = utils.hkl.hkldata_from_mtz(gemmi.read_mtz_file(file_info["mtz_file"]), 
                                          labels=["Fmap1", "Pmap1", "Fmap2", "Pmap2", "Fout", "Pout"],
                                          newlabels=["F_map1", "", "F_map2", "", "FP", ""])

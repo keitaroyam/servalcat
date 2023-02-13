@@ -17,6 +17,17 @@ from servalcat.spa import fsc
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
+def calc_D_and_S(hkldata): # simplified version of fofc.calc_D_and_S()
+    bdf = hkldata.binned_df
+    bdf["D"] = 0.
+    bdf["S"] = 0.
+    for i_bin, idxes in hkldata.binned():
+        Fo = hkldata.df.FP.to_numpy()[idxes]
+        Fc = hkldata.df.FC.to_numpy()[idxes]
+        bdf.loc[i_bin, "D"] = numpy.nansum(numpy.real(Fo * numpy.conj(Fc))) / numpy.sum(numpy.abs(Fc)**2)
+        bdf.loc[i_bin, "S"] = numpy.nanmean(numpy.abs(Fo - bdf.D[i_bin] * Fc)**2)
+# calc_D_and_S()
+
 class LL_SPA:
     def __init__(self, hkldata, st, monlib, source="electron", mott_bethe=True):
         assert source in ("electron", "xray")
@@ -30,12 +41,8 @@ class LL_SPA:
         self.calc_fsc()
 
     def update_ml_params(self):
-        # FIXME S should include variance of noise.
-        # FIXME make sure D > 0 and S > 0
-        # following function needs half maps - but they are actually not needed absolutely
-        fofc.calc_D_and_S(self.hkldata)
-        # quick fix
-        self.hkldata.binned_df.S += self.hkldata.binned_df.var_noise
+        # FIXME make sure D > 0
+        calc_D_and_S(self.hkldata)
         logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min", "D", "S"]))
 
     def update_fc(self):
@@ -77,7 +84,7 @@ class LL_SPA:
         for i_bin, idxes in self.hkldata.binned():
             Fo = self.hkldata.df.FP.to_numpy()[idxes]
             DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df.D[i_bin]
-            ret += numpy.sum(numpy.abs(Fo - DFc)**2) / self.hkldata.binned_df.S[i_bin]
+            ret += numpy.nansum(numpy.abs(Fo - DFc)**2) / self.hkldata.binned_df.S[i_bin]
         return ret * 2 # friedel mates
     # calc_target()
 
@@ -90,6 +97,8 @@ class LL_SPA:
     def calc_grad(self, refine_xyz, adp_mode, refine_h):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
+        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
+        logger.writeln("blur for deriv= {:.2f}".format(blur))
         for i_bin, idxes in self.hkldata.binned():
             D = self.hkldata.binned_df.D[i_bin]
             S = self.hkldata.binned_df.S[i_bin]
@@ -104,15 +113,16 @@ class LL_SPA:
 
         # strangely, we need V for Hessian and V**2/n for gradient.
         d2ll_dab2 *= self.hkldata.cell.volume
-        dll_dab_den = self.hkldata.fft_map(data=dll_dab)
+        dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
-
+        #asu = dll_dab_den.masked_asu()
+        #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
-        ll = gemmi.LLX(self.hkldata.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        ll = gemmi.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        vn = ll.calc_grad(dll_dab_den)
+        vn = ll.calc_grad(dll_dab_den, blur)
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
 
