@@ -179,21 +179,25 @@ def modify_output(pdbout, cifout, fixes, hout, keep_original_output=False):
 def main(args):
     if len(args.opts) % 2 != 0: raise SystemExit("Invalid number of args")
     args.ligand = sum(args.ligand, []) if args.ligand else []
-    try:
-        refmac_ver = utils.refmac.check_version(args.exe)
-    except OSError as e:
-        raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
-    if not refmac_ver:
-        raise SystemExit("Error: Cannot get Refmac version.")
-    logger.writeln("Refmac version: {}".format(".".join(str(x) for x in refmac_ver)))
-    if refmac_ver < (5, 8, 404):
-        raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
+
     print("Waiting for input..")
     inputs = []
     for l in sys.stdin:
         inputs.append(l)
         if l.strip().lower().startswith("end"):
             break
+
+    keywords = parse_keywords(inputs) # TODO read psrestin also?
+    if not keywords["make"].get("exit"):
+        try:
+            refmac_ver = utils.refmac.check_version(args.exe)
+        except OSError as e:
+            raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
+        if not refmac_ver:
+            raise SystemExit("Error: Cannot get Refmac version.")
+        logger.writeln("Refmac version: {}".format(".".join(str(x) for x in refmac_ver)))
+        if refmac_ver < (5, 8, 404):
+            raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
 
     opts = OrderedDict((args.opts[2*i].lower(), args.opts[2*i+1]) for i in range(len(args.opts)//2))
     xyzin = opts.get("xyzin")
@@ -209,8 +213,6 @@ def main(args):
             os.environ["CCP4_SCR"] = os.path.dirname(opts[k]) # XXX "." may be given, which causes problem (os.path.isdir("") is False)
     utils.refmac.ensure_ccp4scr()
     
-    keywords = parse_keywords(inputs) # TODO read psrestin also?
-
     # TODO what if restin is given or make cr prepared is given?
     # TODO check make pept/link/suga/ss/conn/symm/chain
 
