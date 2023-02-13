@@ -54,6 +54,7 @@ def hkldata_from_asu_data(asu_data, label):
 # hkldata_from_asu_data()
 
 def hkldata_from_mtz(mtz, labels, newlabels=None):
+    assert type(mtz) == gemmi.Mtz
     if not set(labels).issubset(mtz.column_labels()):
         raise RuntimeError("All specified coulumns were not found from mtz.")
     
