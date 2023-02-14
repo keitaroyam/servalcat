@@ -184,7 +184,7 @@ class HklData:
         elif common_only:
             self.df = self.df.merge(df_tmp)
         else:
-            self.df = self.df.merge(other.df, how="outer")
+            self.df = self.df.merge(df_tmp, how="outer")
     # merge_asu_data()
 
     def miller_array(self):
