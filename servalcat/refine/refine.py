@@ -24,10 +24,9 @@ atexit.register(profile.print_stats)
 
 class Geom:
     def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, exte_keywords=None):
-        self.monlib = monlib
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
-        self.geom = gemmi.Geometry(self.st)
+        self.geom = gemmi.Geometry(self.st, monlib.ener_lib)
         self.sigma_b = sigma_b
         if shake_rms > 0:
             numpy.random.seed(0)
@@ -115,7 +114,6 @@ class Refine:
         self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
         self.refine_h = refine_h
-        self.max_distsq_for_adp = 0. # need interface
         self.h_inherit_parent_adp = self.geom is not None and self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
@@ -262,7 +260,7 @@ class Refine:
             self.ll.update_ml_params()
 
         if self.geom is not None:
-            self.geom.geom.setup_vdw(self.geom.monlib.ener_lib, self.max_distsq_for_adp) # if refine_xyz=False, no need to do it every time
+            self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
             logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
             self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
