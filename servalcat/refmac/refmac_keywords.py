@@ -7,6 +7,8 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat import utils
+b_to_u = utils.model.b_to_u
 
 def parse_atom_spec(s, itk):
     # s: list of keywords
@@ -196,7 +198,7 @@ def read_exte_line(l):
                     itk += 1
         elif s[1].lower().startswith(("harm", "spec")):
             ret["rest_type"] = s[1][:4].lower() # in Refmac, irest_type = 1 if harm else 2
-            ret["restr"] = dict(rectype="", toler=0.5, sigma_t=0.5, sigma_u=2.0/numpy.pi**2/8., u_val_incl=False)
+            ret["restr"] = dict(rectype="", toler=0.5, sigma_t=0.5, sigma_u=2.0 * b_to_u, u_val_incl=False)
             itk = 2
             while itk < len(s):
                 if s[itk].lower().startswith("auto"):
@@ -227,7 +229,7 @@ def read_exte_line(l):
                         ret["restr"]["u_val_incl"] = False
                         itk += 1
                 elif s[itk].lower().startswith(("sigb", "sigu")):
-                    ret["restr"]["sigma_u"] = float(s[itk+1]) / numpy.pi**2 / 8.0
+                    ret["restr"]["sigma_u"] = float(s[itk+1]) * b_to_u
                     itk += 2
                 else:
                     logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], l))
@@ -238,93 +240,199 @@ def read_exte_line(l):
     return ret
 # read_exte_line()
 
+def read_ridge_params(l, r):
+    s = l.split()
+    assert s[0].lower().startswith("ridg")
+    ntok = len(s)
+    if s[1].lower().startswith("dist") and ntok > 2:
+        if s[2].lower().startswith("with"):
+            r.setdefault("groups", []).append({})
+            #r["groups"][-1]["sigma"] = sigma_dist_r
+            #r["groups"][-1]["dmax"] = dmax_dist_r
+            itk = 3
+            while itk < ntok:
+                if s[itk].lower().startswith("chai"):
+                    r["groups"][-1]["chain"] = s[itk+1]
+                    itk += 2
+                elif s[itk].lower().startswith("resi"):
+                    r["groups"][-1]["resi"] = (int(s[itk+1]), int(s[itk+2]))
+                    itk += 3
+                elif s[itk].lower().startswith("sigm"):
+                    v = float(s[itk+1])
+                    if v < 0: v = 0.01
+                    r["groups"][-1]["sigma"] = v
+                    itk += 2
+                elif s[itk].lower().startswith("dmax"):
+                    v = float(s[itk+1])
+                    if v < 0: v = 4.2
+                    r["groups"][-1]["dmax"] = v
+                    itk += 2
+        elif s[2].lower().startswith("incl") and ntok > 3:
+            # a: ridge_dist_include_all
+            # h: ridge_dist_include_hbond
+            # m: ridge_dist_include_main
+            v = s[3][0].lower()
+            if v in ("a", "h", "m"): r["include"] = v
+        elif s[2].lower().startswith("sigm"):
+            v = float(s[3])
+            r["sigma"] = v if v > 0 else 0.01
+        elif s[2].lower().startswith("dmax"):
+            v = float(s[3])
+            r["dmax"] = v if v > 0 else 4.2
+        elif s[2].lower().startswith("inte") and ntok > 3:
+            r["interchain"] = s[3][0].lower() == "y"
+        elif s[2].lower().startswith("symm") and ntok > 3:
+            r["intersym"] = s[3][0].lower() == "y"
+        elif s[2].lower().startswith("long") and ntok > 3:
+            r["long_range"] = max(0, int(s[3])) # long_range_residue_gap
+        elif s[2].lower().startswith("shor") and ntok > 3:
+            r["short_range"] = max(0, int(s[3])) # short_range_residue_gap
+        elif s[2].lower().startswith("hydr"):
+            r["hydrogen"] = ntok < 4 or s[3][0].lower() == "i" # hydrogens_include
+        elif s[2].lower().startswith("side") and ntok > 3:
+            r["sidechain"] = s[3][0].lower() == "i" # rb_side_chain_include
+        elif s[2].lower().startswith("filt"):
+            r["bvalue_filter"] = True
+            if s[3].lower().startswith("bran"):
+                v = float(s[4])
+                r["bvalue_filter_range"] = v if v > 0 else 2.0
+        else:
+            logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[2], l))
+    elif s[1].lower().startswith(("atom", "posi")): # not used
+        r["sigma_pos"] = float(s[2]) if ntok > 2 else 0.1
+    elif s[1].lower().startswith(("bval", "uval")) and ntok > 2:
+        if s[2].lower().startswith("diff"):
+            itk = 3
+            while itk < ntok:
+                if s[itk].lower().startswith("sigm"):
+                    if ntok > itk + 1:
+                        r["sigma_uval_diff"] = float(s[itk+1])
+                        itk += 2
+                    else:
+                        r["sigma_uval_diff"] = 0.025
+                        itk += 1
+                elif s[itk].lower().startswith("dmax"): 
+                    if ntok > itk + 1:
+                        r["dmax_uval_diff"] = float(s[itk+1])
+                        itk += 2
+                    else:
+                        r["dmax_uval_diff"] = 4.2
+                        itk += 1
+                elif s[itk].lower().startswith("dmwe"): # not used
+                    if ntok > itk + 1:
+                        r["dmax_uval_weight"] = float(s[itk+1]) * b_to_u
+                        itk += 2
+                    else:
+                        r["dmax_uval_weight"] = 3.0
+                        itk += 1
+                else:
+                    itk += 1
+        else:
+            r["sigma_b"] = float(s[2])
+            r["sigma_u"] = float(s[2])
+    else:
+        logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[1], l))
+
+    return r
+# read_ridge_params()
+
+def read_make_params(l, r):
+    # TODO: hout,ribo,valu,spec,form,sdmi,segi
+    s = l.split()
+    assert s[0].lower().startswith("make")
+    itk = 1
+    ntok = len(s)
+    while itk < ntok:
+        if s[itk].lower().startswith("hydr"): #default a
+            r["hydr"] = s[itk+1][0].lower()
+            if r["hydr"] not in "yanf":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("chec"): # default n?
+            tmp = s[itk+1].lower()
+            if tmp.startswith(("none", "0")):
+                r["check"] = "0"
+            elif tmp.startswith(("liga", "n")):
+                r["check"] = "n"
+            elif tmp.startswith(("all", "y")):
+                r["check"] = "y"
+            else:
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("newl"): #default e
+            tmp = s[itk+1].lower()
+            if tmp.startswith("e"): # exit
+                r["newligand"] = False
+            elif tmp.startswith(("c", "y", "noex")): # noexit
+                r["newligand"] = True
+            else:
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("buil"): #default n
+            r["build"] = s[itk+1][0].lower()
+            if r["build"] not in "yn":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("pept"): # default n
+            r["pept"] = s[itk+1][0].lower()
+            if r["pept"] not in "yn":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("link"):
+            r["link"] = s[itk+1][0].lower()
+            if r["link"] not in "ynd0": # what is 0?
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("suga"):
+            r["sugar"] = s[itk+1][0].lower()
+            if r["sugar"] not in "ynds": # what is s?
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("conn"): # TODO read conn_tolerance? (make conn tole val)
+            r["conn"] = s[itk+1][0].lower()
+            if r["conn"] not in "ynd0": # what is 0?
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("symm"):
+            r["symm"] = s[itk+1][0].lower()
+            if r["symm"] not in "ync": # what is 0?
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("chai"):
+            r["chain"] = s[itk+1][0].lower()
+            if r["chain"] not in "yn":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("cisp"):
+            r["cispept"] = s[itk+1][0].lower()
+            if r["cispept"] not in "yn":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("ss"):
+            r["ss"] = s[itk+1][0].lower()
+            if r["ss"] not in "ydn":
+                raise SystemExit("Invalid make instruction: {}".format(l))
+            itk += 2
+        elif s[itk].lower().startswith("exit"):
+            if itk + 1 < len(s):
+                r["exit"] = s[itk+1][0].lower() == "y"
+                itk += 2
+            else:
+                r["exit"] = True
+                itk += 1
+        else:
+            itk += 1
+    return r
+# read_make_params()
+
 def parse_line(l, ret):
     s = l.split()
     ntok = len(s)
     if ntok == 0: return
-    if s[0].lower().startswith("make"): # TODO: hout,ribo,valu,spec,form,sdmi,segi
-        itk = 1
-        r = ret["make"]
-        while itk < ntok:
-            if s[itk].lower().startswith("hydr"): #default a
-                r["hydr"] = s[itk+1][0].lower()
-                if r["hydr"] not in "yanf":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("chec"): # default n?
-                tmp = s[itk+1].lower()
-                if tmp.startswith(("none", "0")):
-                    r["check"] = "0"
-                elif tmp.startswith(("liga", "n")):
-                    r["check"] = "n"
-                elif tmp.startswith(("all", "y")):
-                    r["check"] = "y"
-                else:
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("newl"): #default e
-                tmp = s[itk+1].lower()
-                if tmp.startswith("e"): # exit
-                    r["newligand"] = False
-                elif tmp.startswith(("c", "y", "noex")): # noexit
-                    r["newligand"] = True
-                else:
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("buil"): #default n
-                r["build"] = s[itk+1][0].lower()
-                if r["build"] not in "yn":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("pept"): # default n
-                r["pept"] = s[itk+1][0].lower()
-                if r["pept"] not in "yn":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("link"):
-                r["link"] = s[itk+1][0].lower()
-                if r["link"] not in "ynd0": # what is 0?
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("suga"):
-                r["sugar"] = s[itk+1][0].lower()
-                if r["sugar"] not in "ynds": # what is s?
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("conn"): # TODO read conn_tolerance? (make conn tole val)
-                r["conn"] = s[itk+1][0].lower()
-                if r["conn"] not in "ynd0": # what is 0?
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("symm"):
-                r["symm"] = s[itk+1][0].lower()
-                if r["symm"] not in "ync": # what is 0?
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("chai"):
-                r["chain"] = s[itk+1][0].lower()
-                if r["chain"] not in "yn":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("cisp"):
-                r["cispept"] = s[itk+1][0].lower()
-                if r["cispept"] not in "yn":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("ss"):
-                r["ss"] = s[itk+1][0].lower()
-                if r["ss"] not in "ydn":
-                    raise SystemExit("Invalid make instruction: {}".format(l))
-                itk += 2
-            elif s[itk].lower().startswith("exit"):
-                if itk + 1 < len(s):
-                    r["exit"] = s[itk+1][0].lower() == "y"
-                    itk += 2
-                else:
-                    r["exit"] = True
-                    itk += 1
-            else:
-                itk += 1
+    if s[0].lower().startswith("make"):
+        read_make_params(l, ret["make"])
+    elif s[0].lower().startswith("ridg"):
+        read_ridge_params(l, ret["ridge"])
     elif s[0].lower().startswith(("sour", "scat")):
         k = s[1].lower()
         if k.startswith("em"):
@@ -370,7 +478,7 @@ def get_lines(lines):
 # get_lines()
             
 def parse_keywords(inputs):
-    ret = {"make":{}}
+    ret = {"make":{}, "ridge":{}}
     for l in get_lines(inputs):
         parse_line(l, ret)
     return ret

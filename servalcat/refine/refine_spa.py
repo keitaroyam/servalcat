@@ -54,6 +54,11 @@ def add_arguments(parser):
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
+    parser.add_argument('--jellybody', action='store_true',
+                        help="Use jelly body restraints")
+    parser.add_argument('--jellybody_params', nargs=2, type=float,
+                        metavar=("sigma", "dmax"), default=[0.01, 4.2],
+                        help="Jelly body sigma and dmax (default: %(default)s)")
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
@@ -137,7 +142,9 @@ def main(args):
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                      refine_h=args.refine_h)
 
-    refiner.max_distsq_for_adp = args.max_dist_for_adp_restraint**2
+    geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
+    if args.jellybody:
+        geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
 
     #logger.writeln("TEST: shift x+0.3 A")
     #for cra in st[0].all():
