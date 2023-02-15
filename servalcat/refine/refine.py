@@ -320,13 +320,13 @@ class Refine:
         dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
         if self.refine_xyz:
             dxx = dx[:len(self.atoms)*3]
-            logger.writeln("dx = {}".format(dxx))
+            #logger.writeln("dx = {}".format(dxx))
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
         if self.adp_mode > 0: # TODO for aniso
             db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
-            logger.writeln("dB = {}".format(db))
+            #logger.writeln("dB = {}".format(db))
             logger.writeln("min(dB) = {}".format(numpy.min(db)))
             logger.writeln("max(dB) = {}".format(numpy.max(db)))
             logger.writeln("mean(dB)= {}".format(numpy.mean(db)))
@@ -399,5 +399,5 @@ class Refine:
         lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
                                        float_format="{:.4f}".format)
         logger.writeln(lstr)
-    
+        return stats    
 # class Refine

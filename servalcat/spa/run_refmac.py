@@ -269,6 +269,93 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     return fscavg_text
 # calc_fsc()
 
+def calc_fofc(st, st_expanded, maps, monlib, model_format, args):
+    logger.writeln("Starting Fo-Fc calculation..")
+    if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
+    logger.writeln(" model: {}".format(args.output_prefix+model_format))
+    
+    # for Fo-Fc in case of helical reconstruction, expand model more
+    # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
+    if args.twist is not None:
+        logger.writeln("Generating all helical copies in the box")
+        st_expanded = st.clone()
+        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
+        utils.model.expand_ncs(st_expanded)
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded_all", pdb=True, cif=True)
+
+    if args.mask_for_fofc:
+        logger.writeln("  mask: {}".format(args.mask_for_fofc))
+        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
+    elif args.mask_radius_for_fofc:
+        logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
+        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
+    else:
+        logger.writeln("  mask: not used")
+        mask = None
+        
+    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
+                                                      half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
+                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
+    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
+                         mask=mask, output_prefix="diffmap",
+                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
+    
+    # Create Coot script
+    spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
+                               model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
+                               mtz_file="diffmap.mtz",
+                               contour_fo=None if mask is None else 1.2,
+                               contour_fofc=None if mask is None else 3.0,
+                               ncs_ops=st.ncs)
+# calc_fofc()
+
+def write_final_summary(st, refmac_summary, fscavg_text, output_prefix):
+    if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
+        final_weight = refmac_summary["cycles"][-2]["actual_weight"]
+    else:
+        final_weight = "???"
+
+    adpstats_txt = ""
+    adp_stats = utils.model.adp_stats_per_chain(st[0])
+    max_chain_len = max([len(x[0]) for x in adp_stats])
+    max_num_len = max([len(str(x[1])) for x in adp_stats])
+    for chain, natoms, qs in adp_stats:
+        adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
+        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
+
+    logger.writeln("""
+=============================================================================
+* Final Summary *
+
+Rmsd from ideal
+  bond lengths: {rmsbond} A
+  bond  angles: {rmsangle} deg
+
+{fscavgs}
+ Run loggraph {fsclog} to see plots
+
+ADP statistics
+{adpstats}
+
+Weight used: {final_weight}
+             If you want to change the weight, give larger (looser restraints)
+             or smaller (tighter) value to --weight_auto_scale=.
+             
+Open refined model and diffmap.mtz with COOT:
+coot --script {prefix}_coot.py
+
+List Fo-Fc map peaks in the ASU:
+servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
+=============================================================================
+""".format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
+           rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
+           fscavgs=fscavg_text.rstrip(),
+           fsclog="{}_fsc.log".format(output_prefix),
+           adpstats=adpstats_txt.rstrip(),
+           final_weight=final_weight,
+           prefix=output_prefix))
+# write_final_summary()
+
 def lab_f_suffix(blur):
     if blur is None or blur == 0.:
         return ""
@@ -803,89 +890,10 @@ def main(args):
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
     # Calc Fo-Fc (and updated) maps
-    logger.writeln("Starting Fo-Fc calculation..")
-    if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
-    logger.writeln(" model: {}".format(args.output_prefix+model_format))
-
-    # for Fo-Fc in case of helical reconstruction, expand model more
-    # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
-    if args.twist is not None:
-        logger.writeln("Generating all helical copies in the box")
-        st_expanded = st.clone()
-        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
-        utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded_all", pdb=True, cif=True,
-                                 cif_ref=cif_ref)
-
-    if args.mask_for_fofc:
-        logger.writeln("  mask: {}".format(args.mask_for_fofc))
-        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
-    elif args.mask_radius_for_fofc:
-        logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
-        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
-    else:
-        logger.writeln("  mask: not used")
-        mask = None
-        
-    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
-                                                      half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
-                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
-    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
-                         mask=mask, output_prefix="diffmap",
-                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
-
+    calc_fofc(st, st_expanded, maps, monlib, model_format, args)
+    
     # Final summary
-    if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
-        final_weight = refmac_summary["cycles"][-2]["actual_weight"]
-    else:
-        final_weight = "???"
-
-    adpstats_txt = ""
-    adp_stats = utils.model.adp_stats_per_chain(st[0])
-    max_chain_len = max([len(x[0]) for x in adp_stats])
-    max_num_len = max([len(str(x[1])) for x in adp_stats])
-    for chain, natoms, qs in adp_stats:
-        adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
-        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
-
-    # Create Coot script
-    spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
-                               model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
-                               mtz_file="diffmap.mtz",
-                               contour_fo=None if mask is None else 1.2,
-                               contour_fofc=None if mask is None else 3.0,
-                               ncs_ops=st.ncs)
-    logger.writeln("""
-=============================================================================
-* Final Summary *
-
-Rmsd from ideal
-  bond lengths: {rmsbond} A
-  bond  angles: {rmsangle} deg
-
-{fscavgs}
- Run loggraph {fsclog} to see plots
-
-ADP statistics
-{adpstats}
-
-Weight used: {final_weight}
-             If you want to change the weight, give larger (looser restraints)
-             or smaller (tighter) value to --weight_auto_scale=.
-             
-Open refined model and diffmap.mtz with COOT:
-coot --script {prefix}_coot.py
-
-List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
-=============================================================================
-""".format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
-           rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
-           fscavgs=fscavg_text.rstrip(),
-           fsclog="{}_fsc.log".format(args.output_prefix),
-           adpstats=adpstats_txt.rstrip(),
-           final_weight=final_weight,
-           prefix=args.output_prefix))
+    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix)
 # main()
         
 if __name__ == "__main__":
