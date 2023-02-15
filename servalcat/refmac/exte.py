@@ -173,4 +173,5 @@ def read_external_restraints(lines, st, geom):
                 stac="stackings", harm="harmonics", spec="special positions")
     for lab in labs:
         logger.writeln(" Number of {:18s} : {}".format(labs[lab], len(exlists[lab]) - num_org[lab]))
+    logger.writeln("")
 # read_external_restraints()

@@ -104,6 +104,8 @@ def main(args):
     args.trim_fofc_mtz = None
     check_args(args)
     
+    refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
+
     st = utils.fileio.read_structure(args.model)
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
@@ -134,8 +136,9 @@ def main(args):
             if not cra.atom.aniso.nonzero() or args.bfactor is not None:
                 u = cra.atom.b_iso * b_to_u
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
-    
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b)#, exte_keywords=keywords)
+            
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b,
+                refmac_keywords=refmac_keywords)
     ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,

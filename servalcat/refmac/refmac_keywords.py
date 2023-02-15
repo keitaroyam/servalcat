@@ -431,8 +431,6 @@ def parse_line(l, ret):
     if ntok == 0: return
     if s[0].lower().startswith("make"):
         read_make_params(l, ret["make"])
-    elif s[0].lower().startswith("ridg"):
-        read_ridge_params(l, ret["ridge"])
     elif s[0].lower().startswith(("sour", "scat")):
         k = s[1].lower()
         if k.startswith("em"):
@@ -453,6 +451,27 @@ def parse_line(l, ret):
                 itk += 2
             else:
                 itk += 1
+    elif s[0].lower().startswith("dist"):
+        try:
+            ret["wbond"] = float(s[1])
+        except:
+            pass
+        # TODO read sdex, excu, dele, dmxe, dmne
+    elif s[0].lower().startswith("ridg"):
+        read_ridge_params(l, ret["ridge"])
+    elif s[0].lower().startswith("angl") and ntok > 1:
+        ret["wangle"] = float(s[1])
+    elif s[0].lower().startswith("tors") and ntok > 1:
+        ret["wtors"] = float(s[1])
+    elif s[0].lower().startswith(("bfac", "temp", "bval")):
+        pass # TODO
+    elif s[0].lower().startswith("plan") and ntok > 1:
+        ret["wplane"] = float(s[1])
+    elif s[0].lower().startswith("chir") and ntok > 1:
+        ret["wchir"] = float(s[1])
+        # TODO read calp
+    elif s[0].lower().startswith(("vdwr", "vand", "nonb")) and ntok > 1:
+        ret["wvdw"] = float(s[1])
 # parse_line()
 
 def get_lines(lines):

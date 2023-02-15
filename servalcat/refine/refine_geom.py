@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import argparse
+import os
 import gemmi
 import numpy
 import scipy.optimize
@@ -42,7 +43,7 @@ def add_arguments(parser):
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
-    parser.add_argument('-o','--output_prefix', default="refined")
+    parser.add_argument('-o','--output_prefix')
 
 # add_arguments()
 
@@ -54,6 +55,8 @@ def parse_args(arg_list):
 
 def main(args):
     if args.model:
+        if not args.output_prefix:
+            args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
         st = utils.fileio.read_structure(args.model)
         utils.model.setup_entities(st, clear=True, force_subchain_names=True)
         st.assign_cis_flags()
@@ -73,6 +76,8 @@ def main(args):
                     "yes":gemmi.HydrogenChange.NoChange,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
     else:
+        if not args.output_prefix:
+            args.output_prefix = utils.fileio.splitext(os.path.basename(args.update_dictionary))[0] + "_refined"
         doc = gemmi.cif.read(args.update_dictionary)
         for block in doc: # this block will be reused below
             st = gemmi.make_structure_from_chemcomp_block(block)
@@ -98,7 +103,7 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
 
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, exte_keywords=keywords)
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, refmac_keywords=keywords)
     refiner = Refine(st, geom)
     refiner.run_cycles(args.ncycle)
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
@@ -125,7 +130,7 @@ def main(args):
                          ("descriptor", "optimization tool")):
             if tag in tags: row[tags.index(tag)] = val
         loop.add_row(gemmi.cif.quote_list(row))
-        doc.write_file("updated.cif", style=gemmi.cif.Style.Aligned)
+        doc.write_file(args.output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
 # main()
 
 if __name__ == "__main__":

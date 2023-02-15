@@ -13,6 +13,7 @@ import scipy.sparse
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
+from servalcat.refmac.refmac_keywords import parse_keywords
 from . import cgsolve
 u_to_b = utils.model.u_to_b
 b_to_u = utils.model.b_to_u
@@ -23,7 +24,7 @@ profile = line_profiler.LineProfiler()
 atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, exte_keywords=None):
+    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.geom = gemmi.Geometry(self.st, monlib.ener_lib)
@@ -32,14 +33,17 @@ class Geom:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
         self.geom.load_topo(topo)
-        if exte_keywords is not None:
-            exte.read_external_restraints(exte_keywords, self.st, self.geom)
-        self.geom.finalize_restraints()
-        print("   bonds =", len(self.geom.bonds))
-        print("  angles =", len(self.geom.angles))
-        print("torsions =", len(self.geom.torsions))
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=1, stacd=1)
         self.use_nucleus = False
+        self.calc_kwds = {"use_nucleus": self.use_nucleus}
+        if refmac_keywords:
+            exte.read_external_restraints(refmac_keywords, self.st, self.geom)
+            kwds = parse_keywords(refmac_keywords)
+            for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw"):
+                if k in kwds:
+                    self.calc_kwds[k] = kwds[k]
+                    logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
+        self.geom.finalize_restraints()
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=1, stacd=1)
         self.parents = {}
     # __init__()
     
@@ -52,8 +56,12 @@ class Geom:
                 self.parents[bond.atoms[1]] = bond.atoms[0]
     # set_h_parents()
 
+    def calc(self, target_only):
+        return self.geom.calc(check_only=target_only, **self.calc_kwds)
+    def calc_adp_restraint(self, target_only):
+        return self.geom.calc_adp_restraint(target_only, self.sigma_b)
     def show_model_stats(self, show_outliers=True):
-        f0 = self.geom.calc(self.use_nucleus, True)
+        f0 = self.calc(True)
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
                              angle=self.geom.reporting.get_angle_outliers,
@@ -110,7 +118,6 @@ class Refine:
         self.geom = geom
         self.ll = ll
         self.gamma = 0
-        self.use_nucleus = False
         self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
         self.refine_h = refine_h
@@ -197,12 +204,12 @@ class Refine:
 
         return x
     @profile
-    def calc_target(self, w=1, sigma_b=30, target_only=False):
+    def calc_target(self, w=1, target_only=False):
         N = self.n_params()
         if self.geom is not None:
             self.geom.geom.clear_target()
-            geom_x = self.geom.geom.calc(self.use_nucleus, target_only) if self.refine_xyz else 0
-            geom_a = self.geom.geom.calc_adp_restraint(target_only, self.geom.sigma_b) if self.adp_mode > 0 else 0
+            geom_x = self.geom.calc(target_only) if self.refine_xyz else 0
+            geom_a = self.geom.calc_adp_restraint(target_only) if self.adp_mode > 0 else 0
             logger.writeln(" geom_x = {}".format(geom_x))
             logger.writeln(" geom_a = {}".format(geom_a))
             geom = geom_x + geom_a
