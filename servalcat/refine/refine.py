@@ -18,10 +18,10 @@ from . import cgsolve
 u_to_b = utils.model.u_to_b
 b_to_u = utils.model.b_to_u
 
-import line_profiler
-import atexit
-profile = line_profiler.LineProfiler()
-atexit.register(profile.print_stats)
+#import line_profiler
+#import atexit
+#profile = line_profiler.LineProfiler()
+#atexit.register(profile.print_stats)
 
 class Geom:
     def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None):
@@ -203,7 +203,7 @@ class Refine:
                 x[offset_b + 6*i : offset_b + 6*(i+1)] *= u_to_b
 
         return x
-    @profile
+    #@profile
     def calc_target(self, w=1, target_only=False):
         N = self.n_params()
         if self.geom is not None:
@@ -259,7 +259,7 @@ class Refine:
 
         return f, vn, am
 
-    @profile
+    #@profile
     def run_cycle(self, weight=1):
         if self.ll is not None:
             self.ll.update_fc()
@@ -354,7 +354,7 @@ class Refine:
 
         return ret
     
-    def run_cycles(self, ncycles, weight=1, debug=True):
+    def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
         if self.geom is not None:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)

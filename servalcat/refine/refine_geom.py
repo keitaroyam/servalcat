@@ -17,11 +17,6 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refine.refine import Geom, Refine
 
-import line_profiler
-import atexit
-profile = line_profiler.LineProfiler()
-#atexit.register(profile.print_stats)
-
 def add_arguments(parser):
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--model',
