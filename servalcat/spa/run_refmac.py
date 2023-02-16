@@ -75,8 +75,8 @@ def add_arguments(parser):
                         help='Disable mask test using model')
     parser.add_argument("--prepare_only", action='store_true',
                         help="Stop before refinement")
-    parser.add_argument("--gemmi_prep", action='store_true',
-                        help="Use gemmi for crd/rst file preparation (do not use makecif)")
+    parser.add_argument("--no_refmacat", action='store_true',
+                        help="By default uses gemmi for crd/rst file preparation (do not use makecif)")
     # run_refmac options
     # TODO use group! like refmac options
     parser.add_argument('--ligand', nargs="*", action="append",
@@ -432,7 +432,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                   shifted_model_prefix="shifted",
                   output_masked_prefix="masked_fs",
                   output_mtz_prefix="starting_map",
-                  no_refmac_fix=False):
+                  use_gemmi_prep=False, no_refmac_fix=False):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -462,7 +462,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     # workaround for Refmac
     # TODO need to check external restraints
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    if args.gemmi_prep:
+    if use_gemmi_prep:
         st.assign_cis_flags()
         h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                     "yes":gemmi.HydrogenChange.NoChange,
@@ -475,14 +475,14 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
         topo = None # not used
     if not no_refmac_fix:
         ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                        fix_microheterogeneity=not args.no_fix_microheterogeneity and not args.gemmi_prep,
+                                                        fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
                                                         fix_resimax=not args.no_fix_resi9999,
                                                         fix_nonpolymer=False)
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
         logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
         ret["model_format"] = ".mmcif"
-    if not no_refmac_fix and ret["model_format"] == ".mmcif" and not args.gemmi_prep:
+    if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
         ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
@@ -570,7 +570,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    if args.gemmi_prep:
+    if use_gemmi_prep:
         # TODO: make cispept, make link, remove unknown link id
         # TODO: cross validation?
         crdout = os.path.splitext(ret["model_file"])[0] + ".crd"
@@ -691,6 +691,17 @@ def check_args(args):
 
 def main(args):
     check_args(args)
+    use_gemmi_prep = False
+    if not args.prepare_only:
+        try:
+            refmac_ver = utils.refmac.check_version(args.exe)
+        except OSError as e:
+            raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
+        if not args.no_refmacat and refmac_ver and refmac_ver >= (5, 8, 404):
+            logger.writeln(" will use gemmi to prepare restraints")
+            use_gemmi_prep = True
+        else:
+            logger.writeln(" will use makecif to prepare restraints")
 
     logger.writeln("Input model: {}".format(args.model))
     st = utils.fileio.read_structure(args.model)
@@ -729,7 +740,8 @@ def main(args):
     shifted_model_prefix = "shifted"
     file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
-                              shifted_model_prefix=shifted_model_prefix)
+                              shifted_model_prefix=shifted_model_prefix,
+                              use_gemmi_prep=use_gemmi_prep)
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
@@ -820,7 +832,7 @@ def main(args):
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         logger.writeln("Starting refinement using half map 1 (model is shaken first)")
         logger.writeln("In this refinement, hydrogen is removed regardless of --hydrogen option")
-        if args.gemmi_prep:
+        if use_gemmi_prep:
             xyzin = refmac_prefix + ".crd"
             prepare_crd(refmac_prefix+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
                         make={"hydr":"n"})
@@ -845,7 +857,7 @@ def main(args):
 
         if args.hydrogen != "no": # does not work properly when 'yes' - we would need to keep hydrogen in input
             logger.writeln("Cross validation: 2nd run with hydrogen")
-            if args.gemmi_prep:
+            if use_gemmi_prep:
                 xyzin = refmac_prefix_shaken + ".crd"
                 prepare_crd(refmac_prefix_shaken+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
                             make={"hydr":"a"})

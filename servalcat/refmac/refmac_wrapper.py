@@ -199,7 +199,6 @@ def main(args):
             raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
         if not refmac_ver:
             raise SystemExit("Error: Cannot get Refmac version.")
-        logger.writeln("Refmac version: {}".format(".".join(str(x) for x in refmac_ver)))
         if refmac_ver < (5, 8, 404):
             raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
 

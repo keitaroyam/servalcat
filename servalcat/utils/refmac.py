@@ -32,6 +32,7 @@ def check_version(exe="refmac5"):
     for l in iter(p.stdout.readline, ""):
         r_ver = re_version.search(l)
         if r_ver:
+            logger.writeln("Refmac version: {}".format(r_ver.group(1)))
             ver = tuple(map(int, r_ver.group(1).split(".")))
     p.wait()
     return ver
