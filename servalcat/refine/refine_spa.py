@@ -23,7 +23,9 @@ b_to_u = utils.model.b_to_u
 #logger.set_file("servalcat_test_refine.log")
 
 def add_arguments(parser):
-    parser.add_argument("--halfmaps", nargs=2, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--halfmaps", nargs=2, help="Input half map files")
+    group.add_argument("--map", help="Use this only if you really do not have half maps.")
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--model', required=True,
@@ -112,10 +114,14 @@ def main(args):
     refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
 
     st = utils.fileio.read_structure(args.model)
-    maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True)
     utils.restraints.find_and_fix_links(st, monlib)
+    st.assign_cis_flags()
+    if args.halfmaps:
+        maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
+    else:
+        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
     file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
                               shifted_model_prefix=shifted_model_prefix,
@@ -131,10 +137,10 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     hkldata = utils.hkl.hkldata_from_mtz(gemmi.read_mtz_file(file_info["mtz_file"]), 
-                                         labels=["Fmap1", "Pmap1", "Fmap2", "Pmap2", "Fout", "Pout"],
-                                         newlabels=["F_map1", "", "F_map2", "", "FP", ""])
+                                         labels=[file_info["lab_f"], file_info["lab_phi"]],
+                                         newlabels=["FP", ""])
     hkldata.setup_relion_binning()
-    utils.maps.calc_noise_var_from_halfmaps(hkldata)
+    #utils.maps.calc_noise_var_from_halfmaps(hkldata)
     
     # initialize ADP
     for cra in st[0].all():

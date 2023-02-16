@@ -177,7 +177,10 @@ class TestSPACommands(unittest.TestCase):
                     "--model", pipes.quote(data["pdb"]), 
                     "--resolution", "1.9", "--ncycle", "2",]
         command_line.main()
-        self.assertTrue(os.path.isfile("refined_01.pdb"))
+        self.assertTrue(os.path.isfile("refined_fsc.json"))
+        self.assertTrue(os.path.isfile("refined.mmcif"))
+        self.assertTrue(os.path.isfile("diffmap.mtz"))
+        self.assertTrue(os.path.isfile("refined_expanded.pdb"))
         # TODO check result
     # test_refine()
 
