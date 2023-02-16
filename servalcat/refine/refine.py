@@ -62,6 +62,7 @@ class Geom:
         return self.geom.calc_adp_restraint(target_only, self.sigma_b)
     def show_model_stats(self, show_outliers=True):
         f0 = self.calc(True)
+        ret = {"outliers": {}}
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
                              angle=self.geom.reporting.get_angle_outliers,
@@ -91,6 +92,7 @@ class Geom:
                             table[kk] = [str(self.lookup[x]) for x in table[kk]]
                     df = pandas.DataFrame(table)
                     df = df.reindex(df.z.abs().sort_values(ascending=False).index)
+                    ret["outliers"][k] = df
                     if k == "bond":
                         df0 = df[df.type < 2].drop(columns=["type", "alpha"])
                         if len(df0.index) > 0:
@@ -106,8 +108,9 @@ class Geom:
 
         df = pandas.DataFrame(self.geom.reporting.get_summary_table(self.use_nucleus))
         df = df.set_index("Restraint type").rename_axis(index=None)
+        ret["summary"] = df
         logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
-        return df
+        return ret
         
 class Refine:
     def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1, refine_h=False):
@@ -357,7 +360,7 @@ class Refine:
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
         if self.geom is not None:
-            stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)
+            stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
             self.ll.update_fc()
             stats[-1]["fsca"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
@@ -368,7 +371,7 @@ class Refine:
             stats.append({})
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and self.geom is not None:
-                stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
+                stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
                 #stats[-1]["rmsBOND"] = g.loc["Bond distances, non H", "r.m.s.d."]
                 #stats[-1]["zBOND"] = g.loc["Bond distances, non H", "r.m.s.Z"]
                 #stats[-1]["rmsANGL"] = g.loc["Bond angles, non H", "r.m.s.d."]

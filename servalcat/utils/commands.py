@@ -13,11 +13,13 @@ from servalcat.utils import model
 from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
+from servalcat.refine.refine import Geom
 import os
 import gemmi
 import numpy
 import scipy.spatial
 import pandas
+import json
 import argparse
 
 def add_arguments(p):
@@ -159,10 +161,10 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--sigma', type=float, default=5,
                         help="sigma cutoff to print outliers (default: %(default).1f)")
-    parser.add_argument('--write_z_per_atom', nargs="*", 
-                        help="write model file(s) with sum of z values of specified metric as B values")
-    parser.add_argument('-o', '--output_prefix', default="geometry",
-                        help="default: %(default)s")
+    #parser.add_argument('--write_z_per_atom', nargs="*", 
+    #                    help="write model file(s) with sum of z values of specified metric as B values")
+    parser.add_argument('-o', '--output_prefix', 
+                        help="default: taken from input file")
 
     # power
     parser = subparsers.add_parser("power", description = 'Show power spectrum')
@@ -697,47 +699,33 @@ def merge_dicts(args):
 
 def geometry(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
-    args.write_z_per_atom = set(args.write_z_per_atom) if args.write_z_per_atom else set()
-    if not args.write_z_per_atom.issubset(set(("bond","angle","chiral","plane"))):
-        raise SystemExit("invalid keyword included in --write_z_per_atom: {}".format(args.write_z_per_atom))
-
-    model_format = fileio.check_model_format(args.model)
+    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_geom"
     st = fileio.read_structure(args.model)
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                  stop_for_unknowns=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+
+    restraints.find_and_fix_links(st, monlib)
+    try:
+        topo = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                           check_hydrogen=True)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
     
-    restr = restraints.Restraints(st, monlib)
-    for k in restr.outlier_sigmas: restr.outlier_sigmas[k] = args.sigma
-    dfs = restr.show_all()
-    logger.writeln("")
-    for k in dfs:
-        json_out = "{}_{}.json".format(args.output_prefix, k)
-        with open(json_out, "w") as ofs: dfs[k].to_json(ofs, indent=2, orient="index")
-        logger.writeln("written: {}".format(json_out))
-
-    for k in args.write_z_per_atom:
-        for cra in st[0].all(): cra.atom.b_iso = 0
-        if k == "bond":
-            for t in restr.topo.bonds:
-                z = t.calculate_z()
-                for a in t.atoms: a.b_iso += z
-        elif k == "angle":
-            for t in restr.topo.angles:
-                t.atoms[1].b_iso += t.calculate_z()
-        elif k == "chiral":
-            for t in restr.topo.chirs:
-                t.atoms[0].b_iso += t.calculate_z(restr.topo.ideal_chiral_abs_volume(t), 0.2)
-        elif k == "plane":
-            for t in restr.topo.planes:
-                devs = restraints.plane_deviations(t.atoms)
-                for a, d in zip(t.atoms, devs):
-                    a.b_iso += abs(d) / t.restr.esd
-  
-        fileio.write_model(st, file_name="z_{}s{}".format(k, model_format))
-
+    geom = Geom(st, topo, monlib)
+    for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
+    ret = geom.show_model_stats()
+    
+    with open(args.output_prefix + "_summary.json", "w") as ofs:
+        ret["summary"].to_json(ofs, indent=2)
+        logger.writeln("saved: {}".format(ofs.name))
+    with open(args.output_prefix + "_outliers.json", "w") as ofs:
+        for k in ret["outliers"]:
+            ret["outliers"][k] = ret["outliers"][k].to_dict(orient="records")
+        json.dump(ret["outliers"], ofs, indent=2)
+        logger.writeln("saved: {}".format(ofs.name))
 # geometry()
 
 def show_power(args):
