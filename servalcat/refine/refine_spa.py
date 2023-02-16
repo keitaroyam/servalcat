@@ -114,23 +114,28 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     maps = [utils.fileio.read_ccp4_map(f, pixel_size=args.pixel_size) for f in args.halfmaps]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                   stop_for_unknowns=True,
-                                                   check_hydrogen=(args.hydrogen=="yes"))
-
+                                                   stop_for_unknowns=True)
+    utils.restraints.find_and_fix_links(st, monlib)
     file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
-                              shifted_model_prefix=shifted_model_prefix)
+                              shifted_model_prefix=shifted_model_prefix,
+                              no_refmac_fix=True)
     st.setup_cell_images()
+    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                "yes":gemmi.HydrogenChange.NoChange,
+                "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+    try:
+        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                 check_hydrogen=(args.hydrogen=="yes"))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     hkldata = utils.hkl.hkldata_from_mtz(gemmi.read_mtz_file(file_info["mtz_file"]), 
                                          labels=["Fmap1", "Pmap1", "Fmap2", "Pmap2", "Fout", "Pout"],
                                          newlabels=["F_map1", "", "F_map2", "", "FP", ""])
     hkldata.setup_relion_binning()
     utils.maps.calc_noise_var_from_halfmaps(hkldata)
-    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                "yes":gemmi.HydrogenChange.NoChange,
-                "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                  reorder=True, ignore_unknown_links=False) # we should remove logger here??
+    
     # initialize ADP
     for cra in st[0].all():
         if args.bfactor is not None:

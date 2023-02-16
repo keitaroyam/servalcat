@@ -431,7 +431,8 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
 def prepare_files(st, maps, resolution, monlib, mask_in, args,
                   shifted_model_prefix="shifted",
                   output_masked_prefix="masked_fs",
-                  output_mtz_prefix="starting_map"):
+                  output_mtz_prefix="starting_map",
+                  no_refmac_fix=False):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -468,17 +469,21 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
         topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
                                       reorder=True, ignore_unknown_links=False)
-    else:
+    elif not no_refmac_fix:
         topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
-    ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                    fix_microheterogeneity=not args.no_fix_microheterogeneity and not args.gemmi_prep,
-                                                    fix_resimax=not args.no_fix_resi9999,
-                                                    fix_nonpolymer=False)
+    else:
+        topo = None # not used
+    if not no_refmac_fix:
+        ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                        fix_microheterogeneity=not args.no_fix_microheterogeneity and not args.gemmi_prep,
+                                                        fix_resimax=not args.no_fix_resi9999,
+                                                        fix_nonpolymer=False)
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
         logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
         ret["model_format"] = ".mmcif"
-    if ret["model_format"] == ".mmcif" and not args.gemmi_prep: ret["refmac_fixes"].fix_nonpolymer(st)
+    if not no_refmac_fix and ret["model_format"] == ".mmcif" and not args.gemmi_prep:
+        ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
         logger.writeln("Removing symmetry information from model.")

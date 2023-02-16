@@ -63,8 +63,7 @@ def main(args):
 
         if args.ligand: args.ligand = sum(args.ligand, [])
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                       stop_for_unknowns=True,
-                                                       check_hydrogen=(args.hydrogen=="yes"))
+                                                       stop_for_unknowns=True)
         utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
         h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                     "full":gemmi.HydrogenChange.ReAdd,
@@ -87,8 +86,12 @@ def main(args):
                                                        stop_for_unknowns=True)
         h_change = gemmi.HydrogenChange.NoChange
         
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                  ignore_unknown_links=False) # we should remove logger here??
+    try:
+        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                 check_hydrogen=(args.hydrogen=="yes"))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     if args.hydrogen == "full":
         for cra in st[0].all():
             if cra.atom.is_hydrogen(): cra.atom.occ = 1.
