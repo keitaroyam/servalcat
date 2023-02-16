@@ -43,7 +43,7 @@ class Geom:
                     self.calc_kwds[k] = kwds[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=1, stacd=1)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5)
         self.parents = {}
     # __init__()
     
@@ -98,7 +98,7 @@ class Geom:
                             logger.writeln(df0.to_string(float_format="{:.3f}".format, index=False) + "\n")
                         df0 = df[df.type == 2].drop(columns=["type"])
                         if len(df0.index) > 0:
-                            logger.writeln(" *** External bond outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
+                            logger.writeln(" *** External bond outliers (Z >= {}) ***\n".format(self.outlier_sigmas[k]))
                             logger.writeln(df0.to_string(float_format="{:.3f}".format, index=False) + "\n")
                     else:
                         logger.writeln(" *** {} outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
