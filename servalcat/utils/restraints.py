@@ -116,11 +116,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
         # If modification id is duplicated, need to rename
         rename_cif_modification_if_necessary(doc, monlib.modifications)
-        
-        monlib.insert_chemcomps(doc)
-        monlib.insert_chemlinks(doc)
-        monlib.insert_chemmods(doc)
-        
+        monlib.read_monomer_doc(doc)
         for b in doc:
             for row in b.find("_chem_comp.", ["id", "group"]):
                 if row.str(0) in monlib.monomers:
@@ -321,8 +317,9 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
             continue
         
         dist = cra1.atom.pos.dist(cra2.atom.pos)
-        m, swap = monlib.match_link(cra1.residue, cra1.atom.name, cra2.residue, cra2.atom.name,
-                                    cra1.atom.altloc if cra1.atom.altloc!="\0" else cra2.atom.altloc)
+        m, swap, _, _ = monlib.match_link(cra1.residue, cra1.atom.name, cra1.atom.altloc,
+                                          cra2.residue, cra2.atom.name, cra2.atom.altloc)
+
         if m:
             if swap:
                 con.partner1 = model.cra_to_atomaddress(cra2)
