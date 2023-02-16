@@ -49,23 +49,6 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-# go to utils?
-def make_loggraph_str(df, main_title, title_labs):
-    ret = "$TABLE: {} :\n".format(main_title)
-    ret += "$GRAPHS\n"
-    #all_labs = []
-    all_labs = list(df.columns)
-    for t, labs in title_labs:
-        ret += ": {} :A:{}:\n".format(t, ",".join(str(all_labs.index(l)+1) for l in labs))
-        #all_labs.extend(l for l in labs if l not in all_labs)
-    ret += "$$\n"
-    ret += " ".join(all_labs) + "\n"
-    ret += "$$\n$$\n"
-    #ret += df.to_string(columns=all_labs, index=False, index_names=False, header=False) + "\n"
-    ret += df.to_string(index=False, index_names=False, header=False) + "\n"
-    return ret
-# make_loggraph_str()
-
 def write_loggraph(stats, labs_fc, log_out):
     model_labs1 = [l for l in stats if any(l.startswith("fsc_"+fc) for fc in labs_fc)]
     model_labs2 = [l for l in stats if any(l.startswith(("cc_"+fc, "mcos_"+fc)) for fc in labs_fc)]
@@ -99,7 +82,7 @@ def write_loggraph(stats, labs_fc, log_out):
 
     title_labs.append(("number of Fourier coefficients", [s2lab, "ncoeffs"]))
     with open(log_out, "w") as ofs:
-        ofs.write(make_loggraph_str(stats2, main_title="FSC", title_labs=title_labs))
+        ofs.write(utils.make_loggraph_str(stats2, main_title="FSC", title_labs=title_labs))
 # write_loggraph()
 
 def fsc_average(n, fsc):
