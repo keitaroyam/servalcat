@@ -265,6 +265,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     Find links not registered in st.connections
     This is required for correctly recognizing link in gemmi.prepare_topology
     if remove_unknown=True, undefined links and unmatched links are removed.
+    Note that it ignores segment IDs
     """
     from servalcat.utils import model
 
@@ -311,7 +312,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_fo
     for con in conns:
         if con.link_id in known_links: continue
         if con.type == gemmi.ConnectionType.Hydrog: continue
-        cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
+        cra1, cra2 = st[0].find_cra(con.partner1, ignore_segment=True), st[0].find_cra(con.partner2, ignore_segment=True)
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
             continue
