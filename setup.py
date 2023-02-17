@@ -1,7 +1,20 @@
 from __future__ import division, absolute_import, print_function
 import setuptools
 from numpy.distutils.core import setup, Extension
+from pybind11.setup_helpers import Pybind11Extension
+import glob
 import servalcat
+
+import os
+gemmi = os.environ["HOME"] + "/prog/gemmi-fork"
+
+ext_modules = [
+    Pybind11Extension(
+        "servalcat.ext",
+        sorted(glob.glob("src/*.cpp") + [gemmi+"/src/"+x for x in ("topo.cpp", "monlib.cpp", "polyheur.cpp", "resinfo.cpp", "riding_h.cpp")]), 
+        include_dirs=[gemmi+"/include"],
+    ),
+]
 
 setup(name='servalcat',
     version=servalcat.__version__,
@@ -17,4 +30,5 @@ setup(name='servalcat',
           'refmacat  = servalcat.refmac.refmac_wrapper:command_line',
                           ],
       },
+    ext_modules=ext_modules,
     zip_safe= False)
