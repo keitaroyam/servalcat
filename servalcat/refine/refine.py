@@ -6,6 +6,7 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
+import os
 import gemmi
 import numpy
 import pandas
@@ -45,8 +46,22 @@ class Geom:
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5)
         self.parents = {}
+        self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
     # __init__()
-    
+
+    def check_chemtypes(self, enerlib_path, topo):
+        block = gemmi.cif.read(enerlib_path).sole_block()
+        all_types = set(block.find_values("_lib_atom.type"))
+        for ci in topo.chain_infos:
+            for ri in ci.res_infos:
+                cc_all = {x: ri.get_final_chemcomp(x) for x in set(a.altloc for a in ri.res)}
+                for a in ri.res:
+                    cca = cc_all[a.altloc].find_atom(a.name)
+                    if cca is None: # I believe it won't happen..
+                        logger.writeln("WARNING: restraint for {} not found.".format(self.lookup[a]))
+                    elif cca.chem_type not in all_types:
+                        raise RuntimeError("Energy type {} of {} not found in ener_lib.".format(cca.chem_type,
+                                                                                                self.lookup[a]))
     def set_h_parents(self):
         self.parents = {}
         for bond in self.geom.bonds:
