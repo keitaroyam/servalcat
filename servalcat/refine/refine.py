@@ -11,6 +11,7 @@ import gemmi
 import numpy
 import pandas
 import scipy.sparse
+import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
@@ -417,5 +418,25 @@ class Refine:
         lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
                                        float_format="{:.4f}".format)
         logger.writeln(lstr)
-        return stats    
+        self.update_meta()
+        return stats
+
+    def update_meta(self):
+        # TODO write stats. probably geom.reporting.get_summary_table should return with _refine_ls_restr.type names
+        self.st.raw_remarks = []
+        self.st.meta.software.clear()
+        si = gemmi.SoftwareItem()
+        si.classification = gemmi.SoftwareItem.Classification.Refinement
+        si.pdbx_ordinal = 1
+        si.name = "Servalcat"
+        si.version = servalcat.__version__
+        si.date = servalcat.__date__
+        self.st.meta.software.append(si)
+
+        self.st.meta.refinement.clear()
+        #ri = gemmi.RefinementInfo()
+        #rr = gemmi.RefinementInfo.Restr("")
+        #ri.restr_stats.append(rr)
+        #st.meta.refinement.append(ri)
+        
 # class Refine

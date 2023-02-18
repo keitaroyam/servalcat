@@ -10,8 +10,6 @@ import argparse
 import os
 import gemmi
 import numpy
-import scipy.optimize
-import scipy.sparse
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils

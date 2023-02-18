@@ -7,3 +7,4 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 
 __version__ = '0.3.9'
+__date__ = '2023-01-30'
