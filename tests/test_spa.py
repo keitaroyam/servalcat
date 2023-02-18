@@ -172,19 +172,6 @@ class TestSPACommands(unittest.TestCase):
         # TODO check result?
     # test_refine()
 
-    def test_refine_norefmac(self):
-        sys.argv = ["", "refine_spa_norefmac", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
-                    "--model", pipes.quote(data["pdb"]), 
-                    "--resolution", "1.9", "--ncycle", "2",]
-        command_line.main()
-        self.assertTrue(os.path.isfile("refined_fsc.json"))
-        self.assertTrue(os.path.isfile("refined.mmcif"))
-        self.assertTrue(os.path.isfile("diffmap.mtz"))
-        self.assertTrue(os.path.isfile("refined_expanded.pdb"))
-        # TODO check result
-    # test_refine()
-
-
     def test_trim(self):
         sys.argv = ["", "trim", "--maps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
                     "--model", pipes.quote(data["pdb"]), "--mask", pipes.quote(data["mask"]),

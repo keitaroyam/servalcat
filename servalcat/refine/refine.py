@@ -379,12 +379,12 @@ class Refine:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
             self.ll.update_fc()
-            stats[-1]["fsca"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
+            stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
             
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             self.run_cycle(weight=weight) # check ret?
-            stats.append({})
+            stats.append({"Ncyc": i+1})
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and self.geom is not None:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
@@ -398,10 +398,10 @@ class Refine:
 
             if self.ll is not None:
                 self.ll.update_fc()
-                stats[-1]["fsca"] = self.ll.calc_fsc()[1]
+                stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1]
 
         df = pandas.DataFrame({"Ncyc": range(ncycles+1),
-                               "FSCaverage": [s.get("fsca", numpy.nan) for s in stats]})
+                               "FSCaverage": [s.get("FSCaverage", numpy.nan) for s in stats]})
         if self.geom is not None:
             df["rmsBOND"] =[s["geom"].loc["Bond distances, non H", "r.m.s.d."] for s in stats]
             df["zBOND"] = [s["geom"].loc["Bond distances, non H", "r.m.s.Z"] for s in stats]

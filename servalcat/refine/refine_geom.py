@@ -10,6 +10,7 @@ import argparse
 import os
 import gemmi
 import numpy
+import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
@@ -101,8 +102,12 @@ def main(args):
 
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, refmac_keywords=keywords)
     refiner = Refine(st, geom)
-    refiner.run_cycles(args.ncycle)
+    stats = refiner.run_cycles(args.ncycle)
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
+    with open(args.output_prefix + "_stats.json", "w") as ofs:
+        for s in stats: s["geom"] = s["geom"].to_dict()
+        json.dump(stats, ofs, indent=2)
+        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 
     if args.update_dictionary:
         # replace xyz

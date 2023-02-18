@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import argparse
+import json
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.spa.run_refmac import check_args, prepare_files, calc_fsc, calc_fofc
@@ -171,7 +172,11 @@ def main(args):
     stats = refiner.run_cycles(args.ncycle, weight=args.weight)
     if not args.no_trim: refiner.st.cell = maps[0][0].unit_cell
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
-    
+    with open(args.output_prefix + "_stats.json", "w") as ofs:
+        for s in stats: s["geom"] = s["geom"].to_dict()
+        json.dump(stats, ofs, indent=2)
+        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
+
     # Expand sym here
     st_expanded = refiner.st.clone()
     if not all(op.given for op in st.ncs):
@@ -229,8 +234,8 @@ coot --script {prefix}_coot.py
 List Fo-Fc map peaks in the ASU:
 servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
 =============================================================================
-""".format(rmsbond=stats[-1]["geom"].loc["Bond distances, non H", "r.m.s.d."],
-           rmsangle=stats[-1]["geom"].loc["Bond angles, non H", "r.m.s.d."],
+""".format(rmsbond=stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"],
+           rmsangle=stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"],
            fscavgs=fscavg_text.rstrip(),
            fsclog="{}_fsc.log".format(args.output_prefix),
            adpstats=adpstats_txt.rstrip(),
