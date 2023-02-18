@@ -631,6 +631,9 @@ def check_args(args):
     if not os.path.exists(args.model):
         raise SystemExit("Error: --model {} does not exist.".format(args.model))
 
+    if args.cross_validation and not args.halfmaps:
+        raise SystemExit("Error: half maps are needed when --cross_validation is given")
+    
     if args.mask_for_fofc and not os.path.exists(args.mask_for_fofc):
         raise SystemExit("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
 

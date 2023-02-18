@@ -7,10 +7,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
-import numpy
-import json
-import os
-import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
@@ -87,6 +83,8 @@ def add_arguments(parser):
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="refined")
+    parser.add_argument('--cross_validation', action='store_true',
+                        help='Run cross validation. Only "throughout" mode is available (no "shake" mode)')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
@@ -105,11 +103,9 @@ def main(args):
     shifted_model_prefix = "shifted"
     args.mask = None
     args.invert_mask = False
-    args.gemmi_prep = False
     args.no_fix_microheterogeneity = True
     args.no_fix_resi9999 = True
-    args.cross_validation = False
-    args.cross_validation_method = "shake"
+    args.cross_validation_method = "throughout"
     check_args(args)    
     refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
 
@@ -136,11 +132,14 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    if args.cross_validation:
+        lab_f, lab_phi = "lab_f_half1", "lab_phi_half1"
+    else:
+        lab_f, lab_phi = "lab_f", "lab_phi"
     hkldata = utils.hkl.hkldata_from_mtz(gemmi.read_mtz_file(file_info["mtz_file"]), 
-                                         labels=[file_info["lab_f"], file_info["lab_phi"]],
+                                         labels=[file_info[lab_f], file_info[lab_phi]],
                                          newlabels=["FP", ""])
     hkldata.setup_relion_binning()
-    #utils.maps.calc_noise_var_from_halfmaps(hkldata)
     
     # initialize ADP
     for cra in st[0].all():
@@ -190,8 +189,8 @@ def main(args):
                            monlib=monlib, 
                            blur=args.blur,
                            d_min_fsc=args.fsc_resolution,
-                           #cross_validation=args.cross_validation,
-                           #cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded
+                           cross_validation=args.cross_validation,
+                           cross_validation_method=args.cross_validation_method
                            )
     
     # Calc Fo-Fc (and updated) maps
