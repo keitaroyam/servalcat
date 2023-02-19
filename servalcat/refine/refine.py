@@ -424,19 +424,18 @@ class Refine:
     def update_meta(self):
         # TODO write stats. probably geom.reporting.get_summary_table should return with _refine_ls_restr.type names
         self.st.raw_remarks = []
-        self.st.meta.software.clear()
         si = gemmi.SoftwareItem()
         si.classification = gemmi.SoftwareItem.Classification.Refinement
         si.pdbx_ordinal = 1
         si.name = "Servalcat"
         si.version = servalcat.__version__
         si.date = servalcat.__date__
-        self.st.meta.software.append(si)
+        self.st.meta.software = [si]
 
-        self.st.meta.refinement.clear()
+        self.st.meta.refinement = []
         #ri = gemmi.RefinementInfo()
         #rr = gemmi.RefinementInfo.Restr("")
         #ri.restr_stats.append(rr)
-        #st.meta.refinement.append(ri)
+        #st.meta.refinement = [ri]
         
 # class Refine
