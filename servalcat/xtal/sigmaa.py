@@ -53,6 +53,11 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def calc_DFc(Ds, Fcs):
+    DFc = sum(Ds[i] * Fcs[i] for i in range(len(Ds)))
+    return DFc
+# calc_DFc()
+
 def calc_abs_DFc(Ds, Fcs):
     DFc = sum(Ds[i] * Fcs[i] for i in range(len(Ds)))
     return numpy.abs(DFc)

@@ -34,6 +34,7 @@ class Geom:
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
+            self.st.write_pdb("shaken.pdb")
         self.geom.load_topo(topo)
         self.use_nucleus = False
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
@@ -330,6 +331,14 @@ class Refine:
             diag = am.diagonal()
             logger.writeln("diagonal min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                    numpy.max(diag)))
+            #for i in numpy.where(diag <= 0)[0]:
+            #    if self.refine_xyz:
+            #        if i >= len(self.atoms)*3:
+            #            j = i - len(self.atoms)*3
+            #            print("diag<=0: {} B {}".format(i, self.geom.lookup[self.atoms[j]]))
+            #        else:
+            #            j = i // 3
+            #            print("diag<=0: {} x {}".format(i, self.geom.lookup[self.atoms[j]]))
             diag[diag<=0] = 1.
             diag = numpy.sqrt(diag)
             rdiag = 1./diag # sk
@@ -379,7 +388,9 @@ class Refine:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
             self.ll.update_fc()
-            stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
+            self.ll.overall_scale()
+            #stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
+            stats[-1]["data"] = self.ll.calc_stats()["summary"]
             
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
@@ -398,10 +409,14 @@ class Refine:
 
             if self.ll is not None:
                 self.ll.update_fc()
-                stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1]
+                self.ll.overall_scale()
+                #stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1]
+                stats[-1]["data"] = self.ll.calc_stats()["summary"]
 
-        df = pandas.DataFrame({"Ncyc": range(ncycles+1),
-                               "FSCaverage": [s.get("FSCaverage", numpy.nan) for s in stats]})
+        df = pandas.DataFrame({"Ncyc": range(ncycles+1)})
+        if self.ll is not None:
+            df["FSCaverage"] = [s["data"].get("FSCaverage", numpy.nan) for s in stats]
+            df["R"] = [s["data"].get("R", numpy.nan) for s in stats]
         if self.geom is not None:
             df["rmsBOND"] =[s["geom"].loc["Bond distances, non H", "r.m.s.d."] for s in stats]
             df["zBOND"] = [s["geom"].loc["Bond distances, non H", "r.m.s.Z"] for s in stats]
@@ -410,7 +425,7 @@ class Refine:
 
         forplot = []
         if self.ll is not None:
-            forplot.append(["FSC average", ["Ncyc", "FSCaverage"]])
+            forplot.append(["FSC average", ["Ncyc", "FSCaverage", "R"]])
         if self.geom is not None:
             forplot.extend([["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
                             ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]])

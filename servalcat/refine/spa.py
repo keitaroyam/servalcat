@@ -38,7 +38,7 @@ class LL_SPA:
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
         self.update_fc()
-        self.calc_fsc()
+        self.calc_stats()
 
     def update_ml_params(self):
         # FIXME make sure D > 0
@@ -88,11 +88,11 @@ class LL_SPA:
         return ret * 2 # friedel mates
     # calc_target()
 
-    def calc_fsc(self):
+    def calc_stats(self):
         stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f="FP")
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
-        return stats, fsca
+        return {"fsc": stats, "summary": {"FSCaverage": fsca}}
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h):
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
