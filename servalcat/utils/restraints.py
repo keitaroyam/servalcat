@@ -12,6 +12,7 @@ import io
 import gemmi
 import string
 import random
+import numpy
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
@@ -152,6 +153,7 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
 
     unknown_cc = set()
     link_related = set()
+    nan_hydr = set()
     for cinfo in topo.chain_infos:
         for rinfo in cinfo.res_infos:
             cc_org = monlib.monomers[rinfo.res.name] if rinfo.res.name in monlib.monomers else None
@@ -173,17 +175,17 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 if atom.is_hydrogen() and atom.calc_flag == gemmi.CalcFlag.Dummy:
                     logger.writeln(" Warning: hydrogen {} could not be added - Check dictionary".format(atom_str))
                     unknown_cc.add(rinfo.res.name)
-                    del rinfo.res[ia]
-
-    # reset serial
-    for i, cra in enumerate(st[0].all()):
-        cra.atom.serial = i + 1
+                elif any(numpy.isnan(atom.pos.tolist())): # TODO add NaN test before prepare_toplogy
+                    logger.writeln(" Warning: {} position NaN!".format(atom_str))
+                    nan_hydr.add(rinfo.res.name)
 
     if raise_error and (unknown_cc or link_related):
         msgs = []
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
+    if raise_error and nan_hydr:
+        raise RuntimeError("Some hydrogen positions became NaN. The geometry of your model may be of low quality. Consider not adding hydrogen")
     return topo
 # prepare_topology()
 
