@@ -779,9 +779,14 @@ def main(args):
         st_sr_expanded = st_sr.clone()
         if not all(op.given for op in st_sr.ncs):
             utils.model.expand_ncs(st_sr_expanded)
-            utils.fileio.write_model(st_sr_expanded, args.output_prefix+"shaken_refined_expanded",
+            utils.fileio.write_model(st_sr_expanded, args.output_prefix+"_shaken_refined_expanded",
                                      pdb=True, cif=True, cif_ref=cif_ref_sr)
-
+            if args.twist is not None: # as requested by a user
+                st_sr_expanded_all = st_sr.clone()
+                utils.symmetry.update_ncs_from_args(args, st_sr_expanded_all, map_and_start=maps[0], filter_contacting=False)
+                utils.model.expand_ncs(st_sr_expanded_all)
+                utils.fileio.write_model(st_sr_expanded_all, args.output_prefix+"_shaken_refined_expanded_all", pdb=True, cif=True,
+                                         cif_ref=cif_ref)
     else:
         st_sr_expanded = None
 
