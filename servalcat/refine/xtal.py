@@ -34,17 +34,15 @@ class LL_Xtal:
         self.D_labs = ["D{}".format(i) for i in range(len(self.fc_labs))]
         self.k_overall = numpy.ones(len(self.hkldata.df.index))
         self.hkldata.df["k_aniso"] = 1.
+        self.hkldata.df["FP_org"] = self.hkldata.df["FP"]
+        self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
         self.update_fc()
         self.calc_stats()
 
     def update_ml_params(self):
         # FIXME make sure D > 0
-        self.hkldata.df.FP /= self.hkldata.df.k_aniso
-        self.hkldata.df.SIGFP /= self.hkldata.df.k_aniso
         determine_mlf_params(self.hkldata, self.fc_labs, self.D_labs,
                              self.centric_and_selections, D_as_exp=True, S_as_exp=True)
-        self.hkldata.df.FP *= self.hkldata.df.k_aniso
-        self.hkldata.df.SIGFP *= self.hkldata.df.k_aniso
         #logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min"] + self.D_labs + ["S"]))
 
     def update_fc(self):
@@ -66,9 +64,8 @@ class LL_Xtal:
     def overall_scale(self, min_b=0.1):
         scaling = gemmi.Scaling(self.hkldata.cell, self.hkldata.sg)
         scaling.use_solvent = self.use_solvent
-        scaleto = self.hkldata.as_asu_data(label="FP", label_sigma="SIGFP")
+        scaleto = self.hkldata.as_asu_data(label="FP_org", label_sigma="SIGFP_org")
         scaleto.value_array["sigma"] = 1.
-        #fc_asu_total = self.hkldata.as_asu_data(data=self.hkldata.df[self.fc_labs].sum(axis=1).to_numpy())
         fc_asu = self.hkldata.as_asu_data(self.fc_labs[0])
         if not self.use_solvent:
             logger.writeln("Scaling Fc with no bulk solvent contribution")
@@ -113,9 +110,9 @@ class LL_Xtal:
             solvent_scale = scaling.get_solvent_scale(0.25 / self.hkldata.d_spacings()**2)
             self.hkldata.df[self.fc_labs[-1]] *= solvent_scale
 
-        #self.k_overall = scaling.k_overall * k_aniso
-        #self.hkldata.df.FP /= scaling.k_overall * k_aniso
-        #self.hkldata.df.SIGFP /= scaling.k_overall * k_aniso
+        self.hkldata.df["FP"] = self.hkldata.df["FP_org"] / self.hkldata.df.k_aniso
+        self.hkldata.df["SIGFP"] = self.hkldata.df["SIGFP_org"] /self.hkldata.df.k_aniso
+
         for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
         self.calc_stats()
@@ -124,9 +121,6 @@ class LL_Xtal:
 
     def calc_target(self): # -LL target for MLF
         ret = 0
-        self.hkldata.df.FP /= self.hkldata.df.k_aniso
-        self.hkldata.df.SIGFP /= self.hkldata.df.k_aniso
-        
         for i_bin, idxes in self.hkldata.binned():
             ret += mlf(self.hkldata.df,
                        self.fc_labs,
@@ -134,13 +128,11 @@ class LL_Xtal:
                        self.hkldata.binned_df.S[i_bin],
                        self.centric_and_selections[i_bin])
 
-        self.hkldata.df.FP *= self.hkldata.df.k_aniso
-        self.hkldata.df.SIGFP *= self.hkldata.df.k_aniso
         return ret * 2 # friedel mates
     # calc_target()
 
     def calc_stats(self):
-        r = utils.hkl.r_factor(self.hkldata.df.FP,
+        r = utils.hkl.r_factor(self.hkldata.df.FP_org,
                                numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
         logger.writeln("R= {:.4f}".format(r))
         return {"summary": {"R": r}}
@@ -162,9 +154,8 @@ class LL_Xtal:
                 #phic = numpy.angle(self.hkldata.df.FC.to_numpy()[cidxes])
                 Fc = calc_DFc(Ds, Fcs) # sum(D * Fc)
                 expip = numpy.exp(1j * numpy.angle(Fc))
-                k = self.hkldata.df.k_aniso.to_numpy()[cidxes]
-                Fo = self.hkldata.df.FP.to_numpy()[cidxes] / k
-                SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes] / k
+                Fo = self.hkldata.df.FP.to_numpy()[cidxes]
+                SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes]
                 epsilon = self.hkldata.df.epsilon.to_numpy()[cidxes]
                 Fc_abs = numpy.abs(Fc)
 

@@ -56,7 +56,7 @@ def add_arguments(parser):
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
-    parser.add_argument('-o','--output_prefix', default="refined")
+    parser.add_argument('-o','--output_prefix')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -66,6 +66,8 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
+    if not args.output_prefix:
+        args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin,
                                                                   n_bins=args.nbins,
@@ -106,8 +108,6 @@ def main(args):
     refiner.run_cycles(args.ncycle, weight=args.weight)
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 
-    ll.hkldata.df.FP /= ll.hkldata.df.k_aniso
-    ll.hkldata.df.SIGFP /= ll.hkldata.df.k_aniso
     calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log")
 
     # Write mtz file

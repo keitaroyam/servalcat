@@ -34,7 +34,7 @@ class Geom:
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
-            self.st.write_pdb("shaken.pdb")
+            utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
         self.geom.load_topo(topo)
         self.use_nucleus = False
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
@@ -408,7 +408,7 @@ class Refine:
             logger.writeln("")
 
             if self.ll is not None:
-                self.ll.update_fc()
+                #self.ll.update_fc() # should have happened in run_cycle
                 self.ll.overall_scale()
                 #stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1]
                 stats[-1]["data"] = self.ll.calc_stats()["summary"]
@@ -425,7 +425,7 @@ class Refine:
 
         forplot = []
         if self.ll is not None:
-            forplot.append(["FSC average", ["Ncyc", "FSCaverage", "R"]])
+            forplot.append(["Data", ["Ncyc", "FSCaverage", "R"]])
         if self.geom is not None:
             forplot.extend([["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
                             ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]])
