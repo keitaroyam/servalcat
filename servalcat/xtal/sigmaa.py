@@ -257,6 +257,12 @@ def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_
         hkldata.binned_df.loc[i_bin, D_labs[0]] = D
         hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
 
+    for D_lab in D_labs:
+        if hkldata.binned_df[D_lab].min() <= 0:
+            min_D = hkldata.binned_df[D_lab][hkldata.binned_df[D_lab] > 0].min() * 0.1
+            logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
+            hkldata.binned_df[D_lab].where(hkldata.binned_df[D_lab] > 0, min_D, inplace=True) # arbitrary
+        
     logger.writeln("Initial estimates:")
     logger.writeln(hkldata.binned_df.to_string())
 
@@ -363,14 +369,22 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
 
     # Create a centric selection table for faster look up
     centric_and_selections = {}
+    stats = hkldata.binned_df.copy()
+    stats["n_all"] = 0
+    stats["n_obs"] = 0
     for i_bin, idxes in hkldata.binned():
         centric_and_selections[i_bin] = []
+        n_obs = 0
         for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
             valid_sel = numpy.isfinite(g2.FP) & (g2.SIGFP > 0)
             vidxes = g2.index[valid_sel]
             nidxes = g2.index[~valid_sel] # missing reflections
             centric_and_selections[i_bin].append((c, vidxes, nidxes))
-    
+            n_obs += numpy.sum(valid_sel)
+        stats.loc[i_bin, "n_obs"] = n_obs
+        stats.loc[i_bin, "n_all"] = len(idxes)
+    stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
+    logger.writeln(stats.to_string())
     return hkldata, sts, fc_labs, centric_and_selections
 # process_input()
 
