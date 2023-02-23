@@ -29,6 +29,7 @@ class Geom:
     def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
+        utils.model.find_special_positions(self.st)
         self.geom = gemmi.Geometry(self.st, monlib.ener_lib)
         self.sigma_b = sigma_b
         if shake_rms > 0:

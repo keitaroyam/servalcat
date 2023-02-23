@@ -360,6 +360,48 @@ def cra_to_atomaddress(cra):
     return aa
 # cra_to_atomaddress()
 
+def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=True, fix_adp=True):
+    ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
+    cs = gemmi.ContactSearch(special_pos_threshold)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+    cs.special_pos_cutoff_sq = 0
+    results = cs.find_contacts(ns)
+    found = {}
+    cra = {}
+    for r in results:
+        if r.partner1.atom != r.partner2.atom: continue
+        found.setdefault(r.partner1.atom, []).append(r.image_idx)
+        cra[r.partner1.atom] = r.partner1
+
+    if found: logger.writeln("Atoms on special position detected.")
+    ret = []
+    for atom in found:
+        images = found[atom]
+        n_images = len(images) + 1
+        sum_occ = atom.occ * n_images
+        logger.writeln(" {} multiplicity= {} images= {} occupancies_total= {:.2f}".format(cra[atom], n_images, images, sum_occ))
+        if sum_occ > 1 and fix_occ:
+            new_occ = atom.occ / n_images
+            logger.writeln("  correcting occupancy= {:.2f}".format(new_occ))
+            atom.occ = new_occ
+        if fix_pos:
+            fpos = gemmi.Fractional(st.cell.frac.apply(atom.pos))
+            fdiff = sum([(st.cell.images[i-1].apply(fpos) - fpos).wrap_to_zero() for i in images], gemmi.Fractional(0,0,0)) / n_images
+            diff = st.cell.orth.apply(fdiff)
+            atom.pos += gemmi.Position(diff)
+            logger.writeln("  correcting position= {} (diff= {})".format(atom.pos.tolist(), diff.tolist()))
+        if fix_adp and atom.aniso.nonzero():
+            fani = atom.aniso.transformed_by(st.cell.frac.mat)
+            fani_avg = sum([fani.transformed_by(st.cell.images[i-1].mat) for i in images], fani).scaled(1/n_images)
+            atom.aniso = fani_avg.transformed_by(st.cell.orth.mat)
+            logger.writeln("  correcting aniso= {}".format(atom.aniso.elements_pdb()))
+
+        mat_total = (numpy.identity(3) + sum(numpy.array(st.cell.images[i-1].mat) for i in images)) / n_images
+        ret.append((atom, mat_total))
+
+    return ret
+# find_special_positions()    
+
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     if len(st.ncs) == 0: return
     
