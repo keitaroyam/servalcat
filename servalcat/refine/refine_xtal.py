@@ -18,9 +18,9 @@ from servalcat.xtal.sigmaa import process_input, calculate_maps
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
 b_to_u = utils.model.b_to_u
-logger.set_file("servalcat_refine_xtal.log")
 
 def add_arguments(parser):
+    parser.description = "EXPERIMENTAL program to refine crystallographic structures"
     parser.add_argument("--hklin", required=True)
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--nbins', type=int, default=20,
@@ -51,7 +51,8 @@ def add_arguments(parser):
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
-    parser.add_argument('--max_dist_for_adp_restraint', type=float, default=0)
+    parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
+    parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('--no_solvent',  action='store_true',
@@ -98,12 +99,14 @@ def main(args):
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b)#, exte_keywords=keywords)
+    geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     #geom = None # XXX make it optional
     ll = LL_Xtal(hkldata, centric_and_selections, st, monlib, source=args.source, use_solvent=not args.no_solvent)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
-                     refine_h=args.refine_h)
+                     refine_h=args.refine_h,
+                     unrestrained=args.unrestrained)
 
     refiner.run_cycles(args.ncycle, weight=args.weight)
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)

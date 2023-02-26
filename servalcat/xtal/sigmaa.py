@@ -347,6 +347,12 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     mtz.spacegroup = sg_use
 
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["FP","SIGFP"])
+    if 0: # intensity conversion
+        hkldata.df.FP.where(hkldata.df.FP > 0, 0, inplace=True)
+        hkldata.df["FP"] = numpy.sqrt(hkldata.df["FP"])
+        hkldata.df["SIGFP"] /= hkldata.df["FP"] + numpy.sqrt(hkldata.df["SIGFP"] + hkldata.df["FP"]**2)
+
+        
     if d_min is None:
         d_min = hkldata.d_min_max()[0]
     else:
