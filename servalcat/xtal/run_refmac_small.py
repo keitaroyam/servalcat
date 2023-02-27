@@ -160,7 +160,7 @@ def main(args):
             st.cell = mtz.cell
             st.spacegroup_hm = mtz.spacegroup.hm
         elif args.hklin.endswith(".hkl"):
-            asudata, hklf = utils.fileio.read_smcif_hkl(args.hklin)
+            asudata, hklf = utils.fileio.read_smcif_hkl(args.hklin, st.cell, sg_st)
             # TODO check consistency with model cell and sg
             write_mtz(mtz_in, asudata, hklf, args.blur)
             st.cell = asudata.unit_cell
