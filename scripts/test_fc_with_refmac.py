@@ -19,7 +19,7 @@ def parse_args(arg_list):
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', required=True)
     parser.add_argument('--refmacmtz')
-    parser.add_argument('--cell', type=float, nargs=6, help="Override unit cell")
+    parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument("--source", choices=["electron", "xray"], default="electron")
     return parser.parse_args(arg_list)
@@ -42,22 +42,20 @@ def run_refmac(pdbin, d_min, source):
 def main(args):
     logger.set_file("servalcat_test_fc.log")
     st = utils.fileio.read_structure(args.model)
-    if args.cell is not None: st.cell = gemmi.UnitCell(*args.cell)
+    st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
+    if not st.cell.is_crystal() and args.auto_box_with_padding is not None:
+        st.cell = utils.model.box_from_model(st[0], args.auto_box_with_padding)
     if not st.cell.is_crystal():
         logger.error("ERROR: No unit cell information. Give --cell.")
         return
 
     if not args.refmacmtz:
-        if args.cell is not None:
-            xyzin = "for_refmac.pdb"
-            st.write_pdb(xyzin)
-        else:
-            xyzin = args.model
-
+        xyzin = "for_refmac.pdb"
+        st.write_pdb(xyzin)
         args.refmacmtz = run_refmac(xyzin, args.resolution, args.source)
-        
-    #fc_refmac = utils.fileio.read_asu_data_from_mtz(args.refmacmtz, ["Fout0", "Pout0"])
-    fc_refmac = utils.fileio.read_asu_data_from_mtz(args.refmacmtz, ["FC", "PHIC"])
+        fc_refmac = utils.fileio.read_asu_data_from_mtz(args.refmacmtz, ["Fout0", "Pout0"])
+    else:
+        fc_refmac = utils.fileio.read_asu_data_from_mtz(args.refmacmtz, ["FC", "PHIC"])
     hkldata = utils.hkl.hkldata_from_asu_data(fc_refmac, "FC_refmac")
     
     monlib = utils.restraints.load_monomer_library(st)
@@ -65,10 +63,10 @@ def main(args):
     ofs = open("fc_refmac_gemmi.dat", "w")
     ofs.write("blur cutoff rate d_max d_min fsc\n")
     for blur in (None,):#(0, 20, 40, 60):
-        for cutoff in (1e-9,):# (1e-9, 1e-10, 1e-11, 1e-12):#(1e-5, 1e-6, 1e-7, 1e-8, 1e-9):
+        for cutoff in (1e-5, 1e-6, 1e-7, 1e-8, 1e-9):
+        #for cutoff in (1e-3,1e-4,):
             for rate in (1.5,):
                 t0 = time.time()
-                if blur is None: blur = utils.model.determine_blur_for_dencalc(st, args.resolution/2/rate)
                 fc_asu = utils.model.calc_fc_fft(st, args.resolution, cutoff=cutoff, rate=rate,
                                                  mott_bethe=args.source == "electron",
                                                  monlib=monlib, source=args.source, blur=blur)
@@ -77,16 +75,18 @@ def main(args):
                 hkldata.merge_asu_data(fc_asu, "FC")
                 print("SIZE==", len(hkldata.df.index))
                 hkldata.setup_relion_binning()
-                bin_limits = dict(hkldata.bin_and_limits())
-                for i_bin, g in hkldata.binned():
-                    bin_d_max, bin_d_min = bin_limits[i_bin]
-                    fsc = numpy.real(numpy.corrcoef(g.FC.to_numpy(), g.FC_refmac.to_numpy())[1,0])
-                    ofs.write("{:.1f} {:.1e} {:.1f} {:7.3f} {:7.3f} {:.4f}\n".format(blur, cutoff, rate,
-                                                                              bin_d_max, bin_d_min,
-                                                                              fsc))
+                for i_bin, idxes in hkldata.binned():
+                    bin_d_min = hkldata.binned_df.d_min[i_bin]
+                    bin_d_max = hkldata.binned_df.d_max[i_bin]
+                    Fc = hkldata.df.FC.to_numpy()[idxes]
+                    Fcr = hkldata.df.FC_refmac.to_numpy()[idxes]
+                    fsc = numpy.real(numpy.corrcoef(Fc, Fcr)[1,0])
+                    ofs.write("{} {:.1e} {:.1f} {:7.3f} {:7.3f} {:.4f}\n".format(blur, cutoff, rate,
+                                                                                 bin_d_max, bin_d_min,
+                                                                                 fsc))
 
-                cc = numpy.real(numpy.corrcoef(hkldata.df.FC.to_numpy(), hkldata.df.FC_refmac.to_numpy())[1,0])
-                logger.write("blur= {:.1f} cutoff= {:.1e} rate={:.1f} CC={:.4f} time={:.2f} s".format(blur, cutoff, rate, cc, tt))
+                cc = numpy.real(numpy.corrcoef(Fc, Fcr)[1,0])
+                logger.writeln("blur= {} cutoff= {:.1e} rate={:.1f} CC={:.4f} time={:.2f} s".format(blur, cutoff, rate, cc, tt))
 
 if __name__ == "__main__":
     import sys
