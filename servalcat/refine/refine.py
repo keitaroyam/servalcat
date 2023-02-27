@@ -29,7 +29,7 @@ class Geom:
     def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
-        utils.model.find_special_positions(self.st)
+        self.specs = utils.model.find_special_positions(self.st)
         self.geom = gemmi.Geometry(self.st, monlib.ener_lib)
         self.sigma_b = sigma_b
         if shake_rms > 0:
@@ -277,11 +277,10 @@ class Refine:
             self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h)
+                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.specs)
                 diag = l_am.diagonal()
                 logger.writeln("diag(data) min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                          numpy.max(diag)))
-
         else:
             ll = 0
 

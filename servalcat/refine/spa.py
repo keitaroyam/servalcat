@@ -94,7 +94,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return {"fsc": stats, "summary": {"FSCaverage": fsca}}
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_h):
+    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs): # specs not used
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work

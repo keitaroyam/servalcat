@@ -397,7 +397,7 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
             logger.writeln("  correcting aniso= {}".format(atom.aniso.elements_pdb()))
 
         mat_total = (numpy.identity(3) + sum(numpy.array(st.cell.images[i-1].mat) for i in images)) / n_images
-        ret.append((atom, mat_total))
+        ret.append((atom, images, mat_total))
 
     return ret
 # find_special_positions()    
