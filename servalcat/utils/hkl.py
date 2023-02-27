@@ -155,7 +155,10 @@ class HklData:
 
     def switch_to_asu(self):
         # Need to care phases
-        pass
+        assert not any(numpy.iscomplexobj(self.df[x]) for x in self.df)
+        hkl = self.miller_array().to_numpy()
+        self.sg.switch_to_asu(hkl)
+        self.df[["H","K","L"]] = hkl
 
     def copy(self, d_min=None, d_max=None):
         # FIXME we should reset_index here? after resolution truncation, max(df.index) will be larger than size.

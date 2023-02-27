@@ -347,6 +347,7 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     mtz.spacegroup = sg_use
 
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["FP","SIGFP"])
+    hkldata.switch_to_asu()
     if 0: # intensity conversion
         hkldata.df.FP.where(hkldata.df.FP > 0, 0, inplace=True)
         hkldata.df["FP"] = numpy.sqrt(hkldata.df["FP"])
