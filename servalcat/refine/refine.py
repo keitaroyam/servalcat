@@ -234,6 +234,9 @@ class Refine:
                 h.b_iso = p.b_iso
                 h.aniso = p.aniso
 
+        if self.ll is not None:
+            self.ll.update_fc()
+
     def get_x(self):
         n_atoms = len(self.atoms)
         offset_b = n_atoms * 3 if self.refine_xyz else 0
@@ -255,7 +258,6 @@ class Refine:
                                                  not self.unrestrained and self.refine_xyz,
                                                  self.adp_mode, N)
         if self.ll is not None:
-            self.ll.update_fc()
             ll = self.ll.calc_target()
             if not target_only:
                 l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.specs)
@@ -282,7 +284,6 @@ class Refine:
     #@profile
     def run_cycle(self, weight=1):
         if self.ll is not None:
-            self.ll.update_fc()
             self.ll.overall_scale()
             self.ll.update_ml_params()
 
@@ -386,7 +387,6 @@ class Refine:
         if not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
-            # redundant calculations that will happen in run_cycle() as well
             self.ll.update_fc()
             self.ll.overall_scale()
             self.ll.update_ml_params()
