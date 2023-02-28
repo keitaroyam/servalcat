@@ -518,15 +518,16 @@ class HklData:
             return k1, B1
     # scale_k_and_b()
 
+    def translation_factor(self, shift):
+        if type(shift) != gemmi.Position:
+            shift = gemmi.Position(*shift)
+        return numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
+                                                self.cell.fractionalize(shift).tolist()))
+    # translation_factor()
     def translate(self, lab, shift):
         # apply phase shift
         assert numpy.iscomplexobj(self.df[lab])
-        
-        if type(shift) != gemmi.Position:
-            shift = gemmi.Position(*shift)
-            
-        self.df[lab] *= numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
-                                                         self.cell.fractionalize(shift).tolist()))
+        self.df[lab] *= self.translation_factor(shift)
     # translate()
 
     def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None,

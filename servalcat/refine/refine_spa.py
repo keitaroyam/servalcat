@@ -11,7 +11,7 @@ import argparse
 import json
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.spa.run_refmac import check_args, prepare_files, calc_fsc, calc_fofc
+from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
 from servalcat.spa import fofc
 from servalcat.refine import spa
 from servalcat.refine.refine import Geom, Refine
@@ -100,11 +100,8 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    shifted_model_prefix = "shifted"
     args.mask = None
     args.invert_mask = False
-    args.no_fix_microheterogeneity = True
-    args.no_fix_resi9999 = True
     args.cross_validation_method = "throughout"
     check_args(args)    
     refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
@@ -118,10 +115,8 @@ def main(args):
         maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
-    file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
-                              mask_in=args.mask, args=args,
-                              shifted_model_prefix=shifted_model_prefix,
-                              no_refmac_fix=True)
+    hkldata = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
+                            mask_in=args.mask, args=args, use_refmac=False)
     st.setup_cell_images()
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "yes":gemmi.HydrogenChange.NoChange,
@@ -132,22 +127,15 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    if args.cross_validation:
-        lab_f, lab_phi = "lab_f_half1", "lab_phi_half1"
-    else:
-        lab_f, lab_phi = "lab_f", "lab_phi"
-    hkldata = utils.hkl.hkldata_from_mtz(gemmi.read_mtz_file(file_info["mtz_file"]), 
-                                         labels=[file_info[lab_f], file_info[lab_phi]],
-                                         newlabels=["FP", ""])
-    hkldata.setup_relion_binning()
-    
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
             
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b,
                 refmac_keywords=refmac_keywords)
-    ll = spa.LL_SPA(hkldata, st, monlib, source=args.source)
+    ll = spa.LL_SPA(hkldata, st, monlib,
+                    lab_obs="F_map1" if args.cross_validation else "FP",
+                    source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
@@ -191,7 +179,7 @@ def main(args):
                            )
     
     # Calc Fo-Fc (and updated) maps
-    calc_fofc(refiner.st, st_expanded, maps, monlib, file_info["model_format"], args)
+    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args)
     
     # Final summary
     adpstats_txt = ""

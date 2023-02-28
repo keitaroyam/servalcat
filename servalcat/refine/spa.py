@@ -17,30 +17,31 @@ from servalcat.spa import fsc
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
-def calc_D_and_S(hkldata): # simplified version of fofc.calc_D_and_S()
+def calc_D_and_S(hkldata, lab_obs): # simplified version of fofc.calc_D_and_S()
     bdf = hkldata.binned_df
     bdf["D"] = 0.
     bdf["S"] = 0.
     for i_bin, idxes in hkldata.binned():
-        Fo = hkldata.df.FP.to_numpy()[idxes]
+        Fo = hkldata.df[lab_obs].to_numpy()[idxes]
         Fc = hkldata.df.FC.to_numpy()[idxes]
         bdf.loc[i_bin, "D"] = numpy.nansum(numpy.real(Fo * numpy.conj(Fc))) / numpy.sum(numpy.abs(Fc)**2)
         bdf.loc[i_bin, "S"] = numpy.nanmean(numpy.abs(Fo - bdf.D[i_bin] * Fc)**2)
 # calc_D_and_S()
 
 class LL_SPA:
-    def __init__(self, hkldata, st, monlib, source="electron", mott_bethe=True):
+    def __init__(self, hkldata, st, monlib, lab_obs, source="electron", mott_bethe=True):
         assert source in ("electron", "xray")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
+        self.lab_obs = lab_obs
         self.st = st
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
 
     def update_ml_params(self):
         # FIXME make sure D > 0
-        calc_D_and_S(self.hkldata)
+        calc_D_and_S(self.hkldata, self.lab_obs)
         logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min", "D", "S"]))
 
     def update_fc(self):
@@ -57,7 +58,7 @@ class LL_SPA:
                                                         miller_array=self.hkldata.miller_array())
 
     def overall_scale(self, min_b=0.5):
-        k, b = self.hkldata.scale_k_and_b(lab_ref="FP", lab_scaled="FC")
+        k, b = self.hkldata.scale_k_and_b(lab_ref=self.lab_obs, lab_scaled="FC")
         min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
         tmp = min_b_iso + b
         if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
@@ -73,20 +74,20 @@ class LL_SPA:
     def calc_target(self): # -LL target for SPA
         ret = 0
         for i_bin, idxes in self.hkldata.binned():
-            Fo = self.hkldata.df.FP.to_numpy()[idxes]
+            Fo = self.hkldata.df[self.lab_obs].to_numpy()[idxes]
             DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df.D[i_bin]
             ret += numpy.nansum(numpy.abs(Fo - DFc)**2) / self.hkldata.binned_df.S[i_bin]
         return ret * 2 # friedel mates
     # calc_target()
 
     def calc_stats(self):
-        stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f="FP")
+        stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f=self.lab_obs)
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return {"fsc": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs): # specs not used
-        dll_dab = numpy.empty_like(self.hkldata.df.FP)
+        dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
@@ -94,7 +95,7 @@ class LL_SPA:
             D = self.hkldata.binned_df.D[i_bin]
             S = self.hkldata.binned_df.S[i_bin]
             Fc = self.hkldata.df.FC.to_numpy()[idxes]
-            Fo = self.hkldata.df.FP.to_numpy()[idxes]
+            Fo = self.hkldata.df[self.lab_obs].to_numpy()[idxes]
             dll_dab[idxes] = -2 * D / S * (Fo - D * Fc)#.conj()
             d2ll_dab2[idxes] = 2 * D**2 / S
 

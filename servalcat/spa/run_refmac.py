@@ -428,11 +428,12 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
     return -b
 # determine_b_before_mask()
 
-def prepare_files(st, maps, resolution, monlib, mask_in, args,
+def process_input(st, maps, resolution, monlib, mask_in, args,
                   shifted_model_prefix="shifted",
                   output_masked_prefix="masked_fs",
                   output_mtz_prefix="starting_map",
-                  use_gemmi_prep=False, no_refmac_fix=False):
+                  use_gemmi_prep=False, no_refmac_fix=False,
+                  use_refmac=True):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -452,38 +453,39 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     
     st.cell = unit_cell
     st.spacegroup_hm = "P 1"
-    ret["model_format"] = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
-
-    max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
-    if max_seq_num > 9999 and ret["model_format"] == ".pdb":
-        logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
-        ret["model_format"] = ".mmcif"
+    if use_refmac:
+        ret["model_format"] = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
+        max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
+        if max_seq_num > 9999 and ret["model_format"] == ".pdb":
+            logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
+            ret["model_format"] = ".mmcif"
 
     # workaround for Refmac
     # TODO need to check external restraints
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    if use_gemmi_prep:
-        st.assign_cis_flags()
-        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                    "yes":gemmi.HydrogenChange.NoChange,
-                    "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-        topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                      reorder=True, ignore_unknown_links=False)
-    elif not no_refmac_fix:
-        topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
-    else:
-        topo = None # not used
-    if not no_refmac_fix:
-        ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                        fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
-                                                        fix_resimax=not args.no_fix_resi9999,
-                                                        fix_nonpolymer=False)
-    chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
-    if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
-        logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
-        ret["model_format"] = ".mmcif"
-    if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
-        ret["refmac_fixes"].fix_nonpolymer(st)
+    if use_refmac:
+        if use_gemmi_prep:
+            st.assign_cis_flags()
+            h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                        "yes":gemmi.HydrogenChange.NoChange,
+                        "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+            topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
+                                          reorder=True, ignore_unknown_links=False)
+        elif not no_refmac_fix:
+            topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
+        else:
+            topo = None # not used
+        if not no_refmac_fix:
+            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
+                                                            fix_resimax=not args.no_fix_resi9999,
+                                                            fix_nonpolymer=False)
+        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+        if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
+            logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+            ret["model_format"] = ".mmcif"
+        if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
+            ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
         logger.writeln("Removing symmetry information from model.")
@@ -507,11 +509,12 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     if mask is None and args.mask_radius:
         logger.writeln("Creating mask..")
         mask = utils.maps.mask_from_model(st_expanded, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
-        utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
-        
-    logger.writeln(" Saving input model with unit cell information")
-    utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
-    ret["model_file"] = "starting_model" + ret["model_format"]
+        #utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
+
+    if use_refmac:
+        logger.writeln(" Saving input model with unit cell information")
+        utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+        ret["model_file"] = "starting_model" + ret["model_format"]
 
     if mask is not None:
         if args.invert_mask:
@@ -559,10 +562,10 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
             
             st.cell = new_cell
             st.spacegroup_hm = "P 1"
-
-            logger.writeln(" Saving model in trimmed map..")
-            utils.fileio.write_model(st, shifted_model_prefix, pdb=True, cif=True)
-            ret["model_file"] = shifted_model_prefix + ret["model_format"]
+            if use_refmac:
+                logger.writeln(" Saving model in trimmed map..")
+                utils.fileio.write_model(st, shifted_model_prefix, pdb=True, cif=True)
+                ret["model_file"] = shifted_model_prefix + ret["model_format"]
 
             logger.writeln(" Trimming maps..")
             for i in range(len(maps)): # Update maps
@@ -570,7 +573,7 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    if use_gemmi_prep:
+    if use_refmac and use_gemmi_prep:
         # TODO: make cispept, make link, remove unknown link id
         # TODO: cross validation?
         crdout = os.path.splitext(ret["model_file"])[0] + ".crd"
@@ -585,20 +588,13 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
-        logger.writeln(" Calculating noise variances..")
         map_labs = ["Fmap1", "Fmap2", "Fout"]
-        sig_lab = "SIGFout"
-        ret["lab_sigf"] = sig_lab + lab_f_suffix(args.blur)
         ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(args.blur)
         # TODO Add SIGF in case of half maps, when refmac is ready
         ret["lab_phi_half1"] = "Pmap1"
         ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(args.blur)
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
-        hkldata.df[sig_lab] = 0.
-        for i_bin, idxes in hkldata.binned():
-            hkldata.df.loc[idxes, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
-
         d_eff_full = hkldata.d_eff("FSCfull")
         logger.writeln("Effective resolution from FSCfull= {:.2f}".format(d_eff_full))
         ret["d_eff"] = d_eff_full
@@ -606,26 +602,32 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
         map_labs = ["Fout"]
         sig_lab = None
 
-    if args.no_mask:
-        logger.writeln("Saving unmasked maps as mtz file..")
-        mtzout = output_mtz_prefix+".mtz"
-    else:
-        logger.writeln(" Saving masked maps as mtz file..")
-        mtzout = output_masked_prefix+"_obs.mtz"
+    if use_refmac:
+        if args.no_mask:
+            logger.writeln("Saving unmasked maps as mtz file..")
+            mtzout = output_mtz_prefix+".mtz"
+        else:
+            logger.writeln(" Saving masked maps as mtz file..")
+            mtzout = output_masked_prefix+"_obs.mtz"
 
-    hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
-    if "shifts" in ret:
-        for lab in map_labs: # apply phase shift
-            logger.writeln("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
-            hkldata.translate(lab, -ret["shifts"])
-        
-    write_map_mtz(hkldata, mtzout,
-                  map_labs=map_labs, sig_lab=sig_lab, blur=args.blur)
-    ret["mtz_file"] = mtzout
-    ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
-    ret["lab_phi"] = "Pout"
-    return ret
-# prepare_files()
+        hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
+        if "shifts" in ret:
+            for lab in map_labs: # apply phase shift
+                logger.writeln("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
+                hkldata.translate(lab, -ret["shifts"])
+
+        write_map_mtz(hkldata, mtzout, map_labs=map_labs, blur=args.blur)
+        ret["mtz_file"] = mtzout
+        ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
+        ret["lab_phi"] = "Pout"
+        return ret
+    else:
+        fac = hkldata.debye_waller_factors(b_iso=args.blur)
+        if "shifts" in ret: fac *= hkldata.translation_factor(-ret["shifts"])
+        for lab in ("F_map1", "F_map2", "FP"):
+            if lab in hkldata.df: hkldata.df[lab] *= fac
+        return hkldata
+# process_input()
 
 def check_args(args):
     if not os.path.exists(args.model):
@@ -741,7 +743,7 @@ def main(args):
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         
     shifted_model_prefix = "shifted"
-    file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
+    file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                               mask_in=args.mask, args=args,
                               shifted_model_prefix=shifted_model_prefix,
                               use_gemmi_prep=use_gemmi_prep)
