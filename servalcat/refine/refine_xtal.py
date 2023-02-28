@@ -69,6 +69,12 @@ def parse_args(arg_list):
 def main(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
+
+    keywords = []
+    if args.keywords or args.keyword_file:
+        if args.keywords: keywords = sum(args.keywords, [])
+        if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
+
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin,
                                                                   n_bins=args.nbins,
@@ -91,7 +97,7 @@ def main(args):
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
     
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b)#, exte_keywords=keywords)
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     ll = LL_Xtal(hkldata, centric_and_selections, st, monlib, source=args.source, use_solvent=not args.no_solvent)
     refiner = Refine(st, geom, ll=ll,

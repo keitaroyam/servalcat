@@ -96,6 +96,7 @@ class LL_Xtal:
         self.hkldata.df["k_aniso"] = scaling.k_overall * k_aniso
 
         if self.use_solvent:
+            logger.writeln(" k_sol= {:.2e} B_sol= {:.2e}".format(scaling.k_sol, scaling.b_sol))
             solvent_scale = scaling.get_solvent_scale(0.25 / self.hkldata.d_spacings()**2)
             self.hkldata.df[self.fc_labs[-1]] *= solvent_scale
 
