@@ -79,7 +79,7 @@ def calc_sum_ab(st):
     return ret
 # calc_sum_ab()
 
-def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": assert not mott_bethe

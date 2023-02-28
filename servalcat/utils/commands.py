@@ -186,7 +186,7 @@ def add_arguments(p):
     parser.add_argument('--cell', type=float, nargs=6, metavar=("a", "b", "c", "alpha", "beta", "gamma"),
                         help="Override unit cell")
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
-    parser.add_argument('--cutoff', type=float, default=1e-7)
+    parser.add_argument('--cutoff', type=float, default=1e-5)
     parser.add_argument('--rate', type=float, default=1.5)
     parser.add_argument('--add_dummy_sigma', action='store_true', help="write dummy SIGF")
     parser.add_argument('-d', '--resolution', type=float, required=True)

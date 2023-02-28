@@ -47,7 +47,7 @@ class XtalTests(unittest.TestCase):
         hkldata.df["IC"] = numpy.abs(hkldata.df["FC"].to_numpy())**2
         k, b = hkldata.scale_k_and_b("I", "IC")
         self.assertAlmostEqual(k, 0.00667, places=5)
-        self.assertAlmostEqual(b, -8.48374, places=4)
+        self.assertAlmostEqual(b, -8.48166, places=4)
     # test_scale()
 
     def test_sigmaa(self):
@@ -64,17 +64,17 @@ class XtalTests(unittest.TestCase):
                                        1.7532, 1.664 ],
                                       rtol=1e-4)
         numpy.testing.assert_allclose(hkldata.binned_df.D0,
-                                      [0.844599, 0.983733, 1.022031, 0.965314, 0.996966, 1.009102,
-                                       0.997227, 0.98949 , 0.937605, 0.928479],
+                                      [0.844594, 0.983737, 1.022041, 0.965311, 0.996949, 1.009086,
+                                       0.997229, 0.989502, 0.937616, 0.928479],
                                       rtol=1e-5)
         numpy.testing.assert_allclose(hkldata.binned_df.D1,
-                                      [2.974686e-01, 5.625804e-08, 2.500706e-10, 3.981426e-10,
-                                       7.635458e-07, 8.245066e-08, 1.000051e+00, 9.999994e-01,
+                                      [2.974164e-01, 5.624910e-08, 2.500540e-10, 3.980775e-10,
+                                       7.638667e-07, 8.243909e-08, 1.000051e+00, 9.999994e-01,
                                        9.999997e-01, 1.000001e+00],
                                       rtol=1e-5)
         numpy.testing.assert_allclose(hkldata.binned_df.S,
-                                      [ 84.857332,  95.794274,  68.854357,  96.124265,  74.228905,
-                                        110.075772, 116.446679,  95.912967,  81.069191,  43.255408],
+                                      [84.849295, 95.793834, 68.855376, 96.128495, 74.232567,
+                                       110.074536, 116.444811, 95.912754, 81.073520, 43.255423],
                                       rtol=1e-5)
 
     # test_sigmaa()

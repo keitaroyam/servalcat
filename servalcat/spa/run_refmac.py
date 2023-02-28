@@ -171,12 +171,12 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
-    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, monlib=monlib, source="electron",
                                                miller_array=hkldata.miller_array())
     labs_fc = ["FC"]
 
     if st_sr is not None:
-        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, monlib=monlib, source="electron",
                                                       miller_array=hkldata.miller_array())
         labs_fc.append("FC_sr")
 

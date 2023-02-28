@@ -51,7 +51,6 @@ class LL_SPA:
             st = self.st
 
         self.hkldata.df["FC"] = utils.model.calc_fc_fft(st, self.d_min - 1e-6,
-                                                        cutoff=1e-7,
                                                         monlib=self.monlib,
                                                         source=self.source,
                                                         mott_bethe=self.mott_bethe,

@@ -369,7 +369,7 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     fc_labs = []
     for i, st in enumerate(sts):
         lab = "FC{}".format(i)
-        hkldata.df[lab] = utils.model.calc_fc_fft(st, d_min-1e-6, cutoff=1e-7,
+        hkldata.df[lab] = utils.model.calc_fc_fft(st, d_min-1e-6,
                                                   source=source, mott_bethe=(source=="electron"),
                                                   miller_array=hkldata.miller_array())
         fc_labs.append(lab)
