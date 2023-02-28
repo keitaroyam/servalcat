@@ -84,7 +84,7 @@ def main():
                    refmac5=servalcat.refmac.refmac_wrapper,
                    refine_geom=servalcat.refine.refine_geom,
                    refine_spa_norefmac=servalcat.refine.refine_spa,
-                   refine_xtal=servalcat.refine.refine_xtal,
+                   refine_xtal_norefmac=servalcat.refine.refine_xtal,
                    )
 
     for n in modules:

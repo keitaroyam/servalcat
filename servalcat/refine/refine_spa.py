@@ -17,9 +17,8 @@ from servalcat.refine import spa
 from servalcat.refine.refine import Geom, Refine
 b_to_u = utils.model.b_to_u
 
-#logger.set_file("servalcat_test_refine.log")
-
 def add_arguments(parser):
+    parser.description = "EXPERIMENTAL program to refine cryo-EM SPA structures"
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
     group.add_argument("--map", help="Use this only if you really do not have half maps.")

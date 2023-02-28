@@ -36,14 +36,11 @@ class LL_Xtal:
         self.hkldata.df["k_aniso"] = 1.
         self.hkldata.df["FP_org"] = self.hkldata.df["FP"]
         self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
-        self.update_fc()
-        self.calc_stats()
 
     def update_ml_params(self):
         # FIXME make sure D > 0
         determine_mlf_params(self.hkldata, self.fc_labs, self.D_labs,
                              self.centric_and_selections, D_as_exp=True, S_as_exp=True)
-        #logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min"] + self.D_labs + ["S"]))
 
     def update_fc(self):
         if self.st.ncs:
@@ -58,7 +55,6 @@ class LL_Xtal:
                                                                    source=self.source,
                                                                    mott_bethe=self.mott_bethe,
                                                                    miller_array=self.hkldata.miller_array())
-        #self.hkldata.df[self.fc_labs[0]] *= self.k_overall
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
         
     def overall_scale(self, min_b=0.1):
@@ -115,8 +111,6 @@ class LL_Xtal:
 
         for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
-        self.calc_stats()
-        print(self.hkldata.df)
     # overall_scale()
 
     def calc_target(self): # -LL target for MLF
@@ -134,8 +128,8 @@ class LL_Xtal:
     def calc_stats(self):
         r = utils.hkl.r_factor(self.hkldata.df.FP_org,
                                numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
-        logger.writeln("R= {:.4f}".format(r))
-        return {"summary": {"R": r}}
+        logger.writeln("R = {:.4f}".format(r))
+        return {"summary": {"R": r, "-LL": self.calc_target()}}
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
         dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
@@ -150,8 +144,6 @@ class LL_Xtal:
             S = self.hkldata.binned_df.S[i_bin]
             for c, cidxes, nidxes in self.centric_and_selections[i_bin]:
                 Fcs = [self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]
-                #Fc = numpy.abs(self.hkldata.df.FC.to_numpy()[cidxes])
-                #phic = numpy.angle(self.hkldata.df.FC.to_numpy()[cidxes])
                 Fc = calc_DFc(Ds, Fcs) # sum(D * Fc)
                 expip = numpy.exp(1j * numpy.angle(Fc))
                 Fo = self.hkldata.df.FP.to_numpy()[cidxes]
@@ -175,7 +167,6 @@ class LL_Xtal:
                     dll_dab[cidxes] = g * expip
                     d2ll_dab2[cidxes] = (1 / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
 
-        #dll_dab *= numpy.exp(1j * numpy.angle(self.hkldata.df.FC))
         if self.mott_bethe:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2

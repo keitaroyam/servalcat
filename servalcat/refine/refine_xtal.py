@@ -100,7 +100,6 @@ def main(args):
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b)#, exte_keywords=keywords)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
-    #geom = None # XXX make it optional
     ll = LL_Xtal(hkldata, centric_and_selections, st, monlib, source=args.source, use_solvent=not args.no_solvent)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,

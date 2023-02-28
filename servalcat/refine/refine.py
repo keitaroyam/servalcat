@@ -80,27 +80,14 @@ class Geom:
         return self.geom.calc_adp_restraint(target_only, self.sigma_b)
     def calc_target(self, target_only, refine_xyz, adp_mode, N):
         self.geom.clear_target()
-        #print("n_geom=", len(self.geom.bonds), len(self.geom.angles), len(self.geom.torsions), len(self.geom.chirs), len(self.geom.planes), 
-        #      len(self.geom.stackings),len(self.geom.vdws))
-        #for vdw in self.geom.vdws:
-        #    print(vdw.atoms, vdw.sym_idx, vdw.value)
         geom_x = self.calc(target_only) if refine_xyz else 0
         geom_a = self.calc_adp_restraint(target_only) if adp_mode > 0 else 0
-        logger.writeln(" geom_x = {}, {}".format(geom_x, geom_x==0))
+        logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         geom = geom_x + geom_a
         if not target_only:
-            g_vn = numpy.array(self.geom.target.vn) # don't want copy?
-
-            # DEBUG
-            #print("N=", N)
-            #sd, (rows, cols) = self.geom.target.am_for_coo()
-            #for s, r, c in zip(sd, rows, cols):
-            #    print(r, c, s)
-            #
-            
+            g_vn = numpy.array(self.geom.target.vn) # don't want copy?            
             coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
-            #print("am=", coo)
             lil = coo.tolil()
             rows, cols = lil.nonzero()
             lil[cols,rows] = lil[rows,cols]
@@ -108,9 +95,6 @@ class Geom:
             diag = g_am.diagonal()
             logger.writeln("diag(restr) min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                       numpy.max(diag)))
-            #print(diag)
-            #print(g_am)
-            #quit()
         else:
             g_vn, g_am = None, None
 
@@ -169,8 +153,9 @@ class Geom:
         return ret
         
 class Refine:
-    def __init__(self, st, geom=None, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, unrestrained=False):
+    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, unrestrained=False):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
+        assert geom is not None
         self.st = st # clone()?
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -181,7 +166,7 @@ class Refine:
         self.refine_xyz = refine_xyz
         self.unrestrained = unrestrained
         self.refine_h = refine_h
-        self.h_inherit_parent_adp = self.geom is not None and self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
+        self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
     # __init__()
@@ -266,13 +251,9 @@ class Refine:
     #@profile
     def calc_target(self, w=1, target_only=False):
         N = self.n_params()
-        if self.geom is not None:
-            geom, g_vn, g_am = self.geom.calc_target(target_only,
-                                                     not self.unrestrained and self.refine_xyz,
-                                                     self.adp_mode, N)
-        else:
-            geom = 0
-
+        geom, g_vn, g_am = self.geom.calc_target(target_only,
+                                                 not self.unrestrained and self.refine_xyz,
+                                                 self.adp_mode, N)
         if self.ll is not None:
             self.ll.update_fc()
             ll = self.ll.calc_target()
@@ -287,13 +268,10 @@ class Refine:
         f =  w * ll + geom
 
         if not target_only:
-            if self.geom is not None and self.ll is not None:
+            if self.ll is not None:
                 vn = w * l_vn + g_vn
                 am = w * l_am + g_am
-            elif self.geom is None:
-                vn = w * l_vn
-                am = w * l_am
-            elif self.ll is None:
+            else:
                 vn = g_vn
                 am = g_am
         else:
@@ -308,10 +286,9 @@ class Refine:
             self.ll.overall_scale()
             self.ll.update_ml_params()
 
-        if self.geom is not None:
-            self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
-            logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
-            self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
+        self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
+        logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
         if 0: # test of grad
             self.ll.update_fc()
@@ -332,13 +309,8 @@ class Refine:
             quit()
 
         f0, vn, am = self.calc_target(weight)
-        logger.writeln("vn={}".format(vn))
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
-
-        if 0:
-            logger.writeln("EIGH")
-            logger.writeln(str(numpy.linalg.eigh(am.todense())))
         
         if 0:
             assert self.adp_mode == 0 # not supported!
@@ -358,7 +330,6 @@ class Refine:
             diag = am.diagonal()
             logger.writeln("diagonal min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                    numpy.max(diag)))
-            logger.writeln("diag={}".format(diag))
             #for i in numpy.where(diag <= 0)[0]:
             #    if self.refine_xyz:
             #        if i >= len(self.atoms)*3:
@@ -374,7 +345,6 @@ class Refine:
             M = rdmat
             
         dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
-        logger.writeln("dx={}".format(dx))
         if self.refine_xyz:
             dxx = dx[:len(self.atoms)*3]
             #logger.writeln("dx = {}".format(dxx))
@@ -401,7 +371,6 @@ class Refine:
         for i in range(3):
             dx2 = self.scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
-            #if self.ll is not None: self.ll.update_fc()
             f1, _, _ = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
@@ -414,12 +383,13 @@ class Refine:
     
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
-        if self.geom is not None and not self.unrestrained:
+        if not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
+            # redundant calculations that will happen in run_cycle() as well
             self.ll.update_fc()
             self.ll.overall_scale()
-            #stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1] # TODO make it generic for xtal
+            self.ll.update_ml_params()
             stats[-1]["data"] = self.ll.calc_stats()["summary"]
             
         for i in range(ncycles):
@@ -427,28 +397,22 @@ class Refine:
             self.run_cycle(weight=weight) # check ret?
             stats.append({"Ncyc": i+1})
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
-            if self.refine_xyz and self.geom is not None and not self.unrestrained:
+            if self.refine_xyz and not self.unrestrained:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
-                #stats[-1]["rmsBOND"] = g.loc["Bond distances, non H", "r.m.s.d."]
-                #stats[-1]["zBOND"] = g.loc["Bond distances, non H", "r.m.s.Z"]
-                #stats[-1]["rmsANGL"] = g.loc["Bond angles, non H", "r.m.s.d."]
-                #stats[-1]["zANGL"] = g.loc["Bond angles, non H", "r.m.s.Z"]
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             logger.writeln("")
 
             if self.ll is not None:
-                #utils.model.find_special_positions(self.st)
-                #self.ll.update_fc() # should have happened in run_cycle
                 self.ll.overall_scale()
-                #stats[-1]["FSCaverage"] = self.ll.calc_fsc()[1]
                 stats[-1]["data"] = self.ll.calc_stats()["summary"]
 
         df = pandas.DataFrame({"Ncyc": range(ncycles+1)})
         if self.ll is not None:
             df["FSCaverage"] = [s["data"].get("FSCaverage", numpy.nan) for s in stats]
             df["R"] = [s["data"].get("R", numpy.nan) for s in stats]
-        if self.refine_xyz and self.geom is not None and not self.unrestrained:
+            df["-LL"] = [s["data"].get("-LL", numpy.nan) for s in stats]
+        if self.refine_xyz and not self.unrestrained:
             df["rmsBOND"] =[s["geom"]["r.m.s.d."].get("Bond distances, non H") for s in stats]
             df["zBOND"] = [s["geom"]["r.m.s.Z"].get("Bond distances, non H") for s in stats]
             df["rmsANGL"] = [s["geom"]["r.m.s.d."].get("Bond angles, non H") for s in stats]
@@ -456,8 +420,9 @@ class Refine:
 
         forplot = []
         if self.ll is not None:
-            forplot.append(["Data", ["Ncyc", "FSCaverage", "R"]])
-        if self.refine_xyz and self.geom is not None and not self.unrestrained:
+            forplot.append(["FSC or R", ["Ncyc", "FSCaverage", "R"]])
+            forplot.append(["-LL", ["Ncyc", "-LL"]])
+        if self.refine_xyz and not self.unrestrained:
             forplot.extend([["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
                             ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]])
 
