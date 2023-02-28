@@ -580,6 +580,28 @@ def adp_stats_per_chain(model, ignore_zero_occ=True):
     return ret
 # adp_stats_per_chain()
 
+def reset_adp(model, bfactor=None, is_aniso=False):
+    for cra in model.all():
+        if bfactor is not None:
+            cra.atom.b_iso = bfactor
+        if not is_aniso:
+            cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
+        else:
+            if not cra.atom.aniso.nonzero() or bfactor is not None:
+                u = cra.atom.b_iso * b_to_u
+                cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
+# reset_adp()
+
+def shift_b(model, b):
+    u = b * b_to_u
+    for cra in model.all():
+        cra.atom.b_iso += b
+        if cra.atom.aniso.nonzero():
+            cra.atom.aniso.u11 += u
+            cra.atom.aniso.u22 += u
+            cra.atom.aniso.u33 += u
+# shift_b()
+
 def all_chain_ids(st):
     return [chain.name for model in st for chain in model]
 # all_chain_ids()

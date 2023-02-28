@@ -65,13 +65,7 @@ class LL_SPA:
             logger.writeln("Adjusting overall B to avoid too small value")
             b += min_b - tmp
         logger.writeln("Applying overall B to model: {:.2f}".format(b))
-        for cra in self.st[0].all():
-            cra.atom.b_iso += b
-            if cra.atom.aniso.nonzero():
-                cra.atom.aniso.u11 += b * b_to_u
-                cra.atom.aniso.u22 += b * b_to_u
-                cra.atom.aniso.u33 += b * b_to_u
-
+        utils.model.shift_b(self.st[0], b)
         # adjust Fc
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
         self.hkldata.df["FC"] *= k_iso

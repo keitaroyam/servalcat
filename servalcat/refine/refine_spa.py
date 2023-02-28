@@ -142,15 +142,8 @@ def main(args):
     hkldata.setup_relion_binning()
     
     # initialize ADP
-    for cra in st[0].all():
-        if args.bfactor is not None:
-            cra.atom.b_iso = args.bfactor
-        if args.adp == "iso":
-            cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
-        elif args.adp == "aniso":
-            if not cra.atom.aniso.nonzero() or args.bfactor is not None:
-                u = cra.atom.b_iso * b_to_u
-                cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
+    if args.adp != "fix":
+        utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
             
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b,
                 refmac_keywords=refmac_keywords)
