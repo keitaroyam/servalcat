@@ -114,9 +114,8 @@ $$""")
 
     else:
         logger.writeln("Sharpening B before masking= {}".format(b))
-        s2 = 1./hkldata.d_spacings()**2
-        normalizer[:] = numpy.exp(-b*s2/4.)
-        for lab in labs: hkldata.df.loc[:, lab] /= normalizer
+        normalizer[:] = hkldata.debye_waller_factors(b_iso=b)
+        for lab in labs: hkldata.df[lab] /= normalizer
 
     # 2. Mask, FFT, and unsharpen
     for lab in labs:
