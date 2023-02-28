@@ -37,8 +37,6 @@ class LL_SPA:
         self.st = st
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
-        self.update_fc()
-        self.calc_fsc()
 
     def update_ml_params(self):
         # FIXME make sure D > 0
@@ -88,13 +86,13 @@ class LL_SPA:
         return ret * 2 # friedel mates
     # calc_target()
 
-    def calc_fsc(self):
+    def calc_stats(self):
         stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f="FP")
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
-        return stats, fsca
+        return {"fsc": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_h):
+    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs): # specs not used
         dll_dab = numpy.empty_like(self.hkldata.df.FP)
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
