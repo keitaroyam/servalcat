@@ -189,29 +189,24 @@ class LL_Xtal:
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
+        
+        # correction for special positions
+        cs_count = len(self.hkldata.sg.operations())
+        occ_backup = {}
+        for atom, images, _ in specs:
+            # use only crystallographic multiplicity just in case
+            n_sym = len([x for x in images if x < cs_count]) + 1
+            logger.writeln("spec_corr: images= {} {} n={}".format(images, len(images), n_sym))
+            occ_backup[atom] = atom.occ
+            atom.occ *= n_sym
+
         ll = gemmi.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         vn = numpy.array(ll.calc_grad(dll_dab_den, blur))
 
-        # correction for special positions
-        cs_count = len(self.hkldata.sg.operations())
-        adp_offset = len(atoms) * 3 if refine_xyz else 0
-        for atom, images, _ in specs:
-            # use crystallographic multiplicity just in case
-            n_sym = len([x for x in images if x < cs_count]) + 1
-            logger.writeln("spec_corr: images= {} {} n={}".format(images, len(images), n_sym))
-            idx = atom.serial - 1
-            if refine_xyz:
-                vn[idx*3 : (idx+1)*3] /= n_sym
-            if adp_mode == 1:
-                vn[adp_offset+idx] /= n_sym
-            elif adp_mode == 2:
-                vn[adp_offset+idx*6 : adp_offset+(idx+1)*6] /= n_sym
-
         # second derivative
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
-
         b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso
                      for cra in self.st[0].all()]
         b_iso_min = min(b_iso_all)
@@ -231,4 +226,8 @@ class LL_Xtal:
         lil = coo.tolil()
         rows, cols = lil.nonzero()
         lil[cols,rows] = lil[rows,cols]
+
+        for atom in occ_backup:
+            atom.occ = occ_backup[atom]
+            
         return vn, lil
