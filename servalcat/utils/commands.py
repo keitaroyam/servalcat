@@ -716,6 +716,7 @@ def geometry(args):
     
     geom = Geom(st, topo, monlib)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
+    geom.geom.setup_nonbonded()
     ret = geom.show_model_stats()
     
     with open(args.output_prefix + "_summary.json", "w") as ofs:
