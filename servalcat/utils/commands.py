@@ -708,6 +708,8 @@ def geometry(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    model.setup_entities(st, clear=True, force_subchain_names=True)
+    st.assign_cis_flags()
     restraints.find_and_fix_links(st, monlib)
     try:
         topo = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
