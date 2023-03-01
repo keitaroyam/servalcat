@@ -63,6 +63,8 @@ def add_arguments(parser):
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
+    parser.add_argument('--no_check_ncs_map', action='store_true', 
+                        help='Disable map NCS consistency test')
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",

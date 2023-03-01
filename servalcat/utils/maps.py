@@ -57,6 +57,19 @@ def test_mask_with_model(mask, st, mask_threshold=.5, inclusion_cutoff=.8):
     return 1 - n_out/n_all > inclusion_cutoff
 # test_mask_with_model()
 
+def check_symmetry_related_map_values(st, grid, cc_cutoff=0.9):
+    logger.writeln("Checking if model and map symmetry match.")
+    mapvals = numpy.array([grid.interpolate_value(cra.atom.pos) for cra in st[0].all()])
+    for op in st.ncs:
+        if op.given: continue
+        st2 = st.clone()
+        st2[0].transform_pos_and_adp(op.tr)
+        mapvals2 = numpy.array([grid.interpolate_value(cra.atom.pos) for cra in st2[0].all()])
+        cc = numpy.corrcoef(mapvals, mapvals2)[0,1]
+        logger.writeln(" CC_map(pos_model, pos_model_ncs{})= {:.4f}".format(op.id, cc))
+        if cc < cc_cutoff: return True # return True if bad
+# check_symmetry_related_map_values()
+
 def half2full(map_h1, map_h2):
     assert map_h1.shape == map_h2.shape
     assert map_h1.unit_cell == map_h2.unit_cell

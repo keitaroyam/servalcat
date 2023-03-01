@@ -72,6 +72,8 @@ def add_arguments(parser):
                         help='By default it will split chain if max residue number > 9999 which is not supported by Refmac')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
+    parser.add_argument('--no_check_ncs_map', action='store_true', 
+                        help='Disable map NCS consistency test')
     parser.add_argument('--no_check_mask_with_model', action='store_true', 
                         help='Disable mask test using model')
     parser.add_argument("--prepare_only", action='store_true',
@@ -497,6 +499,9 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
             raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
                              "It is very likely you gave symmetry-expanded model along with symmetry operators.")
+        if not args.no_check_ncs_map and utils.maps.check_symmetry_related_map_values(st, maps[0][0]):
+            raise SystemExit("\nError: Too small map correlation.\n"
+                             "It is very likely your map does not follow symmetry of the model.")
         args.keywords.extend(utils.symmetry.ncs_ops_for_refmac(st.ncs))
         utils.model.expand_ncs(st_expanded)
         logger.writeln(" Saving expanded model: input_model_expanded.*")
