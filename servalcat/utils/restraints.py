@@ -150,7 +150,7 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     sio = io.StringIO()
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=sio, reorder=False,
                                   ignore_unknown_links=ignore_unknown_links)
-
+    for l in sio.getvalue().splitlines(): logger.writeln(" " + l)
     unknown_cc = set()
     link_related = set()
     nan_hydr = set()
@@ -162,13 +162,11 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 atom_str = "{}/{} {}/{}".format(cinfo.chain_ref.name, rinfo.res.name, rinfo.res.seqid, atom.name)
                 cc = rinfo.get_final_chemcomp(atom.altloc)
                 if not cc.find_atom(atom.name):
-                    msg = " Warning: definition not found for " + atom_str
+                    # warning message should have already been given by gemmi
                     if cc_org and cc_org.find_atom(atom.name):
-                        logger.writeln(msg + " - this atom should have been removed when linking")
                         if check_hydrogen or not atom.is_hydrogen():
                             link_related.add(rinfo.res.name)
                     else:
-                        logger.writeln(msg)
                         if check_hydrogen or not atom.is_hydrogen():
                             unknown_cc.add(rinfo.res.name)
                 
