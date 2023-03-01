@@ -189,6 +189,7 @@ def add_arguments(p):
     parser.add_argument('--cutoff', type=float, default=1e-5)
     parser.add_argument('--rate', type=float, default=1.5)
     parser.add_argument('--add_dummy_sigma', action='store_true', help="write dummy SIGF")
+    parser.add_argument('--as_intensity', action='store_true', help="if you want |F|^2")
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument('-o', '--output_prefix')
 
@@ -830,12 +831,19 @@ def fcalc(args):
                                       mott_bethe=args.source=="electron", monlib=monlib)
 
     hkldata = hkl.hkldata_from_asu_data(fc_asu, "FC")
-    if args.add_dummy_sigma:
-        hkldata.df["SIGFC"] = 1.
-        hkldata.write_mtz(args.output_prefix+".mtz", ["FC", "SIGFC"], types=dict(SIGFC="Q"))
+    if args.as_intensity:
+        hkldata.df["IC"] = numpy.abs(hkldata.df.FC)**2
+        labout = ["IC"]
+        if args.add_dummy_sigma:
+            hkldata.df["SIGIC"] = 1.
+            labout.append("SIGIC")
     else:
-        hkldata.write_mtz(args.output_prefix+".mtz", ["FC"])
+        labout = ["FC"]
+        if args.add_dummy_sigma:
+            hkldata.df["SIGFC"] = 1.
+            labout.append("SIGFC")
 
+    hkldata.write_mtz(args.output_prefix+".mtz", labout, types=dict(IC="J", SIGIC="Q", SIGFC="Q"))
     logger.writeln("{} written.".format(args.output_prefix+".mtz"))
 # fcalc()
 
