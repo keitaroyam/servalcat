@@ -58,14 +58,15 @@ def hkldata_from_mtz(mtz, labels, newlabels=None):
     if not set(labels).issubset(mtz.column_labels()):
         raise RuntimeError("All specified coulumns were not found from mtz.")
     
+    col_types = {x.label:x.type for x in mtz.columns}
     df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
-    df = df.astype({name: 'int32' for name in ['H', 'K', 'L']})
+    df = df.astype({col: 'int32' for col in col_types if col_types[col] == "H"})
+    df = df.astype({col: 'Int64' for col in col_types if col_types[col] in ("B", "Y", "I")}) # pandas's nullable int
     for lab in set(mtz.column_labels()).difference(labels+["H","K","L"]):
         del df[lab]
         
     if newlabels is not None:
         assert len(newlabels) == len(labels)
-        col_types = {x.label:x.type for x in mtz.columns}
         for i in range(1, len(newlabels)):
             if newlabels[i] == "": # means this is phase and should be transferred to previous column
                 assert col_types.get(labels[i]) == "P"

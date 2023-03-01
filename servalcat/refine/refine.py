@@ -413,7 +413,8 @@ class Refine:
         df = pandas.DataFrame({"Ncyc": range(ncycles+1)})
         if self.ll is not None:
             df["FSCaverage"] = [s["data"].get("FSCaverage", numpy.nan) for s in stats]
-            df["R"] = [s["data"].get("R", numpy.nan) for s in stats]
+            for r in ("R", "Rwork", "Rfree"):
+                df[r] = [s["data"].get(r, numpy.nan) for s in stats]
             df["-LL"] = [s["data"].get("-LL", numpy.nan) for s in stats]
         if self.refine_xyz and not self.unrestrained:
             df["rmsBOND"] =[s["geom"]["r.m.s.d."].get("Bond distances, non H") for s in stats]

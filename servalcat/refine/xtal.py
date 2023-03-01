@@ -11,18 +11,19 @@ import numpy
 import json
 import scipy.sparse
 from servalcat.utils import logger
-from servalcat.xtal.sigmaa import determine_mlf_params, mlf, calc_DFc
+from servalcat.xtal.sigmaa import determine_mlf_params, determine_mlf_params_from_cc, mlf, calc_DFc
 from servalcat import utils
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
 class LL_Xtal:
-    def __init__(self, hkldata, centric_and_selections, st, monlib, source="xray", mott_bethe=True, use_solvent=False):
+    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True, use_solvent=False):
         assert source in ("electron", "xray") # neutron?
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
         self.centric_and_selections = centric_and_selections
+        self.free = free
         self.st = st
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
@@ -37,10 +38,21 @@ class LL_Xtal:
         self.hkldata.df["FP_org"] = self.hkldata.df["FP"]
         self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
 
+        self.use_in_est = "test" if "FREE" in hkldata.df else "all"
+        self.use_in_target = "work" if "FREE" in hkldata.df else "all"
+        logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
+        logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
+
     def update_ml_params(self):
         # FIXME make sure D > 0
         determine_mlf_params(self.hkldata, self.fc_labs, self.D_labs,
-                             self.centric_and_selections, D_as_exp=True, S_as_exp=True)
+                             self.centric_and_selections, use=self.use_in_est)#, D_as_exp=True, S_as_exp=True)
+        for lab in self.D_labs + ["S"]:
+            self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] > 0, 0.01, inplace=True)
+            self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] < numpy.inf, 1, inplace=True)
+        #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs,
+        #                             self.centric_and_selections)
+
 
     def update_fc(self):
         if self.st.ncs:
@@ -114,20 +126,34 @@ class LL_Xtal:
                        self.fc_labs,
                        [self.hkldata.binned_df.loc[i_bin, lab] for lab in self.D_labs],
                        self.hkldata.binned_df.S[i_bin],
-                       self.centric_and_selections[i_bin])
+                       self.centric_and_selections[i_bin],
+                       use=self.use_in_target)
 
         return ret * 2 # friedel mates
     # calc_target()
 
     def calc_stats(self):
-        r = utils.hkl.r_factor(self.hkldata.df.FP_org,
-                               numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
-        logger.writeln("R = {:.4f}".format(r))
-        return {"summary": {"R": r, "-LL": self.calc_target()}}
+        calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP_org[sel],
+                                                numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel]))
+        ret = {"summary": {"-LL": self.calc_target()}}
+        if "FREE" in self.hkldata.df:
+            test_sel = (self.hkldata.df.FREE == self.free).fillna(False)
+            r_free = calc_r(test_sel)
+            r_work = calc_r(~test_sel)
+            logger.writeln("R_work = {:.4f} R_free = {:.4f}".format(r_work, r_free))
+            ret["summary"]["Rfree"] = r_free
+            ret["summary"]["Rwork"] = r_work
+        else:
+            r = utils.hkl.r_factor(self.hkldata.df.FP_org,
+                                   numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
+            logger.writeln("R = {:.4f}".format(r))
+            ret["summary"]["R"] = r
+        return ret
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
         dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
-        d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
+        d2ll_dab2 = numpy.empty(len(self.hkldata.df.index))
+        d2ll_dab2[:] = numpy.nan
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         for i_bin, _ in self.hkldata.binned():
@@ -136,7 +162,11 @@ class LL_Xtal:
             bin_d_max = self.hkldata.binned_df.d_max[i_bin]
             Ds = [max(0., self.hkldata.binned_df[lab][i_bin]) for lab in self.D_labs] # negative D is replaced with zero here
             S = self.hkldata.binned_df.S[i_bin]
-            for c, cidxes, nidxes in self.centric_and_selections[i_bin]:
+            for c, work, test in self.centric_and_selections[i_bin]:
+                if self.use_in_target == "all":
+                    cidxes = numpy.concatenate([work, test])
+                else:
+                    cidxes = work if self.use_in_target == "work" else test
                 Fcs = [self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]
                 Fc = calc_DFc(Ds, Fcs) # sum(D * Fc)
                 expip = numpy.exp(1j * numpy.angle(Fc))
@@ -191,7 +221,8 @@ class LL_Xtal:
 
         # second derivative
         d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
-        d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
+        valid_sel = numpy.isfinite(d2ll_dab2)
+        d2dfw_table.make_table(1./self.hkldata.d_spacings().to_numpy()[valid_sel], d2ll_dab2[valid_sel])
         b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso
                      for cra in self.st[0].all()]
         b_iso_min = min(b_iso_all)

@@ -26,7 +26,9 @@ def add_arguments(parser):
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
     parser.add_argument('--labin', required=True,
-                        help='MTZ column for F,SIGF')
+                        help='MTZ column for F,SIGF,FREE')
+    parser.add_argument('--free', type=int, default=0,
+                        help='flag number for test set')
     parser.add_argument('--model', required=True, nargs="+", action="append",
                         help='Input atomic model file(s)')
     parser.add_argument("-d", '--d_min', type=float)
@@ -43,6 +45,8 @@ def add_arguments(parser):
                         help="Do not consider bulk solvent contribution")
     parser.add_argument('--use_cc',  action='store_true',
                         help="Use CC(|F1|,|F2|) to CC(F1,F2) conversion to derive D and S")
+    parser.add_argument('--use', choices=["all", "work", "test"], default="all",
+                        help="Which reflections to be used for the parameter estimate.")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -98,9 +102,9 @@ def deriv_mlf_wrt_D_S_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     i1_i0_x = gemmi.bessel_i1_over_i0(2*Fo*DFc/Sigma) # m
     for i, (sqder, der) in enumerate(tmp):
-        deriv[i] = -numpy.sum(-sqder / Sigma + i1_i0_x * 2 * Fo * der / Sigma)
+        deriv[i] = -numpy.nansum(-sqder / Sigma + i1_i0_x * 2 * Fo * der / Sigma)
     
-    deriv[-1] = -numpy.sum((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon)
+    deriv[-1] = -numpy.nansum((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon)
     return deriv
 # deriv_mlf_wrt_D_S_acentric()
 
@@ -122,8 +126,8 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     tanh_x = numpy.tanh(Fo*DFc/Sigma)
     for i, (sqder, der) in enumerate(tmp):
-        deriv[i] = -numpy.sum(-0.5 * sqder / Sigma + tanh_x * Fo * der / Sigma)
-    deriv[-1] = -numpy.sum((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon)
+        deriv[i] = -numpy.nansum(-0.5 * sqder / Sigma + tanh_x * Fo * der / Sigma)
+    deriv[-1] = -numpy.nansum((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon)
     return deriv
 # deriv_mlf_wrt_D_S_centric()
 
@@ -132,26 +136,34 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
 #import atexit
 #atexit.register(profile.print_stats)
 #@profile
-def mlf(df, fc_labs, Ds, S, centric_sel):
+def mlf(df, fc_labs, Ds, S, centric_sel, use):
     ret = 0.
     func = (mlf_acentric, mlf_centric)
-    for c, cidxes, _ in centric_sel:
+    for c, work, test in centric_sel:
+        if use == "all":
+            cidxes = numpy.concatenate([work, test])
+        else:
+            cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
-        ret += numpy.sum(func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
+        ret += numpy.nansum(func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
     return ret
 # mlf()
 
 #@profile
-def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel):
+def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
     ret = []
     func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
-    for c, cidxes, _ in centric_sel:
+    for c, work, test in centric_sel:
+        if use == "all":
+            cidxes = numpy.concatenate([work, test])
+        else:
+            cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         ret.append((func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2, Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])))
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
-def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections):
+def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, use="all"):
     # theorhetical values
     cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
     cc_c = lambda cc: 2/(numpy.pi-2) * (cc**2*numpy.sqrt(1-cc**2) + cc * numpy.arctan(cc/numpy.sqrt(1-cc**2)) + (1-cc**2)**(3/2)-1)
@@ -173,7 +185,13 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     inv_sqrt_c_eps = 1. / numpy.sqrt(hkldata.df.epsilon.to_numpy() * (hkldata.df.centric.to_numpy() + 1))
     for i_bin, _ in hkldata.binned():
         # assume they are all acentrics.. only correct by c
-        cidxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
+        if use == "all":
+            cidxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            cidxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
+        valid_sel = numpy.isfinite(hkldata.df.FP.to_numpy()[cidxes])
+        cidxes = cidxes[valid_sel]
         factor = inv_sqrt_c_eps[cidxes]
         Fo = hkldata.df.FP.to_numpy()[cidxes] * factor
         mean_Fo2 = numpy.mean(Fo**2)
@@ -227,7 +245,8 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     logger.writeln(hkldata.binned_df.to_string())
 # determine_mlf_params_from_cc()
     
-def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_exp=False, S_as_exp=False):
+def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_exp=False, S_as_exp=False, use="all"):
+    assert use in ("all", "work", "test")
     if D_as_exp:
         transD = numpy.exp # D = transD(x)
         transD_deriv = numpy.exp # dD/dx
@@ -250,7 +269,13 @@ def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_
     for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
     for i_bin, _ in hkldata.binned():
-        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]])
+        if use == "all":
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
+        valid_sel = numpy.isfinite(hkldata.df.FP[idxes]) # as there is no nan-safe numpy.corrcoef
+        idxes = idxes[valid_sel]
         FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
         FP = hkldata.df.FP.to_numpy()[idxes]
         D = numpy.corrcoef(FP, FC)[1,0]
@@ -269,9 +294,9 @@ def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_
     for i_bin, idxes in hkldata.binned():
         x0 = [transD_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [transS_inv(hkldata.binned_df.S[i_bin])]
         def target(x):
-            return mlf(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
+            return mlf(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin], use)
         def grad(x):
-            g = deriv_mlf_wrt_D_S(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin])
+            g = deriv_mlf_wrt_D_S(hkldata.df, fc_labs, transD(x[:-1]), transS(x[-1]), centric_and_selections[i_bin], use)
             g[:-1] *= transD_deriv(x[:-1])
             g[-1] *= transS_deriv(x[-1])
             return g
@@ -310,8 +335,8 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return model
 # merge_models()
 
-def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
-    assert len(labin) == 2
+def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
+    assert 1 < len(labin) < 4
     assert source in ["electron", "xray", "neutron"]
     
     mtz = gemmi.read_mtz_file(hklin)
@@ -346,7 +371,14 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     for st in sts: st.spacegroup_hm = sg_use.hm
     mtz.spacegroup = sg_use
 
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["FP","SIGFP"])
+    newlabels = ["FP","SIGFP"]
+    if len(labin) == 3: newlabels.append("FREE")
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels)
+    bad_sigma = hkldata.df.SIGFP <= 0
+    n_bad_sigma = bad_sigma.sum()
+    if n_bad_sigma > 0:
+        logger.writeln("Removing {} reflections with SIGF<=0".format(n_bad_sigma))
+        hkldata.df = hkldata.df[~bad_sigma]
     hkldata.switch_to_asu()
     if 0: # intensity conversion
         hkldata.df.FP.where(hkldata.df.FP > 0, 0, inplace=True)
@@ -379,17 +411,34 @@ def process_input(hklin, labin, n_bins, xyzins, source, d_min=None):
     stats = hkldata.binned_df.copy()
     stats["n_all"] = 0
     stats["n_obs"] = 0
+    if "FREE" in hkldata.df:
+        stats["n_work"] = 0
+        stats["n_test"] = 0
+        
     for i_bin, idxes in hkldata.binned():
         centric_and_selections[i_bin] = []
         n_obs = 0
+        n_work, n_test = 0, 0
         for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
-            valid_sel = numpy.isfinite(g2.FP) & (g2.SIGFP > 0)
-            vidxes = g2.index[valid_sel]
-            nidxes = g2.index[~valid_sel] # missing reflections
-            centric_and_selections[i_bin].append((c, vidxes, nidxes))
+            valid_sel = numpy.isfinite(g2.FP)
+            if "FREE" in g2:
+                test_sel = (g2.FREE == free).fillna(False)
+                test = g2.index[test_sel]
+                work = g2.index[~test_sel]
+                n_work += (valid_sel & ~test_sel).sum()
+                n_test += (valid_sel & test_sel).sum()
+            else:
+                work = g2.index
+                test = type(work)([])
+            centric_and_selections[i_bin].append((c, work, test))
             n_obs += numpy.sum(valid_sel)
+            
         stats.loc[i_bin, "n_obs"] = n_obs
         stats.loc[i_bin, "n_all"] = len(idxes)
+        if "FREE" in hkldata.df:
+            stats.loc[i_bin, "n_work"] = n_work
+            stats.loc[i_bin, "n_test"] = n_test
+            
     stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
     logger.writeln(stats.to_string())
     return hkldata, sts, fc_labs, centric_and_selections
@@ -539,6 +588,7 @@ def main(args):
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin.split(","),
                                                                   n_bins=args.nbins,
+                                                                  free=args.free,
                                                                   xyzins=sum(args.model, []),
                                                                   source=args.source,
                                                                   d_min=args.d_min)
@@ -558,10 +608,10 @@ def main(args):
 
     if args.use_cc:
         logger.writeln("Estimating sigma-A parameters from CC..")
-        determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections)
+        determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
     else:
         logger.writeln("Estimating sigma-A parameters using ML..")
-        determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_as_exp, args.S_as_exp)
+        determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
 
     # Calculate maps
     log_out = "{}.log".format(args.output_prefix)

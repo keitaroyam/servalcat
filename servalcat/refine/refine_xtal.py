@@ -25,7 +25,9 @@ def add_arguments(parser):
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--nbins', type=int, default=20,
                         help="Number of bins (default: %(default)d)")
-    parser.add_argument("--labin", nargs=2, help="F SIGF input")
+    parser.add_argument("--labin", nargs="+", help="F SIGF FREE input")
+    parser.add_argument('--free', type=int, default=0,
+                        help='flag number for test set')
     parser.add_argument('--model', required=True,
                         help='Input atomic model file')
     parser.add_argument("--monlib",
@@ -35,6 +37,11 @@ def add_arguments(parser):
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
+    parser.add_argument('--jellybody', action='store_true',
+                        help="Use jelly body restraints")
+    parser.add_argument('--jellybody_params', nargs=2, type=float,
+                        metavar=("sigma", "dmax"), default=[0.01, 4.2],
+                        help="Jelly body sigma and dmax (default: %(default)s)")
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -78,6 +85,7 @@ def main(args):
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin,
                                                                   n_bins=args.nbins,
+                                                                  free=args.free,
                                                                   xyzins=[args.model],
                                                                   source=args.source,
                                                                   d_min=args.d_min)
@@ -99,7 +107,10 @@ def main(args):
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
-    ll = LL_Xtal(hkldata, centric_and_selections, st, monlib, source=args.source, use_solvent=not args.no_solvent)
+    if args.jellybody:
+        geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
+
+    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source, use_solvent=not args.no_solvent)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
