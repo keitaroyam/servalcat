@@ -236,6 +236,9 @@ class Refine:
 
         if self.ll is not None:
             self.ll.update_fc()
+        
+        self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
+        logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
         n_atoms = len(self.atoms)
@@ -287,8 +290,6 @@ class Refine:
             self.ll.overall_scale()
             self.ll.update_ml_params()
 
-        self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
-        logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
         if 0: # test of grad
@@ -384,7 +385,9 @@ class Refine:
     
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
-        if not self.unrestrained:
+        self.geom.geom.setup_nonbonded()
+        logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
+        if self.refine_xyz and not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
         if self.ll is not None:
             self.ll.update_fc()

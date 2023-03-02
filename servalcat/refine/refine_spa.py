@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import argparse
 import json
+import numpy
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
@@ -82,6 +83,8 @@ def add_arguments(parser):
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
+    parser.add_argument('--adp_restraint_power', type=float)
+    parser.add_argument('--adp_restraint_exp_fac', type=float)
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="refined")
@@ -144,8 +147,9 @@ def main(args):
                      refine_h=args.refine_h)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
-    if args.jellybody:
-        geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
+    if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
+    if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac
+    if args.jellybody: geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
 
     #logger.writeln("TEST: shift x+0.3 A")
     #for cra in st[0].all():
@@ -155,7 +159,8 @@ def main(args):
     if not args.no_trim: refiner.st.cell = maps[0][0].unit_cell
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
-        for s in stats: s["geom"] = s["geom"].to_dict()
+        for s in stats:
+            if "geom" in s: s["geom"] = s["geom"].to_dict()
         json.dump(stats, ofs, indent=2)
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 
@@ -192,6 +197,11 @@ def main(args):
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
 
+    if "geom" in stats[-1]:
+        rmsbond = stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"]
+        rmsangle = stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"]
+    else:
+        rmsbond, rmsangle = numpy.nan, numpy.nan
     logger.writeln("""
 =============================================================================
 * Final Summary *
@@ -216,8 +226,8 @@ coot --script {prefix}_coot.py
 List Fo-Fc map peaks in the ASU:
 servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
 =============================================================================
-""".format(rmsbond=stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"],
-           rmsangle=stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"],
+""".format(rmsbond=rmsbond,
+           rmsangle=rmsangle,
            fscavgs=fscavg_text.rstrip(),
            fsclog="{}_fsc.log".format(args.output_prefix),
            adpstats=adpstats_txt.rstrip(),
