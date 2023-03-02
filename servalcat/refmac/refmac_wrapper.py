@@ -261,7 +261,7 @@ def main(args):
 
     # Modify output
     if xyzin is not None:
-        pdbout, cifout = get_output_model_names(xyzout)
+        pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
             modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), args.keep_original_output)
 # main()
