@@ -140,7 +140,6 @@ def add_arguments(p):
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--bond_margin', type=float, default=1.1, help='(default: %(default).1f)')
-    parser.add_argument('--remove_unknown', action="store_true")
     parser.add_argument('-o','--output', help="Default: input_fixlink.{pdb|mmcif}")
 
     # merge_models
@@ -670,8 +669,7 @@ def fix_link(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
-    restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin,
-                                  remove_unknown=args.remove_unknown)
+    restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin)
     fileio.write_model(st, file_name=args.output)
 # fix_link()
     

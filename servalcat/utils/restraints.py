@@ -212,89 +212,113 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_found=True):
+def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True):
     """
-    Find links not registered in st.connections
+    Identify link ids for st.connections and find new links
     This is required for correctly recognizing link in gemmi.prepare_topology
-    if remove_unknown=True, undefined links and unmatched links are removed.
     Note that it ignores segment IDs
+    FIXME it assumes only one bond exists in a link. It may not be the case in future.
     """
     from servalcat.utils import model
 
-    logger.writeln("Checking links in model")
-    hunt = gemmi.LinkHunt()
-    hunt.index_chem_links(monlib)
-    matches = hunt.find_possible_links(st, bond_margin, 0)
-    known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p", "gap")
-    conns = [x for x in st.connections] # to check later
-    new_connections = []
-
-    for m in matches:
-        if m.conn:
-            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
-                                                                                                    m.cra1, m.cra2,
-                                                                                                    m.bond_length,
-                                                                                                    m.chem_link.rt.bonds[0].value))
-            if not m.cra1.atom_matches(m.conn.partner1): # need to swap
-                assert m.cra1.atom_matches(m.conn.partner2)
-                m.conn.partner1 = model.cra_to_atomaddress(m.cra1)
-                m.conn.partner2 = model.cra_to_atomaddress(m.cra2)
-
-            m.conn.link_id = m.chem_link.id
-            if m.conn in conns: # may not be found if id duplicated
-                conns.pop(conns.index(m.conn))
-        elif add_found:
-            # Known link is only accepted when in LINK record
-            if not m.chem_link or m.chem_link.id in known_links:
-                continue
-
-            logger.writeln(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
-                                                                                                    m.cra1, m.cra2,
-                                                                                                    m.bond_length,
-                                                                                                    m.chem_link.rt.bonds[0].value))
-            con = gemmi.Connection()
-            con.type = gemmi.ConnectionType.Covale # XXX may be others
-            con.link_id = m.chem_link.id
-            con.partner1 = model.cra_to_atomaddress(m.cra1)
-            con.partner2 = model.cra_to_atomaddress(m.cra2)
-            new_connections.append(con)
-
-    rm_idxes = []
-    con_idxes = dict((c,i) for i,c in enumerate(st.connections))
-    for con in conns:
-        if con.link_id in known_links: continue
+    logger.writeln("Checking links defined in the model")
+    for con in st.connections:
         if con.type == gemmi.ConnectionType.Hydrog: continue
         cra1, cra2 = st[0].find_cra(con.partner1, ignore_segment=True), st[0].find_cra(con.partner2, ignore_segment=True)
         if None in (cra1.atom, cra2.atom):
-            logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+            logger.writeln(" WARNING: atom(s) not found for link: id= {} atom1= {} atom2= {}".format(con.link_id, con.partner1, con.partner2))
             continue
-        
-        dist = cra1.atom.pos.dist(cra2.atom.pos)
-        m, swap, _, _ = monlib.match_link(cra1.residue, cra1.atom.name, cra1.atom.altloc,
-                                          cra2.residue, cra2.atom.name, cra2.atom.altloc)
-
-        if m:
-            if swap:
+        if con.asu == gemmi.Asu.Different:
+            nimage = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
+            image_idx = nimage.sym_idx
+            dist = nimage.dist()
+        else:
+            image_idx = 0
+            dist = cra1.atom.pos.dist(cra2.atom.pos)
+        atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, image_idx)
+        if con.link_id:
+            link = monlib.get_link(con.link_id)
+            inv = False
+            if link is None:
+                logger.writeln(" WARNING: link {} not found in the library. Please provide link dictionary.".format(con.link_id))
+                continue
+            else:
+                match, _, _ = monlib.test_link(link, cra1.residue.name, cra1.atom.name, cra2.residue.name, cra2.atom.name)
+                if not match and monlib.test_link(link, cra2.residue.name, cra2.atom.name, cra1.residue.name, cra1.atom.name)[0]:
+                    match = True
+                    inv = True
+                if not match:
+                    logger.writeln(" WARNING: link id and atoms mismatch: id= {} {}".format(link.id, atoms_str))
+                    continue
+        else:
+            link, inv, _, _ = monlib.match_link(cra1.residue, cra1.atom.name, cra1.atom.altloc,
+                                                cra2.residue, cra2.atom.name, cra2.atom.altloc)
+            if link:
+                con.link_id = link.id
+            else:
+                ideal_dist = monlib.find_ideal_distance(cra1, cra2)
+                logger.writeln(" Link unidentified (simple bond will be used): {} dist= {:.2f} ideal= {:.2f}".format(atoms_str,
+                                                                                                                     dist,
+                                                                                                                     ideal_dist))
+                continue
+        if link:
+            logger.writeln(" Link confirmed: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
+                                                                                          atoms_str,
+                                                                                          dist,
+                                                                                          link.rt.bonds[0].value))
+            if inv:
                 con.partner1 = model.cra_to_atomaddress(cra2)
                 con.partner2 = model.cra_to_atomaddress(cra1)
-            con.link_id = m.id
-            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.id,
-                                                                                                       cra1, cra2,
-                                                                                                       dist,
-                                                                                                       m.rt.bonds[0].value))
+    if len(st.connections) == 0:
+        logger.writeln(" no links defined in the model")
+
+    logger.writeln("Finding new links (will {} added)".format("be" if add_found else "not be"))
+    ns = gemmi.NeighborSearch(st[0], st.cell, 5.).populate()
+    cs = gemmi.ContactSearch(3.1)
+    cs.ignore = gemmi.ContactSearch.Ignore.AdjacentResidues # may miss polymer links not contiguous in a chain?
+    results = cs.find_contacts(ns)
+    onsb = set(gemmi.Element(x) for x in "ONSB")
+    n_found = 0
+    for r in results:
+        if st.find_connection_by_cra(r.partner1, r.partner2): continue
+        link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
+                                            r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
+                                            (r.dist / 1.4)**2)
+        if inv:
+            cra1, cra2 = r.partner2, r.partner1
         else:
-            logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
-            if remove_unknown: # should we just remove id?
-                i = con_idxes.get(con)
-                if i is not None: rm_idxes.append(i)
-
-    for i in sorted(rm_idxes, reverse=True):
-        st.connections.pop(i)
-
-    if add_found:
-        for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
-            st.connections.append(con)
-
+            cra1, cra2 = r.partner1, r.partner2
+        atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, r.image_idx)
+        if link:
+            if r.dist > link.rt.bonds[0].value * bond_margin: continue
+            logger.writeln(" New link found: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
+                                                                                          atoms_str,
+                                                                                          r.dist,
+                                                                                          link.rt.bonds[0].value))
+        elif find_metal_links:
+            # link only metal - O/N/S/B
+            if r.partner1.atom.element.is_metal == r.partner2.atom.element.is_metal: continue
+            if not r.partner1.atom.element in onsb and not r.partner2.atom.element in onsb: continue
+            ideal_dist = monlib.find_ideal_distance(r.partner1, r.partner2)
+            if r.dist > ideal_dist * bond_margin: continue
+            logger.writeln(" Metal link found: {} dist= {:.2f} ideal= {:.2f}".format(atoms_str,
+                                                                                     r.dist, ideal_dist))
+        n_found += 1
+        if not add_found: continue
+        con = gemmi.Connection()
+        con.name = "added{}".format(n_found)
+        if link:
+            con.link_id = link.id
+            con.type = gemmi.ConnectionType.Covale
+        else:
+            con.type = gemmi.ConnectionType.MetalC
+        con.asu = gemmi.Asu.Same if r.image_idx == 0 else gemmi.Asu.Different
+        con.partner1 = model.cra_to_atomaddress(cra1)
+        con.partner2 = model.cra_to_atomaddress(cra2)
+        con.reported_distance = r.dist
+        st.connections.append(con)
+    if n_found == 0:
+        logger.writeln(" no links found")
 # find_and_fix_links()
 
 def add_hydrogens(st, monlib, pos="elec"):
