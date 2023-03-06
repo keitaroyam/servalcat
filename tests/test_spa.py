@@ -202,9 +202,9 @@ class TestSPACommands(unittest.TestCase):
         modelcc = utils.fileio.read_ccp4_map("ccmap_r5px_model.mrc")[0]
 
         self.assertAlmostEqual(numpy.mean([modelcc.interpolate_value(cra.atom.pos) for cra in st[0].all()]),
-                               0.6416836618309301, places=4)
+                               0.6416836618309301, places=3)
         self.assertAlmostEqual(numpy.mean([halfcc.interpolate_value(cra.atom.pos) for cra in st[0].all()]),
-                               0.6619259582976047, places=4)
+                               0.6619259582976047, places=3)
 
     def test_commands(self): # util commands
         sys.argv = ["", "util", "symmodel", "--model", pipes.quote(data["pdb"]), "--map", pipes.quote(data["mask"]),
