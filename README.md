@@ -1,8 +1,6 @@
 # Servalcat
 **S**tructur**e** **r**efinement and **val**idation for **c**rystallography and single p**a**r**t**icle analysis
 
-Currently we focus on development for single particle analysis and there are only a few functions at the moment.
-
 ## Installation
 
 ```
@@ -16,7 +14,7 @@ pip install git+https://github.com/keitaroyam/servalcat.git
 ```
 Add `-U` option for updating.
 
-The required GEMMI version is now [v0.5.8](https://github.com/project-gemmi/gemmi/releases/tag/v0.5.8). Please update GEMMI as well if it is old (it should be done by pip).
+The required GEMMI version is now [v0.6.0](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.0). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
 
 ## Usage
 ```
