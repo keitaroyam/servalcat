@@ -10,6 +10,7 @@ import gemmi
 import numpy
 import json
 import os
+import io
 import shutil
 import argparse
 from servalcat.utils import logger
@@ -71,12 +72,14 @@ def add_arguments(parser):
                         help='By default it will split chain if max residue number > 9999 which is not supported by Refmac')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
+    parser.add_argument('--no_check_ncs_map', action='store_true', 
+                        help='Disable map NCS consistency test')
     parser.add_argument('--no_check_mask_with_model', action='store_true', 
                         help='Disable mask test using model')
     parser.add_argument("--prepare_only", action='store_true',
                         help="Stop before refinement")
-    parser.add_argument("--gemmi_prep", action='store_true',
-                        help="Use gemmi for crd/rst file preparation (do not use makecif)")
+    parser.add_argument("--no_refmacat", action='store_true',
+                        help="By default uses gemmi for crd/rst file preparation (do not use makecif)")
     # run_refmac options
     # TODO use group! like refmac options
     parser.add_argument('--ligand', nargs="*", action="append",
@@ -171,12 +174,12 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
-    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, monlib=monlib, source="electron",
                                                miller_array=hkldata.miller_array())
     labs_fc = ["FC"]
 
     if st_sr is not None:
-        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, monlib=monlib, source="electron",
                                                       miller_array=hkldata.miller_array())
         labs_fc.append("FC_sr")
 
@@ -269,6 +272,93 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     return fscavg_text
 # calc_fsc()
 
+def calc_fofc(st, st_expanded, maps, monlib, model_format, args):
+    logger.writeln("Starting Fo-Fc calculation..")
+    if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
+    logger.writeln(" model: {}".format(args.output_prefix+model_format))
+    
+    # for Fo-Fc in case of helical reconstruction, expand model more
+    # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
+    if args.twist is not None:
+        logger.writeln("Generating all helical copies in the box")
+        st_expanded = st.clone()
+        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
+        utils.model.expand_ncs(st_expanded)
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded_all", pdb=True, cif=True)
+
+    if args.mask_for_fofc:
+        logger.writeln("  mask: {}".format(args.mask_for_fofc))
+        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
+    elif args.mask_radius_for_fofc:
+        logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
+        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
+    else:
+        logger.writeln("  mask: not used")
+        mask = None
+        
+    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
+                                                      half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
+                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
+    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
+                         mask=mask, output_prefix="diffmap",
+                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
+    
+    # Create Coot script
+    spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
+                               model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
+                               mtz_file="diffmap.mtz",
+                               contour_fo=None if mask is None else 1.2,
+                               contour_fofc=None if mask is None else 3.0,
+                               ncs_ops=st.ncs)
+# calc_fofc()
+
+def write_final_summary(st, refmac_summary, fscavg_text, output_prefix):
+    if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
+        final_weight = refmac_summary["cycles"][-2]["actual_weight"]
+    else:
+        final_weight = "???"
+
+    adpstats_txt = ""
+    adp_stats = utils.model.adp_stats_per_chain(st[0])
+    max_chain_len = max([len(x[0]) for x in adp_stats])
+    max_num_len = max([len(str(x[1])) for x in adp_stats])
+    for chain, natoms, qs in adp_stats:
+        adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
+        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
+
+    logger.writeln("""
+=============================================================================
+* Final Summary *
+
+Rmsd from ideal
+  bond lengths: {rmsbond} A
+  bond  angles: {rmsangle} deg
+
+{fscavgs}
+ Run loggraph {fsclog} to see plots
+
+ADP statistics
+{adpstats}
+
+Weight used: {final_weight}
+             If you want to change the weight, give larger (looser restraints)
+             or smaller (tighter) value to --weight_auto_scale=.
+             
+Open refined model and diffmap.mtz with COOT:
+coot --script {prefix}_coot.py
+
+List Fo-Fc map peaks in the ASU:
+servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
+=============================================================================
+""".format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
+           rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
+           fscavgs=fscavg_text.rstrip(),
+           fsclog="{}_fsc.log".format(output_prefix),
+           adpstats=adpstats_txt.rstrip(),
+           final_weight=final_weight,
+           prefix=output_prefix))
+# write_final_summary()
+
 def lab_f_suffix(blur):
     if blur is None or blur == 0.:
         return ""
@@ -341,10 +431,12 @@ def determine_b_before_mask(st, maps, grid_start, mask, resolution):
     return -b
 # determine_b_before_mask()
 
-def prepare_files(st, maps, resolution, monlib, mask_in, args,
+def process_input(st, maps, resolution, monlib, mask_in, args,
                   shifted_model_prefix="shifted",
                   output_masked_prefix="masked_fs",
-                  output_mtz_prefix="starting_map"):
+                  output_mtz_prefix="starting_map",
+                  use_gemmi_prep=False, no_refmac_fix=False,
+                  use_refmac=True):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -364,34 +456,39 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     
     st.cell = unit_cell
     st.spacegroup_hm = "P 1"
-    ret["model_format"] = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
-
-    max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
-    if max_seq_num > 9999 and ret["model_format"] == ".pdb":
-        logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
-        ret["model_format"] = ".mmcif"
+    if use_refmac:
+        ret["model_format"] = ".mmcif" if st.input_format == gemmi.CoorFormat.Mmcif else ".pdb"
+        max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
+        if max_seq_num > 9999 and ret["model_format"] == ".pdb":
+            logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
+            ret["model_format"] = ".mmcif"
 
     # workaround for Refmac
     # TODO need to check external restraints
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    if args.gemmi_prep:
-        st.assign_cis_flags()
-        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                    "yes":gemmi.HydrogenChange.NoChange,
-                    "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-        topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                      reorder=True, ignore_unknown_links=False)
-    else:
-        topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
-    ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                    fix_microheterogeneity=not args.no_fix_microheterogeneity and not args.gemmi_prep,
-                                                    fix_resimax=not args.no_fix_resi9999,
-                                                    fix_nonpolymer=False)
-    chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
-    if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
-        logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
-        ret["model_format"] = ".mmcif"
-    if ret["model_format"] == ".mmcif" and not args.gemmi_prep: ret["refmac_fixes"].fix_nonpolymer(st)
+    if use_refmac:
+        if use_gemmi_prep:
+            st.assign_cis_flags()
+            h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                        "yes":gemmi.HydrogenChange.NoChange,
+                        "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+            topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
+                                          reorder=True, ignore_unknown_links=False)
+        elif not no_refmac_fix:
+            topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
+        else:
+            topo = None # not used
+        if not no_refmac_fix:
+            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
+                                                            fix_resimax=not args.no_fix_resi9999,
+                                                            fix_nonpolymer=False)
+        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+        if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
+            logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+            ret["model_format"] = ".mmcif"
+        if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
+            ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
         logger.writeln("Removing symmetry information from model.")
@@ -402,6 +499,9 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
         if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
             raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
                              "It is very likely you gave symmetry-expanded model along with symmetry operators.")
+        if not args.no_check_ncs_map and utils.maps.check_symmetry_related_map_values(st, maps[0][0]):
+            raise SystemExit("\nError: Too small map correlation.\n"
+                             "It is very likely your map does not follow symmetry of the model.")
         args.keywords.extend(utils.symmetry.ncs_ops_for_refmac(st.ncs))
         utils.model.expand_ncs(st_expanded)
         logger.writeln(" Saving expanded model: input_model_expanded.*")
@@ -415,11 +515,12 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     if mask is None and args.mask_radius:
         logger.writeln("Creating mask..")
         mask = utils.maps.mask_from_model(st_expanded, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
-        utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
-        
-    logger.writeln(" Saving input model with unit cell information")
-    utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
-    ret["model_file"] = "starting_model" + ret["model_format"]
+        #utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
+
+    if use_refmac:
+        logger.writeln(" Saving input model with unit cell information")
+        utils.fileio.write_model(st, "starting_model", pdb=True, cif=True)
+        ret["model_file"] = "starting_model" + ret["model_format"]
 
     if mask is not None:
         if args.invert_mask:
@@ -467,10 +568,10 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
             
             st.cell = new_cell
             st.spacegroup_hm = "P 1"
-
-            logger.writeln(" Saving model in trimmed map..")
-            utils.fileio.write_model(st, shifted_model_prefix, pdb=True, cif=True)
-            ret["model_file"] = shifted_model_prefix + ret["model_format"]
+            if use_refmac:
+                logger.writeln(" Saving model in trimmed map..")
+                utils.fileio.write_model(st, shifted_model_prefix, pdb=True, cif=True)
+                ret["model_file"] = shifted_model_prefix + ret["model_format"]
 
             logger.writeln(" Trimming maps..")
             for i in range(len(maps)): # Update maps
@@ -478,13 +579,14 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
 
-    if args.gemmi_prep:
+    if use_refmac and use_gemmi_prep:
         # TODO: make cispept, make link, remove unknown link id
         # TODO: cross validation?
         crdout = os.path.splitext(ret["model_file"])[0] + ".crd"
         ret["model_file"] = crdout
         ret["model_format"] = ".mmcif"
         args.keywords.append("make cr prepared")
+        gemmi.setup_for_crd(st)
         doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
         doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
         logger.writeln("crd file written: {}".format(crdout))
@@ -492,20 +594,13 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
-        logger.writeln(" Calculating noise variances..")
         map_labs = ["Fmap1", "Fmap2", "Fout"]
-        sig_lab = "SIGFout"
-        ret["lab_sigf"] = sig_lab + lab_f_suffix(args.blur)
         ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(args.blur)
         # TODO Add SIGF in case of half maps, when refmac is ready
         ret["lab_phi_half1"] = "Pmap1"
         ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(args.blur)
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
-        hkldata.df[sig_lab] = 0.
-        for i_bin, idxes in hkldata.binned():
-            hkldata.df.loc[idxes, sig_lab] = numpy.sqrt(hkldata.binned_df["var_noise"][i_bin])
-
         d_eff_full = hkldata.d_eff("FSCfull")
         logger.writeln("Effective resolution from FSCfull= {:.2f}".format(d_eff_full))
         ret["d_eff"] = d_eff_full
@@ -513,31 +608,39 @@ def prepare_files(st, maps, resolution, monlib, mask_in, args,
         map_labs = ["Fout"]
         sig_lab = None
 
-    if args.no_mask:
-        logger.writeln("Saving unmasked maps as mtz file..")
-        mtzout = output_mtz_prefix+".mtz"
-    else:
-        logger.writeln(" Saving masked maps as mtz file..")
-        mtzout = output_masked_prefix+"_obs.mtz"
+    if use_refmac:
+        if args.no_mask:
+            logger.writeln("Saving unmasked maps as mtz file..")
+            mtzout = output_mtz_prefix+".mtz"
+        else:
+            logger.writeln(" Saving masked maps as mtz file..")
+            mtzout = output_masked_prefix+"_obs.mtz"
 
-    hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
-    if "shifts" in ret:
-        for lab in map_labs: # apply phase shift
-            logger.writeln("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
-            hkldata.translate(lab, -ret["shifts"])
-        
-    write_map_mtz(hkldata, mtzout,
-                  map_labs=map_labs, sig_lab=sig_lab, blur=args.blur)
-    ret["mtz_file"] = mtzout
-    ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
-    ret["lab_phi"] = "Pout"
-    return ret
-# prepare_files()
+        hkldata.df.rename(columns=dict(F_map1="Fmap1", F_map2="Fmap2", FP="Fout"), inplace=True)
+        if "shifts" in ret:
+            for lab in map_labs: # apply phase shift
+                logger.writeln("  applying phase shift for {} with translation {}".format(lab, -ret["shifts"]))
+                hkldata.translate(lab, -ret["shifts"])
+
+        write_map_mtz(hkldata, mtzout, map_labs=map_labs, blur=args.blur)
+        ret["mtz_file"] = mtzout
+        ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
+        ret["lab_phi"] = "Pout"
+    else:
+        fac = hkldata.debye_waller_factors(b_iso=args.blur)
+        if "shifts" in ret: fac *= hkldata.translation_factor(-ret["shifts"])
+        for lab in ("F_map1", "F_map2", "FP"):
+            if lab in hkldata.df: hkldata.df[lab] *= fac
+    return hkldata, ret
+# process_input()
 
 def check_args(args):
     if not os.path.exists(args.model):
         raise SystemExit("Error: --model {} does not exist.".format(args.model))
 
+    if args.cross_validation and not args.halfmaps:
+        raise SystemExit("Error: half maps are needed when --cross_validation is given")
+    
     if args.mask_for_fofc and not os.path.exists(args.mask_for_fofc):
         raise SystemExit("Error: --mask_for_fofc {} does not exist".format(args.mask_for_fofc))
 
@@ -598,6 +701,17 @@ def check_args(args):
 
 def main(args):
     check_args(args)
+    use_gemmi_prep = False
+    if not args.prepare_only:
+        try:
+            refmac_ver = utils.refmac.check_version(args.exe)
+        except OSError as e:
+            raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
+        if not args.no_refmacat and refmac_ver and refmac_ver >= (5, 8, 404):
+            logger.writeln(" will use gemmi to prepare restraints")
+            use_gemmi_prep = True
+        else:
+            logger.writeln(" will use makecif to prepare restraints")
 
     logger.writeln("Input model: {}".format(args.model))
     st = utils.fileio.read_structure(args.model)
@@ -608,12 +722,18 @@ def main(args):
 
     try:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                       stop_for_unknowns=True, check_hydrogen=(args.hydrogen=="yes"))
+                                                       stop_for_unknowns=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
     if not args.no_link_check:
         utils.restraints.find_and_fix_links(st, monlib)
+
+    try:
+        utils.restraints.prepare_topology(st.clone(), monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                          check_hydrogen=(args.hydrogen=="yes"))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
 
     if args.mask_for_fofc and not args.no_check_mask_with_model:
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
@@ -628,9 +748,10 @@ def main(args):
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         
     shifted_model_prefix = "shifted"
-    file_info = prepare_files(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
-                              mask_in=args.mask, args=args,
-                              shifted_model_prefix=shifted_model_prefix)
+    _, file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
+                                 mask_in=args.mask, args=args,
+                                 shifted_model_prefix=shifted_model_prefix,
+                                 use_gemmi_prep=use_gemmi_prep)
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
@@ -721,9 +842,10 @@ def main(args):
         refmac_prefix_shaken = refmac_prefix+"_shaken_refined"
         logger.writeln("Starting refinement using half map 1 (model is shaken first)")
         logger.writeln("In this refinement, hydrogen is removed regardless of --hydrogen option")
-        if args.gemmi_prep:
+        if use_gemmi_prep:
             xyzin = refmac_prefix + ".crd"
-            prepare_crd(refmac_prefix+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+            prepare_crd(utils.fileio.read_structure(refmac_prefix+model_format),
+                        crdout=xyzin, ligand=[refmac_prefix+model_format],
                         make={"hydr":"n"})
         else:
             xyzin = refmac_prefix + model_format
@@ -746,9 +868,10 @@ def main(args):
 
         if args.hydrogen != "no": # does not work properly when 'yes' - we would need to keep hydrogen in input
             logger.writeln("Cross validation: 2nd run with hydrogen")
-            if args.gemmi_prep:
+            if use_gemmi_prep:
                 xyzin = refmac_prefix_shaken + ".crd"
-                prepare_crd(refmac_prefix_shaken+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+                prepare_crd(utils.fileio.read_structure(refmac_prefix_shaken+model_format),
+                            crdout=xyzin, ligand=[refmac_prefix+model_format],
                             make={"hydr":"a"})
             else:
                 xyzin = refmac_prefix_shaken + model_format
@@ -808,89 +931,10 @@ def main(args):
                            cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
 
     # Calc Fo-Fc (and updated) maps
-    logger.writeln("Starting Fo-Fc calculation..")
-    if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
-    logger.writeln(" model: {}".format(args.output_prefix+model_format))
-
-    # for Fo-Fc in case of helical reconstruction, expand model more
-    # XXX should we do it for FSC calculation also? Probably we should not do sharpen-unsharpen procedure for FSC calc either.
-    if args.twist is not None:
-        logger.writeln("Generating all helical copies in the box")
-        st_expanded = st.clone()
-        utils.symmetry.update_ncs_from_args(args, st_expanded, map_and_start=maps[0], filter_contacting=False)
-        utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded_all", pdb=True, cif=True,
-                                 cif_ref=cif_ref)
-
-    if args.mask_for_fofc:
-        logger.writeln("  mask: {}".format(args.mask_for_fofc))
-        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
-    elif args.mask_radius_for_fofc:
-        logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
-        mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
-    else:
-        logger.writeln("  mask: not used")
-        mask = None
-        
-    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
-                                                      half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
-                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
-    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
-                         mask=mask, output_prefix="diffmap",
-                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
-
+    calc_fofc(st, st_expanded, maps, monlib, model_format, args)
+    
     # Final summary
-    if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
-        final_weight = refmac_summary["cycles"][-2]["actual_weight"]
-    else:
-        final_weight = "???"
-
-    adpstats_txt = ""
-    adp_stats = utils.model.adp_stats_per_chain(st[0])
-    max_chain_len = max([len(x[0]) for x in adp_stats])
-    max_num_len = max([len(str(x[1])) for x in adp_stats])
-    for chain, natoms, qs in adp_stats:
-        adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
-        adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
-
-    # Create Coot script
-    spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
-                               model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
-                               mtz_file="diffmap.mtz",
-                               contour_fo=None if mask is None else 1.2,
-                               contour_fofc=None if mask is None else 3.0,
-                               ncs_ops=st.ncs)
-    logger.writeln("""
-=============================================================================
-* Final Summary *
-
-Rmsd from ideal
-  bond lengths: {rmsbond} A
-  bond  angles: {rmsangle} deg
-
-{fscavgs}
- Run loggraph {fsclog} to see plots
-
-ADP statistics
-{adpstats}
-
-Weight used: {final_weight}
-             If you want to change the weight, give larger (looser restraints)
-             or smaller (tighter) value to --weight_auto_scale=.
-             
-Open refined model and diffmap.mtz with COOT:
-coot --script {prefix}_coot.py
-
-List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
-=============================================================================
-""".format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
-           rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
-           fscavgs=fscavg_text.rstrip(),
-           fsclog="{}_fsc.log".format(args.output_prefix),
-           adpstats=adpstats_txt.rstrip(),
-           final_weight=final_weight,
-           prefix=args.output_prefix))
+    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix)
 # main()
         
 if __name__ == "__main__":

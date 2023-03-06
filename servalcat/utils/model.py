@@ -21,6 +21,9 @@ import string
 gemmi.IT92_normalize()
 gemmi.Element("X").it92.set_coefs(gemmi.Element("O").it92.get_coefs()) # treat X (unknown) as O
 
+u_to_b = 8 * numpy.pi**2
+b_to_u = 1. / u_to_b
+
 def shake_structure(st, sigma, copy=True):
     print("Randomizing structure with rmsd of {}".format(sigma))
     if copy:
@@ -51,11 +54,15 @@ def setup_entities(st, clear=False, clear_entity_type=False, overwrite_entity_ty
     st.deduplicate_entities()
 # setup_entities()
 
-def determine_blur_for_dencalc(st, grid):
-    b_min = min((cra.atom.b_iso for cra in st[0].all()))
-    eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in st[0].all() if cra.atom.aniso.nonzero()]
-    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * 8*numpy.pi**2)
+def minimum_b(m):
+    b_min = min((cra.atom.b_iso for cra in m.all()))
+    eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in m.all() if cra.atom.aniso.nonzero()]
+    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * u_to_b)
+    return b_min
+# minimum_b()
 
+def determine_blur_for_dencalc(st, grid):
+    b_min = minimum_b(st[0])
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
     return b_add
@@ -72,7 +79,7 @@ def calc_sum_ab(st):
     return ret
 # calc_sum_ab()
 
-def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-7, rate=1.5,
+def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": assert not mott_bethe
@@ -88,7 +95,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
             omit_proton = omit_h_electron = False
     
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
-    blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
+    #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
     logger.writeln("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
         
     if mott_bethe and not omit_proton and monlib is not None and st[0].has_hydrogen():
@@ -154,7 +161,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
         dc.grid.symmetrize_sum()
         sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
-        mb_000 = sum_ab * 0.023933660963366372 # 1 / (8 * pi() * pi() * bohrradius()
+        mb_000 = sum_ab * gemmi.mott_bethe_const() / 4
     else:
         logger.writeln("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
@@ -353,6 +360,48 @@ def cra_to_atomaddress(cra):
     return aa
 # cra_to_atomaddress()
 
+def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=True, fix_adp=True):
+    ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
+    cs = gemmi.ContactSearch(special_pos_threshold)
+    cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
+    cs.special_pos_cutoff_sq = 0
+    results = cs.find_contacts(ns)
+    found = {}
+    cra = {}
+    for r in results:
+        if r.partner1.atom != r.partner2.atom: continue
+        found.setdefault(r.partner1.atom, []).append(r.image_idx)
+        cra[r.partner1.atom] = r.partner1
+
+    if found: logger.writeln("Atoms on special position detected.")
+    ret = []
+    for atom in found:
+        images = found[atom]
+        n_images = len(images) + 1
+        sum_occ = atom.occ * n_images
+        logger.writeln(" {} multiplicity= {} images= {} occupancies_total= {:.2f}".format(cra[atom], n_images, images, sum_occ))
+        if sum_occ > 1 and fix_occ:
+            new_occ = atom.occ / n_images
+            logger.writeln("  correcting occupancy= {:.2f}".format(new_occ))
+            atom.occ = new_occ
+        if fix_pos:
+            fpos = gemmi.Fractional(st.cell.frac.apply(atom.pos))
+            fdiff = sum([(st.cell.images[i-1].apply(fpos) - fpos).wrap_to_zero() for i in images], gemmi.Fractional(0,0,0)) / n_images
+            diff = st.cell.orth.apply(fdiff)
+            atom.pos += gemmi.Position(diff)
+            logger.writeln("  correcting position= {} (diff= {})".format(atom.pos.tolist(), diff.tolist()))
+        if fix_adp and atom.aniso.nonzero():
+            fani = atom.aniso.transformed_by(st.cell.frac.mat)
+            fani_avg = sum([fani.transformed_by(st.cell.images[i-1].mat) for i in images], fani).scaled(1/n_images)
+            atom.aniso = fani_avg.transformed_by(st.cell.orth.mat)
+            logger.writeln("  correcting aniso= {}".format(atom.aniso.elements_pdb()))
+
+        mat_total = (numpy.identity(3) + sum(numpy.array(st.cell.images[i-1].mat) for i in images)) / n_images
+        ret.append((atom, images, mat_total))
+
+    return ret
+# find_special_positions()    
+
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     if len(st.ncs) == 0: return
     
@@ -531,6 +580,28 @@ def adp_stats_per_chain(model, ignore_zero_occ=True):
     return ret
 # adp_stats_per_chain()
 
+def reset_adp(model, bfactor=None, is_aniso=False):
+    for cra in model.all():
+        if bfactor is not None:
+            cra.atom.b_iso = bfactor
+        if not is_aniso:
+            cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
+        else:
+            if not cra.atom.aniso.nonzero() or bfactor is not None:
+                u = cra.atom.b_iso * b_to_u
+                cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
+# reset_adp()
+
+def shift_b(model, b):
+    u = b * b_to_u
+    for cra in model.all():
+        cra.atom.b_iso += b
+        if cra.atom.aniso.nonzero():
+            cra.atom.aniso.u11 += u
+            cra.atom.aniso.u22 += u
+            cra.atom.aniso.u33 += u
+# shift_b()
+
 def all_chain_ids(st):
     return [chain.name for model in st for chain in model]
 # all_chain_ids()
@@ -684,7 +755,7 @@ def cx_to_mx(ss): #SmallStructure to Structure
         a = st[-1][-1][-1][-1]
         a.name = site.label
         a.aniso = as_smat33f(site.aniso.transformed_by(cif2cart))
-        a.b_iso = site.u_iso * 8*numpy.pi**2
+        a.b_iso = site.u_iso * u_to_b
         #a.charge = ?
         a.element = site.element
         a.occ = site.occ

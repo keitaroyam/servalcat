@@ -578,7 +578,7 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
     return asudata
 # read_shelx_hkl()
 
-def read_smcif_hkl(cif_in):
+def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     # Very crude support for smcif - just because I do not know other varieties.
     # TODO other possible data types? (amplitudes?)
     # TODO check _refln_observed_status?
@@ -590,14 +590,17 @@ def read_smcif_hkl(cif_in):
         cell = gemmi.UnitCell(*cell_par)
     except:
         logger.writeln(" WARNING: no unit cell in this file")
-        cell = None
+        cell = cell_if_absent
 
     for optag in ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"):
         ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop(optag)]
         sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(ops))
         if sg: break
     else:
-        raise RuntimeError("symmetry operations not found in {}".format(cif_in))
+        sg = sg_if_absent
+
+    if cell is None or sg is None:
+        raise RuntimeError("Cell and/or symmetry operations not found in {}".format(cif_in))
         
     l = b.find_values("_refln_index_h").get_loop()
     i_hkl = [l.tags.index("_refln_index_{}".format(h)) for h in "hkl"]

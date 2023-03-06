@@ -53,22 +53,12 @@ def parse_keywords(inputs):
     return ret
 # parse_keywords()
 
-def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None,
+def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 no_adjust_hydrogen_distances=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
-    st = utils.fileio.read_structure(xyzin)
-    if not st.cell.is_crystal():
-        if auto_box_with_padding is not None:
-            st.cell = utils.model.box_from_model(st[0], auto_box_with_padding)
-            st.spacegroup_hm = "P 1"
-            logger.writeln("Box size from the model with padding of {}: {}".format(auto_box_with_padding, st.cell.parameters))
-        else:
-            raise SystemExit("Error: unit cell is not defined in the model.")
-
-
     # we do not have DOD. will not change ND4->NH4 and SPW->SPK, as hydrogen atom names are different
     for chain in st[0]:
         for res in chain:
@@ -76,7 +66,7 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                 logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
                 res.name = "HOH"
 
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    gemmi.setup_for_crd(st)
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
@@ -88,7 +78,6 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
         raise SystemExit("Error: {}".format(e))
 
     if make.get("cispept", "y") == "y": st.assign_cis_flags()
-
     utils.restraints.find_and_fix_links(st, monlib, add_found=(make.get("link", "n")=="y"))
     for con in st.connections:
         if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
@@ -106,7 +95,12 @@ def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", aut
                                                  fix_nonpolymer=False)
 
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=True, ignore_unknown_links=False) # we should remove logger here??
+    try:
+        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
+                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     if make.get("hydr") != "n" and st[0].has_hydrogen():
         if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
             resnames = st[0].get_all_residue_names()
@@ -195,7 +189,6 @@ def main(args):
             raise SystemExit("Error: Cannot execute {}. Check Refmac instllation or use --exe to give the location.\n{}".format(args.exe, e))
         if not refmac_ver:
             raise SystemExit("Error: Cannot get Refmac version.")
-        logger.writeln("Refmac version: {}".format(".".join(str(x) for x in refmac_ver)))
         if refmac_ver < (5, 8, 404):
             raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
 
@@ -222,10 +215,23 @@ def main(args):
     if xyzin is not None:
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
+        st = utils.fileio.read_structure(xyzin)
+        if not st.cell.is_crystal():
+            if args.auto_box_with_padding is not None:
+                st.cell = utils.model.box_from_model(st[0], args.auto_box_with_padding)
+                st.spacegroup_hm = "P 1"
+                logger.writeln("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
+            else:
+                raise SystemExit("Error: unit cell is not defined in the model.")
+        if any(not op.given for op in st.ncs):
+            logger.writeln("WARNING: Refmac ignores MTRIX (_struct_ncs_oper) records. Add following instructions if you need:")
+            logger.writeln("\n".join(utils.symmetry.ncs_ops_for_refmac(st.ncs))+"\n")
+            st.ncs.clear()
+            st.setup_cell_images()
+            # TODO set st.ncs if ncsc instructions given - but should be done outside of this function?
         crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
-        refmac_fixes = prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
+        refmac_fixes = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
-                                   auto_box_with_padding=args.auto_box_with_padding,
                                    no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
         opts["xyzin"] = crdout
 
@@ -258,7 +264,7 @@ def main(args):
 
     # Modify output
     if xyzin is not None:
-        pdbout, cifout = get_output_model_names(xyzout)
+        pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
             modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), args.keep_original_output)
 # main()

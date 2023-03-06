@@ -9,12 +9,10 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 import os
 import io
-import re
 import gemmi
-import numpy
-import pandas
 import string
 import random
+import numpy
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
@@ -70,7 +68,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
     return trans
 # rename_cif_modification_if_necessary()
 
-def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False, check_hydrogen=False,
+def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False,
                          ignore_monomer_dir=False):
     resnames = st[0].get_all_residue_names()
 
@@ -116,11 +114,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
         # If modification id is duplicated, need to rename
         rename_cif_modification_if_necessary(doc, monlib.modifications)
-        
-        monlib.insert_chemcomps(doc)
-        monlib.insert_chemlinks(doc)
-        monlib.insert_chemmods(doc)
-        
+        monlib.read_monomer_doc(doc)
         for b in doc:
             for row in b.find("_chem_comp.", ["id", "group"]):
                 if row.str(0) in monlib.monomers:
@@ -147,53 +141,51 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             logger.writeln("WARNING: ad-hoc restraints will be generated for {}".format(",".join(unknown_cc)))
             logger.writeln("         it is strongly recommended to generate them using AceDRG.")
     
-    st = st.clone()
+    return monlib
+# load_monomer_library()
+
+def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False):
+    # these checks can be done after sorting links
+    logger.writeln("Creating restraints..")
     sio = io.StringIO()
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=sio, reorder=True,
-                                  ignore_unknown_links=True)
-
-    # possible warnings:
-    # Warning: no atom X expected in XXX
-    # and others?
-    unknown_atoms_cc = set()
+    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=sio, reorder=False,
+                                  ignore_unknown_links=ignore_unknown_links)
+    for l in sio.getvalue().splitlines(): logger.writeln(" " + l)
+    unknown_cc = set()
     link_related = set()
-    for l in sio.getvalue().splitlines():
-        r = re.search("Warning: definition not found for [^/]*/([^/ ]*) [^/]*/([^\./]*)", l) # chain/resn seqid/atom.alt ; ignore alt
-        if r:
-            unk = r.group(2), r.group(1)
+    nan_hydr = set()
+    for cinfo in topo.chain_infos:
+        for rinfo in cinfo.res_infos:
+            cc_org = monlib.monomers[rinfo.res.name] if rinfo.res.name in monlib.monomers else None
+            for ia in reversed(range(len(rinfo.res))):
+                atom = rinfo.res[ia]
+                atom_str = "{}/{} {}/{}".format(cinfo.chain_ref.name, rinfo.res.name, rinfo.res.seqid, atom.name)
+                cc = rinfo.get_final_chemcomp(atom.altloc)
+                if not cc.find_atom(atom.name):
+                    # warning message should have already been given by gemmi
+                    if cc_org and cc_org.find_atom(atom.name):
+                        if check_hydrogen or not atom.is_hydrogen():
+                            link_related.add(rinfo.res.name)
+                    else:
+                        if check_hydrogen or not atom.is_hydrogen():
+                            unknown_cc.add(rinfo.res.name)
+                
+                if atom.is_hydrogen() and atom.calc_flag == gemmi.CalcFlag.Dummy:
+                    logger.writeln(" Warning: hydrogen {} could not be added - Check dictionary".format(atom_str))
+                    unknown_cc.add(rinfo.res.name)
+                elif any(numpy.isnan(atom.pos.tolist())): # TODO add NaN test before prepare_toplogy
+                    logger.writeln(" Warning: {} position NaN!".format(atom_str))
+                    nan_hydr.add(rinfo.res.name)
 
-            cc = monlib.monomers[unk[1]] if unk[1] in monlib.monomers else None
-            cc_atom = [x for x in cc.atoms if x.id == unk[0]] if cc else None
-            if cc and cc_atom: # if atom is found in chemcomp, it must be an atom that should be removed.
-                logger.writeln(l + " - this atom should have been removed when linking")
-                if check_hydrogen or not cc_atom[0].is_hydrogen():
-                    link_related.add(unk[1])
-            elif unk not in unknown_atoms_cc:
-                logger.writeln(l)
-                unknown_atoms_cc.add(unk)
-            continue
-
-        # something else
-        logger.writeln(l)
-
-    if not check_hydrogen:
-        todel = []
-        for unk in unknown_atoms_cc:
-            elements = [cra.atom.element for cra in st[0].all() if cra.residue.name==unk[1] and cra.atom.name==unk[0]]
-            if elements and elements[0].is_hydrogen:
-                todel.append(unk)
-        unknown_atoms_cc = unknown_atoms_cc - set(todel)
-        
-    unknown_cc = set([cc for at, cc in unknown_atoms_cc])
-        
-    if stop_for_unknowns and (unknown_cc or link_related):
+    if raise_error and (unknown_cc or link_related):
         msgs = []
         if unknown_cc: msgs.append("restraint cif file(s) for {}".format(",".join(unknown_cc)))
         if link_related: msgs.append("proper link cif file(s) for {} or check your model".format(",".join(link_related)))
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
-    
-    return monlib
-# load_monomer_library()
+    if raise_error and nan_hydr:
+        raise RuntimeError("Some hydrogen positions became NaN. The geometry of your model may be of low quality. Consider not adding hydrogen")
+    return topo
+# prepare_topology()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True
@@ -220,136 +212,113 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def load_ener_lib(path=None):
-    if path is None:
-        if "CLIBD_MON" not in os.environ:
-            logger.error("ERROR: CLIBD_MON is not set")
-            return {}
-        else:
-            path = os.path.join(os.environ["CLIBD_MON"], "ener_lib.cif")
-
-    if not os.path.exists(path):
-        logger.error("ERROR: ener_lib file not found: {}".format(path))
-        return {}
-
-    enelib = gemmi.cif.read(path).sole_block()
+def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True):
     """
-loop_
-_lib_atom.type
-_lib_atom.weight
-_lib_atom.hb_type
-_lib_atom.vdw_radius
-_lib_atom.vdwh_radius
-_lib_atom.ion_radius
-_lib_atom.element
-_lib_atom.valency
-_lib_atom.sp
-    """
-    loop = enelib.find_loop("_lib_atom.type").get_loop()
-    tags = [x.replace("_lib_atom.","") for x in loop.tags]
-    ret = {}
-    for i in range(loop.length()):
-        key = loop.val(i, 0) # type
-        #ret[key] = {}
-        d = {}
-        for j in range(1, loop.width()):
-            val = loop.val(i, j)
-            if tags[j] in ("weight", "vdw_radius", "vdwh_radius", "ion_radius"):
-                d[tags[j]] = float(val) if val != "." else None
-            elif tags[j] in ("valency", "sp"):
-                d[tags[j]] = int(val) if val != "." else None
-            else:
-                d[tags[j]] = val
-
-        ret[key] = d
-    return ret
-# load_ener_lib()
-
-def find_and_fix_links(st, monlib, bond_margin=1.1, remove_unknown=False, add_found=True):
-    """
-    Find links not registered in st.connections
+    Identify link ids for st.connections and find new links
     This is required for correctly recognizing link in gemmi.prepare_topology
-    if remove_unknown=True, undefined links and unmatched links are removed.
+    Note that it ignores segment IDs
+    FIXME it assumes only one bond exists in a link. It may not be the case in future.
     """
     from servalcat.utils import model
 
-    logger.writeln("Checking links in model")
-    hunt = gemmi.LinkHunt()
-    hunt.index_chem_links(monlib)
-    matches = hunt.find_possible_links(st, bond_margin, 0)
-    known_links = ("TRANS", "PTRANS", "NMTRANS", "CIS", "PCIS", "NMCIS", "p", "gap")
-    conns = [x for x in st.connections] # to check later
-    new_connections = []
-
-    for m in matches:
-        if m.conn:
-            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
-                                                                                                    m.cra1, m.cra2,
-                                                                                                    m.bond_length,
-                                                                                                    m.chem_link.rt.bonds[0].value))
-            if not m.cra1.atom_matches(m.conn.partner1): # need to swap
-                assert m.cra1.atom_matches(m.conn.partner2)
-                m.conn.partner1 = model.cra_to_atomaddress(m.cra1)
-                m.conn.partner2 = model.cra_to_atomaddress(m.cra2)
-
-            m.conn.link_id = m.chem_link.id
-            if m.conn in conns: # may not be found if id duplicated
-                conns.pop(conns.index(m.conn))
-        elif add_found:
-            # Known link is only accepted when in LINK record
-            if not m.chem_link or m.chem_link.id in known_links:
-                continue
-
-            logger.writeln(" Link detected:  {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.chem_link.id,
-                                                                                                    m.cra1, m.cra2,
-                                                                                                    m.bond_length,
-                                                                                                    m.chem_link.rt.bonds[0].value))
-            con = gemmi.Connection()
-            con.type = gemmi.ConnectionType.Covale # XXX may be others
-            con.link_id = m.chem_link.id
-            con.partner1 = model.cra_to_atomaddress(m.cra1)
-            con.partner2 = model.cra_to_atomaddress(m.cra2)
-            new_connections.append(con)
-
-    rm_idxes = []
-    con_idxes = dict((c,i) for i,c in enumerate(st.connections))
-    for con in conns:
-        if con.link_id in known_links: continue
-        cra1, cra2 = st[0].find_cra(con.partner1), st[0].find_cra(con.partner2)
+    logger.writeln("Checking links defined in the model")
+    for con in st.connections:
+        if con.type == gemmi.ConnectionType.Hydrog: continue
+        cra1, cra2 = st[0].find_cra(con.partner1, ignore_segment=True), st[0].find_cra(con.partner2, ignore_segment=True)
         if None in (cra1.atom, cra2.atom):
-            logger.writeln(" WARNING: atom(s) not found for link: atom1= {} atom2= {} id= {}".format(con.partner1, con.partner2, con.link_id))
+            logger.writeln(" WARNING: atom(s) not found for link: id= {} atom1= {} atom2= {}".format(con.link_id, con.partner1, con.partner2))
             continue
-        if cra1.atom.altloc != cra2.atom.altloc and "\0" not in (cra1.atom.altloc, cra2.atom.altloc):
-            logger.writeln(" WARNING: link between different altlocs (atom1= {} atom2= {} id= {}) is not allowed. Removing.".format(con.partner1, con.partner2, con.link_id))
-            i = con_idxes.get(con)
-            if i is not None: rm_idxes.append(i)
-            continue
-        
-        dist = cra1.atom.pos.dist(cra2.atom.pos)
-        m, swap = monlib.match_link(cra1.residue, cra1.atom.name, cra2.residue, cra2.atom.name,
-                                    cra1.atom.altloc if cra1.atom.altloc!="\0" else cra2.atom.altloc)
-        if m:
-            if swap:
+        if con.asu == gemmi.Asu.Different:
+            nimage = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
+            image_idx = nimage.sym_idx
+            dist = nimage.dist()
+        else:
+            image_idx = 0
+            dist = cra1.atom.pos.dist(cra2.atom.pos)
+        atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, image_idx)
+        if con.link_id:
+            link = monlib.get_link(con.link_id)
+            inv = False
+            if link is None:
+                logger.writeln(" WARNING: link {} not found in the library. Please provide link dictionary.".format(con.link_id))
+                continue
+            else:
+                match, _, _ = monlib.test_link(link, cra1.residue.name, cra1.atom.name, cra2.residue.name, cra2.atom.name)
+                if not match and monlib.test_link(link, cra2.residue.name, cra2.atom.name, cra1.residue.name, cra1.atom.name)[0]:
+                    match = True
+                    inv = True
+                if not match:
+                    logger.writeln(" WARNING: link id and atoms mismatch: id= {} {}".format(link.id, atoms_str))
+                    continue
+        else:
+            link, inv, _, _ = monlib.match_link(cra1.residue, cra1.atom.name, cra1.atom.altloc,
+                                                cra2.residue, cra2.atom.name, cra2.atom.altloc)
+            if link:
+                con.link_id = link.id
+            else:
+                ideal_dist = monlib.find_ideal_distance(cra1, cra2)
+                logger.writeln(" Link unidentified (simple bond will be used): {} dist= {:.2f} ideal= {:.2f}".format(atoms_str,
+                                                                                                                     dist,
+                                                                                                                     ideal_dist))
+                continue
+        if link:
+            logger.writeln(" Link confirmed: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
+                                                                                          atoms_str,
+                                                                                          dist,
+                                                                                          link.rt.bonds[0].value))
+            if inv:
                 con.partner1 = model.cra_to_atomaddress(cra2)
                 con.partner2 = model.cra_to_atomaddress(cra1)
-            con.link_id = m.id
-            logger.writeln(" Link confirmed: {} atom1= {} atom2= {} dist= {:.2f} ideal= {:.2f}".format(m.id,
-                                                                                                       cra1, cra2,
-                                                                                                       dist,
-                                                                                                       m.rt.bonds[0].value))
+    if len(st.connections) == 0:
+        logger.writeln(" no links defined in the model")
+
+    logger.writeln("Finding new links (will {} added)".format("be" if add_found else "not be"))
+    ns = gemmi.NeighborSearch(st[0], st.cell, 5.).populate()
+    cs = gemmi.ContactSearch(3.1)
+    cs.ignore = gemmi.ContactSearch.Ignore.AdjacentResidues # may miss polymer links not contiguous in a chain?
+    results = cs.find_contacts(ns)
+    onsb = set(gemmi.Element(x) for x in "ONSB")
+    n_found = 0
+    for r in results:
+        if st.find_connection_by_cra(r.partner1, r.partner2): continue
+        link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
+                                            r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
+                                            (r.dist / 1.4)**2)
+        if inv:
+            cra1, cra2 = r.partner2, r.partner1
         else:
-            logger.writeln(" WARNING: unidentified link: atom1= {} atom2= {} dist= {:.2f} id= {}".format(con.partner1, con.partner2, dist, con.link_id))
-            if remove_unknown: # should we just remove id?
-                i = con_idxes.get(con)
-                if i is not None: rm_idxes.append(i)
-
-    for i in sorted(rm_idxes, reverse=True):
-        st.connections.pop(i)
-
-    if add_found:
-        for con in new_connections: # st.connections should have not been modified earlier because referenced in the loop above
-            st.connections.append(con)
-
+            cra1, cra2 = r.partner1, r.partner2
+        atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, r.image_idx)
+        if link:
+            if r.dist > link.rt.bonds[0].value * bond_margin: continue
+            logger.writeln(" New link found: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
+                                                                                          atoms_str,
+                                                                                          r.dist,
+                                                                                          link.rt.bonds[0].value))
+        elif find_metal_links:
+            # link only metal - O/N/S/B
+            if r.partner1.atom.element.is_metal == r.partner2.atom.element.is_metal: continue
+            if not r.partner1.atom.element in onsb and not r.partner2.atom.element in onsb: continue
+            ideal_dist = monlib.find_ideal_distance(r.partner1, r.partner2)
+            if r.dist > ideal_dist * bond_margin: continue
+            logger.writeln(" Metal link found: {} dist= {:.2f} ideal= {:.2f}".format(atoms_str,
+                                                                                     r.dist, ideal_dist))
+        n_found += 1
+        if not add_found: continue
+        con = gemmi.Connection()
+        con.name = "added{}".format(n_found)
+        if link:
+            con.link_id = link.id
+            con.type = gemmi.ConnectionType.Covale
+        else:
+            con.type = gemmi.ConnectionType.MetalC
+        con.asu = gemmi.Asu.Same if r.image_idx == 0 else gemmi.Asu.Different
+        con.partner1 = model.cra_to_atomaddress(cra1)
+        con.partner2 = model.cra_to_atomaddress(cra2)
+        con.reported_distance = r.dist
+        st.connections.append(con)
+    if n_found == 0:
+        logger.writeln(" no links found")
 # find_and_fix_links()
 
 def add_hydrogens(st, monlib, pos="elec"):
@@ -358,7 +327,8 @@ def add_hydrogens(st, monlib, pos="elec"):
     st.entities.clear()
     st.setup_entities()
 
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, warnings=logger, ignore_unknown_links=True)
+    topo = prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, ignore_unknown_links=True)
+    
     if pos == "nucl":
         logger.writeln("Generating hydrogens at nucleus positions")
         resnames = st[0].get_all_residue_names()
@@ -367,264 +337,3 @@ def add_hydrogens(st, monlib, pos="elec"):
     else:
         logger.writeln("Generating hydrogens at electron positions")
 # add_hydrogens()
-
-def plane_deviations(atoms):
-    pp = gemmi.find_best_plane(atoms)
-    return [gemmi.get_distance_from_plane(a.pos, pp) for a in atoms]
-# plane_deviations()
-
-def nbc_z(nbc, nbc_ops):
-    cra1,cra2,imgidx,_,mindist,sigma,_,_ = nbc
-    
-    if imgidx == 0:
-        pos2 = cra2.atom.pos
-    else:
-        pos2 = gemmi.Position(nbc_ops[imgidx].apply(cra2.atom.pos))
-        
-    b = cra1.atom.pos.dist(pos2)
-    db = b - mindist
-    if db < 0:
-        return db/sigma
-    return 0.
-# nbc_z()
-
-class Restraints:
-    #import line_profiler
-    #profile = line_profiler.LineProfiler()
-    #import atexit
-    #atexit.register(profile.print_stats)
-    #@profile
-    def __init__(self, st, monlib, enerlib=None):
-        self.st = st # clone?
-        st.setup_cell_images()
-        self.monlib = monlib
-        self.enerlib = enerlib if enerlib is not None else load_ener_lib()
-        find_and_fix_links(self.st, self.monlib)
-        self.st.entities.clear()
-        self.st.setup_entities() # entity information is needed for links
-        self.topo = gemmi.prepare_topology(self.st, monlib, warnings=logger,
-                                           ignore_unknown_links=True, reorder=True) # updates atom serial
-        # lookup tables
-        self.lookup = dict((x.atom, (i, x)) for i, x in enumerate(self.st[0].all()))
-        self.nbc = []
-        self.nbc_transforms = []
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, nonbonded=5, chiral=5, plane=5)
-
-        self.set_atom_types()
-        self.construct_graph()
-        self.find_nonbonded()
-        self.set_ideal_chiral_volumes()
-    # __init__()
-    
-    #@profile
-    def construct_graph(self):
-        import networkx as nx
-        n_atoms = len(self.lookup)
-        g = nx.Graph()
-        for b in self.topo.bonds:
-            idx1 = self.lookup[b.atoms[0]][0]
-            idx2 = self.lookup[b.atoms[1]][0]
-            g.add_edge(idx1, idx2)
-            
-        self.g = g
-    # construct_graph()
-
-    def set_atom_types(self):
-        self.atom_types = {} # {resname: {atom_name: chem_type}}
-        for resname, mon in self.monlib.monomers.items():
-            self.atom_types[resname] = dict((a.id, a.chem_type) for a in mon.atoms)
-    # set_atom_types()
-
-    def get_chem_type(self, resname, atomname):
-        r = self.atom_types.get(resname)
-        if r: return r.get(atomname)
-        return None
-    # get_chem_type()
-
-    #@profile
-    def max_vdwr(self):
-        maxr = 0
-        for res in self.atom_types.values():
-            for at in res.values():
-                e = self.enerlib.get(at)
-                if e:
-                    maxr = max(maxr, e["vdw_radius"])
-        logger.writeln("maximum vdw_radius in this model= {}".format(maxr))
-        return maxr
-    # max_vdwr()
-
-    #@profile
-    def get_nbc_mindist(self, type1, type2, d_12):
-        default_min_dist = 3.4
-        ene1 = self.enerlib.get(type1)
-        ene2 = self.enerlib.get(type2)
-        vdwtype = 1
-        sigma = 0.2
-        if None in (ene1, ene2):
-            for t, e in ((type1, ene1), (type2, ene2)):
-                if e is None: logger.writeln("WARNING: unknwon energy type: {}".format(t))
-            return default_min_dist, sigma, vdwtype
-
-        # Test hbond
-        ht1, ht2 = ene1["hb_type"], ene2["hb_type"]
-        vdwr1, vdwr2 = ene1["vdw_radius"], ene2["vdw_radius"]
-        mindist = vdwr1 + vdwr2
-        
-        if ((ht1 in "AB" and ht2 in "DB") or
-            (ht2 in "AB" and ht1 in "DB")):
-            mindist -= 0.3 # ADHB
-            sigma = 0.2
-            vdwtype = 3
-
-        if d_12 == 3: # 1_4 related atoms
-            vdwtype = 2
-            sigma = 0.2
-            mindist -= 0.3
-
-        # TODO hydrogen ignored!!
-        # TODO in the same ring?
-        return mindist, sigma, vdwtype
-
-    # get_nbc_mindist()        
-
-    #@profile
-    def find_nonbonded(self):
-        def check_bonds(s, e): # return shortest path between (s,e). checks up to 3 bonds
-            if s not in self.g: return -1
-
-            checked = {s: 0}
-            for d in range(3):
-                for n1 in [x for x in checked if checked[x]==d]:
-                    for n2 in self.g.neighbors(n1):
-                        if e == n2: return d+1
-                        checked[n2] = d+1
-            return -1
-        # check_bonds()
-
-        self.nbc = []
-        self.nbc_transforms = []
-        ns = gemmi.NeighborSearch(self.st[0], self.st.cell, 4).populate()
-        cs = gemmi.ContactSearch(self.max_vdwr()*2)        
-        results = cs.find_contacts(ns)
-        for r in results: # TODO check alt loc!
-            idx1 = self.lookup[r.partner1.atom][0]
-            idx2 = self.lookup[r.partner2.atom][0]
-            idx1_2_d = check_bonds(idx1, idx2)
-            if idx1_2_d == 3 or idx1_2_d < 0:
-                type1 = self.get_chem_type(r.partner1.residue.name, r.partner1.atom.name)
-                type2 = self.get_chem_type(r.partner2.residue.name, r.partner2.atom.name)
-                
-                mindist, sigma, vdwtype = self.get_nbc_mindist(type1, type2, idx1_2_d)
-                if r.dist < mindist:
-                    #print('atom1="{}" atom2="{}" image={} dist={:.2f} id={:.2f} type={}'.format(r.partner1, r.partner2, r.image_idx, r.dist, mindist, vdwtype))
-                    z = (mindist - r.dist)/sigma
-                    self.nbc.append((r.partner1, r.partner2, r.image_idx, r.dist, mindist, sigma, z, vdwtype))
-
-        # convert for orthogonal coordiinates
-        transform = lambda x: self.st.cell.orth.combine(x).combine(self.st.cell.frac)
-        if self.nbc:
-            self.nbc_transforms = [transform(ns.get_image_transformation(i)) for i in range(max(x[2] for x in self.nbc)+1)]
-    # find_nonbonded()
-
-    #@profile
-    def set_ideal_chiral_volumes(self):
-        tmp = []
-        for chir in self.topo.chirs:
-            tmp.append(self.topo.ideal_chiral_abs_volume(chir))
-            
-        self.chir_vols = numpy.array(tmp)
-    # set_ideal_chiral_volumes()
-
-    #@profile
-    def show_all(self):
-        topo_d = dict(bond=self.topo.bonds, angle=self.topo.angles, torsion=self.topo.torsions,
-                      chiral=self.topo.chirs, plane=self.topo.planes, nonbonded=self.nbc)
-        dfs = {}
-        for k in topo_d:
-            topo_k = topo_d[k]
-
-            if k == "torsion":
-                atom_labels = ["atom{}".format(i+1) for i in range(4)]
-                df = pandas.DataFrame([[str(self.lookup[y][1]) for y in x.atoms] + [x.calculate(), x.restr.value,
-                                                                            x.restr.period, x.restr.esd, x.calculate_z(), x.restr.label]
-                                       for x in topo_k],
-                                      columns= atom_labels + ["model", "ideal", "period", "esd", "z", "label"])
-                df = df.loc[df.esd > 0]
-            elif k == "chiral":
-                idealstr = {gemmi.ChiralityType.Positive:"positive",
-                            gemmi.ChiralityType.Negative:"negative",
-                            gemmi.ChiralityType.Both:"both"}
-                df = pandas.DataFrame([[str(self.lookup[y][1]) for y in x.atoms] + [x.calculate(), self.topo.ideal_chiral_abs_volume(x),
-                                                                            idealstr[x.restr.sign], 0.2, x.check()] for x in topo_k],
-                                      columns=["atomc", "atom1", "atom2", "atom3", "model", "ideal_abs", "sign", "esd", "check"])
-                df["z"] = numpy.abs([b.calculate_z(iv, 0.2) for b, iv in zip(topo_k, df["ideal_abs"])])
-            elif k == "plane":
-                index = pandas.MultiIndex.from_arrays([["{}_{}".format(i, x.restr.label) for i, x in enumerate(topo_k) for y in x.atoms],
-                                                       [str(self.lookup[y][1]) for x in topo_k for y in x.atoms]],
-                                                       names=["label", "atom"])
-                df = pandas.DataFrame([(d, x.restr.esd) for i,x in enumerate(topo_k)
-                                       for y,d in zip(x.atoms, plane_deviations(x.atoms))],
-                                      index=index,
-                                      columns=["dev", "esd"])
-                df["z"] = numpy.abs(df.dev/df.esd)
-            elif k == "nonbonded":
-                df = pandas.DataFrame([(str(partner1), str(partner2), image_idx, dist, mindist, vdwtype, sigma, z)
-                                       for partner1, partner2, image_idx, dist, mindist, sigma, z, vdwtype in topo_k],
-                                      columns=["atom1", "atom2", "image", "model", "mindist", "vdwtype", "esd", "z"])
-            else:
-                n_atoms = dict(bond=2, angle=3, torsion=4)
-                atom_labels = ["atom{}".format(i+1) for i in range(n_atoms[k])]
-                df = pandas.DataFrame([[str(self.lookup[y][1]) for y in x.atoms] + [x.calculate(), x.restr.value, x.restr.esd, x.calculate_z()]
-                                       for x in topo_k],
-                                      columns= atom_labels + ["model", "ideal", "esd", "z"])
-
-            if k in ("angle", "torsion"): df["model"] = numpy.rad2deg(df["model"])
-            dfs[k] = df
-
-            if k == "chiral":
-                df = df.loc[(~df.check) | (df.z > self.outlier_sigmas[k])].sort_values("z", ascending=False)
-            elif k == "plane":
-                # sort by z within label (same plane)
-                df = df.reset_index().sort_values(["label", "z"], ascending=[True, False]).set_index(["label", "atom"])
-                # sort by max z
-                tmp = df.groupby(level=0)["z"].max()
-                idx=tmp[tmp > self.outlier_sigmas[k]].sort_values(ascending=False).index
-                df = df.loc[idx]
-            else:
-                df = df.loc[(df.z > self.outlier_sigmas[k])].sort_values("z", ascending=False)
-
-            n_outl = len(df.index.unique(0)) if k == "plane" else len(df.index)
-            logger.writeln("\n{} {} outliers (> {} sigma)".format(n_outl, k, self.outlier_sigmas[k]))
-            if n_outl > 0:
-                logger.writeln(df.to_string(index=(k=="plane")))
-
-        logger.writeln("\nSummary:")
-        tmp = []
-        for k in dfs:
-            df = dfs[k]
-            if k == "nonbonded": df = df.loc[df.model < df.mindist]
-            tmp.append([k, len(df.index), numpy.sqrt(numpy.mean((df.z*df.esd)**2)), numpy.mean(df.esd), numpy.sqrt(numpy.mean(df.z**2))])
-            if k == "torsion":
-                for p, g in df.groupby("period", sort=True):
-                    tmp.append(["{} (period {})".format(k, p), len(g.index), numpy.sqrt(numpy.mean((g.z*g.esd)**2)),
-                                numpy.mean(g.esd), numpy.sqrt(numpy.mean(g.z**2))])
-            elif k == "chiral":
-                df = df.loc[df.sign!="both"]
-                tmp.append(["{} (non-both)".format(k), len(df.index), numpy.sqrt(numpy.mean((df.z*df.esd)**2)),
-                            numpy.mean(df.esd), numpy.sqrt(numpy.mean(df.z**2))])
-
-            
-        logger.writeln(pandas.DataFrame(tmp,
-                                      columns=["Restraint type", "number", "rmsd", "mean(esd)", "rmsz"],
-                                      ).to_string(index=False, float_format="%.3f"))
-
-        logger.writeln("\n!WARNING!: this function has problems at the moment. Will be sorted out later.")
-        logger.writeln("""\
-TODO
-- nbc distance for metals (e.g. Mg-O) and hydrogen atoms are not correct
-- redundant restraint definitions should be sorted out (e.g. A has C2e-nyu0 and C3e-nyu0 for the same atoms)
-- separate refined and non-refined atoms (hydrogen, occ 0?)""")
-
-        return dfs
-    # show_all()
-# class Restraints

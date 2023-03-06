@@ -244,7 +244,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
         logger.writeln("WARNING: --sharpening_b={} is given".format(sharpening_b))
     
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
-    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source="electron",
                                                miller_array=hkldata.miller_array())
     if mask is not None:
         fc_map = hkldata.fft_map("FC", grid_size=mask.shape)
@@ -260,7 +260,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
 
     if omit_proton or omit_h_electron:
-        hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, cutoff=1e-7, monlib=monlib, source="electron",
+        hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source="electron",
                                                    omit_proton=omit_proton, omit_h_electron=omit_h_electron,
                                                    miller_array=hkldata.miller_array())
     

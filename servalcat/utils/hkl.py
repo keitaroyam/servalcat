@@ -58,14 +58,15 @@ def hkldata_from_mtz(mtz, labels, newlabels=None):
     if not set(labels).issubset(mtz.column_labels()):
         raise RuntimeError("All specified coulumns were not found from mtz.")
     
+    col_types = {x.label:x.type for x in mtz.columns}
     df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
-    df = df.astype({name: 'int32' for name in ['H', 'K', 'L']})
+    df = df.astype({col: 'int32' for col in col_types if col_types[col] == "H"})
+    df = df.astype({col: 'Int64' for col in col_types if col_types[col] in ("B", "Y", "I")}) # pandas's nullable int
     for lab in set(mtz.column_labels()).difference(labels+["H","K","L"]):
         del df[lab]
         
     if newlabels is not None:
         assert len(newlabels) == len(labels)
-        col_types = {x.label:x.type for x in mtz.columns}
         for i in range(1, len(newlabels)):
             if newlabels[i] == "": # means this is phase and should be transferred to previous column
                 assert col_types.get(labels[i]) == "P"
@@ -155,7 +156,10 @@ class HklData:
 
     def switch_to_asu(self):
         # Need to care phases
-        pass
+        assert not any(numpy.iscomplexobj(self.df[x]) for x in self.df)
+        hkl = self.miller_array().to_numpy()
+        self.sg.switch_to_asu(hkl)
+        self.df[["H","K","L"]] = hkl
 
     def copy(self, d_min=None, d_max=None):
         # FIXME we should reset_index here? after resolution truncation, max(df.index) will be larger than size.
@@ -515,15 +519,16 @@ class HklData:
             return k1, B1
     # scale_k_and_b()
 
+    def translation_factor(self, shift):
+        if type(shift) != gemmi.Position:
+            shift = gemmi.Position(*shift)
+        return numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
+                                                self.cell.fractionalize(shift).tolist()))
+    # translation_factor()
     def translate(self, lab, shift):
         # apply phase shift
         assert numpy.iscomplexobj(self.df[lab])
-        
-        if type(shift) != gemmi.Position:
-            shift = gemmi.Position(*shift)
-            
-        self.df[lab] *= numpy.exp(2.j*numpy.pi*numpy.dot(self.miller_array(),
-                                                         self.cell.fractionalize(shift).tolist()))
+        self.df[lab] *= self.translation_factor(shift)
     # translate()
 
     def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None,

@@ -25,6 +25,9 @@ import servalcat.xtal.run_refmac_small
 import servalcat.xtal.sigmaa
 import servalcat.refmac.refmac_wrapper
 import servalcat.utils.commands
+import servalcat.refine.refine_geom
+import servalcat.refine.refine_spa
+import servalcat.refine.refine_xtal
 
 from servalcat.utils import logger
 
@@ -79,6 +82,9 @@ def main():
                    #show=servalcat.utils.show,
                    util=servalcat.utils.commands,
                    refmac5=servalcat.refmac.refmac_wrapper,
+                   refine_geom=servalcat.refine.refine_geom,
+                   refine_spa_norefmac=servalcat.refine.refine_spa,
+                   refine_xtal_norefmac=servalcat.refine.refine_xtal,
                    )
 
     for n in modules:
