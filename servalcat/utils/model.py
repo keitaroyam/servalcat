@@ -380,7 +380,7 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
         n_images = len(images) + 1
         sum_occ = atom.occ * n_images
         logger.writeln(" {} multiplicity= {} images= {} occupancies_total= {:.2f}".format(cra[atom], n_images, images, sum_occ))
-        if sum_occ > 1 and fix_occ:
+        if sum_occ > 1.001 and fix_occ:
             new_occ = atom.occ / n_images
             logger.writeln("  correcting occupancy= {:.2f}".format(new_occ))
             atom.occ = new_occ
@@ -403,95 +403,35 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
 # find_special_positions()    
 
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
+    # TODO modify st.connections for atoms at special positions
     if len(st.ncs) == 0: return
-    
+    n_chains = len(st[0]) # number of chains before expansion
+    specs = find_special_positions(st, special_pos_threshold)
+    lookup = {x[0]:None for x in specs}
+    for i, chain in enumerate(st[0]):
+        for j, res in enumerate(chain):
+            for k, atom in enumerate(res):
+                for x in lookup:
+                    if x == atom: lookup[x] = (i, j, k)
     logger.writeln("Expanding symmetry..")
-    # Take care of special positions
-    if special_pos_threshold >= 0:
-        # First expand ncs with Dup regardless of the choice
-        st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
-        cra2key = lambda x: (x.chain.name, x.residue.seqid.num, x.residue.seqid.icode,
-                             x.atom.name, x.atom.element.name, x.atom.altloc.replace("\0"," "))
-        ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
-        cs = gemmi.ContactSearch(special_pos_threshold)
-        #cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
-        #cs.special_pos_cutoff_sq = special_pos_threshold
-        results = cs.find_contacts(ns)
-
-        # find overlaps between different segments
-        pairs = {}
-        cra_dict = {}
-        for r in results:
-            if r.partner1.residue.segment == r.partner2.residue.segment: continue
-            key1, key2 = cra2key(r.partner1), cra2key(r.partner2)
-            if key1 == key2:
-                segi1, segi2 = int(r.partner1.residue.segment), int(r.partner2.residue.segment)
-                pairs.setdefault(key1, []).append([segi1, segi2])
-                cra_dict[key1+(segi1,)] = cra_to_atomaddress(r.partner1)
-                cra_dict[key1+(segi2,)] = cra_to_atomaddress(r.partner2)
-
-        if pairs: logger.writeln("Atoms on special position detected.")
-        res_to_be_removed = []
-        for key in sorted(pairs):
-            logger.writeln(" Site: chain='{}' seq='{}{}' atom='{}' elem='{}' altloc='{}'".format(*key))
-            # use graph to find connected components
-            segs = sorted(set(sum(pairs[key], []))) # index->segid
-            segd = dict([(s,i) for i,s in enumerate(segs)]) # reverse lookup
-            g = numpy.zeros((len(segs),len(segs)), dtype=int)
-            for p in pairs[key]:
-                i, j = segd[p[0]], segd[p[1]]
-                g[i,j] = g[j,i] = 1
-            nc, labs = scipy.sparse.csgraph.connected_components(g, directed=False)
-            groups = [[] for i in range(nc)] # list of segids
-            for i, l in enumerate(labs): groups[l].append(segs[i])
-            for group in groups:
-                group.sort() # first segid will be kept
-                sum_occ = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.occ for i in group])
-                logger.writeln("  multiplicity= {} occupancies_total= {:.2f} segids= {}".format(len(group), sum_occ, group))
-                sum_pos = sum([st[0].find_cra(cra_dict[key+(i,)]).atom.pos for i in group], gemmi.Position(0,0,0))
-                if len(group) < 2: continue # should never happen
-                # modify first atom
-                cra0 = st[0].find_cra(cra_dict[key+(group[0],)])
-                cra0.atom.occ = max(1, sum_occ)
-                cra0.atom.pos = sum_pos/len(group)
-                # remove remaining atoms
-                for g in group[1:]:
-                    cra = st[0].find_cra(cra_dict[key+(g,)])
-                    cra.residue.remove_atom(cra.atom.name, cra.atom.altloc, cra.atom.element)
-                    if len(cra.residue) == 0: # empty residue needs to be removed
-                        r_idx = [i for i, r in enumerate(cra.chain) if r==cra.residue]
-                        res_to_be_removed.append((cra.chain, r_idx[0]))
-                        
-        chain_to_be_removed = []
-        res_to_be_removed.sort(key=lambda x:([x[0].name, x[1]]))
-        for chain, idx in reversed(res_to_be_removed):
-            del chain[idx]
-            if len(chain) == 0: # empty chain needs to be removed..
-                c_idx = [i for i, c in enumerate(st[0]) if c==chain]
-                chain_to_be_removed.append(c_idx[0])
-        chain_to_be_removed.sort()
-        for idx in reversed(chain_to_be_removed): #
-            del st[0][idx] # we cannot use remove_chain() because ID may be duplicated
-
-        # copy segment to subchain, as segment is not written to mmCIF file
-        for chain in st[0]:
-            for res in chain:
-                res.subchain = res.segment
-                
-        # rename chain IDs
-        if howtoname != gemmi.HowToNameCopiedChain.Dup:
-            # want to keep original chain IDs
-            for chain in st[0]:
-                for res in chain:
-                    if res.segment == "0": res.segment = ""
-
-            # new id = original id + ncs id
-            st[0].split_chains_by_segments(gemmi.HowToNameCopiedChain.Dup)
-            if howtoname == gemmi.HowToNameCopiedChain.Short:
-                st.shorten_chain_names()
-    else:
-        st.expand_ncs(howtoname)
-
+    st.expand_ncs(howtoname)
+    if not specs: return
+    cs_count = len(st.find_spacegroup().operations())
+    todel = []
+    for atom, images, _ in specs:
+        if not lookup[atom]: continue # should not happen
+        ic, ir, ia = lookup[atom]
+        mult = 1
+        for img in images:
+            # ignore crystallographic symmetry
+            if (img - cs_count + 1) % cs_count != 0: continue
+            mult += 1
+            idx = img - cs_count + 1
+            todel.append((idx * n_chains + ic, ir, ia))
+        # correct occupancy
+        st[0][ic][ir][ia].occ *= mult
+    for ic, ir, ia in sorted(todel, reverse=True):
+        del st[0][ic][ir][ia]
 # expand_ncs()
 
 def prepare_assembly(name, chains, ops, is_helical=False):
