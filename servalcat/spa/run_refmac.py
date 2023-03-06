@@ -626,13 +626,12 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         ret["mtz_file"] = mtzout
         ret["lab_f"] = "Fout" + lab_f_suffix(args.blur)
         ret["lab_phi"] = "Pout"
-        return ret
     else:
         fac = hkldata.debye_waller_factors(b_iso=args.blur)
         if "shifts" in ret: fac *= hkldata.translation_factor(-ret["shifts"])
         for lab in ("F_map1", "F_map2", "FP"):
             if lab in hkldata.df: hkldata.df[lab] *= fac
-        return hkldata
+    return hkldata, ret
 # process_input()
 
 def check_args(args):
@@ -749,10 +748,10 @@ def main(args):
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         
     shifted_model_prefix = "shifted"
-    file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
-                              mask_in=args.mask, args=args,
-                              shifted_model_prefix=shifted_model_prefix,
-                              use_gemmi_prep=use_gemmi_prep)
+    _, file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
+                                 mask_in=args.mask, args=args,
+                                 shifted_model_prefix=shifted_model_prefix,
+                                 use_gemmi_prep=use_gemmi_prep)
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
