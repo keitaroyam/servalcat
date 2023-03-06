@@ -845,7 +845,8 @@ def main(args):
         logger.writeln("In this refinement, hydrogen is removed regardless of --hydrogen option")
         if use_gemmi_prep:
             xyzin = refmac_prefix + ".crd"
-            prepare_crd(refmac_prefix+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+            prepare_crd(utils.fileio.read_structure(refmac_prefix+model_format),
+                        crdout=xyzin, ligand=[refmac_prefix+model_format],
                         make={"hydr":"n"})
         else:
             xyzin = refmac_prefix + model_format
@@ -870,7 +871,8 @@ def main(args):
             logger.writeln("Cross validation: 2nd run with hydrogen")
             if use_gemmi_prep:
                 xyzin = refmac_prefix_shaken + ".crd"
-                prepare_crd(refmac_prefix_shaken+model_format, crdout=xyzin, ligand=[refmac_prefix+model_format],
+                prepare_crd(utils.fileio.read_structure(refmac_prefix_shaken+model_format),
+                            crdout=xyzin, ligand=[refmac_prefix+model_format],
                             make={"hydr":"a"})
             else:
                 xyzin = refmac_prefix_shaken + model_format

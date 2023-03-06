@@ -53,22 +53,12 @@ def parse_keywords(inputs):
     return ret
 # parse_keywords()
 
-def prepare_crd(xyzin, crdout, ligand, make, monlib_path=None, h_pos="elec", auto_box_with_padding=None,
+def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 no_adjust_hydrogen_distances=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
-    st = utils.fileio.read_structure(xyzin)
-    if not st.cell.is_crystal():
-        if auto_box_with_padding is not None:
-            st.cell = utils.model.box_from_model(st[0], auto_box_with_padding)
-            st.spacegroup_hm = "P 1"
-            logger.writeln("Box size from the model with padding of {}: {}".format(auto_box_with_padding, st.cell.parameters))
-        else:
-            raise SystemExit("Error: unit cell is not defined in the model.")
-
-
     # we do not have DOD. will not change ND4->NH4 and SPW->SPK, as hydrogen atom names are different
     for chain in st[0]:
         for res in chain:
@@ -225,10 +215,23 @@ def main(args):
     if xyzin is not None:
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
+        st = utils.fileio.read_structure(xyzin)
+        if not st.cell.is_crystal():
+            if args.auto_box_with_padding is not None:
+                st.cell = utils.model.box_from_model(st[0], args.auto_box_with_padding)
+                st.spacegroup_hm = "P 1"
+                logger.writeln("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
+            else:
+                raise SystemExit("Error: unit cell is not defined in the model.")
+        if any(not op.given for op in st.ncs):
+            logger.writeln("WARNING: Refmac ignores MTRIX (_struct_ncs_oper) records. Add following instructions if you need:")
+            logger.writeln("\n".join(utils.symmetry.ncs_ops_for_refmac(st.ncs))+"\n")
+            st.ncs.clear()
+            st.setup_cell_images()
+            # TODO set st.ncs if ncsc instructions given - but should be done outside of this function?
         crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
-        refmac_fixes = prepare_crd(xyzin, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
+        refmac_fixes = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
-                                   auto_box_with_padding=args.auto_box_with_padding,
                                    no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
         opts["xyzin"] = crdout
 
