@@ -95,7 +95,6 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
-    parser.add_argument('--trim_fofc_mtz', action="store_true", help="diffmap.mtz will have smaller cell (if --mask_for_fofc is given)")
     parser.add_argument("--fsc_resolution", type=float,
                         help="High resolution limit for FSC calculation. Default: Nyquist")
 # add_arguments()
@@ -109,6 +108,7 @@ def parse_args(arg_list):
 def main(args):
     args.mask = None
     args.invert_mask = False
+    args.trim_fofc_mtz = args.mask_for_fofc is not None
     args.cross_validation_method = "throughout"
     check_args(args)    
     refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
