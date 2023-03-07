@@ -496,39 +496,17 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
 
 def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
     nmodels = len(fc_labs)
-    ofs = open(log_out, "w")
-    ofs.write("""$TABLE: Statistics :
-$GRAPHS
-: log(Mn(|F|^2)) and variances :A:1,7,8,9,10:
-: FOM :A:1,11,12:
-: D :A:1,{Dns}:
-: DFc :A:1,{DFcns}:
-: R-factor :A:1,13:
-: CC :A:1,14:
-: number of reflections :A:1,3,4:
-$$
-1/resol^2 bin n_a n_c d_max d_min log(Mn(|Fo|^2)) log(Mn(|Fc|^2)) log(Mn(|DFc|^2)) log(Sigma) FOM_a FOM_c R CC(|Fo|,|Fc|) {Ds} {DFcs}
-$$
-$$
-""".format(Dns=",".join(map(str, range(15, 15+nmodels))),
-           Ds=" ".join(D_labs),
-           DFcns=",".join(map(str, range(15+nmodels, 15+nmodels*2))),
-           DFcs=" ".join(["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]),
-           ))
-    tmpl = "{:.4f} {:3d} {:7d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {:.4f} {:.4f} "
-    tmpl += "{: .4f} " * (nmodels * 2)
-    tmpl += "{: .4e} {:.4f} {:.4f}\n"
-
     hkldata.df["FWT"] = 0j
     hkldata.df["DELFWT"] = 0j
     hkldata.df["FOM"] = numpy.nan
     hkldata.df["X"] = numpy.nan # for FOM
+    stats_data = []
     for i_bin, _ in hkldata.binned():
         idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]]) # w/o missing reflections
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
         Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
-        DFcs = [numpy.log(Ds[i] * numpy.average(numpy.abs(hkldata.df[lab].to_numpy()[idxes])))
+        DFcs = [numpy.log(Ds[i] * numpy.nanmean(numpy.abs(hkldata.df[lab].to_numpy()[idxes])))
                 for i, lab in enumerate(fc_labs)]
         S = hkldata.binned_df.S[i_bin]
         
@@ -561,7 +539,7 @@ $$
             hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
-            mean_fom[c] = numpy.mean(m)
+            mean_fom[c] = numpy.nanmean(m)
             
             # Fill missing
             hkldata.df.loc[nidxes, "FWT"] = sum(Ds[i] * hkldata.df[lab].to_numpy()[nidxes] for i, lab in enumerate(fc_labs))
@@ -571,14 +549,31 @@ $$
         Fcs = [hkldata.df[lab].to_numpy()[idxes] * k for lab in fc_labs]
         Fo = hkldata.df.FP.to_numpy()[idxes] * k
         DFc = calc_abs_DFc(Ds, Fcs)
-        r = numpy.sum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.sum(Fo)
-        cc = numpy.corrcoef(numpy.abs(Fc), Fo)[1,0]
-        ofs.write(tmpl.format(*(1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
-                                numpy.log(numpy.average(numpy.abs(Fo)**2)),
-                                numpy.log(numpy.average(numpy.abs(Fc)**2)),
-                                numpy.log(numpy.average(DFc**2)),
-                                numpy.log(S), mean_fom[0], mean_fom[1], r, cc) + tuple(Ds + DFcs)))
-    ofs.close()
+        r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
+        valid_sel = numpy.isfinite(Fo)
+        cc = numpy.corrcoef(numpy.abs(Fc[valid_sel]), Fo[valid_sel])[1,0]
+        stats_data.append([1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
+                           numpy.log(numpy.nanmean(numpy.abs(Fo)**2)),
+                           numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
+                           numpy.log(numpy.nanmean(DFc**2)),
+                           numpy.log(S), mean_fom[0], mean_fom[1], r, cc] + Ds + DFcs)
+
+    s2lab = "1/resol^2"
+    DFc_labs = ["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]
+    cols = [s2lab, "bin", "n_a", "n_c", "d_max", "d_min",
+            "log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))",
+            "log(Sigma)", "FOM_a", "FOM_c", "R", "CC(|Fo|,|Fc|)"] + D_labs + DFc_labs
+    stats = pandas.DataFrame(stats_data, columns=cols)
+    title_labs = [["log(Mn(|F|^2)) and variances", [s2lab, "log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))", "log(Sigma)"]],
+                  ["FOM", [s2lab, "FOM_a", "FOM_c"]],
+                  ["D", [s2lab] + D_labs],
+                  ["DFc", [s2lab] + DFc_labs],
+                  ["R-factor", [s2lab, "R"]],
+                  ["CC", [s2lab, "CC(|Fo|,|Fc|)"]],
+                  ["number of reflections", [s2lab, "n_a", "n_c"]]]
+    with open(log_out, "w") as ofs:
+        ofs.write(utils.make_loggraph_str(stats, main_title="Statistics",
+                                          title_labs=title_labs))
     logger.writeln("output log: {}".format(log_out))
 # calculate_maps()
 
