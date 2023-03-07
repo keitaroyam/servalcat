@@ -66,6 +66,8 @@ def add_arguments(parser):
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
     parser.add_argument('--no_check_ncs_map', action='store_true', 
                         help='Disable map NCS consistency test')
+    parser.add_argument('--no_check_mask_with_model', action='store_true', 
+                        help='Disable mask test using model')
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",

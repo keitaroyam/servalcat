@@ -511,6 +511,14 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         if not utils.maps.test_mask_with_model(mask, st_expanded):
             raise SystemExit("\nError: Model is out of mask.\n"
                              "Please check your --model and --mask. You can disable this test with --no_check_mask_with_model.")
+    if args.mask_for_fofc:
+        masktmp = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
+        if masktmp.shape != maps[0][0].shape:
+            raise SystemExit("\nError: mask from --mask_for_fofc has a different shape from input map(s)")
+        if not args.no_check_mask_with_model and not utils.maps.test_mask_with_model(masktmp, st):
+            raise SystemExit("\nError: Model is out of mask.\n"
+                             "Please check your --model and --mask_for_fofc. You can disable this test with --no_check_mask_with_model.")
+        del masktmp
 
     if mask is None and args.mask_radius:
         logger.writeln("Creating mask..")
@@ -734,13 +742,6 @@ def main(args):
                                           check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-
-    if args.mask_for_fofc and not args.no_check_mask_with_model:
-        mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
-        if not utils.maps.test_mask_with_model(mask, st):
-            raise SystemExit("\nError: Model is out of mask.\n"
-                             "Please check your --model and --mask_for_fofc. You can disable this test with --no_check_mask_with_model.")
-        del mask
 
     if args.halfmaps:
         maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
