@@ -372,8 +372,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
     mtz.spacegroup = sg_use
 
     newlabels = ["FP","SIGFP"]
+    require_types = ["F", "Q"]
     if len(labin) == 3: newlabels.append("FREE")
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels)
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
     bad_sigma = hkldata.df.SIGFP <= 0
     n_bad_sigma = bad_sigma.sum()
     if n_bad_sigma > 0:

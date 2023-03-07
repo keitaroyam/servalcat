@@ -53,12 +53,17 @@ def hkldata_from_asu_data(asu_data, label):
     return HklData(asu_data.unit_cell, asu_data.spacegroup, df)
 # hkldata_from_asu_data()
 
-def hkldata_from_mtz(mtz, labels, newlabels=None):
+def hkldata_from_mtz(mtz, labels, newlabels=None, require_types=None):
     assert type(mtz) == gemmi.Mtz
-    if not set(labels).issubset(mtz.column_labels()):
-        raise RuntimeError("All specified coulumns were not found from mtz.")
-    
+    notfound = set(labels) - set(mtz.column_labels())
+    if notfound:
+        raise RuntimeError("MTZ coulumns not found: {}".format(" ".join(notfound)))
     col_types = {x.label:x.type for x in mtz.columns}
+    if require_types:
+        mismatches = [l for l,r in zip(labels, require_types) if r is not None and r != col_types[l]]
+        if mismatches:
+            raise RuntimeError("MTZ coulumn types mismatch: {}".format(" ".join(mismatches)))
+
     df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
     df = df.astype({col: 'int32' for col in col_types if col_types[col] == "H"})
     df = df.astype({col: 'Int64' for col in col_types if col_types[col] in ("B", "Y", "I")}) # pandas's nullable int
