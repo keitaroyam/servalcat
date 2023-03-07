@@ -411,8 +411,7 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
     for i, chain in enumerate(st[0]):
         for j, res in enumerate(chain):
             for k, atom in enumerate(res):
-                for x in lookup:
-                    if x == atom: lookup[x] = (i, j, k)
+                if atom in lookup: lookup[atom] = (i, j, k)
     logger.writeln("Expanding symmetry..")
     st.expand_ncs(howtoname)
     if not specs: return
