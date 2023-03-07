@@ -6,9 +6,11 @@
 
 namespace py = pybind11;
 void add_refine(py::module& m); // refine.cpp
+void add_intensity(py::module& m); // intensity.cpp
 
-PYBIND11_MODULE(ext, mg) {
-  mg.doc() = "Servalcat extension";
+PYBIND11_MODULE(ext, m) {
+  m.doc() = "Servalcat extension";
 
-  add_refine(mg);
+  add_refine(m);
+  add_intensity(m);
 }
