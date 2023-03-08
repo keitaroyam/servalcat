@@ -272,7 +272,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     return fscavg_text
 # calc_fsc()
 
-def calc_fofc(st, st_expanded, maps, monlib, model_format, args):
+def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix="diffmap"):
     logger.writeln("Starting Fo-Fc calculation..")
     if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
     logger.writeln(" model: {}".format(args.output_prefix+model_format))
@@ -300,13 +300,13 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args):
                                                       half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
                                                       sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
     spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
-                         mask=mask, output_prefix="diffmap",
+                         mask=mask, output_prefix=diffmap_prefix,
                          trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
     
     # Create Coot script
     spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
                                model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
-                               mtz_file="diffmap.mtz",
+                               mtz_file="{}.mtz".format(diffmap_prefix),
                                contour_fo=None if mask is None else 1.2,
                                contour_fofc=None if mask is None else 3.0,
                                ncs_ops=st.ncs)

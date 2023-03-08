@@ -209,7 +209,8 @@ def main(args):
                            )
     
     # Calc Fo-Fc (and updated) maps
-    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args)
+    diffmap_prefix = "{}_diffmap".format(args.output_prefix)
+    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=diffmap_prefix)
     
     # Final summary
     adpstats_txt = ""
@@ -243,11 +244,11 @@ Weight used: {final_weight:.3e}
              If you want to change the weight, give larger (looser restraints)
              or smaller (tighter) value to --weight=.
              
-Open refined model and diffmap.mtz with COOT:
+Open refined model and {diffmap_prefix}.mtz with COOT:
 coot --script {prefix}_coot.py
 
 List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
+servalcat util map_peaks --map {diffmap_prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
 =============================================================================
 """.format(rmsbond=rmsbond,
            rmsangle=rmsangle,
@@ -255,7 +256,8 @@ servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb 
            fsclog="{}_fsc.log".format(args.output_prefix),
            adpstats=adpstats_txt.rstrip(),
            final_weight=args.weight,
-           prefix=args.output_prefix))
+           prefix=args.output_prefix,
+           diffmap_prefix=diffmap_prefix))
 
 # main()
 
