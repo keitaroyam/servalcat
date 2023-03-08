@@ -68,6 +68,7 @@ def main():
                         version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
                                                                                              python=platform.python_version(),
                                                                                              deps=", ".join([x[0]+" "+x[1] for x in logger.dependency_versions().items()])))
+    parser.add_argument("--logfile", default="servalcat.log")
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(shiftback=servalcat.spa.shiftback,
@@ -99,7 +100,7 @@ def main():
     if args.command == "util" and not args.subcommand:
         print("specify subcommand.")    
     elif args.command in modules:
-        logger.set_file("servalcat.log")
+        logger.set_file(args.logfile)
         logger.write_header()
         try:
             modules[args.command].main(args)
