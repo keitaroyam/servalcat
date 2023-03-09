@@ -375,11 +375,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
     require_types = ["F", "Q"]
     if len(labin) == 3: newlabels.append("FREE")
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
-    bad_sigma = hkldata.df.SIGFP <= 0
-    n_bad_sigma = bad_sigma.sum()
-    if n_bad_sigma > 0:
-        logger.writeln("Removing {} reflections with SIGF<=0".format(n_bad_sigma))
-        hkldata.df = hkldata.df[~bad_sigma]
+    hkldata.remove_nonpositive("SIGFP")
     hkldata.switch_to_asu()
     if 0: # intensity conversion
         hkldata.df.FP.where(hkldata.df.FP > 0, 0, inplace=True)

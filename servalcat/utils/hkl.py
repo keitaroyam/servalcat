@@ -380,6 +380,14 @@ class HklData:
         return [tmp[lab].to_numpy() for lab in labels]
     # as_numpy_arrays()
 
+    def remove_nonpositive(self, label):
+        sel = self.df[label] <= 0
+        n_bad = sel.sum()
+        if n_bad > 0:
+            logger.writeln("Removing {} reflections with {}<=0".format(n_bad, label))
+            self.df = self.df[~sel]
+    # remove_bad_sigma()
+
     def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None
         else: assert data is None

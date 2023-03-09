@@ -90,7 +90,10 @@ def process_input(hklin, labin, n_bins, d_max=None, d_min=None):
     logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
     logger.writeln("")
     
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["I","SIGI"])
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["I","SIGI"],
+                                         require_types=["J","Q"])
+    hkldata.remove_nonpositive("SIGI")
+    hkldata.switch_to_asu()
     hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
 
     # TODO perhaps we should switch type to float64
@@ -107,14 +110,23 @@ def process_input(hklin, labin, n_bins, d_max=None, d_min=None):
 
     # Create a centric selection table for faster look up
     centric_and_selections = {}
+    stats = hkldata.binned_df.copy()
+    stats["n_all"] = 0
+    stats["n_obs"] = 0
     for i_bin, idxes in hkldata.binned():
         centric_and_selections[i_bin] = []
+        n_obs = 0
         for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
             valid_sel = numpy.isfinite(g2.I) & (g2.SIGI > 0)
             vidxes = g2.index[valid_sel]
             nidxes = g2.index[~valid_sel] # missing reflections
             centric_and_selections[i_bin].append((c, vidxes, nidxes))
-    
+            n_obs += numpy.sum(valid_sel)
+        stats.loc[i_bin, "n_obs"] = n_obs
+        stats.loc[i_bin, "n_all"] = len(idxes)
+
+    stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
+    logger.writeln(stats.to_string())    
     return hkldata, centric_and_selections
 # process_input()
 
