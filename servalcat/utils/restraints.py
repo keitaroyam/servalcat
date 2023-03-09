@@ -95,7 +95,8 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         logger.writeln("Reading monomer: {}".format(f))
         doc = gemmi.cif.read(f)
         for b in doc:
-            if b.find_values("_chem_comp_atom.atom_id"):
+            atom_id_list = b.find_values("_chem_comp_atom.atom_id")
+            if atom_id_list:
                 name = b.name.replace("comp_", "")
                 if name in monlib.monomers:
                     logger.writeln("WARNING:: updating monomer {} using {}".format(name, f))
@@ -103,7 +104,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
                 # Check if bond length values are included
                 # This is to fail if cif file is e.g. from PDB website
-                if not b.find_values("_chem_comp_bond.value_dist"):
+                if len(atom_id_list) > 1 and not b.find_values("_chem_comp_bond.value_dist"):
                     raise RuntimeError("{} does not contain bond length value for {}. You need to generate restraints (e.g. using acedrg).".format(f, name))
                     
             for row in b.find("_chem_link.", ["id"]):
