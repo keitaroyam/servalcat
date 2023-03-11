@@ -267,8 +267,8 @@ def J_ratio_1(k_num, k_den, to1, h): # case 1
     root = calc_f1_exp2_x0(z, to1)
     f1val = f1_exp2_value(root, z, to1)
     f2der = f1_exp2_2der(root, z, to1)
-    return ext.integ_J_ratio_1(delta=h * numpy.sqrt(2 / f2der),
-                               root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
+    return ext.integ_J_ratio_1_fw(delta=h * numpy.sqrt(2 / f2der),
+                                  root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
 
 @profile
 def J_1(k, to1, h, log=False): # case 1
@@ -277,8 +277,8 @@ def J_1(k, to1, h, log=False): # case 1
     root = calc_f1_exp2_x0(z, to1)
     f1val = f1_exp2_value(root, z, to1)
     f2der = f1_exp2_2der(root, z, to1)
-    laplace_correct = ext.integ_J_1(delta=h * numpy.sqrt(2 / f2der),
-                                    root=root, to1=to1, f1val=f1val, z=z) * h
+    laplace_correct = ext.integ_J_1_fw(delta=h * numpy.sqrt(2 / f2der),
+                                       root=root, to1=to1, f1val=f1val, z=z) * h
         
     expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
     if log:
@@ -294,8 +294,8 @@ def J_ratio_2(k_num, k_den, to1, h): # case 2
     root = calc_f1_orig2_x0(z, to1)
     f1val = f1_orig2_value(root, z, to1)
     f2der = f1_orig2_2der(root, z, to1)
-    return ext.integ_J_ratio_2(delta=h * numpy.sqrt(2 / f2der),
-                               root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
+    return ext.integ_J_ratio_2_fw(delta=h * numpy.sqrt(2 / f2der),
+                                  root=root, to1=to1, f1val=f1val, z=z, deltaz=deltaz)
 
 @profile
 def J_2(k, to1, h, log=False): # case 2
@@ -304,8 +304,8 @@ def J_2(k, to1, h, log=False): # case 2
     root = calc_f1_orig2_x0(z, to1)
     f1val = f1_orig2_value(root, z, to1)
     f2der = f1_orig2_2der(root, z, to1)
-    laplace_correct = ext.integ_J_2(delta=h * numpy.sqrt(2 / f2der),
-                                    root=root, to1=to1, f1val=f1val, z=z) * h
+    laplace_correct = ext.integ_J_2_fw(delta=h * numpy.sqrt(2 / f2der),
+                                       root=root, to1=to1, f1val=f1val, z=z) * h
     expon = -f1val + 0.5 * (numpy.log(2.0) - numpy.log(f2der))
     if log:
         return expon + numpy.log(laplace_correct)
