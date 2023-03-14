@@ -213,7 +213,7 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True):
+def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True, find_symmetry_related=True):
     """
     Identify link ids for st.connections and find new links
     This is required for correctly recognizing link in gemmi.prepare_topology
@@ -281,6 +281,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     onsb = set(gemmi.Element(x) for x in "ONSB")
     n_found = 0
     for r in results:
+        if not find_symmetry_related and r.image_idx != 0: continue
         if st.find_connection_by_cra(r.partner1, r.partner2): continue
         link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
                                             r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
