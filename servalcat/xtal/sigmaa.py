@@ -335,10 +335,8 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return model
 # merge_models()
 
-def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
+def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None):
     assert 1 < len(labin) < 4
-    assert source in ["electron", "xray", "neutron"]
-    
     mtz = gemmi.read_mtz_file(hklin)
     logger.writeln("Input mtz: {}".format(hklin))
     logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
@@ -346,47 +344,58 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
     logger.writeln("")
     
     sts = [utils.fileio.read_structure(f) for f in xyzins]
-    logger.writeln("From model 1:")
-    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
-    logger.writeln("  Space group: {}".format(sts[0].spacegroup_hm))
-    logger.writeln("")
-    
-    if not mtz.cell.approx(sts[0].cell, 1e-3):
-        logger.writeln("Warning: unit cell mismatch between model and mtz")
-        logger.writeln("         using unit cell from mtz")
-
-    for st in sts: st.cell = mtz.cell # mtz cell is used in any case
-
-    sg_st = sts[0].find_spacegroup() # may be None
-    sg_use = mtz.spacegroup
-    if mtz.spacegroup != sg_st:
-        logger.writeln("Warning: space group mismatch between model and mtz")
-        if sg_st and mtz.spacegroup.point_group_hm() == sg_st.point_group_hm():
-            logger.writeln("         using space group from model")
-            sg_use = sg_st
-        else:
-            logger.writeln("         using space group from mtz")
+    if sts:
+        assert source in ["electron", "xray", "neutron"]
+        logger.writeln("From model 1:")
+        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
+        logger.writeln("  Space group: {}".format(sts[0].spacegroup_hm))
         logger.writeln("")
+    
+        if not mtz.cell.approx(sts[0].cell, 1e-3):
+            logger.writeln("Warning: unit cell mismatch between model and mtz")
+            logger.writeln("         using unit cell from mtz")
 
-    for st in sts: st.spacegroup_hm = sg_use.hm
-    mtz.spacegroup = sg_use
+        for st in sts: st.cell = mtz.cell # mtz cell is used in any case
 
-    newlabels = ["FP","SIGFP"]
-    require_types = ["F", "Q"]
-    if len(labin) == 3: newlabels.append("FREE")
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
-    hkldata.remove_nonpositive("SIGFP")
-    hkldata.switch_to_asu()
-    if 0: # intensity conversion
-        hkldata.df.FP.where(hkldata.df.FP > 0, 0, inplace=True)
-        hkldata.df["FP"] = numpy.sqrt(hkldata.df["FP"])
-        hkldata.df["SIGFP"] /= hkldata.df["FP"] + numpy.sqrt(hkldata.df["SIGFP"] + hkldata.df["FP"]**2)
+        sg_st = sts[0].find_spacegroup() # may be None
+        sg_use = mtz.spacegroup
+        if mtz.spacegroup != sg_st:
+            logger.writeln("Warning: space group mismatch between model and mtz")
+            if sg_st and mtz.spacegroup.point_group_hm() == sg_st.point_group_hm():
+                logger.writeln("         using space group from model")
+                sg_use = sg_st
+            else:
+                logger.writeln("         using space group from mtz")
+            logger.writeln("")
+
+        for st in sts: st.spacegroup_hm = sg_use.hm
+        mtz.spacegroup = sg_use
+        
+    col_types = {x.label:x.type for x in mtz.columns}
+    if labin[0] not in col_types:
+        raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))
+
+    if col_types[labin[0]] == "F":
+        logger.writeln("Observation type: amplitude")
+        newlabels = ["FP","SIGFP"]
+        require_types = ["F", "Q"]
+    elif col_types[labin[0]] == "J":
+        logger.writeln("Observation type: intensity")
+        newlabels = ["I","SIGI"]
+        require_types = ["J", "Q"]
+    else:
+        raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
 
         
-    if d_min is None:
-        d_min = hkldata.d_min_max()[0]
-    else:
-        hkldata = hkldata.copy(d_min=d_min)
+    if len(labin) == 3: newlabels.append("FREE")
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+    hkldata.remove_nonpositive(newlabels[1])
+    hkldata.switch_to_asu()
+    #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
+
+    if (d_min, d_max).count(None) != 2:
+        hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
+    d_min, d_max = hkldata.d_min_max()
         
     hkldata.complete()
     hkldata.sort_by_resolution()
@@ -417,7 +426,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_min=None):
         n_obs = 0
         n_work, n_test = 0, 0
         for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
-            valid_sel = numpy.isfinite(g2.FP)
+            valid_sel = numpy.isfinite(g2[newlabels[0]])
             if "FREE" in g2:
                 test_sel = (g2.FREE == free).fillna(False)
                 test = g2.index[test_sel]

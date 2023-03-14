@@ -14,6 +14,7 @@ import time
 import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
+from servalcat.xtal.sigmaa import process_input
 from servalcat import utils
 from servalcat import ext
 
@@ -79,56 +80,6 @@ def adp_constraints(ops, cell, tr0=True):
 
     return numpy.vstack(ret)
 # adp_constraints()
-
-# TODO this function can be generalised and merged with sigmaa.process_input
-def process_input(hklin, labin, n_bins, d_max=None, d_min=None):
-    assert len(labin) == 2
-    
-    mtz = gemmi.read_mtz_file(hklin)
-    logger.writeln("Input mtz: {}".format(hklin))
-    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
-    logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
-    logger.writeln("")
-    
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=["I","SIGI"],
-                                         require_types=["J","Q"])
-    hkldata.remove_nonpositive("SIGI")
-    hkldata.switch_to_asu()
-    hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
-
-    # TODO perhaps we should switch type to float64
-    if (d_min, d_max).count(None) != 2:
-        hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
-    d_min, d_max = hkldata.d_min_max()
-    
-    hkldata.complete()
-    hkldata.sort_by_resolution()
-    hkldata.calc_epsilon()
-    hkldata.calc_centric()
-    hkldata.setup_binning(n_bins=n_bins)
-    logger.writeln("Data completeness: {:.2%}".format(hkldata.completeness()))
-
-    # Create a centric selection table for faster look up
-    centric_and_selections = {}
-    stats = hkldata.binned_df.copy()
-    stats["n_all"] = 0
-    stats["n_obs"] = 0
-    for i_bin, idxes in hkldata.binned():
-        centric_and_selections[i_bin] = []
-        n_obs = 0
-        for c, g2 in hkldata.df.loc[idxes].groupby("centric", sort=False):
-            valid_sel = numpy.isfinite(g2.I) & (g2.SIGI > 0)
-            vidxes = g2.index[valid_sel]
-            nidxes = g2.index[~valid_sel] # missing reflections
-            centric_and_selections[i_bin].append((c, vidxes, nidxes))
-            n_obs += numpy.sum(valid_sel)
-        stats.loc[i_bin, "n_obs"] = n_obs
-        stats.loc[i_bin, "n_all"] = len(idxes)
-
-    stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
-    logger.writeln(stats.to_string())    
-    return hkldata, centric_and_selections
-# process_input()
 
 def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     # initial estimate
@@ -320,7 +271,7 @@ def J_conditions(k_den, to1, case1_lim=10):
 @profile
 def J_ratio(k_num, k_den, to1, h=0.5, case1_lim=10):
     idxes = J_conditions(k_den, to1, case1_lim)
-    ret = numpy.zeros(to1.shape)
+    ret = numpy.empty(to1.shape) * numpy.nan
     sel0 = idxes==0
     sel1 = idxes==1
     ret[sel0] = J_ratio_1(k_num, k_den, to1[sel0], h)
@@ -330,7 +281,7 @@ def J_ratio(k_num, k_den, to1, h=0.5, case1_lim=10):
 @profile
 def J(k, to1, h=0.5, case1_lim=10, log=False):
     idxes = J_conditions(k, to1, case1_lim)
-    ret = numpy.zeros(to1.shape)
+    ret = numpy.empty(to1.shape) * numpy.nan
     sel0 = idxes==0
     sel1 = idxes==1
     ret[sel0] = J_1(k, to1[sel0], h, log)
@@ -345,8 +296,8 @@ def ll_acentric(S, Io, sigIo, eps, h=0.5): # S includes k^2
 def ll_ders_S_acentric(S, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - sigIo / S / eps / k2)
     tmp = -J_ratio(1., 0., to1, h) * sigIo / eps / S**2 / k2 + 1. / S
-    g = numpy.sum(tmp)
-    H = numpy.sum(tmp**2)
+    g = numpy.nansum(tmp)
+    H = numpy.nansum(tmp**2)
     return g, H
 
 def ll_ders_B_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
@@ -358,9 +309,9 @@ def ll_ders_B_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
            svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
     for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-        H[i,j] = numpy.sum(tmp2[i] * tmp2[j] * tmpsqr)
+        H[i,j] = numpy.nansum(tmp2[i] * tmp2[j] * tmpsqr)
         if i != j: H[j,i] = H[i,j]
-        g[k] = numpy.sum(tmp2[k] * tmp)
+        g[k] = numpy.nansum(tmp2[k] * tmp)
 
     return g, H
 
@@ -371,8 +322,8 @@ def ll_centric(S, Io, sigIo, eps, h=0.5):
 def ll_ders_S_centric(S, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps / k2)
     tmp = -J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S**2 / k2 + 0.5 / S
-    g = numpy.sum(tmp)
-    H = numpy.sum(tmp**2)
+    g = numpy.nansum(tmp)
+    H = numpy.nansum(tmp**2)
     return g, H
 
 def ll_ders_B_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
@@ -384,9 +335,9 @@ def ll_ders_B_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
     tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
            svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
     for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-        H[i,j] = numpy.sum(tmp2[i] * tmp2[j] * tmpsqr)
+        H[i,j] = numpy.nansum(tmp2[i] * tmp2[j] * tmpsqr)
         if i != j: H[j,i] = H[i,j]
-        g[k] = numpy.sum(tmp2[k] * tmp)
+        g[k] = numpy.nansum(tmp2[k] * tmp)
 
     return g, H
     
@@ -395,11 +346,12 @@ def ll_bin(x, B, i_bin, svecs, hkldata, centric_and_selections):
     ll = (ll_acentric, ll_centric)
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     ret = 0.
-    for c, cidxes, nidxes in centric_and_selections[i_bin]:
+    for c, work, free in centric_and_selections[i_bin]:
+        cidxes = numpy.concatenate([work, free])
         Io = hkldata.df.I.to_numpy()[cidxes]
         sigo = hkldata.df.SIGI.to_numpy()[cidxes]
         eps = hkldata.df.epsilon.to_numpy()[cidxes]
-        ret += numpy.sum(ll[c](S * k2[cidxes], Io, sigo, eps))
+        ret += numpy.nansum(ll[c](S * k2[cidxes], Io, sigo, eps))
     return ret
     
 @profile
@@ -409,11 +361,12 @@ def ll_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     ret = 0.
     for i, (i_bin, idxes) in enumerate(hkldata.binned()):
-        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+        for c, work, free in centric_and_selections[i_bin]:
+            cidxes = numpy.concatenate([work, free])
             Io = hkldata.df.I.to_numpy()[cidxes]
             sigo = hkldata.df.SIGI.to_numpy()[cidxes]
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
-            ret += numpy.sum(ll[c](hkldata.binned_df.S[i_bin] * k2[cidxes], Io, sigo, eps))
+            ret += numpy.nansum(ll[c](hkldata.binned_df.S[i_bin] * k2[cidxes], Io, sigo, eps))
     return ret
 
 def ll_shift_bin_S(S, B, i_bin, svecs, hkldata, centric_and_selections, exp_trans=True):
@@ -421,7 +374,8 @@ def ll_shift_bin_S(S, B, i_bin, svecs, hkldata, centric_and_selections, exp_tran
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     g = 0.
     H = 0.
-    for c, cidxes, nidxes in centric_and_selections[i_bin]:
+    for c, work, free in centric_and_selections[i_bin]:
+        cidxes = numpy.concatenate([work, free])
         Io = hkldata.df.I.to_numpy()[cidxes]
         sigo = hkldata.df.SIGI.to_numpy()[cidxes]
         eps = hkldata.df.epsilon.to_numpy()[cidxes]
@@ -441,7 +395,8 @@ def ll_shift_B(x, svecs, hkldata, centric_and_selections, adpdirs):
     #g, H = numpy.zeros(len(x)), numpy.zeros((len(x), len(x)))
     g, H = numpy.zeros(6), numpy.zeros((6,6))
     for i, (i_bin, idxes) in enumerate(hkldata.binned()):
-        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+        for c, work, free in centric_and_selections[i_bin]:
+            cidxes = numpy.concatenate([work, free])
             Io = hkldata.df.I.to_numpy()[cidxes]
             sigo = hkldata.df.SIGI.to_numpy()[cidxes]
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
@@ -460,7 +415,8 @@ def french_wilson(hkldata, centric_and_selections, B_aniso):
     
     for i_bin, idxes in hkldata.binned():
         S = hkldata.binned_df.S[i_bin]
-        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+        for c, work, free in centric_and_selections[i_bin]:
+            cidxes = numpy.concatenate([work, free])
             Io = hkldata.df.I.to_numpy()[cidxes]
             sigo = hkldata.df.SIGI.to_numpy()[cidxes]
             epsS = hkldata.df.epsilon.to_numpy()[cidxes] * S * k2[cidxes]
@@ -474,7 +430,7 @@ def french_wilson(hkldata, centric_and_selections, B_aniso):
                 F = numpy.sqrt(sigo) * J_ratio(0., -0.5, to1)
                 Fsq = sigo * J_ratio(0.5, -0.5, to1)
 
-            print("bin=",i_bin, "cen=", c, "min_to1=", numpy.min(to1))
+            print("bin=",i_bin, "cen=", c, "min_to1=", numpy.nanmin(to1))
             varF = Fsq - F**2
             hkldata.df.loc[cidxes, "F"] = F
             hkldata.df.loc[cidxes, "SIGF"] = numpy.sqrt(varF)
@@ -483,12 +439,14 @@ def french_wilson(hkldata, centric_and_selections, B_aniso):
 def main(args):
     if args.nbins < 1:
         raise SystemExit("--nbins must be > 0")
+    hkldata, _, _, centric_and_selections = process_input(hklin=args.hklin,
+                                                          labin=args.labin.split(","),
+                                                          n_bins=args.nbins,
+                                                          free=None,
+                                                          xyzins=[],
+                                                          source=None,
+                                                          d_min=args.d_min)
 
-    hkldata, centric_and_selections = process_input(hklin=args.hklin,
-                                                    labin=args.labin.split(","),
-                                                    n_bins=args.nbins,
-                                                    d_min=args.d_min,
-                                                    d_max=args.d_max)
     B_aniso = determine_Sigma_and_aniso(hkldata, centric_and_selections)
     french_wilson(hkldata, centric_and_selections, B_aniso)
 
