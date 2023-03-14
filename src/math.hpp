@@ -22,6 +22,12 @@ double fom_der(double m, double X, int c) {
   return c == 1 ? 1 - 0.5 * m / X - m * m : 1 - m * m;
 }
 
+double x_plus_sqrt_xsq_plus_y(double x, double y) {
+  // avoid precision loss
+  const double tmp = std::sqrt(sq(x) + y);
+  return x < 0 ? y / (tmp - x) : x + tmp;
+}
+
 template<typename Func, typename Fprime>
 double newton(Func&& func, Fprime&& fprime, double x0,
 	      int maxiter=50, double tol=1.48e-8) {

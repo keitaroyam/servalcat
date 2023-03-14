@@ -15,6 +15,7 @@ import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
+from servalcat import ext
 
 """
 DFc = sum_j D_j F_c,j
@@ -326,6 +327,131 @@ def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_as_
     return D_labs
 # determine_mlf_params()
 
+def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, D_as_exp=False, S_as_exp=False, use="all"):
+    assert use == "all" # for now
+    # TODO sort out redundant code
+    assert use in ("all", "work", "test")
+    if D_as_exp:
+        transD = numpy.exp # D = transD(x)
+        transD_deriv = numpy.exp # dD/dx
+        transD_inv = numpy.log # x = transD_inv(D)
+    else:
+        transD = lambda x: x
+        transD_deriv = lambda x: 1
+        transD_inv = lambda x: x
+
+    if S_as_exp:
+        transS = numpy.exp
+        transS_deriv = numpy.exp
+        transS_inv = numpy.log
+    else:
+        transS = lambda x: x
+        transS_deriv = lambda x: 1
+        transS_inv = lambda x: x
+    
+    # Initial values
+    for lab in D_labs: hkldata.binned_df[lab] = 1.
+    hkldata.binned_df["S"] = 10000.
+    for i_bin, _ in hkldata.binned():
+        if use == "all":
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
+        valid_sel = numpy.isfinite(hkldata.df.FP[idxes]) # as there is no nan-safe numpy.corrcoef
+        idxes = idxes[valid_sel]
+        FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
+        FP = hkldata.df.FP.to_numpy()[idxes]
+        D = numpy.corrcoef(FP, FC)[1,0]
+        hkldata.binned_df.loc[i_bin, D_labs[0]] = D
+        hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
+
+    for D_lab in D_labs:
+        if hkldata.binned_df[D_lab].min() <= 0:
+            min_D = hkldata.binned_df[D_lab][hkldata.binned_df[D_lab] > 0].min() * 0.1
+            logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
+            hkldata.binned_df[D_lab].where(hkldata.binned_df[D_lab] > 0, min_D, inplace=True) # arbitrary
+        
+    logger.writeln("Initial estimates:")
+    logger.writeln(hkldata.binned_df.to_string())
+    k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+    for i_bin, idxes in hkldata.binned():
+        x0 = [transD_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [transS_inv(hkldata.binned_df.S[i_bin])] #+ [0,0,0,0,0,0]
+        def target(x):
+            #b_aniso = gemmi.SMat33d(*x[-6:])
+            #k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)[idxes]
+            DFc = (transD(x[:len(fc_labs)]) * hkldata.df.loc[idxes, fc_labs]).sum(axis=1)
+            ll = ext.ll_int(hkldata.df.I[idxes], hkldata.df.SIGI[idxes], k_ani[idxes], transS(x[-1]) * hkldata.df.epsilon[idxes],
+                            numpy.abs(DFc), hkldata.df.centric[idxes]+1)
+            return numpy.nansum(ll)
+        def grad(x):
+            #b_aniso = gemmi.SMat33d(*x[-6:])
+            #k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)[idxes]
+            r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], transS(x[-1]),
+                                       hkldata.df[fc_labs].to_numpy()[idxes], transD(x[:len(fc_labs)]),
+                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+            g = numpy.zeros(len(fc_labs)+1)
+            g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
+            g[-1] = numpy.nansum(r[:,-2]) # S
+            g[:len(fc_labs)] *= transD_deriv(x[:len(fc_labs)])
+            g[-1] *= transS_deriv(x[-1])
+
+            # B
+            #svecs = hkldata.s_array()[idxes]
+            #tmp2 = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
+            #        0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
+            #for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
+            #    g[1+len(fc_labs)+k] = numpy.nansum(tmp2[k] * r[:,-1])
+            
+            return g
+
+        print("Bin", i_bin)
+        res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad)
+        print(res)
+        
+        for i, lab in enumerate(D_labs):
+            hkldata.binned_df.loc[i_bin, lab] = transD(res.x[i])
+        hkldata.binned_df.loc[i_bin, "S"] = transS(res.x[-1])
+
+    logger.writeln("Refined estimates:")
+    logger.writeln(hkldata.binned_df.to_string())
+
+    # TODO: refine b_aniso
+    return D_labs
+# determine_mli_params()
+
+def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
+    nmodels = len(fc_labs)
+    hkldata.df["FWT"] = 0j
+    hkldata.df["DELFWT"] = 0j
+    hkldata.df["FOM"] = numpy.nan
+    Io = hkldata.df.I.to_numpy()
+    sigIo = hkldata.df.SIGI.to_numpy()
+    k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+    eps = hkldata.df.epsilon.to_numpy()
+    for i_bin, idxes in hkldata.binned():
+        Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
+        S = hkldata.binned_df.S[i_bin]
+        for c, work, test in centric_and_selections[i_bin]:
+            if use == "all":
+                cidxes = numpy.concatenate([work, test])
+            else:
+                cidxes = work if use == "work" else test
+            if c == 0: # acentric
+                k_num, k_den = 0.5, 0.
+            else:
+                k_num, k_den = 0., -0.5
+            Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
+            #DFc = (hkldata.binned_df.loc[i_bin, D_labs] * hkldata.df.loc[cidxes, fc_labs]).sum(axis=1)#.to_numpy() does not work
+            DFc = calc_DFc(Ds, Fcs)
+            to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
+            tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
+            sig1 = numpy.sqrt(k_ani[cidxes]) * S / sigIo[cidxes]
+            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes])
+            hkldata.df.loc[cidxes, "FWT"] = f * numpy.exp(numpy.angle(DFc)*1j) / k_ani[cidxes]
+            hkldata.df.loc[cidxes, "DELFWT"] = hkldata.df.loc[cidxes, "FWT"] - DFc
+# calculate_maps_int()
+
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
     model = gemmi.Model("1")
     for st in sts:
@@ -499,6 +625,8 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
     
     # total Fc
     hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
+    
+    return scaling.k_overall, b_aniso
 # bulk_solvent_and_lsq_scales()
 
 def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
@@ -595,30 +723,50 @@ def main(args):
                                                                   xyzins=sum(args.model, []),
                                                                   source=args.source,
                                                                   d_min=args.d_min)
+    is_int = "I" in hkldata.df
+    if is_int:
+        #from servalcat.xtal import french_wilson as fw
+        #B_aniso = fw.determine_Sigma_and_aniso(hkldata, centric_and_selections)
+        #fw.french_wilson(hkldata, centric_and_selections, B_aniso, labout=["FP", "SIGFP"])
+        # at the moment we need FP just for bulk solvent and scales
+        hkldata.df["FP"] = numpy.sqrt(numpy.where(hkldata.df.I > 0, hkldata.df.I, 0))
+        hkldata.df["SIGFP"] = 0.5 * hkldata.df.SIGI / numpy.where(hkldata.df.I > 0, hkldata.df.FP, numpy.nan)
+
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
-    bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent)    
-
+    k_overall, b_aniso = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent)
+    if is_int:
+        # in intensity case, we try to refine b_aniso with ML. perhaps we should do it in amplitude case also
+        hkldata.df.I /= k_overall**2
+        hkldata.df.SIGI /= k_overall**2
+    
     # Show R and CC
-    fpa, fca, k = hkldata.as_numpy_arrays(["FP", "FC", "k_aniso"])
-    fpa *= k
-    fca = numpy.abs(fca) * k
-    logger.writeln(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
-    logger.writeln(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
+    if not is_int:
+        fpa, fca, k = hkldata.as_numpy_arrays(["FP", "FC", "k_aniso"])
+        fpa *= k
+        fca = numpy.abs(fca) * k
+        logger.writeln(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
+        logger.writeln(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
 
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
-    if args.use_cc:
-        logger.writeln("Estimating sigma-A parameters from CC..")
-        determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
-    else:
+    if is_int:
+        assert not args.use_cc
         logger.writeln("Estimating sigma-A parameters using ML..")
-        determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
+        determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
+        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections)
+    else:
+        if args.use_cc:
+            logger.writeln("Estimating sigma-A parameters from CC..")
+            determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
+        else:
+            logger.writeln("Estimating sigma-A parameters using ML..")
+            determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
 
-    # Calculate maps
-    log_out = "{}.log".format(args.output_prefix)
-    calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
+        # Calculate maps
+        log_out = "{}.log".format(args.output_prefix)
+        calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
 
     # Write mtz file
     labs = ["FP", "SIGFP", "FOM", "FWT", "DELFWT", "FC"]

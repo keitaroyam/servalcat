@@ -407,9 +407,10 @@ def ll_shift_B(x, svecs, hkldata, centric_and_selections, adpdirs):
     H = numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
     return -numpy.dot(g, numpy.linalg.pinv(H))
 
-def french_wilson(hkldata, centric_and_selections, B_aniso):
-    hkldata.df["F"] = numpy.nan
-    hkldata.df["SIGF"] = numpy.nan
+def french_wilson(hkldata, centric_and_selections, B_aniso, labout=None):
+    if labout is None: labout = ["F", "SIGF"]
+    hkldata.df[labout[0]] = numpy.nan
+    hkldata.df[labout[1]] = numpy.nan
     hkldata.df["to1"] = numpy.nan
     k2 = hkldata.debye_waller_factors(b_cart=B_aniso)**2
     
@@ -432,8 +433,8 @@ def french_wilson(hkldata, centric_and_selections, B_aniso):
 
             print("bin=",i_bin, "cen=", c, "min_to1=", numpy.nanmin(to1))
             varF = Fsq - F**2
-            hkldata.df.loc[cidxes, "F"] = F
-            hkldata.df.loc[cidxes, "SIGF"] = numpy.sqrt(varF)
+            hkldata.df.loc[cidxes, labout[0]] = F
+            hkldata.df.loc[cidxes, labout[1]] = numpy.sqrt(varF)
             hkldata.df.loc[cidxes, "to1"] = to1
 
 def main(args):

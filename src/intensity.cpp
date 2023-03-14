@@ -2,6 +2,8 @@
 // MRC Laboratory of Molecular Biology
 
 #include <pybind11/numpy.h>
+#include <pybind11/stl.h>
+#include <pybind11/complex.h>
 #include <gemmi/bessel.hpp>
 #include "math.hpp"
 namespace py = pybind11;
@@ -63,15 +65,15 @@ double find_initial_root_exp2(double z, double to, double tf, double sig1, int c
   //   const double x1 = std::max(to, 0.) * tf / sig1;
   //   a = std::log(std::sqrt(0.5 * (to + std::sqrt(sq(to) + 2 * z + 2 * (3-c) * x1))));
   // }
-  const double a = std::log(std::sqrt(0.5 * (to + std::sqrt(sq(to) + 2 * z))));
+  const double a = std::log(std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * z)));
   return a >= 0 ? a : -std::log(-a);
 }
 
 template<typename Func, typename Fprime>
 double find_root(Func&& func, Fprime&& fprime, double x0) {
   // const double root = newton_or_secant([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-  //       			       [&](double x) { return fder2(x, z, to, tf, sig1, c); },
-  //       			       x0);
+  //                                   [&](double x) { return fder2(x, z, to, tf, sig1, c); },
+  //                                   x0);
   double root;
   try {
     root = newton(func, fprime, x0);
@@ -83,7 +85,7 @@ double find_root(Func&& func, Fprime&& fprime, double x0) {
     //               }, x0);
     double a = x0, b = x0, fa = func(x0), fb = func(x0);
     double inc = fa < 0 ? 0.1 : -0.1;
-    for (int i = 0; i < 100; ++i, b+=inc) { // to prevent infinite loop
+    for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
       fb = func(b);
       if (fa * fb < 0) break;
     }
@@ -95,16 +97,19 @@ double find_root(Func&& func, Fprime&& fprime, double x0) {
 
 double integ_j(double k, double to, double tf, double sig1, int c, bool return_log,
                double exp2_threshold=10., double h=0.5, int N=200, double ewmax=20.) {
-  const double det = std::sqrt(0.5 * (to + std::sqrt(to*to + 2 * (2 * k + 1))));
+  if (std::isnan(to)) return NAN;
+  const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k + 1)));
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
   auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
   const double x0 = use_exp2 ? find_initial_root_exp2(z, to, tf, sig1, c) : det;
+  if (std::isinf(x0))
+    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
   const double root = find_root([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-				[&](double x) { return fder2(x, z, to, tf, sig1, c); },
-				x0);
+                                [&](double x) { return fder2(x, z, to, tf, sig1, c); },
+                                x0);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
@@ -124,9 +129,10 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
 }
 
 double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c,
-		     double exp2_threshold=10., double h=0.5, int N=200, double ewmax=20.) {
+                     double exp2_threshold=10., double h=0.5, int N=200, double ewmax=20.) {
   // factor of sig^{k_num - k_den} is needed, which should be done outside.
-  const double det = std::sqrt(0.5 * (to + std::sqrt(to*to + 2 * (2 * k_den + 1))));
+  if (std::isnan(to)) return NAN;
+  const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k_den + 2 : 2 * k_den + 1;
   const double deltaz = 2 * (k_num - k_den);
@@ -134,9 +140,11 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
   const double x0 = use_exp2 ? find_initial_root_exp2(z, to, tf, sig1, c) : det;
+  if (std::isinf(x0))
+    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
   const double root = find_root([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-				[&](double x) { return fder2(x, z, to, tf, sig1, c); },
-				x0);
+                                [&](double x) { return fder2(x, z, to, tf, sig1, c); },
+                                x0);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
@@ -175,7 +183,8 @@ double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c)
     return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
 }
 
-// d/dx -log(Io; Fc) for x = S, Ds, k_aniso
+// d/dx -log(Io; Fc) for x = D, S, k_aniso
+// for Dj, Re(Fcj Fc*) needs to be multiplied
 std::tuple<double,double,double>
 ll_int_der1_params(double Io, double sigIo, double k_ani, double S, double Fc, int c, double eps) {
   if (std::isnan(Io)) return std::make_tuple(NAN, NAN, NAN);
@@ -189,49 +198,49 @@ ll_int_der1_params(double Io, double sigIo, double k_ani, double S, double Fc, i
   const double invepsS = 1. / (S * eps);
   const double invepsS2 = invepsS / S;
   if (c == 1) // acentrics
-    return std::make_tuple(1. / S - (Ic + j_ratio_1 / sq(k_ani) / c - (3-c) * Fc * j_ratio_2 / k_ani) * invepsS2,
-			   (2 - (3-c) / k_ani / Fc * j_ratio_2) * invepsS,
-			   2 / k_ani - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / sq(k_ani) * invepsS);
+    return std::make_tuple((2 - (3-c) / k_ani / Fc * j_ratio_2) * invepsS,
+                           1. / S - (Ic + j_ratio_1 / sq(k_ani) / c - (3-c) * Fc * j_ratio_2 / k_ani) * invepsS2,
+                           2 / k_ani - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / sq(k_ani) * invepsS);
   else
-    return std::make_tuple(0.5 / S - 0.5 * Ic * invepsS2 - (j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) / k_ani * invepsS2,
-			   (1. - (3-c) * j_ratio_2 / k_ani / Fc) * invepsS,
-			   1 / k_ani - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / sq(k_ani));
+    return std::make_tuple((1. - (3-c) * j_ratio_2 / k_ani / Fc) * invepsS,
+                           0.5 / S - 0.5 * Ic * invepsS2 - (j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) / k_ani * invepsS2,
+                           1 / k_ani - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / sq(k_ani));
 }
 
 py::array_t<double>
 ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                      py::array_t<double> S, py::array_t<std::complex<double>> Fcs, py::array_t<double> Ds,
+                      double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
                       py::array_t<int> c, py::array_t<int> eps) {
-  if (Ds.shape(1) != Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
+  if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
   size_t n_models = Fcs.shape(1);
   size_t n_ref = Fcs.shape(0);
   size_t n_cols = n_models + 2;
   auto Io_ = Io.unchecked<1>();
   auto sigIo_ = sigIo.unchecked<1>();
   auto k_ani_ = k_ani.unchecked<1>();
-  auto S_ = S.unchecked<1>(); // should take just one?
+  //auto S_ = S.unchecked<1>(); // should take just one?
   auto Fcs_ = Fcs.unchecked<2>();
-  auto Ds_ = Ds.unchecked<2>();
+  //auto Ds_ = Ds.unchecked<2>();
   auto c_ = c.unchecked<1>();
   auto eps_ = eps.unchecked<1>();
-  
-  // der1 wrt S, D1, D2, ..., k_ani
+
+  // der1 wrt D1, D2, .., S, k_ani
   auto ret = py::array_t<double>({n_ref, n_cols});
   double* ptr = (double*) ret.request().ptr;
   auto sum_Fc = [&](int i) {
-		  std::complex<double> s = Fcs_(i, 0) * Ds_(i, 0);
-		  for (size_t j = 1; j < n_models; ++j)
-		    s += Fcs_(i, j) * Ds_(i, j);
-		  return s;
-		};
+                  std::complex<double> s = Fcs_(i, 0) * Ds[0];
+                  for (size_t j = 1; j < n_models; ++j)
+                    s += Fcs_(i, j) * Ds[j];
+                  return s;
+                };
   for (size_t i = 0; i < n_ref; ++i) {
-    std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
-    auto v = ll_int_der1_params(Io_(i), sigIo_(i), k_ani_(i), S_(i), std::abs(Fc_total_conj), c_(i), eps_(i));
-    ptr[i*n_cols + 0] = std::get<0>(v);
+    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
+    const auto v = ll_int_der1_params(Io_(i), sigIo_(i), k_ani_(i), S, std::abs(Fc_total_conj), c_(i), eps_(i));
     for (size_t j = 0; j < n_models; ++j) {
       const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
-      ptr[i*n_cols + 1 + j] = std::get<1>(v) * r_fcj_fc;
+      ptr[i*n_cols + j] = std::get<0>(v) * r_fcj_fc;
     }
+    ptr[i*n_cols + n_models] = std::get<1>(v);
     ptr[i*n_cols + n_models + 1] = std::get<2>(v);
   }
   return ret;
@@ -294,7 +303,7 @@ void add_intensity(py::module& m) {
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
   m.def("integ_J_ratio", py::vectorize(integ_j_ratio),
         py::arg("k_num"), py::arg("k_den"), py::arg("l"), py::arg("to"), py::arg("tf"),
-	py::arg("sig1"), py::arg("c"), 
+        py::arg("sig1"), py::arg("c"),
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
   m.def("ll_int", py::vectorize(ll_int),
         py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"));
