@@ -226,6 +226,14 @@ def main(args):
         rmsangle = stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"]
     else:
         rmsbond, rmsangle = numpy.nan, numpy.nan
+    if args.mask_for_fofc:
+        map_peaks_str = """\
+List Fo-Fc map peaks in the ASU:
+servalcat util map_peaks --map {diffmap_prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
+""".format(prefix=args.output_prefix, diffmap_prefix=diffmap_prefix)
+    else:
+        map_peaks_str = "WARNING: --mask_for_fofc was not given, so the Fo-Fc map was not normalized."
+
     logger.writeln("""
 =============================================================================
 * Final Summary *
@@ -247,8 +255,7 @@ Weight used: {final_weight:.3e}
 Open refined model and {diffmap_prefix}.mtz with COOT:
 coot --script {prefix}_coot.py
 
-List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map {diffmap_prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
+{map_peaks_msg}
 =============================================================================
 """.format(rmsbond=rmsbond,
            rmsangle=rmsangle,
@@ -257,7 +264,8 @@ servalcat util map_peaks --map {diffmap_prefix}_normalized_fofc.mrc --model {pre
            adpstats=adpstats_txt.rstrip(),
            final_weight=args.weight,
            prefix=args.output_prefix,
-           diffmap_prefix=diffmap_prefix))
+           diffmap_prefix=diffmap_prefix,
+           map_peaks_msg=map_peaks_str))
 
 # main()
 

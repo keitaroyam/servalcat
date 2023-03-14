@@ -312,7 +312,7 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
                                ncs_ops=st.ncs)
 # calc_fofc()
 
-def write_final_summary(st, refmac_summary, fscavg_text, output_prefix):
+def write_final_summary(st, refmac_summary, fscavg_text, output_prefix, is_mask_given):
     if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
         final_weight = refmac_summary["cycles"][-2]["actual_weight"]
     else:
@@ -325,6 +325,14 @@ def write_final_summary(st, refmac_summary, fscavg_text, output_prefix):
     for chain, natoms, qs in adp_stats:
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
+
+    if is_mask_given:
+        map_peaks_str = """\
+List Fo-Fc map peaks in the ASU:
+servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
+""".format(prefix=output_prefix)
+    else:
+        map_peaks_str = "WARNING: --mask_for_fofc was not given, so the Fo-Fc map was not normalized."
 
     logger.writeln("""
 =============================================================================
@@ -347,8 +355,7 @@ Weight used: {final_weight}
 Open refined model and diffmap.mtz with COOT:
 coot --script {prefix}_coot.py
 
-List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0
+{map_peaks_msg}
 =============================================================================
 """.format(rmsbond=refmac_summary["cycles"][-1].get("rms_bond", "???"),
            rmsangle=refmac_summary["cycles"][-1].get("rms_angle", "???"),
@@ -356,7 +363,8 @@ servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb 
            fsclog="{}_fsc.log".format(output_prefix),
            adpstats=adpstats_txt.rstrip(),
            final_weight=final_weight,
-           prefix=output_prefix))
+           prefix=output_prefix,
+           map_peaks_msg=map_peaks_str))
 # write_final_summary()
 
 def lab_f_suffix(blur):
@@ -935,7 +943,8 @@ def main(args):
     calc_fofc(st, st_expanded, maps, monlib, model_format, args)
     
     # Final summary
-    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix)
+    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix,
+                        args.mask_for_fofc or args.mask_radius_for_fofc)
 # main()
         
 if __name__ == "__main__":
