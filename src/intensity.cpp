@@ -55,41 +55,34 @@ double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c
   ret += sq(1 + e_y) * tmp - e_y / sq(1 + e_y);
   return ret;
 }
-double find_initial_root_exp2(double z, double to, double tf, double sig1, int c) {
-  //double a = 0;
-  // if (to < 10)
-  //   // small to case
-  //   a = std::log(std::sqrt(0.5 * (to + std::sqrt(sq(to) + 2 * z + 2 * (3-c)))));
-  // else {
-  //   // assuming case 3: m = 1
-  //   const double x1 = std::max(to, 0.) * tf / sig1;
-  //   a = std::log(std::sqrt(0.5 * (to + std::sqrt(sq(to) + 2 * z + 2 * (3-c) * x1))));
-  // }
-  const double a = std::log(std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * z)));
-  return a >= 0 ? a : -std::log(-a);
-}
-
-template<typename Func, typename Fprime>
-double find_root(Func&& func, Fprime&& fprime, double x0) {
-  // const double root = newton_or_secant([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-  //                                   [&](double x) { return fder2(x, z, to, tf, sig1, c); },
-  //                                   x0);
+double find_root(double k, double to, double tf, double sig1, int c, double det, bool use_exp2) {
+  const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
+  auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
+  auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
+  double x0 = det, x1 = NAN;
+  if (use_exp2) {
+    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5)), 1e-2);
+    const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 1));
+    x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-2);
+  }
+  if (std::isinf(x0))
+    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
+  auto func = [&](double x) { return fder1(x, z, to, tf, sig1, c); };
+  auto fprime = [&](double x) { return fder2(x, z, to, tf, sig1, c); };
   double root;
   try {
     root = newton(func, fprime, x0);
   } catch (const std::runtime_error& err) {
-    // root = newton([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-    //               [&](double x) {
-    //                 const double e = 1e-1;
-    //                 return (fder1(x+e, z, to, tf, sig1, c) - fder1(x, z, to, tf, sig1, c)) / e;
-    //               }, x0);
-    double a = x0, b = x0, fa = func(x0), fb = func(x0);
-    double inc = fa < 0 ? 0.1 : -0.1;
-    for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
-      fb = func(b);
-      if (fa * fb < 0) break;
+    double a = x0, b = std::isnan(x1) ? x0 : x1;
+    double fa = func(a), fb = func(b);
+    if (fa * fb > 0) { // should not happen for use_exp2 case, just for safety
+      double inc = fa < 0 ? 0.1 : -0.1;
+      for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
+        fb = func(b);
+        if (fa * fb < 0) break;
+      }
+      if (fa * fb >= 0) throw std::runtime_error("interval not found");
     }
-    if (fa * fb >= 0) throw std::runtime_error("interval not found");
     root = bisect(func, a, b, 100, 1e-2);
   }
   return root;
@@ -102,14 +95,8 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
-  auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  const double x0 = use_exp2 ? find_initial_root_exp2(z, to, tf, sig1, c) : det;
-  if (std::isinf(x0))
-    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
-  const double root = find_root([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-                                [&](double x) { return fder2(x, z, to, tf, sig1, c); },
-                                x0);
+  const double root = find_root(k, to, tf, sig1, c, det, use_exp2);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
@@ -137,14 +124,8 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   const double z = use_exp2 ? 2 * k_den + 2 : 2 * k_den + 1;
   const double deltaz = 2 * (k_num - k_den);
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
-  auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  const double x0 = use_exp2 ? find_initial_root_exp2(z, to, tf, sig1, c) : det;
-  if (std::isinf(x0))
-    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
-  const double root = find_root([&](double x) { return fder1(x, z, to, tf, sig1, c); },
-                                [&](double x) { return fder2(x, z, to, tf, sig1, c); },
-                                x0);
+  const double root = find_root(k_den, to, tf, sig1, c, det, use_exp2);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
@@ -320,4 +301,5 @@ void add_intensity(py::module& m) {
   m.def("integ_J_ratio_2_fw", py::vectorize(integ_j_ratio_fw<false>),
         py::arg("delta"), py::arg("root"), py::arg("to1"), py::arg("f1val"), py::arg("z"), py::arg("deltaz"),
         py::arg("N")=200, py::arg("ewmax")=20.);
+  m.def("lambertw", py::vectorize(lambertw::lambertw));
 }

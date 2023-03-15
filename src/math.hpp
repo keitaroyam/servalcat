@@ -4,6 +4,8 @@
 #ifndef SERVALCAT_MATH_HPP_
 #define SERVALCAT_MATH_HPP_
 
+#include "lambertw.hpp"
+
 namespace servalcat {
 
 double sq(double x) {return x * x;}
@@ -26,6 +28,13 @@ double x_plus_sqrt_xsq_plus_y(double x, double y) {
   // avoid precision loss
   const double tmp = std::sqrt(sq(x) + y);
   return x < 0 ? y / (tmp - x) : x + tmp;
+}
+
+// solve y - exp(-y) = x for y.
+// solution is y = W(exp(-x)) + x
+double solve_y_minus_exp_minus_y(double x, double prec) {
+  if (x > 20) return x;
+  return lambertw::lambertw(std::exp(-x), prec) + x;
 }
 
 template<typename Func, typename Fprime>

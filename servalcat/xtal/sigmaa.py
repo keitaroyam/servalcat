@@ -806,7 +806,11 @@ def main(args):
         calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
 
     # Write mtz file
-    labs = ["FP", "SIGFP", "FOM", "FWT", "DELFWT", "FC"]
+    if is_int:
+        labs = ["I", "SIGI"]
+    else:
+        labs = ["FP", "SIGFP", "FOM"]
+    labs.extend(["FWT", "DELFWT", "FC"])
     if not args.no_solvent:
         labs.append("Fbulk")
         labs.append("Fmask")
