@@ -45,42 +45,6 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def adp_constraints(ops, cell, tr0=True):
-    # think about f = (b-Rb)^T (b-Rb) = b^T b - b^TRb -b^TR^Tb + b^TR^TRb
-    # d^2f/db^2 = 2I - 2(R+R^T) + (R^TR + RR^T)
-    # eigenvectors of this second derivative matrix corresponding to 0-valeud eigenvalues are directions to refine
-    def get_6x6(m):
-        r = numpy.zeros((6,6))
-        for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-            r[k,:] = (m[i][0] * m[j][0],
-                      m[i][1] * m[j][1],
-                      m[i][2] * m[j][2],
-                      m[i][0] * m[j][1] + m[i][1] * m[j][0],
-                      m[i][0] * m[j][2] + m[i][2] * m[j][0],
-                      m[i][1] * m[j][2] + m[i][2] * m[j][1])
-        return r
-
-    Ainv = cell.frac.mat
-    x = numpy.zeros((6,6))
-    if tr0:
-        x[:3,:3] += numpy.ones((3,3)) * 2
-    for op in ops:
-        m = gemmi.Mat33(op.rot).multiply(Ainv)
-        r1 = get_6x6(Ainv.tolist())
-        r2 = get_6x6(m.tolist()) / op.DEN**2
-        r1r2 = numpy.dot(r1.T, r2)
-        x += 2 * numpy.dot(r1.T, r1) - 2 * (r1r2 + r1r2.T) + 2 * numpy.dot(r2.T, r2)
-
-    evals, evecs = numpy.linalg.eig(x)
-    ret = []
-    print(evals)
-    for i in range(6):
-        if numpy.isclose(evals[i], 0):
-            ret.append(evecs[:, i])
-
-    return numpy.vstack(ret)
-# adp_constraints()
-
 def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     # initial estimate
     hkldata.binned_df["S"] = 1.
@@ -98,7 +62,7 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
 
     B = gemmi.SMat33d(0,0,0,0,0,0)
     SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
-    adpdirs = adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
+    adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
     logger.writeln("ADP free parameters = {}".format(adpdirs.shape[0]))
     svecs = hkldata.s_array()
     cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]

@@ -378,15 +378,11 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     for i_bin, idxes in hkldata.binned():
         x0 = [transD_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [transS_inv(hkldata.binned_df.S[i_bin])] #+ [0,0,0,0,0,0]
         def target(x):
-            #b_aniso = gemmi.SMat33d(*x[-6:])
-            #k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)[idxes]
             DFc = (transD(x[:len(fc_labs)]) * hkldata.df.loc[idxes, fc_labs]).sum(axis=1)
             ll = ext.ll_int(hkldata.df.I[idxes], hkldata.df.SIGI[idxes], k_ani[idxes], transS(x[-1]) * hkldata.df.epsilon[idxes],
                             numpy.abs(DFc), hkldata.df.centric[idxes]+1)
             return numpy.nansum(ll)
         def grad(x):
-            #b_aniso = gemmi.SMat33d(*x[-6:])
-            #k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)[idxes]
             r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], transS(x[-1]),
                                        hkldata.df[fc_labs].to_numpy()[idxes], transD(x[:len(fc_labs)]),
                                        hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
@@ -395,14 +391,6 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
             g[-1] = numpy.nansum(r[:,-2]) # S
             g[:len(fc_labs)] *= transD_deriv(x[:len(fc_labs)])
             g[-1] *= transS_deriv(x[-1])
-
-            # B
-            #svecs = hkldata.s_array()[idxes]
-            #tmp2 = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
-            #        0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
-            #for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-            #    g[1+len(fc_labs)+k] = numpy.nansum(tmp2[k] * r[:,-1])
-            
             return g
 
         print("Bin", i_bin)
@@ -416,8 +404,57 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     logger.writeln("Refined estimates:")
     logger.writeln(hkldata.binned_df.to_string())
 
-    # TODO: refine b_aniso
-    return D_labs
+    # Refine b_aniso
+    adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
+    SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
+
+    def target_ani(x):
+        b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+        k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+        ret = 0.
+        for i_bin, idxes in hkldata.binned():
+            Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
+            Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
+            DFc = calc_DFc(Ds, Fcs)
+            ll = ext.ll_int(hkldata.df.I[idxes], hkldata.df.SIGI[idxes], k_ani[idxes],
+                            hkldata.binned_df.S[i_bin] * hkldata.df.epsilon[idxes],
+                            numpy.abs(DFc), hkldata.df.centric[idxes]+1)
+            ret += numpy.nansum(ll)
+        return ret
+    
+    def grad_ani(x):
+        b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+        k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+        g = numpy.zeros(6)
+        for i_bin, idxes in hkldata.binned():
+            r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
+                                       k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                       hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
+                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+            svecs = hkldata.s_array()[idxes]
+            tmp2 = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
+                    0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
+            for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
+                g[k] += -numpy.nansum(tmp2[k] * r[:,-1] * k_ani[idxes])
+        return numpy.dot(g, adpdirs.T)
+
+    logger.writeln("Refining B_aniso. Current = {}".format(b_aniso))
+    x0 = numpy.dot(SMattolist(b_aniso), numpy.linalg.pinv(adpdirs))
+    if 0:
+        e = 1e-4
+        ad = grad_ani(x0)
+        for i in range(len(x0)):
+            xe = x0.copy()
+            xe[i] += e
+            nd = (target_ani(xe) - target_ani(x0))/e
+            print("DERIV",i,"=", nd, ad[i], nd/ad[i])
+        #quit()
+    res = scipy.optimize.minimize(fun=target_ani, x0=x0, jac=grad_ani)
+    print(res)
+    b_aniso = gemmi.SMat33d(*numpy.dot(res.x, adpdirs))
+    logger.writeln("Refined B_aniso = {}".format(b_aniso))
+
+    return b_aniso
 # determine_mli_params()
 
 def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
@@ -754,7 +791,7 @@ def main(args):
     if is_int:
         assert not args.use_cc
         logger.writeln("Estimating sigma-A parameters using ML..")
-        determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
+        b_aniso = determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
         calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections)
     else:
         if args.use_cc:
