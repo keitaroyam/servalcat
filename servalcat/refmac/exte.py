@@ -10,6 +10,7 @@ import gemmi
 import numpy
 from servalcat.utils import logger
 from servalcat.refmac.refmac_keywords import get_lines, read_exte_line
+from servalcat import ext
 
 """import line_profiler
 profile = line_profiler.LineProfiler()
@@ -24,15 +25,15 @@ def read_external_restraints(lines, st, geom):
                 sigma_min_loc=0., sigma_max_loc=100., ignore_undefined=False, ignore_hydrogens=True,
                 dist_max_external=numpy.inf, dist_min_external=-numpy.inf, use_atoms="a", prefix_ch=" ")
     #exte = gemmi.ExternalRestraints(st)
-    extypes = dict(dist=gemmi.Geometry.Bond,
-                   angl=gemmi.Geometry.Angle,
-                   chir=gemmi.Geometry.Chirality,
-                   tors=gemmi.Geometry.Torsion,
-                   plan=gemmi.Geometry.Plane,
-                   inte=gemmi.Geometry.Interval,
-                   harm=gemmi.Geometry.Harmonic,
-                   spec=gemmi.Geometry.Special,
-                   stac=gemmi.Geometry.Stacking)
+    extypes = dict(dist=ext.Geometry.Bond,
+                   angl=ext.Geometry.Angle,
+                   chir=ext.Geometry.Chirality,
+                   tors=ext.Geometry.Torsion,
+                   plan=ext.Geometry.Plane,
+                   inte=ext.Geometry.Interval,
+                   harm=ext.Geometry.Harmonic,
+                   spec=ext.Geometry.Special,
+                   stac=ext.Geometry.Stacking)
     exlists = dict(dist=geom.bonds, angl=geom.angles, tors=geom.torsions,
                    chir=geom.chirs, plan=geom.planes, inte=geom.intervals,
                    stac=geom.stackings, harm=geom.harmonics, spec=geom.specials)

@@ -14,6 +14,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.spa import fofc
 from servalcat.spa import fsc
+from servalcat import ext
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
@@ -112,10 +113,10 @@ class LL_SPA:
         #atoms = [x.atom for x in self.st[0].all()]
         atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
-        ll = gemmi.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        ll = ext.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         vn = ll.calc_grad(dll_dab_den, blur)
-        d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
+        d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
 
         b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso

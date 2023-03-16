@@ -13,6 +13,7 @@ import scipy.sparse
 from servalcat.utils import logger
 from servalcat.xtal.sigmaa import determine_mlf_params, determine_mlf_params_from_cc, mlf, calc_DFc
 from servalcat import utils
+from servalcat import ext
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
@@ -215,12 +216,12 @@ class LL_Xtal:
             occ_backup[atom] = atom.occ
             atom.occ *= n_sym
 
-        ll = gemmi.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        ll = ext.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         vn = numpy.array(ll.calc_grad(dll_dab_den, blur))
 
         # second derivative
-        d2dfw_table = gemmi.TableS3(*self.hkldata.d_min_max())
+        d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         valid_sel = numpy.isfinite(d2ll_dab2)
         d2dfw_table.make_table(1./self.hkldata.d_spacings().to_numpy()[valid_sel], d2ll_dab2[valid_sel])
         b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso

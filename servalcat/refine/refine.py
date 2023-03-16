@@ -16,6 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
 from servalcat.refmac.refmac_keywords import parse_keywords
+from servalcat import ext
 from . import cgsolve
 u_to_b = utils.model.u_to_b
 b_to_u = utils.model.b_to_u
@@ -30,7 +31,7 @@ class Geom:
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.specs = utils.model.find_special_positions(self.st)
-        self.geom = gemmi.Geometry(self.st, monlib.ener_lib)
+        self.geom = ext.Geometry(self.st, monlib.ener_lib)
         self.sigma_b = sigma_b
         if shake_rms > 0:
             numpy.random.seed(0)
@@ -320,7 +321,7 @@ class Refine:
             #Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
             N = len(self.atoms) * 3
             tmp = am.tocoo()
-            Pinv = scipy.sparse.coo_matrix(gemmi.precondition_eigen_coo(tmp.data, tmp.row, tmp.col, N, 1e-4),
+            Pinv = scipy.sparse.coo_matrix(ext.precondition_eigen_coo(tmp.data, tmp.row, tmp.col, N, 1e-4),
                                            shape=(N, N))
             M = Pinv
             #a = Pinv.T.dot(lil).dot(Pinv)
