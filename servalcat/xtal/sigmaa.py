@@ -491,9 +491,10 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
             tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
             sig1 = numpy.sqrt(k_ani[cidxes]) * S / sigIo[cidxes]
-            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes])
-            hkldata.df.loc[cidxes, "FWT"] = f * numpy.exp(numpy.angle(DFc)*1j) / k_ani[cidxes]
-            hkldata.df.loc[cidxes, "DELFWT"] = hkldata.df.loc[cidxes, "FWT"] - DFc
+            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
+            exp_ip = numpy.exp(numpy.angle(DFc)*1j)
+            hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
+            hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc
 # calculate_maps_int()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
