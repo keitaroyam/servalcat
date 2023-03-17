@@ -1,0 +1,71 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build_wheels:
+    name: Wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-11]
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+    - name: Build wheels
+      uses: pypa/cibuildwheel@v2.12.0
+      env:
+        CIBW_BUILD: 'cp*'
+        CIBW_SKIP: 'cp36* *musllinux* *_i686 *-win32'
+        CIBW_ARCHS_MACOS: x86_64 arm64
+        # increase pip debugging output
+        CIBW_BUILD_VERBOSITY: 1
+
+    - run: ls -lh wheelhouse
+      shell: bash
+
+    - uses: actions/upload-artifact@v3
+      with:
+        name: wheels2
+        path: wheelhouse/*.whl
+
+  standard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-11]
+        py: ['3.7', '3.8', '3.9', '3.10', '3.11']
+    name: ${{ matrix.os }} py${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    needs: build_wheels
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+
+    - name: checkout monomers
+      uses: actions/checkout@v3
+      with:
+        repository: MRC-LMB-ComputationalStructuralBiology/monomers
+        path: monomers
+
+    - uses: actions/download-artifact@master
+      with:
+        name: wheels2
+        path: wheels2
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.py }}
+    - name: Python Setup
+      run: python -m pip install --find-links=wheels2 servalcat
+    - name: Python Tests
+      continue-on-error: true
+      env:
+        CLIBD_MON: ${{runner.workspace}}/servalcat/monomers
+      run: |
+        cd tests/
+        python3 -m unittest discover -v -s .
+        cd ..

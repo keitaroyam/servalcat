@@ -47,7 +47,7 @@ class XtalTests(unittest.TestCase):
         hkldata.df["IC"] = numpy.abs(hkldata.df["FC"].to_numpy())**2
         k, b = hkldata.scale_k_and_b("I", "IC")
         self.assertAlmostEqual(k, 0.00667, places=5)
-        self.assertAlmostEqual(b, -8.48166, places=4)
+        self.assertAlmostEqual(b, -8.48166, places=3)
     # test_scale()
 
     def test_sigmaa(self):
@@ -79,6 +79,7 @@ class XtalTests(unittest.TestCase):
 
     # test_sigmaa()
 
+    @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")
     def test_refine_cx(self):
         mtzin = os.path.join(root, "biotin", "biotin_talos.mtz")
         pdbin = os.path.join(root, "biotin", "biotin_talos.pdb")

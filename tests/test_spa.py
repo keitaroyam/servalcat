@@ -148,7 +148,7 @@ class TestSPACommands(unittest.TestCase):
                                       rtol=1e-4)
     # test_fsc()
 
-    #@unittest.skip("skip refmac")
+    @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")
     def test_refine(self):
         sys.argv = ["", "refine_spa", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
                     "--model", pipes.quote(data["pdb"]), "--mask_for_fofc", pipes.quote(data["mask"]),
