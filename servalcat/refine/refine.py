@@ -27,17 +27,21 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None):
+    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None, jellybody_only=False):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.specs = utils.model.find_special_positions(self.st)
         self.geom = ext.Geometry(self.st, monlib.ener_lib)
         self.sigma_b = sigma_b
+        self.jellybody_only = jellybody_only
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
             utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
-        self.geom.load_topo(topo)
+        if not self.jellybody_only:
+            self.geom.load_topo(topo)
+        else:
+            self.geom.ridge_exclude_short_dist = False
         self.use_nucleus = False
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if refmac_keywords:
@@ -74,7 +78,9 @@ class Geom:
             elif bond.atoms[1].is_hydrogen():
                 self.parents[bond.atoms[1]] = bond.atoms[0]
     # set_h_parents()
-
+    def setup_nonbonded(self, refine_xyz):
+        skip_critical_dist = not refine_xyz or self.jellybody_only
+        self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist)
     def calc(self, target_only):
         return self.geom.calc(check_only=target_only, **self.calc_kwds)
     def calc_adp_restraint(self, target_only):
@@ -238,7 +244,7 @@ class Refine:
         if self.ll is not None:
             self.ll.update_fc()
         
-        self.geom.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
+        self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
@@ -386,7 +392,7 @@ class Refine:
     
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
-        self.geom.geom.setup_nonbonded()
+        self.geom.setup_nonbonded(self.refine_xyz)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         if self.refine_xyz and not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]

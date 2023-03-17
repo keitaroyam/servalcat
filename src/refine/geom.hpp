@@ -448,7 +448,7 @@ struct Geometry {
     double calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const;
     int type = 0; // 1: vdw, 2: torsion, 3: hbond, 4: metal, 5: dummy-nondummy, 6: dummy-dummy
     double value; // critical distance
-    double sigma;
+    double sigma = 0.;
     int sym_idx = 0; // if negative, atoms need to be swapped.
     std::array<int, 3> pbc_shift = {{0,0,0}};
     std::array<gemmi::Atom*, 2> atoms;
@@ -472,7 +472,7 @@ struct Geometry {
   Geometry(gemmi::Structure& s, const gemmi::EnerLib* ener_lib) : st(s), bondindex(s.first_model()), ener_lib(ener_lib) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
-  void setup_nonbonded();
+  void setup_nonbonded(bool skip_critical_dist);
   static gemmi::Position apply_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift, const gemmi::Position &v) {
     gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform({}) : cell.images[sym_idx-1];
     ft.vec += gemmi::Vec3(pbc_shift);
@@ -539,6 +539,7 @@ struct Geometry {
   float ridge_dmax = 0;
   double ridge_sigma = 0.02;
   bool ridge_symm = false; // inter-symmetry
+  bool ridge_exclude_short_dist = true;
 
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
@@ -792,10 +793,10 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
 }
 
 // sets up nonbonded interactions for vdwr, ADP restraints, and jellybody
-inline void Geometry::setup_nonbonded() {
-  if (ener_lib == nullptr) gemmi::fail("set ener_lib");
+inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
+  if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
   // set hbtypes for hydrogen
-  if (hbtypes.empty()) {
+  if (!skip_critical_dist && hbtypes.empty()) {
     for (auto& b : bonds)
       if (b.atoms[0]->is_hydrogen() != b.atoms[1]->is_hydrogen()) {
         int p = b.atoms[0]->is_hydrogen() ? 1 : 0; // parent
@@ -822,11 +823,13 @@ inline void Geometry::setup_nonbonded() {
     int d_1_2 = bondindex.graph_distance(*cra1.atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());
     if (d_1_2 > 2) {
       vdws.emplace_back(cra1.atom, cra2.atom);
-      set_vdw_values(vdws.back(), d_1_2);
-      assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
+      if (!skip_critical_dist) {
+        set_vdw_values(vdws.back(), d_1_2);
+        assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
+        if (im.sym_idx != 0 || !im.same_asu())
+          vdws.back().type += 6;
+      }
       vdws.back().set_image(im);
-      if (im.sym_idx != 0 || !im.same_asu())
-        vdws.back().type += 6;
     }
   });
 }
@@ -993,7 +996,8 @@ inline void Geometry::calc_jellybody() {
     const gemmi::Position& x1 = atom1.pos;
     const gemmi::Position& x2 = t.same_asu() ? atom2.pos : gemmi::Position(tr.apply(atom2.pos));
     const double b = x1.dist(x2);
-    if (b > ridge_dmax || b < 2 || b < t.value * 0.95) continue;
+    if (b > ridge_dmax) continue;
+    if (ridge_exclude_short_dist && b < std::max(2., t.value * 0.95)) continue;
     const gemmi::Position dbdx1 = (x1 - x2) / std::max(b, 0.02);
     const gemmi::Position dbdx2 = t.same_asu() ? -dbdx1 : gemmi::Position(tr.mat.transpose().multiply(-dbdx1));
     target.incr_am_diag(ia1 * 6, weight, dbdx1);
@@ -1428,6 +1432,7 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
 
 inline double
 Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const {
+  if (sigma <= 0) return 0.;
   const double weight = wvdw * wvdw / (sigma * sigma);
   const bool swapped = sym_idx < 0;
   const gemmi::Atom& atom1 = *atoms[swapped ? 1 : 0];

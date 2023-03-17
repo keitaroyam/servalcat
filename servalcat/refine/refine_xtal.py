@@ -42,6 +42,8 @@ def add_arguments(parser):
     parser.add_argument('--jellybody_params', nargs=2, type=float,
                         metavar=("sigma", "dmax"), default=[0.01, 4.2],
                         help="Jelly body sigma and dmax (default: %(default)s)")
+    parser.add_argument('--jellyonly', action='store_true',
+                        help="Jelly body only (experimental, may not be useful)")
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -105,9 +107,10 @@ def main(args):
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
     
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords)
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords,
+                jellybody_only=args.jellyonly)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
-    if args.jellybody:
+    if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
 
     ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source, use_solvent=not args.no_solvent)

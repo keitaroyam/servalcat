@@ -549,7 +549,8 @@ void add_refine(py::module& m) {
     .def("finalize_restraints", &Geometry::finalize_restraints)
     .def("setup_target", &Geometry::setup_target)
     .def("clear_target", &Geometry::clear_target)
-    .def("setup_nonbonded", &Geometry::setup_nonbonded)
+    .def("setup_nonbonded", &Geometry::setup_nonbonded,
+	 py::arg("skip_critical_dist")=false)
     .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
          py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1)
@@ -575,6 +576,7 @@ void add_refine(py::module& m) {
     .def_readwrite("ridge_dmax", &Geometry::ridge_dmax)
     .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)
     .def_readwrite("ridge_symm", &Geometry::ridge_symm)
+    .def_readwrite("ridge_exclude_short_dist", &Geometry::ridge_exclude_short_dist)
   ;
 
   py::class_<TableS3>(m, "TableS3")
