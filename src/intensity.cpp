@@ -61,7 +61,9 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
   double x0 = det, x1 = NAN;
   if (use_exp2) {
-    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5)), 1e-2);
+    const double X1 = (3-c) * tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5));
+    const double m1 = fom(X1, c);
+    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5)), 1e-2);
     const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 1));
     x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-2);
   }
