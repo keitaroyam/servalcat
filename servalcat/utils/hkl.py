@@ -165,6 +165,9 @@ class HklData:
         hkl = self.miller_array().to_numpy()
         self.sg.switch_to_asu(hkl)
         self.df[["H","K","L"]] = hkl
+        # in some environment type changes to int64 even though hkl's dtype is int32
+        # it causes a problem in self.debye_waller_factors()
+        self.df = self.df.astype({x: numpy.int32 for x in "HKL"})
 
     def copy(self, d_min=None, d_max=None):
         # FIXME we should reset_index here? after resolution truncation, max(df.index) will be larger than size.
