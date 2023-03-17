@@ -422,10 +422,11 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
             ret += numpy.nansum(ll)
         return ret
     
-    def grad_ani(x):
+    def shift_ani(x):
         b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
         g = numpy.zeros(6)
+        H = numpy.zeros((6, 6))
         for i_bin, idxes in hkldata.binned():
             r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
                                        k_ani[idxes], hkldata.binned_df.S[i_bin],
@@ -435,23 +436,29 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
             tmp2 = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
                     0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
             for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
+                H[i,j] += numpy.nansum(tmp2[i] * tmp2[j] * (r[:,-1] * k_ani[idxes])**2)
                 g[k] += -numpy.nansum(tmp2[k] * r[:,-1] * k_ani[idxes])
-        return numpy.dot(g, adpdirs.T)
+        g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
+        return -numpy.dot(g, numpy.linalg.pinv(H))
 
     logger.writeln("Refining B_aniso. Current = {}".format(b_aniso))
-    x0 = numpy.dot(SMattolist(b_aniso), numpy.linalg.pinv(adpdirs))
-    if 0:
-        e = 1e-4
-        ad = grad_ani(x0)
-        for i in range(len(x0)):
-            xe = x0.copy()
-            xe[i] += e
-            nd = (target_ani(xe) - target_ani(x0))/e
-            print("DERIV",i,"=", nd, ad[i], nd/ad[i])
-        #quit()
-    res = scipy.optimize.minimize(fun=target_ani, x0=x0, jac=grad_ani)
-    print(res)
-    b_aniso = gemmi.SMat33d(*numpy.dot(res.x, adpdirs))
+    B_converged = False
+    for j in range(10):
+        x = numpy.dot(SMattolist(b_aniso), numpy.linalg.pinv(adpdirs))
+        f0 = target_ani(x)
+        shift = shift_ani(x)
+        for i in range(3):
+            ss = shift / 2**i
+            f1 = target_ani(x + ss)
+            logger.writeln("{:2d} f0 = {:.3e} shift = {} f1 = {:.3e} dec? {}".format(j, f0, ss, f1, f1 < f0))
+            if f1 < f0:
+                b_aniso = gemmi.SMat33d(*numpy.dot(x+ss, adpdirs))
+                if numpy.max(numpy.abs(ss)) < 1e-4: B_converged = True
+                break
+        else:
+            B_converged = True
+        if B_converged: break
+
     logger.writeln("Refined B_aniso = {}".format(b_aniso))
 
     return b_aniso
