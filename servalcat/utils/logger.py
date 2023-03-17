@@ -12,7 +12,7 @@ import platform
 import getpass
 import traceback
 import atexit
-import pipes
+import shlex
 import servalcat
 
 class Logger(object):
@@ -87,7 +87,7 @@ def write_header(command="servalcat"):
     writeln("# Started on {}".format(datetime.datetime.now()))
     writeln("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
     writeln("# Command-line:")
-    writeln("# {} {}".format(command, " ".join(map(lambda x: pipes.quote(x), sys.argv[1:]))))
+    writeln("# {} {}".format(command, " ".join(map(lambda x: shlex.quote(x), sys.argv[1:]))))
 # write_header()
 
 def exit_success():

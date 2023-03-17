@@ -12,7 +12,7 @@ import os
 import shutil
 import tempfile
 import sys
-import pipes
+import shlex
 import test_spa
 from servalcat import command_line
 
@@ -39,8 +39,8 @@ class TestRefine(unittest.TestCase):
         
     def test_refine_spa(self):
         data = test_spa.data
-        sys.argv = ["", "refine_spa_norefmac", "--halfmaps", pipes.quote(data["half1"]), pipes.quote(data["half2"]),
-                    "--model", pipes.quote(data["pdb"]),
+        sys.argv = ["", "refine_spa_norefmac", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
+                    "--model", shlex.quote(data["pdb"]),
                     "--resolution", "1.9", "--ncycle", "2",]
         command_line.main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))

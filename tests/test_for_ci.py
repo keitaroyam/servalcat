@@ -10,7 +10,6 @@ import unittest
 import json
 import os
 import sys
-import pipes
 from servalcat import utils
 from servalcat import ext
 root = os.path.abspath(os.path.dirname(__file__))

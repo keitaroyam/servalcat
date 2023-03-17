@@ -8,7 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import subprocess
-import pipes
+import shlex
 import json
 import copy
 import re
@@ -574,7 +574,7 @@ class Refmac:
         with open(self.prefix+".inp", "w") as ofs: ofs.write(stdin)
 
         logger.writeln("Running REFMAC5..")
-        logger.writeln("{} <<__eof__ > {}".format(" ".join(pipes.quote(x) for x in cmd), self.prefix+".log"))
+        logger.writeln("{} <<__eof__ > {}".format(" ".join(shlex.quote(x) for x in cmd), self.prefix+".log"))
         logger.write(stdin)
         logger.writeln("__eof__")
 

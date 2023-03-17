@@ -15,7 +15,6 @@ import os
 import shutil
 import sys
 import tempfile
-import pipes
 import hashlib
 from servalcat import utils
 from servalcat import command_line

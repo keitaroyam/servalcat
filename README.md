@@ -8,13 +8,10 @@ pip install servalcat
 ```
 will install the stable version.
 
-If you want to try the latest features,
-```
-pip install git+https://github.com/keitaroyam/servalcat.git
-```
-Add `-U` option for updating.
-
 The required GEMMI version is now [v0.6.0](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.0). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
+
+**Notice:**
+From ver. 0.4.6, Servalcat is no longer python-only package and has some C++ code. If you build Servalcat by yourself, probably you also need to build GEMMI using the same compiler.
 
 ## Usage
 ```
