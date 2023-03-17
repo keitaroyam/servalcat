@@ -9,23 +9,19 @@
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
 #include <gemmi/topo.hpp>     // for Topo
 #include <gemmi/select.hpp>   // for count_atom_sites
+#include <gemmi/eig3.hpp>     // for eigen_decomposition
 
 namespace servalcat {
 
 gemmi::Mat33 eigen_decomp_inv(const gemmi::SMat33<double> &m, double e, bool for_precond) {
-  const auto eig = m.calculate_eigenvalues();
   // good e = 1.e-9 for plane and ~1e-6 or 1e-4 for precondition
   auto f = [&](double v){
     if (std::abs(v) < e) return 0.;
     return for_precond ? 1. / std::sqrt(v) : 1. / v;
   };
+  double eig[3] = {};
+  const gemmi::Mat33 Q = gemmi::eigen_decomposition(m, eig);
   const gemmi::Vec3 l{f(eig[0]), f(eig[1]), f(eig[2])};
-  gemmi::Mat33 Q; // formed by eigenvectors
-  for (int j = 0; j < 3; ++j) {
-    const auto v = m.calculate_eigenvector(eig[j]);
-    for (int i = 0; i < 3; ++i) Q[i][j] = v.at(i);
-  }
-
   if (for_precond)
     return Q.multiply_by_diagonal(l);
   else
@@ -51,13 +47,13 @@ struct PlaneDeriv {
       A.u13 += p.x * p.z;
       A.u23 += p.y * p.z;
     }
-    const auto eig = A.calculate_eigenvalues();
-    double eigmin = eig[0];
-    for (double d : {eig[1], eig[2]})
-      if (std::fabs(d) < std::fabs(eigmin))
-        eigmin = d;
-
-    vm = A.calculate_eigenvector(eigmin);
+    double eig[3] = {};
+    const gemmi::Mat33 V = gemmi::eigen_decomposition(A, eig);
+    int smallest_idx = std::fabs(eig[0]) < std::fabs(eig[1]) ? 0 : 1;
+    if (std::fabs(eig[2]) < std::fabs(eig[smallest_idx]))
+      smallest_idx = 2;
+    const double eigmin = eig[smallest_idx];
+    vm = V.column_copy(smallest_idx);
     D = xs.dot(vm);
 
     // derivatives
