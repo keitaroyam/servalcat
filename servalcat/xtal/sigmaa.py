@@ -425,6 +425,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     def shift_ani(x):
         b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+        S2mat = hkldata.ssq_mat() # ssqmat
         g = numpy.zeros(6)
         H = numpy.zeros((6, 6))
         for i_bin, idxes in hkldata.binned():
@@ -432,12 +433,10 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                                        k_ani[idxes], hkldata.binned_df.S[i_bin],
                                        hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
                                        hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
-            svecs = hkldata.s_array()[idxes]
-            tmp2 = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
-                    0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
-            for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-                H[i,j] += numpy.nansum(tmp2[i] * tmp2[j] * (r[:,-1] * k_ani[idxes])**2)
-                g[k] += -numpy.nansum(tmp2[k] * r[:,-1] * k_ani[idxes])
+            S2 = S2mat[:,idxes]
+            g += -numpy.nansum(S2 * r[:,-1] * k_ani[idxes], axis=1)
+            H += numpy.nansum(numpy.matmul(S2[None,:].T, S2.T[:,None]) * ((r[:,-1] * k_ani[idxes])**2)[:,None,None], axis=0)
+            
         g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
         return -numpy.dot(g, numpy.linalg.pinv(H))
 

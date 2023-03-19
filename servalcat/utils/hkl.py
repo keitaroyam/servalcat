@@ -206,6 +206,18 @@ class HklData:
         hkl = self.miller_array()
         return numpy.dot(hkl, self.cell.fractionalization_matrix)
 
+    def ssq_mat(self):
+        # k_aniso = exp(-s^T B_aniso s / 4)
+        # s^T B s / 4 can be reformulated as R b where R = 1x6 matrix and b = 6x1 matrix
+        # here R for all indices is returned with shape of (6, N)
+        # x[None,:].T <= (N, 6, 1)
+        # x.T[:,None] <= (N, 1, 6)    they can be matmul'ed.
+        svecs = self.s_array()
+        tmp = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
+               0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
+        return numpy.array(tmp)
+    # aniso_s_u_s_as_left_mat()
+    
     def debye_waller_factors(self, b_cart=None, b_iso=None):
         if b_iso is not None:
             s2 = 1 / self.d_spacings()**2

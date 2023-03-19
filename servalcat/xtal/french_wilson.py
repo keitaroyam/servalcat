@@ -64,13 +64,13 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
     SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
     adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
     logger.writeln("ADP free parameters = {}".format(adpdirs.shape[0]))
-    svecs = hkldata.s_array()
+    ssqmat = hkldata.ssq_mat() * 2
     cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]
     for icyc in range(100):
         logger.writeln("Refine B")
         B_converged = False
         t0 = time.time()
-        args=(svecs, hkldata, centric_and_selections, adpdirs)
+        args=(ssqmat, hkldata, centric_and_selections, adpdirs)
         for j in range(10):
             x = numpy.dot(SMattolist(B), numpy.linalg.pinv(adpdirs))
             f0 = ll_all_B(x, *args)
@@ -93,7 +93,7 @@ def determine_Sigma_and_aniso(hkldata, centric_and_selections):
         S_converged = [False for _ in hkldata.binned()]
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
             #logger.writeln("Bin {}".format(i_bin))
-            args=(B, i_bin, svecs, hkldata, centric_and_selections)
+            args=(B, i_bin, ssqmat, hkldata, centric_and_selections)
             for j in range(10):
                 S = hkldata.binned_df.loc[i_bin, "S"]
                 f0 = ll_bin([S], *args)
@@ -264,19 +264,11 @@ def ll_ders_S_acentric(S, k2, Io, sigIo, eps, h=0.5):
     H = numpy.nansum(tmp**2)
     return g, H
 
-def ll_ders_B_acentric(S, svecs, k2, Io, sigIo, eps, h=0.5):
+def ll_ders_B_acentric(S, ssqmat, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - sigIo / S / k2 / eps)
-    g = numpy.zeros(6)
-    H = numpy.zeros((6, 6))
     tmp = J_ratio(1., 0., to1, h) * sigIo / eps / k2 / S - 1.
-    tmpsqr = tmp**2
-    tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
-           svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
-    for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-        H[i,j] = numpy.nansum(tmp2[i] * tmp2[j] * tmpsqr)
-        if i != j: H[j,i] = H[i,j]
-        g[k] = numpy.nansum(tmp2[k] * tmp)
-
+    g = numpy.nansum(ssqmat * tmp, axis=1)
+    H = numpy.nansum(numpy.matmul(ssqmat[None,:].T, ssqmat.T[:,None]) * (tmp**2)[:,None,None], axis=0)
     return g, H
 
 def ll_centric(S, Io, sigIo, eps, h=0.5):
@@ -290,22 +282,14 @@ def ll_ders_S_centric(S, k2, Io, sigIo, eps, h=0.5):
     H = numpy.nansum(tmp**2)
     return g, H
 
-def ll_ders_B_centric(S, svecs, k2, Io, sigIo, eps, h=0.5):
+def ll_ders_B_centric(S, ssqmat, k2, Io, sigIo, eps, h=0.5):
     to1 = numpy.asarray(Io / sigIo - 0.5 * sigIo / S / eps / k2)
-    g = numpy.zeros(6)
-    H = numpy.zeros((6, 6))
     tmp = J_ratio(0.5, -0.5, to1, h) * 0.5 * sigIo / eps / S / k2 - 0.5
-    tmpsqr = tmp**2
-    tmp2 = (0.5 * svecs[:,0]**2, 0.5 * svecs[:,1]**2, 0.5 * svecs[:,2]**2,
-           svecs[:,0] * svecs[:,1], svecs[:,0] * svecs[:,2], svecs[:,1] * svecs[:,2])
-    for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-        H[i,j] = numpy.nansum(tmp2[i] * tmp2[j] * tmpsqr)
-        if i != j: H[j,i] = H[i,j]
-        g[k] = numpy.nansum(tmp2[k] * tmp)
-
+    g = numpy.nansum(ssqmat * tmp, axis=1)
+    H = numpy.nansum(numpy.matmul(ssqmat[None,:].T, ssqmat.T[:,None]) * (tmp**2)[:,None,None], axis=0)
     return g, H
     
-def ll_bin(x, B, i_bin, svecs, hkldata, centric_and_selections):
+def ll_bin(x, B, i_bin, ssqmat, hkldata, centric_and_selections):
     S = x[0]
     ll = (ll_acentric, ll_centric)
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
@@ -319,7 +303,7 @@ def ll_bin(x, B, i_bin, svecs, hkldata, centric_and_selections):
     return ret
     
 @profile
-def ll_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
+def ll_all_B(x, ssqmat, hkldata, centric_and_selections, adpdirs):
     ll = (ll_acentric, ll_centric)
     B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
@@ -333,7 +317,7 @@ def ll_all_B(x, svecs, hkldata, centric_and_selections, adpdirs):
             ret += numpy.nansum(ll[c](hkldata.binned_df.S[i_bin] * k2[cidxes], Io, sigo, eps))
     return ret
 
-def ll_shift_bin_S(S, B, i_bin, svecs, hkldata, centric_and_selections, exp_trans=True):
+def ll_shift_bin_S(S, B, i_bin, ssqmat, hkldata, centric_and_selections, exp_trans=True):
     ll_ders = (ll_ders_S_acentric, ll_ders_S_centric)
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
     g = 0.
@@ -352,7 +336,7 @@ def ll_shift_bin_S(S, B, i_bin, svecs, hkldata, centric_and_selections, exp_tran
     else:
         return -g / H
 
-def ll_shift_B(x, svecs, hkldata, centric_and_selections, adpdirs):
+def ll_shift_B(x, ssqmat, hkldata, centric_and_selections, adpdirs):
     ll_ders = (ll_ders_B_acentric, ll_ders_B_centric)
     B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
     k2 = hkldata.debye_waller_factors(b_cart=B)**2
@@ -364,7 +348,7 @@ def ll_shift_B(x, svecs, hkldata, centric_and_selections, adpdirs):
             Io = hkldata.df.I.to_numpy()[cidxes]
             sigo = hkldata.df.SIGI.to_numpy()[cidxes]
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
-            g_tmp, H_tmp = ll_ders[c](hkldata.binned_df.S[i_bin], svecs[cidxes], k2[cidxes], Io, sigo, eps)
+            g_tmp, H_tmp = ll_ders[c](hkldata.binned_df.S[i_bin], ssqmat[:,cidxes], k2[cidxes], Io, sigo, eps)
             g += g_tmp
             H += H_tmp
     g = numpy.dot(g, adpdirs.T)
