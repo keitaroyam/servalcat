@@ -81,10 +81,10 @@ class VarTrans:
 
 class LsqScale:
     # parameter x = [k_overall, adp_pars, k_sol, B_sol]
-    def __init__(self, hkldata, fc_list, use_int=False, k_as_exp=False):
+    def __init__(self, hkldata, obs, fc_list, use_int=False, k_as_exp=False):
         assert 0 < len(fc_list) < 3
         self.use_int = use_int
-        self.obs = hkldata.df.I.to_numpy() if use_int else hkldata.df.FP.to_numpy()
+        self.obs = obs
         self.calc = fc_list
         self.s2mat = hkldata.ssq_mat()
         self.s2 = 1. / hkldata.d_spacings().to_numpy()**2
@@ -540,11 +540,11 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
             H = numpy.nansum(numpy.matmul(tmp[:,:,None], tmp[:,None]), axis=0)
             return -numpy.dot(g, numpy.linalg.pinv(H))
 
-        print("Bin", i_bin)
-        if 0:
+        #print("Bin", i_bin)
+        if 1:
             x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
             res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad)
-            print(res)
+            #print(res)
             for i, lab in enumerate(D_labs):
                 hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
             hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
@@ -557,7 +557,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 for i in range(3):
                     ss = shift / 2**i
                     f1 = target(x + ss)
-                    logger.writeln("{:2d} f0 = {:.3e} shift = {} df = {:.3e}".format(j, f0, ss, f1 - f0))
+                    #logger.writeln("{:2d} f0 = {:.3e} shift = {} df = {:.3e}".format(j, f0, ss, f1 - f0))
                     if f1 < f0:
                         for i, lab in enumerate(D_labs):
                             hkldata.binned_df.loc[i_bin, lab] = trans.D((x+ss)[i])
@@ -618,7 +618,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
         for i in range(3):
             ss = shift / 2**i
             f1 = target_ani(x + ss)
-            logger.writeln("{:2d} f0 = {:.3e} shift = {} df = {:.3e}".format(j, f0, ss, f1 - f0))
+            #logger.writeln("{:2d} f0 = {:.3e} shift = {} df = {:.3e}".format(j, f0, ss, f1 - f0))
             if f1 < f0:
                 b_aniso = gemmi.SMat33d(*numpy.dot(x+ss, adpdirs))
                 if numpy.max(numpy.abs(ss)) < 1e-4: B_converged = True
@@ -666,12 +666,15 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
 # calculate_maps_int()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
+    st = sts[0].clone()
+    del st[:]
     model = gemmi.Model("1")
     for st in sts:
         for m in st:
             for c in m:
                 model.add_chain(c)
-    return model
+    st.add_model(model)
+    return st
 # merge_models()
 
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None):
@@ -789,22 +792,27 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     return hkldata, sts, fc_labs, centric_and_selections
 # process_input()
 
+def calc_Fmask(st, d_min, miller_array):
+    logger.writeln("Calculating solvent contribution..")
+    grid = gemmi.FloatGrid()
+    spacing = min(1 / (2 * x / d_min + 1) / xr for x, xr in zip(st.cell.parameters[:3],
+                                                                st.cell.reciprocal().parameters[:3]))
+    grid.setup_from(st, spacing=min(0.4, spacing))
+    masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
+    masker.put_mask_on_float_grid(grid, st[0])
+    fmask_gr = gemmi.transform_map_to_f_phi(grid)
+    Fmask = fmask_gr.get_value_by_hkl(miller_array)
+    return Fmask
+# calc_Fmask()
+
 def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False):
     fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
     if use_solvent:
-        logger.writeln("Calculating solvent contribution..")
-        d_min = hkldata.d_min_max()[0] - 1e-6
-        grid = gemmi.FloatGrid()
-        spacing = min(1 / (2 * x / d_min + 1) / xr for x, xr in zip(sts[0].cell.parameters[:3],
-                                                                    sts[0].cell.reciprocal().parameters[:3]))
-        grid.setup_from(sts[0], spacing=min(0.4, spacing))
-        masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
-        masker.put_mask_on_float_grid(grid, merge_models(sts))
-        fmask_gr = gemmi.transform_map_to_f_phi(grid)
-        hkldata.df["Fmask"] = fmask_gr.get_value_by_hkl(hkldata.miller_array())
-        fc_list.append(hkldata.df["Fmask"].to_numpy())
+        Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
+        fc_list.append(Fmask)
 
-    scaling = LsqScale(hkldata, fc_list, use_int)
+    obs = hkldata.df["I" if use_int else "FP"].to_numpy()
+    scaling = LsqScale(hkldata, obs, fc_list, use_int)
     scaling.scale()
     b_aniso = scaling.b_aniso
     b_iso = scaling.b_iso
@@ -815,7 +823,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     if use_solvent:
         fc_labs.append("Fbulk")
         solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol)
-        hkldata.df[fc_labs[-1]] = hkldata.df.Fmask * solvent_scale
+        hkldata.df[fc_labs[-1]] = Fmask * solvent_scale
 
     # Apply scales.
     #  - k_aniso^-1 is applied to FP (isotropize), 
@@ -962,7 +970,6 @@ def main(args):
     labs.extend(["FWT", "DELFWT", "FC"])
     if not args.no_solvent:
         labs.append("Fbulk")
-        labs.append("Fmask")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
     logger.writeln("output mtz: {}".format(mtz_out))

@@ -14,7 +14,7 @@ import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.xtal.sigmaa import process_input, calculate_maps
+from servalcat.xtal.sigmaa import process_input, calculate_maps, calculate_maps_int
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
 b_to_u = utils.model.b_to_u
@@ -91,6 +91,7 @@ def main(args):
                                                                   xyzins=[args.model],
                                                                   source=args.source,
                                                                   d_min=args.d_min)
+    is_int = "I" in hkldata.df
     st = sts[0]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=False)
@@ -123,10 +124,18 @@ def main(args):
     refiner.run_cycles(args.ncycle, weight=args.weight)
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 
-    calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log")
+    # CHECK ML parameters are determined from the last model?
+    if is_int:
+        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections)
+    else:
+        calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log")
 
     # Write mtz file
-    labs = ["FP", "SIGFP", "FOM", "FWT", "DELFWT", "FC"]
+    if is_int:
+        labs = ["I", "SIGI"]
+    else:
+        labs = ["FP", "SIGFP", "FOM"]
+    labs.extend(["FWT", "DELFWT", "FC"])
     if not args.no_solvent:
         labs.append("FCbulk")
     mtz_out = args.output_prefix+".mtz"
