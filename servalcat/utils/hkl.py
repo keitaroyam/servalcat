@@ -31,6 +31,9 @@ class Binner:
 
 def r_factor(fo, fc):
     return numpy.nansum(numpy.abs(fo-fc)) / numpy.nansum(fo)
+def correlation(obs, calc):
+    sel = numpy.isfinite(obs)
+    return numpy.corrcoef(obs[sel], calc[sel])[0,1]
 
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,

@@ -79,6 +79,152 @@ class VarTrans:
             self.S_inv = lambda x: x
 # class VarTrans
 
+class LsqScale:
+    # parameter x = [k_overall, adp_pars, k_sol, B_sol]
+    def __init__(self, hkldata, fc_list, use_int=False, k_as_exp=False):
+        assert 0 < len(fc_list) < 3
+        self.use_int = use_int
+        self.obs = hkldata.df.I.to_numpy() if use_int else hkldata.df.FP.to_numpy()
+        self.calc = fc_list
+        self.s2mat = hkldata.ssq_mat()
+        self.s2 = 1. / hkldata.d_spacings().to_numpy()**2
+        self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=False)
+        self.k_trans = lambda x: numpy.exp(x) if k_as_exp else x
+        self.k_trans_der = lambda x: numpy.exp(x) if k_as_exp else 1
+        self.k_trans_inv = lambda x: numpy.log(x) if k_as_exp else x
+        self.k_sol_ini = 0.35 # same default as gemmi/scaling.hpp
+        self.b_sol_ini = 46.
+        if use_int:
+            self.sqrt_obs = numpy.sqrt(numpy.maximum(self.obs, 0.1))
+        
+    def get_solvent_scale(self, k_sol, b_sol):
+        return k_sol * numpy.exp(-b_sol * self.s2 / 4)
+    
+    def scaled_fc(self, x):
+        fc0 = self.calc[0]
+        if len(self.calc) == 2:
+            fmask = self.calc[1]
+            fbulk = self.get_solvent_scale(x[-2], x[-1]) * fmask
+            fc = fc0 + fbulk
+        else:
+            fc = fc0
+        nadp = self.adpdirs.shape[0]
+        B = numpy.dot(x[1:nadp+1], self.adpdirs)
+        kani = numpy.exp(numpy.dot(-B, self.s2mat))
+        return self.k_trans(x[0]) * kani * fc
+
+    def target(self, x):
+        y = numpy.abs(self.scaled_fc(x))
+        if self.use_int:
+            y2 = y**2
+            return numpy.nansum(((self.obs - y2) / (self.sqrt_obs + y))**2)
+        else:
+            return numpy.nansum((self.obs - y)**2)
+        
+    def grad(self, x):
+        g = numpy.zeros_like(x)
+        fc0 = self.calc[0]
+        if len(self.calc) == 2:
+            fmask = self.calc[1]
+            temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
+            fbulk = x[-2] * temp_sol * fmask
+            fc = fc0 + fbulk
+        else:
+            fc = fc0
+        nadp = self.adpdirs.shape[0]
+        B = numpy.dot(x[1:nadp+1], self.adpdirs)
+        kani = numpy.exp(numpy.dot(-B, self.s2mat))
+        fc_abs = numpy.abs(fc)
+        k = self.k_trans(x[0])
+        y = k * kani * fc_abs
+        if self.use_int:
+            y2 = y**2
+            t1 = self.obs - y2
+            t2 = self.sqrt_obs + y
+            dfdy = -2 * t1 * (self.obs + y * (2 * self.sqrt_obs + y)) / t2**3
+        else:
+            dfdy = -2 * (self.obs - y)
+        dfdb = numpy.nansum(-self.s2mat * k * fc_abs * kani * dfdy, axis=1)
+        g[0] = numpy.nansum(kani * fc_abs * dfdy * self.k_trans_der(x[0]))
+        g[1:nadp+1] = numpy.dot(dfdb, self.adpdirs.T)
+        if len(self.calc) == 2:
+            re_fmask_fcconj = (fmask * fc.conj()).real
+            tmp = k * kani * temp_sol / fc_abs * re_fmask_fcconj
+            g[-2] = numpy.nansum(tmp * dfdy)
+            g[-1] = numpy.nansum(-tmp * dfdy * x[-2] * self.s2 / 4)
+                
+        return g
+
+    def initial_kb(self):
+        fc0 = self.calc[0]
+        if len(self.calc) == 2:
+            fmask = self.calc[1]
+            fbulk = self.get_solvent_scale(self.k_sol_ini, self.b_sol_ini) * fmask
+            fc = fc0 + fbulk
+        else:
+            fc = fc0
+        sel = self.obs > 0
+        f1p, f2p, s2p = self.obs[sel], numpy.abs(fc)[sel], self.s2[sel]
+        if self.use_int: f2p *= f2p
+        tmp = numpy.log(f2p) - numpy.log(f1p)
+        # g = [dT/dk, dT/db]
+        g = numpy.array([2 * numpy.sum(tmp), -numpy.sum(tmp*s2p)/2])
+        H = numpy.zeros((2,2))
+        H[0,0] = 2*len(f1p)
+        H[1,1] = numpy.sum(s2p**2/8)
+        H[0,1] = H[1,0] = -numpy.sum(s2p)/2
+        x = -numpy.dot(numpy.linalg.inv(H), g)
+        if self.use_int: x /= 2
+        k = numpy.exp(x[0])
+        b = x[1]
+        logger.writeln(" initial k,b = {:.2e} {:.2e}".format(k, b))
+        logger.writeln("           R = {:.4f}".format(utils.hkl.r_factor(f1p, f2p * k * numpy.exp(-b*self.s2[sel]/4))))
+        return k, b
+    
+    def scale(self):
+        use_sol = len(self.calc) == 2
+        msg = "Scaling Fc to {} {} bulk solvent contribution".format("Io" if self.use_int else "Fo",
+                                                                     "with" if use_sol else "without")
+        logger.writeln(msg)
+        k, b = self.initial_kb()
+        x0 = [self.k_trans_inv(k)]
+        x0.extend(numpy.dot([b,b,b,0,0,0], self.adpdirs.T))
+        if use_sol:
+            x0.extend([self.k_sol_ini, self.b_sol_ini])
+        if 0:
+            f0 = self.target(x0)
+            ader = self.grad(x0)
+            e = 1e-2
+            nder = []
+            for i in range(len(x0)):
+                x = numpy.copy(x0)
+                x[i] += e
+                f1 = self.target(x)
+                nder.append((f1 - f0) / e)
+            print("ADER NDER RATIO")
+            print(ader)
+            print(nder)
+            print(ader / nder)
+            quit()
+            
+        res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad)
+        logger.writeln(str(res))
+        self.k_overall = self.k_trans(res.x[0])
+        nadp = self.adpdirs.shape[0]
+        b_overall = gemmi.SMat33d(*numpy.dot(res.x[1:nadp+1], self.adpdirs))
+        self.b_iso = b_overall.trace() / 3
+        self.b_aniso = b_overall.added_kI(-self.b_iso) # subtract isotropic contribution
+
+        logger.writeln(" k_ov= {:.2e} B_iso= {:.2e} B_aniso= {}".format(self.k_overall, self.b_iso, self.b_aniso))
+        if use_sol:
+            self.k_sol = res.x[-2] 
+            self.b_sol = res.x[-1]
+            logger.writeln(" k_sol= {:.2e} B_sol= {:.2e}".format(self.k_sol, self.b_sol))
+        calc = numpy.abs(self.scaled_fc(res.x))
+        if self.use_int: calc *= calc            
+        logger.writeln(" CC = {:.4f}".format(utils.hkl.correlation(self.obs, calc)))
+        logger.writeln(" R  = {:.4f}".format(utils.hkl.r_factor(self.obs, calc)))
+
 def calc_DFc(Ds, Fcs):
     DFc = sum(Ds[i] * Fcs[i] for i in range(len(Ds)))
     return DFc
@@ -643,16 +789,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     return hkldata, sts, fc_labs, centric_and_selections
 # process_input()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
-    scaling = gemmi.Scaling(hkldata.cell, hkldata.sg)
-    scaling.use_solvent = use_solvent
-    scaleto = hkldata.as_asu_data(label="FP", label_sigma="SIGFP")
-    scaleto.value_array["sigma"] = 1. # I guess this would be better.
-    fc_asu_total = hkldata.as_asu_data(data=hkldata.df[fc_labs].sum(axis=1).to_numpy())
-    if not use_solvent:
-        logger.writeln("Scaling Fc with no bulk solvent contribution")
-        scaling.prepare_points(fc_asu_total, scaleto)
-    else:
+def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False):
+    fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
+    if use_solvent:
         logger.writeln("Calculating solvent contribution..")
         d_min = hkldata.d_min_max()[0] - 1e-6
         grid = gemmi.FloatGrid()
@@ -663,36 +802,35 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
         masker.put_mask_on_float_grid(grid, merge_models(sts))
         fmask_gr = gemmi.transform_map_to_f_phi(grid)
         hkldata.df["Fmask"] = fmask_gr.get_value_by_hkl(hkldata.miller_array())
-        fmask_asu = hkldata.as_asu_data("Fmask")
-        scaling.prepare_points(fc_asu_total, scaleto, fmask_asu)
+        fc_list.append(hkldata.df["Fmask"].to_numpy())
 
-    scaling.fit_isotropic_b_approximately()
-    logger.writeln(" initial k,b = {:.2e} {:.2e}".format(scaling.k_overall, scaling.b_overall.u11))
-    scaling.fit_parameters()
-    b_aniso = scaling.b_overall
-    b_iso = b_aniso.trace() / 3
-    b_aniso = b_aniso.added_kI(-b_iso) # subtract isotropic contribution
-    logger.writeln(" k_ov= {:.2e} B_iso= {:.2e} B_aniso= {}".format(scaling.k_overall, b_iso, b_aniso))
+    scaling = LsqScale(hkldata, fc_list, use_int)
+    scaling.scale()
+    b_aniso = scaling.b_aniso
+    b_iso = scaling.b_iso
     k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
     k_aniso = hkldata.debye_waller_factors(b_cart=b_aniso)
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
     
     if use_solvent:
         fc_labs.append("Fbulk")
-        solvent_scale = scaling.get_solvent_scale(0.25 / hkldata.d_spacings()**2)
+        solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol)
         hkldata.df[fc_labs[-1]] = hkldata.df.Fmask * solvent_scale
 
     # Apply scales.
     #  - k_aniso^-1 is applied to FP (isotropize), 
     #    but k_aniso should be applied to FC when calculating R or CC
     #  - k_iso should be applied to FC
-    hkldata.df.FP /= scaling.k_overall * k_aniso
-    hkldata.df.SIGFP /= scaling.k_overall * k_aniso
+    if use_int:
+        # in intensity case, we try to refine b_aniso with ML. perhaps we should do it in amplitude case also
+        hkldata.df.I /= scaling.k_overall**2
+        hkldata.df.SIGI /= scaling.k_overall**2
+    else:
+        hkldata.df.FP /= scaling.k_overall * k_aniso
+        hkldata.df.SIGFP /= scaling.k_overall * k_aniso
     for lab in fc_labs: hkldata.df[lab] *= k_iso
-    
     # total Fc
     hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
-    
     return scaling.k_overall, b_aniso
 # bulk_solvent_and_lsq_scales()
 
@@ -791,30 +929,11 @@ def main(args):
                                                                   source=args.source,
                                                                   d_min=args.d_min)
     is_int = "I" in hkldata.df
-    if is_int:
-        #from servalcat.xtal import french_wilson as fw
-        #B_aniso = fw.determine_Sigma_and_aniso(hkldata, centric_and_selections)
-        #fw.french_wilson(hkldata, centric_and_selections, B_aniso, labout=["FP", "SIGFP"])
-        # at the moment we need FP just for bulk solvent and scales
-        hkldata.df["FP"] = numpy.sqrt(numpy.where(hkldata.df.I > 0, hkldata.df.I, 0))
-        hkldata.df["SIGFP"] = 0.5 * hkldata.df.SIGI / numpy.where(hkldata.df.I > 0, hkldata.df.FP, numpy.nan)
-
+    
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
-    k_overall, b_aniso = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent)
-    if is_int:
-        # in intensity case, we try to refine b_aniso with ML. perhaps we should do it in amplitude case also
-        hkldata.df.I /= k_overall**2
-        hkldata.df.SIGI /= k_overall**2
-    
-    # Show R and CC
-    if not is_int:
-        fpa, fca, k = hkldata.as_numpy_arrays(["FP", "FC", "k_aniso"])
-        fpa *= k
-        fca = numpy.abs(fca) * k
-        logger.writeln(" CC(Fo,Fc)= {:.4f}".format(numpy.corrcoef(fca, fpa)[0,1]))
-        logger.writeln(" Rcryst= {:.4f}".format(utils.hkl.r_factor(fpa, fca)))
-
+    k_overall, b_aniso = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+                                                     use_int=is_int)
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
