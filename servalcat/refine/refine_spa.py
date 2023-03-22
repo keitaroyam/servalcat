@@ -23,8 +23,11 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
     group.add_argument("--map", help="Use this only if you really do not have half maps.")
+    group.add_argument("--hklin", help="Use mtz file. With limited functionality.")
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
+    parser.add_argument('--labin', 
+                        help='F,PHI for hklin')
     parser.add_argument('--model', required=True,
                         help='Input atomic model file')
     parser.add_argument("-d", '--resolution', type=float, required=True)
@@ -58,6 +61,8 @@ def add_arguments(parser):
     parser.add_argument('--jellybody_params', nargs=2, type=float,
                         metavar=("sigma", "dmax"), default=[0.01, 4.2],
                         help="Jelly body sigma and dmax (default: %(default)s)")
+    parser.add_argument('--jellyonly', action='store_true',
+                        help="Jelly body only (experimental, may not be useful)")
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
@@ -118,12 +123,25 @@ def main(args):
                                                    stop_for_unknowns=True)
     utils.restraints.find_and_fix_links(st, monlib)
     st.assign_cis_flags()
-    if args.halfmaps:
-        maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
+    if args.hklin:
+        assert not args.cross_validation
+        mtz = gemmi.read_mtz_file(args.hklin)
+        hkldata = utils.hkl.hkldata_from_mtz(mtz, args.labin.split(","),
+                                             newlabels=["FP", ""],
+                                             require_types=["F", "P"])
+        hkldata.df = hkldata.df.dropna() # workaround for missing data
+        #hkldata.setup_relion_binning()
+        hkldata.setup_binning(n_bins=10) # need to sort out
+        st.cell = hkldata.cell
+        st.spacegroup_hm = hkldata.sg.hm
+        info = {}
     else:
-        maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
-    hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
-                                  mask_in=args.mask, args=args, use_refmac=False)
+        if args.halfmaps:
+            maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
+        else:
+            maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
+        hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
+                                      mask_in=args.mask, args=args, use_refmac=False)
     st.setup_cell_images()
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "yes":gemmi.HydrogenChange.NoChange,
@@ -160,7 +178,7 @@ def main(args):
         logger.writeln(" Will use weight= {:.2f}".format(args.weight))
 
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b,
-                refmac_keywords=refmac_keywords)
+                refmac_keywords=refmac_keywords, jellybody_only=args.jellyonly)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
@@ -172,14 +190,14 @@ def main(args):
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac
-    if args.jellybody: geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
+    if args.jellybody or args.jellyonly: geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
 
     #logger.writeln("TEST: shift x+0.3 A")
     #for cra in st[0].all():
     #    cra.atom.pos += gemmi.Position(0.3,0,0)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight)
-    if not args.no_trim: refiner.st.cell = maps[0][0].unit_cell
+    if not args.hklin and not args.no_trim: refiner.st.cell = maps[0][0].unit_cell
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
         for s in stats:
@@ -187,6 +205,9 @@ def main(args):
         json.dump(stats, ofs, indent=2)
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 
+    if args.hklin:
+        return
+        
     # Expand sym here
     st_expanded = refiner.st.clone()
     if not all(op.given for op in st.ncs):
