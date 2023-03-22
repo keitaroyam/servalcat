@@ -448,7 +448,6 @@ class Refine:
         self.st.raw_remarks = []
         si = gemmi.SoftwareItem()
         si.classification = gemmi.SoftwareItem.Classification.Refinement
-        si.pdbx_ordinal = 1
         si.name = "Servalcat"
         si.version = servalcat.__version__
         si.date = servalcat.__date__
