@@ -456,9 +456,11 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True):
         scaling.prepare_points(fc_asu_total, scaleto)
     else:
         logger.writeln("Calculating solvent contribution..")
-        d_min = hkldata.d_min_max()[0]
+        d_min = hkldata.d_min_max()[0] - 1e-6
         grid = gemmi.FloatGrid()
-        grid.setup_from(sts[0], spacing=min(0.4, (d_min-1e-6)/2))
+        spacing = min(1 / (2 * x / d_min + 1) / xr for x, xr in zip(sts[0].cell.parameters[:3],
+                                                                    sts[0].cell.reciprocal().parameters[:3]))
+        grid.setup_from(sts[0], spacing=min(0.4, spacing))
         masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
         masker.put_mask_on_float_grid(grid, merge_models(sts))
         fmask_gr = gemmi.transform_map_to_f_phi(grid)
