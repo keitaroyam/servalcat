@@ -518,7 +518,7 @@ def map_peaks(args):
         if (args.max_volume is not None and b.volume > args.max_volume) or abs(map_val) < cutoff: continue
         x = ns.find_nearest_atom(bpos)
         if x is None:
-            logger.writeln("too far from model: value={:.2f} volume= {} pos= {}".format(map_val, b.volume, bpos))
+            logger.writeln("too far from model: value={:.2f} volume= {:.2f} pos= {}".format(map_val, b.volume, bpos))
             continue
         chain = st[0][x.chain_idx]
         res = chain[x.residue_idx]
@@ -533,7 +533,7 @@ def map_peaks(args):
         return
         
     # Print and write coot script
-    peaks.sort(reverse=True, key=lambda x:(abs(x[0]),)+x[1:])
+    peaks.sort(reverse=True, key=lambda x:(abs(x[0]), x[1]))
     for_coot = []
     for i, p in enumerate(peaks):
         map_val, volume, mpos, dist, chain, res, atom = p
