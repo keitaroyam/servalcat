@@ -42,16 +42,24 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def parse_keywords(inputs):
+def read_stdin(stdin):
+    print("Waiting for input..")
     # these make keywords will be ignored (just passed to refmac): ribo,valu,spec,form,sdmi,segi
-    ret = refmac_keywords.parse_keywords(inputs)
+    ret = {"make":{}, "ridge":{}}
+    inputs = []
+    for l in refmac_keywords.get_lines(stdin):
+        if l.split()[0].lower().startswith("end"):
+            break
+        refmac_keywords.parse_line(l, ret)
+        inputs.append(l + "\n")
+    
     def sorry(s): raise SystemExit("Sorry, '{}' is not supported".format(s))
     if ret["make"].get("hydr") == "f":
         sorry("make hydr full")
     if ret["make"].get("buil") == "y":
         sorry("make build yes")
-    return ret
-# parse_keywords()
+    return inputs, ret
+# read_stdin()
 
 def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 no_adjust_hydrogen_distances=False):
@@ -174,14 +182,7 @@ def main(args):
     if len(args.opts) % 2 != 0: raise SystemExit("Invalid number of args")
     args.ligand = sum(args.ligand, []) if args.ligand else []
 
-    print("Waiting for input..")
-    inputs = []
-    for l in sys.stdin:
-        inputs.append(l)
-        if l.strip().lower().startswith("end"):
-            break
-
-    keywords = parse_keywords(inputs) # TODO read psrestin also?
+    inputs, keywords = read_stdin(sys.stdin) # TODO read psrestin also?
     if not keywords["make"].get("exit"):
         refmac_ver = utils.refmac.check_version(args.exe)
         if not refmac_ver:

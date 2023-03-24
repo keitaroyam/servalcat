@@ -484,7 +484,7 @@ def get_lines(lines):
         if not l: continue
         if l[0] == "@":
             f = l[1:]
-            ret.extend(get_lines(open(f).readlines()))
+            yield from get_lines(open(f).readlines())
             continue
         if l.split()[-1] == "-":
             cont += l[:l.rfind("-")] + " "
@@ -492,13 +492,14 @@ def get_lines(lines):
         if cont:
             l = cont + l
             cont = ""
-        ret.append(l)
-    return ret
+        yield l
 # get_lines()
             
 def parse_keywords(inputs):
     ret = {"make":{}, "ridge":{}}
     for l in get_lines(inputs):
+        if l.split()[0].lower().startswith("end"):
+            break
         parse_line(l, ret)
     return ret
 # parse_keywords()
