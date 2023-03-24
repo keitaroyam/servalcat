@@ -518,7 +518,7 @@ def map_peaks(args):
         if (args.max_volume is not None and b.volume > args.max_volume) or abs(map_val) < cutoff: continue
         x = ns.find_nearest_atom(bpos)
         if x is None:
-            logger.writeln("too far from model: value={:.2f} volume= {:.2f} pos= {}".format(map_val, b.volume, bpos))
+            logger.writeln("too far from model: value={:.2e} volume= {:.2f} pos= {}".format(map_val, b.volume, bpos))
             continue
         chain = st[0][x.chain_idx]
         res = chain[x.residue_idx]
@@ -535,13 +535,20 @@ def map_peaks(args):
     # Print and write coot script
     peaks.sort(reverse=True, key=lambda x:(abs(x[0]), x[1]))
     for_coot = []
+    for_df = []
     for i, p in enumerate(peaks):
         map_val, volume, mpos, dist, chain, res, atom = p
         mpos_str = "({: 7.2f},{: 7.2f},{: 7.2f})".format(mpos.x, mpos.y, mpos.z)
-        atom_str = "{}/{}/{}{}".format(chain.name, res.seqid, atom.name, "."+atom.altloc if atom.altloc!="\0" else "")
-        lab_str = "Peak {:4d} value= {:5.2f} volume= {:5.1f} pos= {} closest= {:10s} dist= {:.2f}".format(i+1, map_val, volume, mpos_str, atom_str, dist)
-        logger.writeln(lab_str)
+        atom_name = atom.name + ("." + atom.altloc if atom.altloc != "\0" else "")
+        atom_str = "{}/{}/{}".format(chain.name, res.seqid, atom_name)
+        lab_str = "Peak {:4d} value= {: .2e} volume= {:5.1f} pos= {} closest= {:10s} dist= {:.2f}".format(i+1, map_val, volume, mpos_str, atom_str, dist)
         for_coot.append((lab_str, (mpos.x, mpos.y, mpos.z)))
+        for_df.append((map_val, volume, mpos.x, mpos.y, mpos.z, chain.name, str(res.seqid), atom_name, dist))
+    df = pandas.DataFrame(for_df, columns=["map_value", "volume", "x", "y", "z", "chain", "residue", "atom", "dist"])
+    logger.writeln(df.to_string())
+    with open(args.output_prefix + ".json", "w") as ofs:
+        df.to_json(ofs, orient="records", indent=2)
+        logger.writeln("saved: {}".format(ofs.name))
     coot_out = args.output_prefix + "_coot.py"
     with open(coot_out, "w") as ofs:
         ofs.write("""\
