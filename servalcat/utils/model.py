@@ -583,7 +583,6 @@ def adp_constraints(ops, cell, tr0=True):
 
     evals, evecs = numpy.linalg.eig(x)
     ret = []
-    print(evals)
     for i in range(6):
         if numpy.isclose(evals[i], 0):
             ret.append(evecs[:, i])

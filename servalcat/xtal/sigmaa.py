@@ -518,25 +518,25 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                             numpy.abs(DFc), hkldata.df.centric[idxes]+1)
             return numpy.nansum(ll)
         def grad(x):
-            r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], trans.S(x[-1]),
-                                       hkldata.df[fc_labs].to_numpy()[idxes], trans.D(x[:len(fc_labs)]),
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+            r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], trans.S(x[-1]),
+                                   hkldata.df[fc_labs].to_numpy()[idxes], trans.D(x[:len(fc_labs)]),
+                                   hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
             g = numpy.zeros(len(fc_labs)+1)
             g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
-            g[-1] = numpy.nansum(r[:,-2]) # S
+            g[-1] = numpy.nansum(r[:,-1]) # S
             g[:len(fc_labs)] *= trans.D_deriv(x[:len(fc_labs)])
             g[-1] *= trans.S_deriv(x[-1])
             return g
 
         def shift_DS(x):
-            r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], trans.S(x[-1]),
-                                       hkldata.df[fc_labs].to_numpy()[idxes], trans.D(x[:len(fc_labs)]),
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+            r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], trans.S(x[-1]),
+                                   hkldata.df[fc_labs].to_numpy()[idxes], trans.D(x[:len(fc_labs)]),
+                                   hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
             g = numpy.zeros(len(fc_labs)+1)
             g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) * trans.D_deriv(x[:len(fc_labs)]) # D
-            g[-1] = numpy.nansum(r[:,-2]) * trans.S_deriv(x[-1]) # S
+            g[-1] = numpy.nansum(r[:,-1]) * trans.S_deriv(x[-1]) # S
             tmp = numpy.hstack([r[:,:len(fc_labs)] * trans.D_deriv(x[:len(fc_labs)]),
-                                r[:,-2,None] * trans.S_deriv(x[-1])])
+                                r[:,-1,None] * trans.S_deriv(x[-1])])
             H = numpy.nansum(numpy.matmul(tmp[:,:,None], tmp[:,None]), axis=0)
             return -numpy.dot(g, numpy.linalg.pinv(H))
 
@@ -598,13 +598,13 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
         H = numpy.zeros((6, 6))
         for i_bin, _ in hkldata.binned():
             idxes = get_idxes(i_bin)
-            r = ext.ll_int_der1_params(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
-                                       k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                       hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+            r = ext.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
+                                    k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                    hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
+                                    hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
             S2 = S2mat[:,idxes]
-            g += -numpy.nansum(S2 * r[:,-1] * k_ani[idxes], axis=1)
-            H += numpy.nansum(numpy.matmul(S2[None,:].T, S2.T[:,None]) * ((r[:,-1] * k_ani[idxes])**2)[:,None,None], axis=0)
+            g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
+            H += numpy.nansum(numpy.matmul(S2[None,:].T, S2.T[:,None]) * (r[:,0]**2)[:,None,None], axis=0)
             
         g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
         return -numpy.dot(g, numpy.linalg.pinv(H))
@@ -658,7 +658,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             DFc = calc_DFc(Ds, Fcs)
             to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
             tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
-            sig1 = numpy.sqrt(k_ani[cidxes]) * S / sigIo[cidxes]
+            sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
             f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
             exp_ip = numpy.exp(numpy.angle(DFc)*1j)
             hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc

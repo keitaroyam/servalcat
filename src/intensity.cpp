@@ -180,30 +180,6 @@ double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c)
     return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
 }
 
-// d/dx -log(Io; Fc) for x = D, S, k_aniso
-// for Dj, Re(Fcj Fc*) needs to be multiplied
-std::tuple<double,double,double>
-ll_int_der1_params(double Io, double sigIo, double k_ani, double S, double Fc, int c, double eps) {
-  if (std::isnan(Io)) return std::make_tuple(NAN, NAN, NAN);
-  const double to = Io / sigIo - sigIo / c / sq(k_ani) / S / eps;
-  const double Ic = sq(Fc);
-  const double sqrt_sigIo = std::sqrt(sigIo);
-  const double tf = k_ani * Fc / sqrt_sigIo;
-  const double sig1 = sq(k_ani) * S / sigIo;
-  const double j_ratio_1 = integ_j_ratio(c==1 ? 1 : 0.5, c==1 ? 0 : -0.5, false, to, tf, sig1, c) * sigIo;
-  const double j_ratio_2 = Fc == 0. ? 0 : integ_j_ratio(c==1 ? 0.5 : 0, c==1 ? 0 : -0.5, true, to, tf, sig1, c) * sqrt_sigIo;
-  const double invepsS = 1. / (S * eps);
-  const double invepsS2 = invepsS / S;
-  if (c == 1) // acentrics
-    return std::make_tuple((2 - (3-c) / k_ani / Fc * j_ratio_2) * invepsS,
-                           1. / S - (Ic + j_ratio_1 / sq(k_ani) / c - (3-c) * Fc * j_ratio_2 / k_ani) * invepsS2,
-                           2 / k_ani - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / sq(k_ani) * invepsS);
-  else
-    return std::make_tuple((1. - (3-c) * j_ratio_2 / k_ani / Fc) * invepsS,
-                           0.5 / S - 0.5 * Ic * invepsS2 - (j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) / k_ani * invepsS2,
-                           1 / k_ani - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / sq(k_ani));
-}
-
 // d/dDj -log(Io; Fc)
 // note Re(Fcj Fc*) needs to be multiplied
 double ll_int_der1_D(double k_ani, double S, double Fc, int c, double eps, double j_ratio_2) {
@@ -226,30 +202,27 @@ double ll_int_der1_S(double k_ani, double S, double Fc, int c, double eps, doubl
 double ll_int_der1_ani(double k_ani, double S, double Fc, int c, double eps, double j_ratio_1, double j_ratio_2) {
   const double invepsS = 1. / (S * eps);
   if (c == 1) // acentrics
-    //return 2 / k_ani - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / sq(k_ani) * invepsS;
     return 2.  - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / k_ani * invepsS;
   else
-    //return 1 / k_ani - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / sq(k_ani);
     return 1.  - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / k_ani;
 }
+template<bool for_DS>
 py::array_t<double>
 ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
                       double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
                       py::array_t<int> c, py::array_t<int> eps) {
   if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
-  size_t n_models = Fcs.shape(1);
-  size_t n_ref = Fcs.shape(0);
-  size_t n_cols = n_models + 2;
+  const size_t n_models = Fcs.shape(1);
+  const size_t n_ref = Fcs.shape(0);
+  const size_t n_cols = for_DS ? n_models + 1 : 1;
   auto Io_ = Io.unchecked<1>();
   auto sigIo_ = sigIo.unchecked<1>();
   auto k_ani_ = k_ani.unchecked<1>();
-  //auto S_ = S.unchecked<1>(); // should take just one?
   auto Fcs_ = Fcs.unchecked<2>();
-  //auto Ds_ = Ds.unchecked<2>();
   auto c_ = c.unchecked<1>();
   auto eps_ = eps.unchecked<1>();
 
-  // der1 wrt D1, D2, .., S, k_ani
+  // der1 wrt D1, D2, .., S, or k_ani
   auto ret = py::array_t<double>({n_ref, n_cols});
   double* ptr = (double*) ret.request().ptr;
   auto sum_Fc = [&](int i) {
@@ -259,14 +232,31 @@ ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::arr
                   return s;
                 };
   for (size_t i = 0; i < n_ref; ++i) {
-    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
-    const auto v = ll_int_der1_params(Io_(i), sigIo_(i), k_ani_(i), S, std::abs(Fc_total_conj), c_(i), eps_(i));
-    for (size_t j = 0; j < n_models; ++j) {
-      const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
-      ptr[i*n_cols + j] = std::get<0>(v) * r_fcj_fc;
+    if (std::isnan(Io_(i))) {
+      for (size_t j = 0; j < n_cols; ++j)
+        ptr[i * n_cols + j] = NAN;
+      continue;
     }
-    ptr[i*n_cols + n_models] = std::get<1>(v);
-    ptr[i*n_cols + n_models + 1] = std::get<2>(v);
+    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
+    const double Fc_abs = std::abs(Fc_total_conj);
+    const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+    const double sqrt_sigIo = std::sqrt(sigIo_(i));
+    const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+    const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+    const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+    const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i);
+    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo;
+    if (for_DS) {
+      const double tmp = ll_int_der1_D(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+      for (size_t j = 0; j < n_models; ++j) {
+        const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
+        ptr[i*n_cols + j] = tmp * r_fcj_fc;
+      }
+      ptr[i*n_cols + n_models] = ll_int_der1_S(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+    }
+    else
+      ptr[i] = ll_int_der1_ani(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
   }
   return ret;
 }
@@ -312,7 +302,8 @@ void add_intensity(py::module& m) {
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
   m.def("ll_int", py::vectorize(ll_int),
         py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"));
-  m.def("ll_int_der1_params", &ll_int_der1_params_py);
+  m.def("ll_int_der1_DS", &ll_int_der1_params_py<true>);
+  m.def("ll_int_der1_ani", &ll_int_der1_params_py<false>);
   m.def("ll_int_fw_der1_S", &ll_int_fw_der1_params_py<true>);
   m.def("ll_int_fw_der1_ani", &ll_int_fw_der1_params_py<false>);
   m.def("lambertw", py::vectorize(lambertw::lambertw));
