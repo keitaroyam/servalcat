@@ -70,6 +70,8 @@ class LL_SPA:
         # adjust Fc
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
         self.hkldata.df["FC"] *= k_iso
+        # adjust Fo
+        self.hkldata.df[self.lab_obs] /= k
     # overall_scale()
 
     def calc_target(self): # -LL target for SPA
