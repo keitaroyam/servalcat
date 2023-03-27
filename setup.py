@@ -13,7 +13,7 @@ ext_modules = [
     Pybind11Extension(
         "servalcat.ext",
         sorted(glob.glob("src/*.cpp") + ["gemmi/src/"+x for x in ("topo.cpp", "monlib.cpp", "polyheur.cpp", "resinfo.cpp", "riding_h.cpp")]), 
-        include_dirs=["gemmi/include"],
+        include_dirs=["gemmi/include", "eigen"],
     ),
 ]
 

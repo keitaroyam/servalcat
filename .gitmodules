@@ -1,3 +1,6 @@
 [submodule "gemmi"]
 	path = gemmi
 	url = https://github.com/project-gemmi/gemmi.git
+[submodule "eigen"]
+	path = eigen
+	url = https://gitlab.com/libeigen/eigen.git
