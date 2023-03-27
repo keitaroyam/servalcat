@@ -22,6 +22,7 @@ Table of Contents
 .. toctree::
    :maxdepth: 2
 
+   overview
    spa
    spa_examples/index
    commands
