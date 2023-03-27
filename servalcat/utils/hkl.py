@@ -16,21 +16,11 @@ from servalcat.utils import logger
 dtypes64 = dict(i=numpy.int64, u=numpy.uint64, f=numpy.float64, c=numpy.complex128)
 to64 = lambda x: x.astype(dtypes64.get(x.dtype.kind, x.dtype))
 
-class Binner:
-    def __init__(self, asu, style="relion"):
-        if style == "relion":
-            cell = asu.unit_cell
-            max_cell_edge = numpy.max([cell.a, cell.b, cell.c])
-            self.d_array = asu.make_d_array()
-            self.bin_array = (max_cell_edge/self.d_array).astype(int)
-            self.bins, self.bin_counts = numpy.unique(self.bin_array, return_counts=True)
-        else:
-            raise Exception("Non-supported binning type")
-    # __init__()
-# class Binner    
-
 def r_factor(fo, fc):
     return numpy.nansum(numpy.abs(fo-fc)) / numpy.nansum(fo)
+def correlation(obs, calc):
+    sel = numpy.isfinite(obs)
+    return numpy.corrcoef(obs[sel], calc[sel])[0,1]
 
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,
@@ -145,6 +135,21 @@ def mtz_selected(mtz, columns):
     mtz2.set_data(data)
     return mtz2
 # mtz_selected()
+
+def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
+    sp = numpy.sort(s_array)**power
+    spmin, spmax = numpy.min(sp), numpy.max(sp)
+    n_bins = 1
+    if n_per_bin <= len(sp):
+        # Decide n_bins so that inner-shell has requested number
+        width = sp[n_per_bin - 1] - spmin
+        n_bins = int((spmax - spmin) / width)
+    if min_bins is not None:
+        n_bins = max(n_bins, min_bins)
+    if max_bins is not None:
+        n_bins = min(n_bins, max_bins)
+    return n_bins
+# decide_n_bins()
     
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
@@ -206,6 +211,18 @@ class HklData:
         hkl = self.miller_array()
         return numpy.dot(hkl, self.cell.fractionalization_matrix)
 
+    def ssq_mat(self):
+        # k_aniso = exp(-s^T B_aniso s / 4)
+        # s^T B s / 4 can be reformulated as R b where R = 1x6 matrix and b = 6x1 matrix
+        # here R for all indices is returned with shape of (6, N)
+        # x[None,:].T <= (N, 6, 1)
+        # x.T[:,None] <= (N, 1, 6)    they can be matmul'ed.
+        svecs = self.s_array()
+        tmp = (0.25 * svecs[:,0]**2, 0.25 * svecs[:,1]**2, 0.25 * svecs[:,2]**2,
+               0.5 * svecs[:,0] * svecs[:,1], 0.5 * svecs[:,0] * svecs[:,2], 0.5 * svecs[:,1] * svecs[:,2])
+        return numpy.array(tmp)
+    # aniso_s_u_s_as_left_mat()
+    
     def debye_waller_factors(self, b_cart=None, b_iso=None):
         if b_iso is not None:
             s2 = 1 / self.d_spacings()**2
@@ -379,6 +396,14 @@ class HklData:
         if omit_nan: tmp = tmp[~tmp.isna().any(axis=1)]
         return [tmp[lab].to_numpy() for lab in labels]
     # as_numpy_arrays()
+
+    def remove_nonpositive(self, label):
+        sel = self.df[label] <= 0
+        n_bad = sel.sum()
+        if n_bad > 0:
+            logger.writeln("Removing {} reflections with {}<=0".format(n_bad, label))
+            self.df = self.df[~sel]
+    # remove_bad_sigma()
 
     def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None
