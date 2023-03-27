@@ -16,19 +16,6 @@ from servalcat.utils import logger
 dtypes64 = dict(i=numpy.int64, u=numpy.uint64, f=numpy.float64, c=numpy.complex128)
 to64 = lambda x: x.astype(dtypes64.get(x.dtype.kind, x.dtype))
 
-class Binner:
-    def __init__(self, asu, style="relion"):
-        if style == "relion":
-            cell = asu.unit_cell
-            max_cell_edge = numpy.max([cell.a, cell.b, cell.c])
-            self.d_array = asu.make_d_array()
-            self.bin_array = (max_cell_edge/self.d_array).astype(int)
-            self.bins, self.bin_counts = numpy.unique(self.bin_array, return_counts=True)
-        else:
-            raise Exception("Non-supported binning type")
-    # __init__()
-# class Binner    
-
 def r_factor(fo, fc):
     return numpy.nansum(numpy.abs(fo-fc)) / numpy.nansum(fo)
 def correlation(obs, calc):
@@ -148,6 +135,21 @@ def mtz_selected(mtz, columns):
     mtz2.set_data(data)
     return mtz2
 # mtz_selected()
+
+def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
+    sp = numpy.sort(s_array)**power
+    spmin, spmax = numpy.min(sp), numpy.max(sp)
+    n_bins = 1
+    if n_per_bin <= len(sp):
+        # Decide n_bins so that inner-shell has requested number
+        width = sp[n_per_bin - 1] - spmin
+        n_bins = int((spmax - spmin) / width)
+    if min_bins is not None:
+        n_bins = max(n_bins, min_bins)
+    if max_bins is not None:
+        n_bins = min(n_bins, max_bins)
+    return n_bins
+# decide_n_bins()
     
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):

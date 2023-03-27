@@ -23,8 +23,8 @@ def add_arguments(parser):
     parser.description = "EXPERIMENTAL program to refine crystallographic structures"
     parser.add_argument("--hklin", required=True)
     parser.add_argument("-d", '--d_min', type=float)
-    parser.add_argument('--nbins', type=int, default=20,
-                        help="Number of bins (default: %(default)d)")
+    parser.add_argument('--nbins', type=int, 
+                        help="Number of bins (default: auto)")
     parser.add_argument("--labin", nargs="+", help="F SIGF FREE input")
     parser.add_argument('--free', type=int, default=0,
                         help='flag number for test set')
@@ -84,13 +84,26 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
 
+    if len(args.labin) == 3: # with test flags
+        use_in_est = "test"
+        use_in_target = "work"
+        n_per_bin = 50
+    else:
+        use_in_est = "all"
+        use_in_target = "all"
+        n_per_bin = 100
+
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin,
                                                                   n_bins=args.nbins,
                                                                   free=args.free,
                                                                   xyzins=[args.model],
                                                                   source=args.source,
-                                                                  d_min=args.d_min)
+                                                                  d_min=args.d_min,
+                                                                  n_per_bin=n_per_bin,
+                                                                  use=use_in_est,
+                                                                  max_bins=30)
+
     is_int = "I" in hkldata.df
     st = sts[0]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
@@ -114,7 +127,8 @@ def main(args):
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
 
-    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source, use_solvent=not args.no_solvent)
+    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
+                 use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],

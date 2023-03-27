@@ -31,8 +31,8 @@ def add_arguments(parser):
                         help='MTZ column for I,SIGI')
     parser.add_argument('--d_min', type=float)
     parser.add_argument('--d_max', type=float)
-    parser.add_argument('--nbins', type=int, default=20,
-                        help="Number of bins (default: %(default)d)")
+    parser.add_argument('--nbins', type=int,
+                        help="Number of bins (default: auto)")
     parser.add_argument('-o','--output_prefix', default="servalcat_fw",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -189,16 +189,16 @@ def french_wilson(hkldata, B_aniso, labout=None):
         hkldata.df.loc[idxes, "to1"] = to
 
 def main(args):
-    if args.nbins < 1:
-        raise SystemExit("--nbins must be > 0")
     hkldata, _, _, _ = process_input(hklin=args.hklin,
                                      labin=args.labin.split(","),
                                      n_bins=args.nbins,
                                      free=None,
                                      xyzins=[],
                                      source=None,
-                                     d_min=args.d_min)
-
+                                     d_min=args.d_min,
+                                     n_per_bin=500,
+                                     max_bins=30)
+    
     B_aniso = determine_Sigma_and_aniso(hkldata)
     french_wilson(hkldata, B_aniso)
 

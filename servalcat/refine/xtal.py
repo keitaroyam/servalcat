@@ -19,7 +19,8 @@ b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
 class LL_Xtal:
-    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True, use_solvent=False):
+    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
+                 use_solvent=False, use_in_est="all", use_in_target="all"):
         assert source in ("electron", "xray") # neutron?
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -42,8 +43,8 @@ class LL_Xtal:
         if not self.is_int:
             self.hkldata.df["FP_org"] = self.hkldata.df["FP"]
             self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
-        self.use_in_est = "test" if "FREE" in hkldata.df else "all"
-        self.use_in_target = "work" if "FREE" in hkldata.df else "all"
+        self.use_in_est = use_in_est
+        self.use_in_target = use_in_target
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 

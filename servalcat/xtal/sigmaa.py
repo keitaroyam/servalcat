@@ -34,8 +34,8 @@ def add_arguments(parser):
                         help='Input atomic model file(s)')
     parser.add_argument("-d", '--d_min', type=float)
     #parser.add_argument('--d_max', type=float)
-    parser.add_argument('--nbins', type=int, default=20,
-                        help="Number of bins (default: %(default)d)")
+    parser.add_argument('--nbins', type=int,
+                        help="Number of bins (default: auto)")
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray",
                         help="Scattering factor choice (default: %(default)s)")
     parser.add_argument('--D_as_exp',  action='store_true',
@@ -208,7 +208,7 @@ class LsqScale:
             quit()
             
         res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad)
-        logger.writeln(str(res))
+        #logger.writeln(str(res))
         self.k_overall = self.k_trans(res.x[0])
         nadp = self.adpdirs.shape[0]
         b_overall = gemmi.SMat33d(*numpy.dot(res.x[1:nadp+1], self.adpdirs))
@@ -677,8 +677,12 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st
 # merge_models()
 
-def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None):
+def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
+                  n_per_bin=None, use="all", max_bins=None):
     assert 1 < len(labin) < 4
+    assert use in ("all", "work", "test")
+    assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
+    
     mtz = gemmi.read_mtz_file(hklin)
     logger.writeln("Input mtz: {}".format(hklin))
     logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
@@ -743,6 +747,16 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.sort_by_resolution()
     hkldata.calc_epsilon()
     hkldata.calc_centric()
+
+    if n_bins is None:
+        sel = hkldata.df[newlabels[0]].notna()
+        if use == "work":
+            sel &= hkldata.df.FREE != free
+        elif use == "test":
+            sel &= hkldata.df.FREE == free
+        n_bins = utils.hkl.decide_n_bins(n_per_bin, 1/hkldata.d_spacings()[sel], max_bins=max_bins)
+        logger.writeln("n_per_bin={} requested for {}. n_bins set to {}".format(n_per_bin, use, n_bins))
+
     hkldata.setup_binning(n_bins=n_bins)
     logger.writeln("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
 
@@ -759,6 +773,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     stats = hkldata.binned_df.copy()
     stats["n_all"] = 0
     stats["n_obs"] = 0
+    snr = "I/sigma" if require_types[0] == "J" else "F/sigma"
+    stats[snr] = 0.
     if "FREE" in hkldata.df:
         stats["n_work"] = 0
         stats["n_test"] = 0
@@ -783,6 +799,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             
         stats.loc[i_bin, "n_obs"] = n_obs
         stats.loc[i_bin, "n_all"] = len(idxes)
+        obs = hkldata.df[newlabels[0]].to_numpy()[idxes]
+        sigma = hkldata.df[newlabels[1]].to_numpy()[idxes]
+        stats.loc[i_bin, snr] = numpy.nanmean(obs / sigma)
         if "FREE" in hkldata.df:
             stats.loc[i_bin, "n_work"] = n_work
             stats.loc[i_bin, "n_test"] = n_test
@@ -926,16 +945,17 @@ def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
 # calculate_maps()
 
 def main(args):
-    if args.nbins < 1:
-        raise SystemExit("--nbins must be > 0")
-
+    n_per_bin = {"all": 500, "work": 500, "test": 50}[args.use]
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
                                                                   labin=args.labin.split(","),
                                                                   n_bins=args.nbins,
                                                                   free=args.free,
                                                                   xyzins=sum(args.model, []),
                                                                   source=args.source,
-                                                                  d_min=args.d_min)
+                                                                  d_min=args.d_min,
+                                                                  n_per_bin=n_per_bin,
+                                                                  use=args.use,
+                                                                  max_bins=30)
     is_int = "I" in hkldata.df
     
     # Overall scaling & bulk solvent
