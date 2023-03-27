@@ -85,7 +85,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    if make.get("cispept", "y") == "y": st.assign_cis_flags()
+    use_cispeps = make.get("cispept", "y") != "y"
     utils.restraints.find_and_fix_links(st, monlib, add_found=(make.get("link", "n")=="y"), find_symmetry_related=False)
     for con in st.connections:
         if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
@@ -105,7 +105,8 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
     try:
         topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
-                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
+                                                 use_cispeps=use_cispeps)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 

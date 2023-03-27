@@ -123,7 +123,6 @@ def main(args):
                                                    stop_for_unknowns=True)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
     utils.restraints.find_and_fix_links(st, monlib)
-    st.assign_cis_flags()
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)

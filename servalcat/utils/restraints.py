@@ -145,12 +145,13 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     return monlib
 # load_monomer_library()
 
-def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False):
+def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
+                     use_cispeps=False):
     # these checks can be done after sorting links
     logger.writeln("Creating restraints..")
     sio = io.StringIO()
     topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=sio, reorder=False,
-                                  ignore_unknown_links=ignore_unknown_links)
+                                  ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
     for l in sio.getvalue().splitlines(): logger.writeln(" " + l)
     unknown_cc = set()
     link_related = set()
@@ -185,6 +186,8 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
         raise RuntimeError("Provide {}".format(" and ".join(msgs)))
     if raise_error and nan_hydr:
         raise RuntimeError("Some hydrogen positions became NaN. The geometry of your model may be of low quality. Consider not adding hydrogen")
+    if not use_cispeps:
+        topo.set_cispeps_in_structure(st)
     return topo
 # prepare_topology()
 
