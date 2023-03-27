@@ -19,6 +19,7 @@ import shlex
 import hashlib
 from servalcat import utils
 from servalcat.xtal import sigmaa
+from servalcat.xtal import french_wilson
 from servalcat import command_line
 
 root = os.path.abspath(os.path.dirname(__file__))
@@ -78,6 +79,31 @@ class XtalTests(unittest.TestCase):
                                       rtol=1e-3)
 
     # test_sigmaa()
+    
+    def test_sigmaa_int(self):
+        mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
+        pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
+        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
+                                  "--labin", "I,SIGI", "--nbins", "10"])
+        hkldata = sigmaa.main(args)
+        os.remove("sigmaa.mtz")
+        numpy.testing.assert_allclose(hkldata.binned_df.D0,
+                                      [0.8437, 0.9814, 1.0212, 0.9620, 0.9935,
+                                       1.0079, 0.9952, 0.9876, 0.9332, 0.9192],
+                                      rtol=1e-4)
+        numpy.testing.assert_allclose(hkldata.binned_df.S,
+                                      [84.4183, 95.3190, 70.4358, 96.5995, 76.2247,
+                                       112.4735, 123.3169, 102.3399, 85.0303, 44.1779],
+                                      rtol=1e-3)
+
+    def test_fw(self):
+        mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
+        args = french_wilson.parse_args(["--hklin", mtzin, "--labin", "I,SIGI"])
+        B_aniso, hkldata = french_wilson.main(args)
+        os.remove("5e5z_fw.mtz")
+        numpy.testing.assert_allclose(B_aniso.elements_pdb(),
+                                      [2.62404, 1.71037, -4.33441, 0, -1.08405, 0],
+                                      rtol=1e-3)                                       
 
     @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")
     def test_refine_cx(self):

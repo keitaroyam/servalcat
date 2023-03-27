@@ -11,6 +11,7 @@ import gemmi
 import numpy
 import pandas
 import time
+import os
 import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
@@ -33,8 +34,8 @@ def add_arguments(parser):
     parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int,
                         help="Number of bins (default: auto)")
-    parser.add_argument('-o','--output_prefix', default="servalcat_fw",
-                        help='output file name prefix (default: %(default)s)')
+    parser.add_argument('-o','--output_prefix',
+                        help='output file name prefix')
 # add_arguments()
 
 def parse_args(arg_list):
@@ -65,7 +66,7 @@ def determine_Sigma_and_aniso(hkldata):
     ssqmat = hkldata.ssq_mat()
     cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]
     for icyc in range(100):
-        logger.writeln("Refine B")
+        #logger.writeln("Refine B")
         B_converged = False
         t0 = time.time()
         args=(ssqmat, hkldata, adpdirs)
@@ -76,7 +77,7 @@ def determine_Sigma_and_aniso(hkldata):
             for i in range(3):
                 ss = shift / 2**i
                 f1 = ll_all_B(x + ss, *args)
-                logger.writeln("f0 = {:.3e} shift = {} df = {:.3e}".format(f0, ss, f1 - f0))
+                #logger.writeln("f0 = {:.3e} shift = {} df = {:.3e}".format(f0, ss, f1 - f0))
                 if f1 < f0:
                     B = gemmi.SMat33d(*numpy.dot(x+ss, adpdirs))
                     if numpy.max(numpy.abs(ss)) < 1e-4: B_converged = True
@@ -85,9 +86,9 @@ def determine_Sigma_and_aniso(hkldata):
                 B_converged = True
             if B_converged: break
 
-        logger.writeln("time= {}".format(time.time() - t0))
-        logger.writeln("B_aniso= {}".format(B))
-        logger.writeln("Refine S")
+        #logger.writeln("time= {}".format(time.time() - t0))
+        #logger.writeln("B_aniso= {}".format(B))
+        #logger.writeln("Refine S")
         S_converged = [False for _ in hkldata.binned()]
         k_ani = hkldata.debye_waller_factors(b_cart=B)
         for i, (i_bin, idxes) in enumerate(hkldata.binned()):
@@ -104,7 +105,7 @@ def determine_Sigma_and_aniso(hkldata):
                     f1 = numpy.nansum(ext.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                  S * ss * hkldata.df.epsilon.to_numpy()[idxes],
                                                  0, hkldata.df.centric.to_numpy()[idxes]+1))
-                    logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
+                    #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
                     if f1 < f0:
                         hkldata.binned_df.loc[i_bin, "S"] = S * ss
                         if ss > 0.9999: S_converged[i] = True
@@ -113,12 +114,15 @@ def determine_Sigma_and_aniso(hkldata):
                     S_converged[i] = True
                 if S_converged[i]: break
 
-        logger.writeln("Refined estimates in cycle {}:".format(icyc))
-        logger.writeln(hkldata.binned_df.to_string())
-        logger.writeln("B_aniso= {}".format(B))
+        #logger.writeln("Refined estimates in cycle {}:".format(icyc))
+        #logger.writeln(hkldata.binned_df.to_string())
+        #logger.writeln("B_aniso= {}".format(B))
         cycle_data.append([icyc] + SMattolist(B) + list(hkldata.binned_df.S))
         if B_converged and all(S_converged):
-            logger.writeln("Converged. Finished in cycle {}".format(icyc))
+            logger.writeln("Converged in cycle {}".format(icyc))
+            logger.writeln("Refined estimates:")
+            logger.writeln(hkldata.binned_df.to_string())
+            logger.writeln("B_aniso= {}".format(B))
             break
 
     with open("fw_cycles.dat", "w") as ofs:
@@ -189,6 +193,9 @@ def french_wilson(hkldata, B_aniso, labout=None):
         hkldata.df.loc[idxes, "to1"] = to
 
 def main(args):
+    if not args.output_prefix:
+        args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
+
     hkldata, _, _, _ = process_input(hklin=args.hklin,
                                      labin=args.labin.split(","),
                                      n_bins=args.nbins,
@@ -203,9 +210,10 @@ def main(args):
     french_wilson(hkldata, B_aniso)
 
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=["F","SIGF","I","SIGI","d","bin","centric","to1"],
-                      types={"F":"F", "SIGF":"Q"})
+    hkldata.write_mtz(mtz_out, labs=["F","SIGF","I","SIGI"],
+                      types={"F":"F", "SIGF":"Q", "I":"J", "SIGI":"Q"})
     logger.writeln("output mtz: {}".format(mtz_out))
+    return B_aniso, hkldata
 # main()
 
 if __name__ == "__main__":
