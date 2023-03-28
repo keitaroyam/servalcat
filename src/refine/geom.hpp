@@ -10,6 +10,7 @@
 #include <gemmi/topo.hpp>     // for Topo
 #include <gemmi/select.hpp>   // for count_atom_sites
 #include <gemmi/eig3.hpp>     // for eigen_decomposition
+#include <Eigen/Sparse>
 
 namespace servalcat {
 
@@ -226,53 +227,53 @@ struct GeomTarget {
     am[ipos+7] += w * deriv1.y * deriv2.z;
     am[ipos+8] += w * deriv1.z * deriv2.z;
   }
-  void get_am_col_row(int *row, int *col) const {
+  Eigen::SparseMatrix<double> make_spmat() const {
+    Eigen::SparseMatrix<double> spmat(vn.size(), vn.size());
+    std::vector<Eigen::Triplet<double>> data;
     size_t i = 0, offset = 0;
+    auto add_data = [&data](size_t i, size_t j, double v) {
+                      data.emplace_back(i, j, v);
+                      if (i != j)
+                        data.emplace_back(j, i, v);
+                    };
     if (refine_xyz) {
       for (size_t j = 0; j < n_atoms(); ++j, i+=6) {
-        row[i]   = 3*j;   col[i]   = 3*j;
-        row[i+1] = 3*j+1; col[i+1] = 3*j+1;
-        row[i+2] = 3*j+2; col[i+2] = 3*j+2;
-        row[i+3] = 3*j;   col[i+3] = 3*j+1;
-        row[i+4] = 3*j;   col[i+4] = 3*j+2;
-        row[i+5] = 3*j+1; col[i+5] = 3*j+2;
+        add_data(3*j,   3*j,   am[i]);
+        add_data(3*j+1, 3*j+1, am[i+1]);
+        add_data(3*j+2, 3*j+2, am[i+2]);
+        add_data(3*j,   3*j+1, am[i+3]);
+        add_data(3*j,   3*j+2, am[i+4]);
+        add_data(3*j+1, 3*j+2, am[i+5]);
       }
       for (size_t j = 0; j < pairs.size(); ++j)
         for (size_t k = 0; k < 3; ++k)
-          for (size_t l = 0; l < 3; ++l, ++i) {
-            row[i] = 3 * pairs[j].second + l;
-            col[i] = 3 * pairs[j].first + k;
-          }
+          for (size_t l = 0; l < 3; ++l, ++i)
+            add_data(3 * pairs[j].second + l, 3 * pairs[j].first + k, am[i]);
       offset = 3 * n_atoms();
     }
     if (adp_mode == 1) {
       for (size_t j = 0; j < n_atoms(); ++j, ++i) {
-        row[i] = offset + j;
-        col[i] = offset + j;
+        add_data(offset + j, offset + j, am[i]);
       }
-      for (size_t j = 0; j < pairs.size(); ++j, ++i) {
-        row[i] = offset + pairs[j].second;
-        col[i] = offset + pairs[j].first;
-      }
+      for (size_t j = 0; j < pairs.size(); ++j, ++i)
+        add_data(offset + pairs[j].second, offset + pairs[j].first, am[i]);
     } else if (adp_mode == 2) {
       for (size_t j = 0; j < n_atoms(); ++j) {
         for (size_t k = 0; k < 6; ++k, ++i)
-          row[i] = col[i] = offset + 6 * j + k;
+          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i]);
         for (size_t k = 0; k < 6; ++k)
-          for (int l = k + 1; l < 6; ++l, ++i) {
-            row[i] = offset + 6 * j + k;
-            col[i] = offset + 6 * j + l;
-          }
+          for (int l = k + 1; l < 6; ++l, ++i)
+            add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
       }
       for (size_t j = 0; j < pairs.size(); ++j) {
         for (size_t k = 0; k < 6; ++k)
-          for (size_t l = 0; l < 6; ++l, ++i) {
-            row[i] = offset + 6 * pairs[j].second + l;
-            col[i] = offset + 6 * pairs[j].first + k;
-          }
+          for (size_t l = 0; l < 6; ++l, ++i)
+            add_data(offset + 6 * pairs[j].second + l, offset + 6 * pairs[j].first + k, am[i]);
       }
     }
     assert(i == am.size());
+    spmat.setFromTriplets(data.begin(), data.end());
+    return spmat;
   }
 };
 

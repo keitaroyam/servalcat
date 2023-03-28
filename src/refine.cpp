@@ -12,7 +12,7 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/numpy.h>
 #include <pybind11/iostream.h>  // for detail::pythonbuf
-
+#include <pybind11/eigen.h>
 namespace py = pybind11;
 using namespace pybind11::literals; // to bring in the `_a` literal
 using namespace servalcat;
@@ -37,28 +37,6 @@ PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
-
-py::tuple for_coo_matrix(GeomTarget &self) {
-  const size_t n = self.am.size();
-  py::array_t<int> rowarr(n);
-  py::array_t<int> colarr(n);
-  int* row = (int*) rowarr.request().ptr;
-  int* col = (int*) colarr.request().ptr;
-  self.get_am_col_row(row, col);
-  return py::make_tuple(&self.am, py::make_tuple(rowarr, colarr));
-}
-
-template<typename Table>
-py::tuple for_coo_matrix(LL<Table> &self) {
-  const auto am = self.fisher_diag_from_table();
-  const size_t n = am.size();
-  py::array_t<int> rowarr(n);
-  py::array_t<int> colarr(n);
-  int* row = (int*) rowarr.request().ptr;
-  int* col = (int*) colarr.request().ptr;
-  self.get_am_col_row(row, col);
-  return py::make_tuple(am, py::make_tuple(rowarr, colarr));
-}
 
 py::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
                                  py::array_t<int> cols, int N, double cutoff) {
@@ -108,7 +86,7 @@ void add_ll(py::module& m, const char* name) {
     .def("calc_grad", &T::calc_grad)
     .def("make_fisher_table_diag_fast", &T::make_fisher_table_diag_fast)
     .def("fisher_diag_from_table", &T::fisher_diag_from_table)
-    .def("fisher_for_coo", [](T &self) {return for_coo_matrix(self);}, py::return_value_policy::reference_internal)
+    .def_property_readonly("fisher_spmat", &T::make_spmat)
     .def_readonly("table_bs", &T::table_bs)
     .def_readonly("pp1", &T::pp1)
     .def_readonly("bb", &T::bb)
@@ -529,7 +507,7 @@ void add_refine(py::module& m) {
     .def_readonly("target", &GeomTarget::target)
     .def_readonly("vn", &GeomTarget::vn)
     .def_readonly("am", &GeomTarget::am)
-    .def("am_for_coo", [](GeomTarget &self) {return for_coo_matrix(self);}, py::return_value_policy::reference_internal)
+    .def_property_readonly("am_spmat", &GeomTarget::make_spmat)
   ;
   geom
     .def(py::init<gemmi::Structure&, const gemmi::EnerLib*>(), py::arg("st"), py::arg("ener_lib")=nullptr)
@@ -550,7 +528,7 @@ void add_refine(py::module& m) {
     .def("setup_target", &Geometry::setup_target)
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
-	 py::arg("skip_critical_dist")=false)
+         py::arg("skip_critical_dist")=false)
     .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
          py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1)

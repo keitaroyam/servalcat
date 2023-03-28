@@ -279,12 +279,8 @@ class LL_Xtal:
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
-        coo = scipy.sparse.coo_matrix(ll.fisher_for_coo())
-        lil = coo.tolil()
-        rows, cols = lil.nonzero()
-        lil[cols,rows] = lil[rows,cols]
 
         for atom in occ_backup:
             atom.occ = occ_backup[atom]
             
-        return vn, lil
+        return vn, ll.fisher_spmat

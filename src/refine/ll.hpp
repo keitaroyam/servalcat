@@ -8,6 +8,7 @@
 #include <gemmi/grid.hpp>
 #include <gemmi/it92.hpp>
 #include <gemmi/dencalc.hpp>
+#include <Eigen/Sparse>
 
 namespace servalcat {
 
@@ -468,7 +469,7 @@ struct LL{
       return y;
   }
 
-  std::vector<double> fisher_diag_from_table() {
+  std::vector<double> fisher_diag_from_table() const {
     const size_t n_atoms = atoms.size();
     const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
     const int N = Table::Coef::ncoeffs;
@@ -508,35 +509,43 @@ struct LL{
     return am;
   }
 
-  void get_am_col_row(int *row, int *col) const {
+  Eigen::SparseMatrix<double> make_spmat() const {
     const size_t n_atoms = atoms.size();
     const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
+    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
+    const std::vector<double> am = fisher_diag_from_table();
+    Eigen::SparseMatrix<double> spmat(n_v, n_v);
+    std::vector<Eigen::Triplet<double>> data;
+    auto add_data = [&data](size_t i, size_t j, double v) {
+                      data.emplace_back(i, j, v);
+                      if (i != j)
+                        data.emplace_back(j, i, v);
+                    };
     size_t i = 0, offset = 0;
     if (refine_xyz) {
       for (size_t j = 0; j < n_atoms; ++j)
         for (size_t k = 0; k < 3; ++k, ++i)
-          row[i] = col[i] = 3*j + k;
+          add_data(3*j + k, 3*j + k, am[i]);
       offset = 3 * n_atoms;
     }
     if (adp_mode == 1) {
       for (size_t j = 0; j < n_atoms; ++j, ++i)
-        row[i] = col[i] = offset + j;
+        add_data(offset + j, offset + j, am[i]);
     } else if (adp_mode == 2) {
       for (size_t j = 0; j < n_atoms; ++j, i+=9) {
         for (size_t k = 0; k < 6; ++k)
-          row[i+k] = col[i+k] = offset + 6 * j + k;
+          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i+k]);
         // 11-22
-        row[i+6] = offset + 6 * j;
-        col[i+6] = offset + 6 * j + 1;
+        add_data(offset + 6 * j, offset + 6 * j + 1, am[i+6]);
         // 11-33
-        row[i+7] = offset + 6 * j;
-        col[i+7] = offset + 6 * j + 2;
+        add_data(offset + 6 * j, offset + 6 * j + 2, am[i+7]);
         // 22-33
-        row[i+8] = offset + 6 * j + 1;
-        col[i+8] = offset + 6 * j + 2;
+        add_data(offset + 6 * j + 1, offset + 6 * j + 2, am[i+8]);
       }
     }
     if(i != n_a) gemmi::fail("wrong matrix size");
+    spmat.setFromTriplets(data.begin(), data.end());
+    return spmat;
   }
 };
 

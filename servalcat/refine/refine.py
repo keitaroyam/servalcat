@@ -85,7 +85,7 @@ class Geom:
         return self.geom.calc(check_only=target_only, **self.calc_kwds)
     def calc_adp_restraint(self, target_only):
         return self.geom.calc_adp_restraint(target_only, self.sigma_b)
-    def calc_target(self, target_only, refine_xyz, adp_mode, N):
+    def calc_target(self, target_only, refine_xyz, adp_mode):
         self.geom.clear_target()
         geom_x = self.calc(target_only) if refine_xyz else 0
         geom_a = self.calc_adp_restraint(target_only) if adp_mode > 0 else 0
@@ -93,12 +93,8 @@ class Geom:
         logger.writeln(" geom_a = {}".format(geom_a))
         geom = geom_x + geom_a
         if not target_only:
-            g_vn = numpy.array(self.geom.target.vn) # don't want copy?            
-            coo = scipy.sparse.coo_matrix(self.geom.target.am_for_coo(), shape=(N, N))
-            lil = coo.tolil()
-            rows, cols = lil.nonzero()
-            lil[cols,rows] = lil[rows,cols]
-            g_am = lil
+            g_vn = numpy.array(self.geom.target.vn) # don't want copy?
+            g_am = self.geom.target.am_spmat
             diag = g_am.diagonal()
             logger.writeln("diag(restr) min= {:3e} max= {:3e}".format(numpy.min(diag),
                                                                       numpy.max(diag)))
@@ -266,7 +262,7 @@ class Refine:
         N = self.n_params()
         geom, g_vn, g_am = self.geom.calc_target(target_only,
                                                  not self.unrestrained and self.refine_xyz,
-                                                 self.adp_mode, N)
+                                                 self.adp_mode)
         if self.ll is not None:
             ll = self.ll.calc_target()
             if not target_only:
