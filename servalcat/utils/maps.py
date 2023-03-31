@@ -15,10 +15,7 @@ from servalcat.utils import logger
 from servalcat.utils import hkl
 
 def new_grid_like(gr):
-    newgr = type(gr)(*gr.shape)
-    newgr.set_unit_cell(gr.unit_cell)
-    newgr.spacegroup = gr.spacegroup
-    return newgr
+    return type(gr)(gr.array*0, gr.unit_cell, gr.spacegroup)
 # new_grid_like()
 
 def copy_maps(maps):
@@ -296,38 +293,48 @@ def raised_cosine_kernel(r1, dr=2):
 # raised_cosine_kernel()
 
 def fft_convolve_simple(in1, in2):
-    return numpy.fft.irfftn(numpy.fft.rfftn(in1) * numpy.fft.rfftn(in2))
+    if numpy.iscomplexobj(in1):
+        return numpy.fft.ifftn(numpy.fft.fftn(in1) * numpy.fft.fftn(in2))
+    else:
+        return numpy.fft.irfftn(numpy.fft.rfftn(in1) * numpy.fft.rfftn(in2))
 
 def local_var(grid, kernel, method="scipy"):
     if method == "scipy":
         convolve = lambda x, y: scipy.signal.fftconvolve(x, y, "same")
     else:
         convolve = fft_convolve_simple
-    mean_x2 = convolve(grid.array**2, kernel)
+    mean_x2 = convolve(numpy.abs(grid.array)**2, kernel)
     mean_x = convolve(grid.array, kernel)
     var_x = new_grid_like(grid)
-    var_x.array[:] = mean_x2 - mean_x**2
+    var_x.array[:] = mean_x2 - numpy.abs(mean_x)**2
     var_x.array[var_x.array<0] = 0 # due to loss of significance
     return var_x
 # local_var()
 
 def local_cc(map1, map2, kernel, method="scipy"):
+    # maps may be real space grid or reciprocal space grid
     if method == "scipy":
         convolve = lambda x, y: scipy.signal.fftconvolve(x, y, "same")
     else:
         convolve = fft_convolve_simple
 
     localcc = new_grid_like(map1)
-    mean_1_sqr = convolve(map1.array**2, kernel)
-    mean_2_sqr = convolve(map2.array**2, kernel)
+    mean_1_sqr = convolve(numpy.abs(map1.array)**2, kernel)
+    mean_2_sqr = convolve(numpy.abs(map2.array)**2, kernel)
     mean_1 = convolve(map1.array, kernel)
     mean_2 = convolve(map2.array, kernel)
-    mean_12 = convolve(map1.array * map2.array, kernel)
-    var_1 = mean_1_sqr - mean_1**2
-    var_1[var_1 < 0] = 0
-    var_2 = mean_2_sqr - mean_2**2
-    var_2[var_2 < 0] = 0
-    covar_12 = mean_12 - mean_1 * mean_2
-    localcc.array[:] = covar_12 / numpy.sqrt(var_1 * var_2)
+    mean_12 = convolve(map1.array * numpy.conj(map2.array), kernel)
+    var_1 = mean_1_sqr - numpy.abs(mean_1)**2
+    var_2 = mean_2_sqr - numpy.abs(mean_2)**2
+    bad_sel = (var_1 <= 0) | (var_2 <= 0)
+    var_1_2 = var_1 * var_2
+    var_1_2[bad_sel] = 1 # to avoid division by zero
+    covar_12 = mean_12 - mean_1 * numpy.conj(mean_2)
+    localcc.array[:] = covar_12 / numpy.sqrt(var_1_2)
+    localcc.array[bad_sel] = 0.
+    if numpy.iscomplexobj(localcc.array):
+        localcc.array[:] = localcc.array.real
+    localcc.array[localcc.array > 1] = 1.
+    localcc.array[localcc.array < -1] = -1.
     return localcc
 # local_cc()

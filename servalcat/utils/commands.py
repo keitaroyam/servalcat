@@ -14,6 +14,7 @@ from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
 from servalcat.refine.refine import Geom
+from servalcat import ext
 import os
 import gemmi
 import numpy
@@ -207,6 +208,8 @@ def add_arguments(p):
     parser.add_argument('-o', '--output_prefix', default='nemap')
     parser.add_argument("--trim", action='store_true', help="Write trimmed maps")
     parser.add_argument("--trim_mtz", action='store_true', help="Write trimmed mtz")
+    parser.add_argument("--local_fourier_weighting_with", type=float, default=0,
+                        help="Experimental: give kernel size in A^-1 unit to use local Fourier weighting instead of resolution-dependent weights")
 
     # blur
     parser = subparsers.add_parser("blur", description = 'Blur data by specified B value')
@@ -874,11 +877,40 @@ def nemap(args):
         args.resolution = maps.nyquist_resolution(halfmaps[0][0])
         logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
 
-    hkldata = maps.mask_and_fft_maps(halfmaps, args.resolution, mask)
-    hkldata.setup_relion_binning()
-    maps.calc_noise_var_from_halfmaps(hkldata)
-    map_labs = fofc.calc_maps(hkldata, B=args.B, has_halfmaps=True, half1_only=args.half1_only,
-                              no_fsc_weights=args.no_fsc_weights, sharpening_b=args.sharpening_b)
+    d_min = args.resolution
+    if args.local_fourier_weighting_with > 0:
+        d_min = 1 / (args.local_fourier_weighting_with + 1 / d_min)
+        logger.writeln("adjusting d_min= {:.2f} for local correlation".format(d_min))
+    hkldata = maps.mask_and_fft_maps(halfmaps, d_min, mask)
+
+    if args.local_fourier_weighting_with > 0:
+        asu1 = hkldata.as_asu_data("F_map1")
+        asu2 = hkldata.as_asu_data("F_map2")
+        size = asu1.get_size_for_hkl(sample_rate=3)
+        logger.writeln("using grid {}".format(size))
+        gr1 = asu1.get_f_phi_on_grid(size)
+        gr2 = asu2.get_f_phi_on_grid(size)
+        kernel = ext.hard_sphere_kernel_recgrid(size, asu1.unit_cell, args.local_fourier_weighting_with)
+        cc = maps.local_cc(gr1, gr2, kernel.array.real, method="simple")
+        cc.array[cc.array < 0] = 0 # negative cc cannot be used anyway
+        cc.array[:] = 2 * cc.array.real / (1 + cc.array.real) # to full map cc
+        hkldata.df["cc"] = numpy.real(cc.get_value_by_hkl(hkldata.miller_array()))
+        grf = type(gr1)((gr1.array + gr2.array) / 2, gr1.unit_cell, gr1.spacegroup)
+        var_f = maps.local_var(grf, kernel.array.real, method="simple")
+        hkldata.df["var_f"] = numpy.real(var_f.get_value_by_hkl(hkldata.miller_array()))
+        if args.B is not None:
+            k2_l = numpy.exp(-args.B / hkldata.d_spacings()**2 / 2)
+            hkldata.df.cc = k2_l * hkldata.df.cc / (1 + (k2_l - 1) * hkldata.df.cc)
+        hkldata.df["FWT"] = hkldata.df.FP * numpy.sqrt(hkldata.df.cc / hkldata.df.var_f)
+        hkldata.df["kernel"] = numpy.real(kernel.get_value_by_hkl(hkldata.miller_array()))
+        hkldata.write_mtz(args.output_prefix+"_cc.mtz", ["cc", "kernel"])
+        hkldata = hkldata.copy(d_min=args.resolution)
+        map_labs = ["FWT"]
+    else:
+        hkldata.setup_relion_binning()
+        maps.calc_noise_var_from_halfmaps(hkldata)
+        map_labs = fofc.calc_maps(hkldata, B=args.B, has_halfmaps=True, half1_only=args.half1_only,
+                                  no_fsc_weights=args.no_fsc_weights, sharpening_b=args.sharpening_b)
     fofc.write_files(hkldata, map_labs, grid_start=halfmaps[0][1], stats_str=None,
                      mask=mask, output_prefix=args.output_prefix,
                      trim_map=args.trim, trim_mtz=args.trim_mtz)
