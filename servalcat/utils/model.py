@@ -587,7 +587,9 @@ def adp_constraints(ops, cell, tr0=True):
         if numpy.isclose(evals[i], 0):
             ret.append(evecs[:, i])
 
-    return numpy.vstack(ret)
+    if len(ret) > 0:
+        return numpy.vstack(ret)
+    return numpy.empty((0, 6))
 # adp_constraints()
 
 def to_dataframe(st):
