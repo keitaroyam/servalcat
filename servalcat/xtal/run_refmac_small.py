@@ -124,7 +124,7 @@ def main(args):
             asudata.spacegroup = sg_user
         write_mtz(mtz_in, asudata, info.get("hklf"), args.blur)
     else:
-        st = utils.fileio.read_small_structure(args.model)
+        st = utils.fileio.read_structure(args.model)
         sg_st = st.find_spacegroup()
         logger.writeln(" Cell from model: {}".format(st.cell))
         logger.writeln(" Space group from model: {}".format(st.spacegroup_hm))
@@ -194,6 +194,12 @@ def main(args):
     else:
         args.keywords = []
 
+    for m in st:
+        for chain in m:
+            # Fix if they are blank TODO if more than one chain/residue?
+            if chain.name == "": chain.name = "A"
+            for res in chain:
+                if res.name == "": res.name = "00"
 
     # FIXME in some cases mtz space group should be modified. 
     utils.fileio.write_model(st, prefix="input", pdb=True, cif=True)

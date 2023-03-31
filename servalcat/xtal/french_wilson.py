@@ -212,7 +212,6 @@ def main(args):
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=["F","SIGF","I","SIGI"],
                       types={"F":"F", "SIGF":"Q", "I":"J", "SIGI":"Q"})
-    logger.writeln("output mtz: {}".format(mtz_out))
     return B_aniso, hkldata
 # main()
 

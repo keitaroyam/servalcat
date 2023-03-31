@@ -154,7 +154,6 @@ def main(args):
         labs.append("FCbulk")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
-    logger.writeln("output mtz: {}".format(mtz_out))
 
 # main()
 

@@ -684,14 +684,35 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     assert 1 < len(labin) < 4
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
+
+    if utils.fileio.splitext(hklin)[1] == ".mtz":
+        mtz = gemmi.read_mtz_file(hklin)
+        logger.writeln("Input mtz: {}".format(hklin))
+        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
+        logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
+        logger.writeln("")
+        col_types = {x.label:x.type for x in mtz.columns}
+        if labin[0] not in col_types:
+            raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))
+        if col_types[labin[0]] == "F":
+            logger.writeln("Observation type: amplitude")
+            newlabels = ["FP","SIGFP"]
+            require_types = ["F", "Q"]
+        elif col_types[labin[0]] == "J":
+            logger.writeln("Observation type: intensity")
+            newlabels = ["I","SIGI"]
+            require_types = ["J", "Q"]
+        else:
+            raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
+        if len(labin) == 3: newlabels.append("FREE")
+        hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+        sts = [utils.fileio.read_structure(f) for f in xyzins]
+    else:
+        assert len(xyzins) == 1
+        st, hkldata = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
+        sts = [st]
+        newlabels = hkldata.columns()
     
-    mtz = gemmi.read_mtz_file(hklin)
-    logger.writeln("Input mtz: {}".format(hklin))
-    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
-    logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
-    logger.writeln("")
-    
-    sts = [utils.fileio.read_structure(f) for f in xyzins]
     if sts:
         assert source in ["electron", "xray", "neutron"]
         logger.writeln("From model 1:")
@@ -699,17 +720,19 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         logger.writeln("  Space group: {}".format(sts[0].spacegroup_hm))
         logger.writeln("")
     
-        if not mtz.cell.approx(sts[0].cell, 1e-3):
-            logger.writeln("Warning: unit cell mismatch between model and mtz")
+        if not hkldata.cell.approx(sts[0].cell, 1e-3):
+            logger.writeln("Warning: unit cell mismatch between model and reflection data")
             logger.writeln("         using unit cell from mtz")
 
-        for st in sts: st.cell = mtz.cell # mtz cell is used in any case
+        for st in sts: st.cell = hkldata.cell # mtz cell is used in any case
 
         sg_st = sts[0].find_spacegroup() # may be None
-        sg_use = mtz.spacegroup
-        if mtz.spacegroup != sg_st:
+        sg_use = hkldata.sg
+        if hkldata.sg != sg_st:
             logger.writeln("Warning: space group mismatch between model and mtz")
-            if sg_st and mtz.spacegroup.point_group_hm() == sg_st.point_group_hm():
+            pg_mtz = utils.hkl.intensity_symmetry(hkldata.sg)
+            pg_st = utils.hkl.intensity_symmetry(sg_st)
+            if sg_st and pg_mtz == pg_st:
                 logger.writeln("         using space group from model")
                 sg_use = sg_st
             else:
@@ -717,26 +740,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             logger.writeln("")
 
         for st in sts: st.spacegroup_hm = sg_use.hm
-        mtz.spacegroup = sg_use
+        hkldata.sg = sg_use
         
-    col_types = {x.label:x.type for x in mtz.columns}
-    if labin[0] not in col_types:
-        raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))
-
-    if col_types[labin[0]] == "F":
-        logger.writeln("Observation type: amplitude")
-        newlabels = ["FP","SIGFP"]
-        require_types = ["F", "Q"]
-    elif col_types[labin[0]] == "J":
-        logger.writeln("Observation type: intensity")
-        newlabels = ["I","SIGI"]
-        require_types = ["J", "Q"]
-    else:
-        raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
-
-        
-    if len(labin) == 3: newlabels.append("FREE")
-    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
@@ -775,7 +780,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     stats = hkldata.binned_df.copy()
     stats["n_all"] = 0
     stats["n_obs"] = 0
-    snr = "I/sigma" if require_types[0] == "J" else "F/sigma"
+    snr = "I/sigma" if newlabels[0] == "I" else "F/sigma"
     stats[snr] = 0.
     if "FREE" in hkldata.df:
         stats["n_work"] = 0
@@ -994,8 +999,6 @@ def main(args):
         labs.append("Fbulk")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
-    logger.writeln("output mtz: {}".format(mtz_out))
-
     return hkldata
 # main()
 if __name__ == "__main__":

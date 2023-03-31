@@ -150,6 +150,13 @@ def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
         n_bins = min(n_bins, max_bins)
     return n_bins
 # decide_n_bins()
+
+def intensity_symmetry(sg):
+    ops = sg.operations()
+    ops.add_inversion()
+    newsg = gemmi.find_spacegroup_by_ops(ops)
+    return newsg.point_group_hm()
+# intensity_symmetry()
     
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
@@ -372,6 +379,9 @@ class HklData:
 
     def binned(self):
         return self._bin_and_indices
+
+    def columns(self):
+        return [x for x in self.df.columns if x not in "HKL"]
     
     def merge(self, other, common_only=True):
         self.merge_df(other, common_only)
@@ -566,6 +576,9 @@ class HklData:
 
     def write_mtz(self, mtz_out, labs, types=None, phase_label_decorator=None,
                   exclude_000=True):
+        logger.writeln("Writing MTZ file: {}".format(mtz_out))
+        if self.sg.ccp4 < 1:
+            logger.writeln("WARNING: CCP4-unsupported space group ({})".format(self.sg.xhm()))
         if types is None: types = {}
         if exclude_000:
             df = self.df.query("H!=0 | K!=0 | L!=0")

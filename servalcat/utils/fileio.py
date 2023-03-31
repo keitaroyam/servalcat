@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import model
+from servalcat.utils import hkl
 from servalcat.utils import restraints
 import os
 import shutil
@@ -272,11 +273,18 @@ def read_structure(xyz_in):
         logger.writeln("Reading mmCIF file: {}".format(xyz_in))
         doc = read_cif_safe(xyz_in)
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
-        if len(blocks) == 0:
-            raise RuntimeError("No block having _atom_site found")
-        if len(blocks) > 1:
-            logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
-        return gemmi.make_structure_from_block(blocks[0])
+        if len(blocks) > 0:
+            if len(blocks) > 1:
+                logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
+            return gemmi.make_structure_from_block(blocks[0])
+        else:
+            ss = gemmi.read_small_structure(xyz_in)
+            if not ss.sites:
+                raise RuntimeError("No atoms found in cif file.")
+            return model.cx_to_mx(ss)
+    elif spext[1].lower() in (".ins", ".res"):
+        logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
+        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
 # read_structure()
@@ -379,37 +387,6 @@ def merge_ligand_cif(cifs_in, cif_out):
 
     doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
 # merge_ligand_cif()
-
-def read_small_structure(xyz_in):
-    spext = splitext(xyz_in)
-    if spext[1].lower() in (".ins", ".res"):
-        logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
-        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
-    elif spext[1].lower() in (".pdb", ".ent"):
-        logger.writeln("Reading PDB file: {}".format(xyz_in))
-        st = gemmi.read_pdb(xyz_in)
-        for m in st:
-            for chain in m:
-                # Fix if they are blank TODO if more than one chain/residue?
-                if chain.name == "": chain.name = "A"
-                for res in chain:
-                    if res.name == "": res.name = "00"
-        return st
-    elif spext[1].lower() in (".cif", ".mmcif"):
-        doc = read_cif_safe(xyz_in)
-        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
-        if len(blocks) > 0:
-            if len(blocks) > 1:
-                logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
-            return gemmi.make_structure_from_block(blocks[0])
-        else:
-            ss = gemmi.read_small_structure(xyz_in)
-            if not ss.sites:
-                raise RuntimeError("No atoms found in cif file.")
-            return model.cx_to_mx(ss)
-    else:
-        raise RuntimeError("Unsupported file type: {}".format(spext[1]))
-# read_small_structure()
 
 def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
     assert (ins_in, lines_in).count(None) == 1
@@ -638,3 +615,52 @@ def read_smcif_shelx(cif_in):
     asudata = read_shelx_hkl(ss.cell, ss.find_spacegroup(), lines_in=hkl_str.splitlines())
     return asudata, ss, info
 # read_smcif_shelx()
+
+def read_small_molecule_files(files):
+    st, asudata, hklf = None, None, None
+    # first pass - find structure
+    for filename in files:
+        ext = splitext(filename)[1]
+        if ext in (".cif", ".res", ".ins"):
+            try:
+                st = read_structure(filename)
+            except:
+                continue
+            logger.writeln("Coordinates read from: {}".format(filename))
+            if ext == ".cif":
+                b = gemmi.cif.read(cif_in).sole_block()
+                res_str = b.find_value("_shelx_res_file")
+            else:
+                res_str = open(filename).read()
+            if res_str:
+                _, info = read_shelx_ins(lines_in=res_str.splitlines())
+                hklf = info["hklf"]
+    if st is None:
+        logger.writeln("ERRROR: coordinates not found.")
+        return None, None
+    
+    # second pass - find hkl
+    for filename in files:
+        ext = splitext(filename)[1]
+        try:
+            b = gemmi.cif.read(filename).sole_block()
+            hkl_str = b.find_value("_shelx_hkl_file")
+            if hkl_str:
+                asudata = read_shelx_hkl(st.cell, st.find_spacegroup(), lines_in=hkl_str.splitlines())
+                logger.writeln("reflection data read from: {}".format(filename))
+            elif b.find_value("_refln_index_h"):
+                asudata, hklf = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
+        except ValueError: # not a cif file
+            if ext == ".hkl":
+                asudata = read_shelx_hkl(st.cell, st.find_spacegroup(), file_in=filename)
+                logger.writeln("reflection data read from: {}".format(filename))
+
+    if asudata is not None:
+        if hklf is None:
+            logger.writeln("No HKLF info found. Assuming 4 (intensity)")
+            hklf = 4
+        hkldata = hkl.hkldata_from_asu_data(asudata, {3: "FP", 4: "I"}[hklf])
+    else:
+        hkldata = None
+
+    return st, hkldata
