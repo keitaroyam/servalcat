@@ -10,6 +10,7 @@
 #include <gemmi/topo.hpp>     // for Topo
 #include <gemmi/select.hpp>   // for count_atom_sites
 #include <gemmi/eig3.hpp>     // for eigen_decomposition
+#include <gemmi/bond_idx.hpp> // for BondIndex
 #include <Eigen/Sparse>
 
 namespace servalcat {
