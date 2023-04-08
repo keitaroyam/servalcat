@@ -473,7 +473,6 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
 
     # workaround for Refmac
     # TODO need to check external restraints
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
     if use_refmac:
         if use_gemmi_prep:
             st.assign_cis_flags()
@@ -741,6 +740,7 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
     if not args.no_link_check:
         utils.restraints.find_and_fix_links(st, monlib)
 

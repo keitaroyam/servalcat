@@ -108,6 +108,8 @@ def main(args):
     st = sts[0]
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=False)
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    utils.restraints.find_and_fix_links(st, monlib)
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]

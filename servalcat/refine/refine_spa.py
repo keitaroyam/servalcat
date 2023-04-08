@@ -121,6 +121,7 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True)
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
     utils.restraints.find_and_fix_links(st, monlib)
     st.assign_cis_flags()
     if args.hklin:
@@ -133,7 +134,7 @@ def main(args):
         #hkldata.setup_relion_binning()
         hkldata.setup_binning(n_bins=10) # need to sort out
         st.cell = hkldata.cell
-        st.spacegroup_hm = hkldata.sg.hm
+        st.spacegroup_hm = hkldata.sg.xhm()
         info = {}
     else:
         if args.halfmaps:
