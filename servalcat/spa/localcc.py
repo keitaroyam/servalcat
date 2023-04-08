@@ -169,7 +169,7 @@ def main(args):
         st = utils.fileio.read_structure(args.model)
         utils.model.expand_ncs(st)
         st.cell = hkldata.cell
-        st.spacegroup_hm = hkldata.sg.hm
+        st.spacegroup_hm = hkldata.sg.xhm()
         add_coeffs_for_model_cc(hkldata, st)
         modelcc_map = utils.maps.local_cc(hkldata.fft_map("FPw", grid_size=grid_shape),
                                           hkldata.fft_map("FCw", grid_size=grid_shape),

@@ -512,7 +512,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
     if sg is None:
         logger.error("Cannot construct space group from symbols: {}".format([x.triplet() for x in symms]))
     else:
-        ss.spacegroup_hm = sg.hm + (" :{}".format(sg.ext) if sg.ext!="\0" else "")
+        ss.spacegroup_hm = sg.xhm()
 
     if sg is not None: # debug
         sgops = set(gemmi.SpaceGroup(ss.spacegroup_hm).operations())

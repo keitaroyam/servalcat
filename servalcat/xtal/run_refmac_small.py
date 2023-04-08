@@ -135,7 +135,7 @@ def main(args):
             logger.writeln(" Cell from mtz: {}".format(mtz.cell))
             if not mtz.cell.approx(st.cell, 1e-3):
                 logger.writeln(" Warning: unit cell mismatch!")
-            logger.writeln(" Space group from mtz: {}".format(mtz.spacegroup.hm))
+            logger.writeln(" Space group from mtz: {}".format(mtz.spacegroup.xhm()))
             if sg_user:
                 if not mtz.cell.is_compatible_with_spacegroup(sg_user):
                     raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
@@ -158,13 +158,13 @@ def main(args):
             if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
             mtz.write_to_file(mtz_in)
             st.cell = mtz.cell
-            st.spacegroup_hm = mtz.spacegroup.hm
+            st.spacegroup_hm = mtz.spacegroup.xhm()
         elif args.hklin.endswith(".hkl"):
             asudata, hklf = utils.fileio.read_smcif_hkl(args.hklin, st.cell, sg_st)
             # TODO check consistency with model cell and sg
             write_mtz(mtz_in, asudata, hklf, args.blur)
             st.cell = asudata.unit_cell
-            st.spacegroup_hm = asudata.spacegroup.hm
+            st.spacegroup_hm = asudata.spacegroup.xhm()
         else:
             raise SystemExit("Error: unsupported hkl file: {}".format(args.hklin))
 
@@ -172,10 +172,10 @@ def main(args):
         logger.writeln("Inversion of structure is requested.")
         old_sg = st.find_spacegroup()
         new_sg, tr = make_invert_tr(old_sg, st.cell)
-        logger.writeln(" new space group = {} (no. {})".format(new_sg.hm, new_sg.number))
+        logger.writeln(" new space group = {} (no. {})".format(new_sg.xhm(), new_sg.number))
         st[0].transform_pos_and_adp(tr)
         if old_sg != new_sg:
-            st.spacegroup_hm = new_sg.hm
+            st.spacegroup_hm = new_sg.xhm()
             # overwrite mtz
             mtz = gemmi.read_mtz_file(mtz_in)
             mtz.spacegroup = new_sg

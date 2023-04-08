@@ -689,7 +689,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         mtz = gemmi.read_mtz_file(hklin)
         logger.writeln("Input mtz: {}".format(hklin))
         logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
-        logger.writeln("  Space group: {}".format(mtz.spacegroup.hm))
+        logger.writeln("  Space group: {}".format(mtz.spacegroup.xhm()))
         logger.writeln("")
         col_types = {x.label:x.type for x in mtz.columns}
         if labin[0] not in col_types:
@@ -739,7 +739,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
                 logger.writeln("         using space group from mtz")
             logger.writeln("")
 
-        for st in sts: st.spacegroup_hm = sg_use.hm
+        for st in sts: st.spacegroup_hm = sg_use.xhm()
         hkldata.sg = sg_use
         
     hkldata.remove_nonpositive(newlabels[1])
