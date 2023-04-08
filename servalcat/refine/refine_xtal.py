@@ -25,7 +25,7 @@ def add_arguments(parser):
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--nbins', type=int, 
                         help="Number of bins (default: auto)")
-    parser.add_argument("--labin", nargs="+", help="F SIGF FREE input")
+    parser.add_argument("--labin", help="F,SIGF,FREE input")
     parser.add_argument('--free', type=int, default=0,
                         help='flag number for test set')
     parser.add_argument('--model', required=True,
@@ -94,7 +94,7 @@ def main(args):
         n_per_bin = 100
 
     hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
-                                                                  labin=args.labin,
+                                                                  labin=args.labin.split(","),
                                                                   n_bins=args.nbins,
                                                                   free=args.free,
                                                                   xyzins=[args.model],
