@@ -236,6 +236,11 @@ def add_arguments(p):
                         help="cutoff value for normalization and trimming (default: %(default)s)")
     parser.add_argument('-o', '--output_prefix')
 
+    # sm2mm
+    parser = subparsers.add_parser("sm2mm", description = 'Small molecule files (cif/hkl/res/ins) to macromolecules (pdb/mmcif/mtz)')
+    parser.add_argument('files', nargs='+', help='Cif/ins/res/hkl files')
+    parser.add_argument('-o', '--output_prefix')
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -851,7 +856,6 @@ def fcalc(args):
             labout.append("SIGFC")
 
     hkldata.write_mtz(args.output_prefix+".mtz", labout, types=dict(IC="J", SIGIC="Q", SIGFC="Q"))
-    logger.writeln("{} written.".format(args.output_prefix+".mtz"))
 # fcalc()
 
 def nemap(args):
@@ -926,7 +930,19 @@ def applymask(args):
                         mask_for_extent=mask.array if args.trim else None,
                         mask_threshold=args.mask_cutoff)
 # applymask()
-    
+
+def sm2mm(args):
+    if args.output_prefix is None:
+        args.output_prefix = fileio.splitext(args.files[0])[0]
+    st, hkldata = fileio.read_small_molecule_files(args.files)
+    if st is not None:
+        fileio.write_model(st, prefix=args.output_prefix, pdb=True, cif=True)
+    if hkldata is not None:
+        hkldata.write_mtz(args.output_prefix+".mtz",
+                          hkldata.columns(),
+                          types=dict(I="J", SIGI="Q", FP="F", SIGFP="Q"))
+# sm2mm()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -962,7 +978,8 @@ def main(args):
                  nemap=nemap,
                  blur=blur,
                  mask_from_model=mask_from_model,
-                 applymask=applymask)
+                 applymask=applymask,
+                 sm2mm=sm2mm)
     
     com = args.subcommand
     f = comms.get(com)
