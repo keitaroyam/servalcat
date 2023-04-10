@@ -45,6 +45,7 @@ class LL_Xtal:
             self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
         self.use_in_est = use_in_est
         self.use_in_target = use_in_target
+        self.ll = None
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -236,15 +237,12 @@ class LL_Xtal:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 
-        # strangely, we need V for Hessian and V**2/n for gradient.
+        # we need V for Hessian and V**2/n for gradient.
         d2ll_dab2 *= self.hkldata.cell.volume
         dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
-        #atoms = [x.atom for x in self.st[0].all()]
-        atoms = [None for _ in range(self.st[0].count_atom_sites())]
-        for cra in self.st[0].all(): atoms[cra.atom.serial-1] = cra.atom
         
         # correction for special positions
         cs_count = len(self.hkldata.sg.operations())
@@ -256,25 +254,16 @@ class LL_Xtal:
             occ_backup[atom] = atom.occ
             atom.occ *= n_sym
 
-        ll = ext.LLX(self.st.cell, self.hkldata.sg, atoms, self.mott_bethe, refine_xyz, adp_mode, refine_h)
-        ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        vn = numpy.array(ll.calc_grad(dll_dab_den, blur))
+        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
+        self.ll.calc_grad_it92(dll_dab_den, blur)
 
         # second derivative
         d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         valid_sel = numpy.isfinite(d2ll_dab2)
         d2dfw_table.make_table(1./self.hkldata.d_spacings().to_numpy()[valid_sel], d2ll_dab2[valid_sel])
-        b_iso_all = [cra.atom.aniso.trace() / 3 * u_to_b if cra.atom.aniso.nonzero() else cra.atom.b_iso
-                     for cra in self.st[0].all()]
-        b_iso_min = min(b_iso_all)
-        b_iso_max = max(b_iso_all)
-        elems = set(cra.atom.element for cra in self.st[0].all())
-        b_sf_min = 0 #min(min(e.it92.b) for e in elems) # because there is constants
-        b_sf_max = max(max(e.it92.b) for e in elems)
-        fisher_b_min = b_iso_min + b_sf_min
-        fisher_b_max = 2 * (b_iso_max + b_sf_max)
-        logger.writeln("preparing fast Fisher table for B= {:.2f} - {:.2f}".format(fisher_b_min, fisher_b_max))
-        ll.make_fisher_table_diag_fast(fisher_b_min, fisher_b_max, d2dfw_table)
+        self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
+        self.ll.fisher_diag_from_table_it92()
         #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
@@ -283,4 +272,4 @@ class LL_Xtal:
         for atom in occ_backup:
             atom.occ = occ_backup[atom]
             
-        return vn, ll.fisher_spmat
+        

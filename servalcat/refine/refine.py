@@ -92,16 +92,7 @@ class Geom:
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         geom = geom_x + geom_a
-        if not target_only:
-            g_vn = numpy.array(self.geom.target.vn) # don't want copy?
-            g_am = self.geom.target.am_spmat
-            diag = g_am.diagonal()
-            logger.writeln("diag(restr) min= {:3e} max= {:3e}".format(numpy.min(diag),
-                                                                      numpy.max(diag)))
-        else:
-            g_vn, g_am = None, None
-
-        return geom, g_vn, g_am
+        return geom
         
     def show_model_stats(self, show_outliers=True):
         f0 = self.calc(True)
@@ -260,32 +251,18 @@ class Refine:
     #@profile
     def calc_target(self, w=1, target_only=False):
         N = self.n_params()
-        geom, g_vn, g_am = self.geom.calc_target(target_only,
-                                                 not self.unrestrained and self.refine_xyz,
-                                                 self.adp_mode)
+        geom = self.geom.calc_target(target_only,
+                                     not self.unrestrained and self.refine_xyz,
+                                     self.adp_mode)
         if self.ll is not None:
             ll = self.ll.calc_target()
             if not target_only:
-                l_vn, l_am = self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.specs)
-                diag = l_am.diagonal()
-                logger.writeln("diag(data) min= {:3e} max= {:3e}".format(numpy.min(diag),
-                                                                         numpy.max(diag)))
+                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.specs)
         else:
             ll = 0
 
         f =  w * ll + geom
-
-        if not target_only:
-            if self.ll is not None:
-                vn = w * l_vn + g_vn
-                am = w * l_am + g_am
-            else:
-                vn = g_vn
-                am = g_am
-        else:
-            vn, am = None, None
-
-        return f, vn, am
+        return f
 
     #@profile
     def run_cycle(self, weight=1):
@@ -313,43 +290,13 @@ class Refine:
                 print("ratio=", nder/ader[i])
             quit()
 
-        f0, vn, am = self.calc_target(weight)
+        f0 = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
-        
-        if 0:
-            assert self.adp_mode == 0 # not supported!
-            logger.writeln("Preconditioning using eigen")
-            #Pinv = scipy.sparse.coo_matrix(self.geom.target.precondition_eigen_coo(1e-4), shape=(N, N)) # did not work if <= 1e-7
-            N = len(self.atoms) * 3
-            tmp = am.tocoo()
-            Pinv = scipy.sparse.coo_matrix(ext.precondition_eigen_coo(tmp.data, tmp.row, tmp.col, N, 1e-4),
-                                           shape=(N, N))
-            M = Pinv
-            #a = Pinv.T.dot(lil).dot(Pinv)
-            #logger.writeln("cond(Pinv^-1 A Pinv)= {}".format(numpy.linalg.cond(a.todense())))
-            #logger.writeln("cond(A)= {}".format(numpy.linalg.cond(lil.todense())))
-            #quit()
-            #M = scipy.sparse.identity(N)
-        else:
-            diag = am.diagonal()
-            logger.writeln("diagonal min= {:3e} max= {:3e}".format(numpy.min(diag),
-                                                                   numpy.max(diag)))
-            #for i in numpy.where(diag <= 0)[0]:
-            #    if self.refine_xyz:
-            #        if i >= len(self.atoms)*3:
-            #            j = i - len(self.atoms)*3
-            #            print("diag<=0: {} B {}".format(i, self.geom.lookup[self.atoms[j]]))
-            #        else:
-            #            j = i // 3
-            #            print("diag<=0: {} x {}".format(i, self.geom.lookup[self.atoms[j]]))
-            diag[diag<=0] = 1.
-            diag = numpy.sqrt(diag)
-            rdiag = 1./diag # sk
-            rdmat = scipy.sparse.diags(rdiag)
-            M = rdmat
-            
-        dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
+        cgsolver = ext.CgSolve(self.geom.geom.target, None if self.ll is None else self.ll.ll)
+        cgsolver.gamma = self.gamma
+        dx = cgsolver.solve(weight, logger)
+        self.gamma = cgsolver.gamma
         if self.refine_xyz:
             dxx = dx[:len(self.atoms)*3]
             #logger.writeln("dx = {}".format(dxx))
@@ -376,7 +323,7 @@ class Refine:
         for i in range(3):
             dx2 = self.scale_shifts(dx, 1/2**i)
             self.set_x(x0 - dx2)
-            f1, _, _ = self.calc_target(weight, target_only=True)
+            f1 = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
             if f1 < f0: break
         else:

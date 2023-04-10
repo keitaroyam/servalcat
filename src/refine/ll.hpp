@@ -225,11 +225,10 @@ struct TableS3 {
   }
 };
 
-template <typename Table>
 struct LL{
-  std::vector<gemmi::Atom*> atoms;
+  std::vector<const gemmi::Atom*> atoms;
   gemmi::UnitCell cell;
-  gemmi::SpaceGroup *sg;
+  const gemmi::SpaceGroup *sg;
   std::vector<gemmi::Transform> ncs;
   bool mott_bethe;
   bool refine_xyz;
@@ -240,12 +239,18 @@ struct LL{
   std::vector<std::vector<double>> pp1; // for x-x diagonal
   std::vector<std::vector<double>> bb;  // for B-B diagonal
   std::vector<std::vector<double>> aa; // for B-B diagonal, aniso
+  std::vector<double> vn; // first derivatives
+  std::vector<double> am; // second derivative sparse matrix
 
-  LL(gemmi::UnitCell cell, gemmi::SpaceGroup *sg, const std::vector<gemmi::Atom*> &atoms, bool mott_bethe,
-     bool refine_xyz, int adp_mode, bool refine_h)
-    : atoms(atoms), cell(cell), sg(sg), mott_bethe(mott_bethe), refine_xyz(refine_xyz),
+  LL(const gemmi::Structure &st, bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_h)
+    : cell(st.cell), sg(st.find_spacegroup()), mott_bethe(mott_bethe), refine_xyz(refine_xyz),
       adp_mode(adp_mode), refine_h(refine_h) {
     if (adp_mode < 0 || adp_mode > 2) gemmi::fail("bad adp_mode");
+    const size_t n_atoms = gemmi::count_atom_sites<gemmi::Model>(st.first_model());
+    atoms.resize(n_atoms);
+    // set atoms
+    for (const auto &cra : st.first_model().all())
+      atoms[cra.atom->serial - 1] = cra.atom;
     set_ncs({});
   }
   void set_ncs(const std::vector<gemmi::Transform> &trs) {
@@ -259,10 +264,11 @@ struct LL{
   // FFT-based gradient calculation: Murshudov et al. (1997) 10.1107/S0907444996012255
   // if cryo-EM SPA, den is the Fourier transform of (dLL/dAc-i dLL/dBc)*mott_bethe_factor/s^2
   // When b_add is given, den must have been sharpened
-  std::vector<double> calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
+  template <typename Table>
+  void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = atoms.size();
     const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
-    std::vector<double> vn(n_v, 0.);
+    vn.assign(n_v, 0.);
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
@@ -354,7 +360,6 @@ struct LL{
     }
     for (auto &v : vn) // to match scale of hessian
       v *= (mott_bethe ? -1 : 1) / (double) ncs.size();
-    return vn;
   }
 
   /*
@@ -383,8 +388,29 @@ struct LL{
 
   // preparation for fisher_diag_from_table()
   // Steiner et al. (2003) doi: 10.1107/S0907444903018675
-  void make_fisher_table_diag_fast(double b_min, double b_max,
-                                   const TableS3 &d2dfw_table) {
+  template <typename Table>
+  void make_fisher_table_diag_fast(const TableS3 &d2dfw_table) {
+    // find b_sf_max
+    double b_sf_max = 0.;
+    std::set<gemmi::Element> elems;
+    for (auto atom : atoms)
+      elems.insert(atom->element);
+    for (const auto &el : elems) {
+      const auto &coef = Table::get(el);
+      for (int i = 0; i < Table::Coef::ncoeffs; ++i)
+        if (coef.b(i) > b_sf_max)
+          b_sf_max = coef.b(i);
+    }
+    // find b_min and b_max
+    double b_min = INFINITY, b_max = 0;
+    for (const auto atom : atoms) {
+      const double b_iso = atom->aniso.nonzero() ? gemmi::u_to_b() * atom->aniso.trace() / 3 : atom->b_iso;
+      if (b_iso < b_min) b_min = b_iso;
+      if (b_iso > b_max) b_max = b_iso;
+    }
+    b_max = 2 * (b_max + b_sf_max);
+    printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
+
     pp1.resize(1);
     bb.resize(1);
     aa.resize(1);
@@ -469,11 +495,12 @@ struct LL{
       return y;
   }
 
-  std::vector<double> fisher_diag_from_table() const {
+  template <typename Table>
+  void fisher_diag_from_table() {
     const size_t n_atoms = atoms.size();
     const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
     const int N = Table::Coef::ncoeffs;
-    std::vector<double> am(n_a, 0.);
+    am.assign(n_a, 0.);
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
@@ -506,14 +533,12 @@ struct LL{
         for (int j = 6; j < 9; ++j) am[offset + 9*i + j] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
     }
-    return am;
   }
 
   Eigen::SparseMatrix<double> make_spmat() const {
     const size_t n_atoms = atoms.size();
     const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
     const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
-    const std::vector<double> am = fisher_diag_from_table();
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {

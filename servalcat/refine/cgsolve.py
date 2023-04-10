@@ -19,10 +19,10 @@ def cgsolve_rm(A, v, M, gamma=0., ncycl=2000, toler=1.e-4):
     dv_save = numpy.zeros(len(v))
     
     # preconditioning
-    A = M.T.dot(A).dot(M)
+    #A = M.T.dot(A).dot(M)
     #print("precond_A=")
     #print(A.toarray())
-    v = M.T.dot(v)
+    #v = M.T.dot(v)
 
     vnorm = numpy.sqrt(numpy.dot(v, v))
     test_lim = toler * vnorm
@@ -34,18 +34,19 @@ def cgsolve_rm(A, v, M, gamma=0., ncycl=2000, toler=1.e-4):
 
         logger.writeln("Trying gamma equal {:.4e}".format(gamma))
         r = v - (A.dot(dv) + gamma * dv)
-        rho = [numpy.dot(r, r)]
+        Mr = M.dot(r)
+        rho = [numpy.dot(r, Mr)]
         if rho[0] < toler:
             break
         
         exit_flag = False
         for itr in range(ncycl):
             if itr == 0:
-                p = r
+                p = Mr
                 beta = 0.
             else:
                 beta = rho[-1] / rho[-2]
-                p = r + beta * p
+                p = Mr + beta * p
 
             f = A.dot(p) + gamma * p
             alpha = rho[-1] / numpy.dot(p, f)
@@ -54,8 +55,8 @@ def cgsolve_rm(A, v, M, gamma=0., ncycl=2000, toler=1.e-4):
                 r = v - (A.dot(dv) + gamma * dv)
             else:
                 r = r - alpha * f
-
-            rho.append(numpy.dot(r, r))
+            Mr = M.dot(r)
+            rho.append(numpy.dot(r, Mr))
             #print("rho=", rho)
             if numpy.sqrt(rho[-1]) > 2 * numpy.sqrt(rho[-2]):
                 logger.writeln("Not converging with gamma equal {:.4e}".format(gamma))
@@ -95,6 +96,6 @@ def cgsolve_rm(A, v, M, gamma=0., ncycl=2000, toler=1.e-4):
 
 
     # postconditioning
-    dv = M.dot(dv)
+    #dv = M.dot(dv)
     return dv, gamma
 # cgsolve_rm()

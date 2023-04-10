@@ -2,7 +2,8 @@
 // MRC Laboratory of Molecular Biology
 
 #include "refine/geom.hpp"    // for Geometry
-#include "refine/ll.hpp"    // for LL
+#include "refine/ll.hpp"      // for LL
+#include "refine/cgsolve.hpp" // for CgSolve
 #include <gemmi/it92.hpp>
 #include <gemmi/monlib.hpp>
 #include <gemmi/unitcell.hpp>
@@ -73,25 +74,6 @@ py::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
   }
 
   return py::make_tuple(ret, py::make_tuple(retrow, retcol));
-}
-
-template<typename Table>
-void add_ll(py::module& m, const char* name) {
-  using T = LL<Table>;
-  py::class_<T>(m, name)
-    .def(py::init<gemmi::UnitCell, gemmi::SpaceGroup*, std::vector<gemmi::Atom*>, bool, bool, int, bool>(),
-         py::arg("cell"), py::arg("sg"), py::arg("atoms"), py::arg("mott_bethe"),
-         py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_h"))
-    .def("set_ncs", &T::set_ncs)
-    .def("calc_grad", &T::calc_grad)
-    .def("make_fisher_table_diag_fast", &T::make_fisher_table_diag_fast)
-    .def("fisher_diag_from_table", &T::fisher_diag_from_table)
-    .def_property_readonly("fisher_spmat", &T::make_spmat)
-    .def_readonly("table_bs", &T::table_bs)
-    .def_readonly("pp1", &T::pp1)
-    .def_readonly("bb", &T::bb)
-    .def_readonly("aa", &T::aa)
-  ;
 }
 
 void add_refine(py::module& m) {
@@ -564,6 +546,43 @@ void add_refine(py::module& m) {
     .def("make_table",&TableS3::make_table)
     .def("get_value", &TableS3::get_value)
     ;
-  add_ll<gemmi::IT92<double>>(m, "LLX");
+  py::class_<LL>(m, "LL")
+    .def(py::init<const gemmi::Structure &, bool, bool, int, bool>(),
+         py::arg("st"), py::arg("mott_bethe"),
+         py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_h"))
+    .def("set_ncs", &LL::set_ncs)
+    .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
+    .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
+    .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
+    .def_property_readonly("fisher_spmat", &LL::make_spmat)
+    .def_readonly("table_bs", &LL::table_bs)
+    .def_readonly("pp1", &LL::pp1)
+    .def_readonly("bb", &LL::bb)
+    .def_readonly("aa", &LL::aa)
+    .def_readonly("vn", &LL::vn)
+    .def_readonly("am", &LL::am)
+    ;
   m.def("precondition_eigen_coo", &precondition_eigen_coo);
+  py::class_<CgSolve>(m, "CgSolve")
+    .def(py::init<const GeomTarget *, const LL *>(),
+         py::arg("geom"), py::arg("ll")=nullptr)
+    .def("solve", [](CgSolve &self, double weight, const py::object& pystream) {
+      std::ostream os(nullptr);
+      std::unique_ptr<py::detail::pythonbuf> buffer;
+      buffer.reset(new py::detail::pythonbuf(pystream));
+      os.rdbuf(buffer.get());
+      return self.solve<>(weight, &os);
+    })
+    .def("solve_ic", [](CgSolve &self, double weight, const py::object& pystream) {
+      std::ostream os(nullptr);
+      std::unique_ptr<py::detail::pythonbuf> buffer;
+      buffer.reset(new py::detail::pythonbuf(pystream));
+      os.rdbuf(buffer.get());
+      return self.solve<Eigen::IncompleteCholesky<double>>(weight, &os);
+    })
+    .def_readwrite("gamma", &CgSolve::gamma)
+    .def_readwrite("toler", &CgSolve::toler)
+    .def_readwrite("ncycle", &CgSolve::ncycle)
+    .def_readwrite("max_gamma_cyc", &CgSolve::max_gamma_cyc)
+    ;
 }

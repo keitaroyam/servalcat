@@ -232,10 +232,11 @@ struct GeomTarget {
     std::vector<Eigen::Triplet<double>> data;
     size_t i = 0, offset = 0;
     auto add_data = [&data](size_t i, size_t j, double v) {
-                      data.emplace_back(i, j, v);
-                      if (i != j)
-                        data.emplace_back(j, i, v);
-                    };
+      if (v == 0.) return;
+      data.emplace_back(i, j, v);
+      if (i != j)
+        data.emplace_back(j, i, v);
+    };
     if (refine_xyz) {
       for (size_t j = 0; j < n_atoms(); ++j, i+=6) {
         add_data(3*j,   3*j,   am[i]);
