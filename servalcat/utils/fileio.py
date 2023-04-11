@@ -270,21 +270,24 @@ def read_structure(xyz_in):
         logger.writeln("Reading PDB file: {}".format(xyz_in))
         return gemmi.read_pdb(xyz_in)
     elif spext[1].lower() in (".cif", ".mmcif"):
-        logger.writeln("Reading mmCIF file: {}".format(xyz_in))
         doc = read_cif_safe(xyz_in)
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
         if len(blocks) > 0:
+            logger.writeln("Reading mmCIF file: {}".format(xyz_in))
             if len(blocks) > 1:
                 logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
             return gemmi.make_structure_from_block(blocks[0])
         else:
+            logger.writeln("Reading smCIF file: {}".format(xyz_in))
             ss = gemmi.read_small_structure(xyz_in)
             if not ss.sites:
                 raise RuntimeError("No atoms found in cif file.")
             return model.cx_to_mx(ss)
     elif spext[1].lower() in (".ins", ".res"):
         logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
-        return model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
+        st = model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
+        st.setup_cell_images()
+        return st
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
 # read_structure()

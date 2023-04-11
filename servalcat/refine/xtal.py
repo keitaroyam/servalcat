@@ -244,16 +244,6 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        # correction for special positions
-        cs_count = len(self.hkldata.sg.operations())
-        occ_backup = {}
-        for atom, images, _ in specs:
-            # use only crystallographic multiplicity just in case
-            n_sym = len([x for x in images if x < cs_count]) + 1
-            logger.writeln("spec_corr: images= {} {} n={}".format(images, len(images), n_sym))
-            occ_backup[atom] = atom.occ
-            atom.occ *= n_sym
-
         self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         self.ll.calc_grad_it92(dll_dab_den, blur)
@@ -269,7 +259,4 @@ class LL_Xtal:
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
 
-        for atom in occ_backup:
-            atom.occ = occ_backup[atom]
-            
-        
+        self.ll.spec_correction(specs)

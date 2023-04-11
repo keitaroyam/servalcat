@@ -4,6 +4,7 @@
 #ifndef SERVALCAT_REFINE_LL_HPP_
 #define SERVALCAT_REFINE_LL_HPP_
 
+#include "geom.hpp"
 #include <vector>
 #include <gemmi/grid.hpp>
 #include <gemmi/it92.hpp>
@@ -498,7 +499,7 @@ struct LL{
   template <typename Table>
   void fisher_diag_from_table() {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
+    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21));
     const int N = Table::Coef::ncoeffs;
     am.assign(n_a, 0.);
     for (size_t i = 0; i < n_atoms; ++i) {
@@ -522,55 +523,111 @@ struct LL{
           fac_a += aj * ak * interp_1d(table_bs, aa[0], b);
         }
 
-      const int ipos = i*3;
+      const int ipos = i*6;
       if (refine_xyz) am[ipos] = am[ipos+1] = am[ipos+2] = w * fac_x;
-      const int offset = refine_xyz ? n_atoms * 3 : 0;
+      const int offset = refine_xyz ? n_atoms * 6 : 0;
       if (adp_mode == 1)
         am[offset + i] = w * fac_b;
       else if (adp_mode == 2) {
-        for (int j = 0; j < 3; ++j) am[offset + 9*i + j] = w * fac_a;     // 11-11, 22-22, 33-33
-        for (int j = 3; j < 6; ++j) am[offset + 9*i + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
-        for (int j = 6; j < 9; ++j) am[offset + 9*i + j] = w * fac_a / 3; // 11-22, 11-33, 22-33
+        for (int j = 0; j < 3; ++j) am[offset + 21*i + j] = w * fac_a;     // 11-11, 22-22, 33-33
+        for (int j = 3; j < 6; ++j) am[offset + 21*i + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
+        am[offset + 21*i + 6] = am[offset + 21*i + 7] = am[offset + 21*i + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
     }
   }
 
   Eigen::SparseMatrix<double> make_spmat() const {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 9));
+    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21));
     const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {
-                      data.emplace_back(i, j, v);
-                      if (i != j)
-                        data.emplace_back(j, i, v);
-                    };
+      if (v == 0) return;
+      data.emplace_back(i, j, v);
+      if (i != j)
+        data.emplace_back(j, i, v);
+    };
     size_t i = 0, offset = 0;
     if (refine_xyz) {
-      for (size_t j = 0; j < n_atoms; ++j)
-        for (size_t k = 0; k < 3; ++k, ++i)
-          add_data(3*j + k, 3*j + k, am[i]);
+      for (size_t j = 0; j < n_atoms; ++j, i+=6) {
+        add_data(3*j,   3*j,   am[i]);
+        add_data(3*j+1, 3*j+1, am[i+1]);
+        add_data(3*j+2, 3*j+2, am[i+2]);
+        add_data(3*j,   3*j+1, am[i+3]);
+        add_data(3*j,   3*j+2, am[i+4]);
+        add_data(3*j+1, 3*j+2, am[i+5]);
+      }
       offset = 3 * n_atoms;
     }
     if (adp_mode == 1) {
       for (size_t j = 0; j < n_atoms; ++j, ++i)
         add_data(offset + j, offset + j, am[i]);
     } else if (adp_mode == 2) {
-      for (size_t j = 0; j < n_atoms; ++j, i+=9) {
+      for (size_t j = 0; j < n_atoms; ++j) {
+        for (size_t k = 0; k < 6; ++k, ++i)
+          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i]);
         for (size_t k = 0; k < 6; ++k)
-          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i+k]);
-        // 11-22
-        add_data(offset + 6 * j, offset + 6 * j + 1, am[i+6]);
-        // 11-33
-        add_data(offset + 6 * j, offset + 6 * j + 2, am[i+7]);
-        // 22-33
-        add_data(offset + 6 * j + 1, offset + 6 * j + 2, am[i+8]);
+          for (size_t l = k + 1; l < 6; ++l, ++i)
+            add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
       }
     }
     if(i != n_a) gemmi::fail("wrong matrix size");
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
+  }
+
+  void spec_correction(const std::vector<Geometry::Special> &specials) {
+    const double alpha = 1e-3;
+    const size_t n_atoms = atoms.size();
+    const int offset_v = refine_xyz ? 3 * n_atoms : 0;
+    const int offset_a = refine_xyz ? 6 * n_atoms : 0;
+    for (const auto &spec : specials) {
+      const int idx = spec.atom->serial - 1;
+      if (refine_xyz) {
+        // correct gradient
+        Eigen::Map<Eigen::Vector3d> v(&vn[idx * 3], 3);
+        v = (spec.Rspec_pos.transpose() * v).eval();
+        // correct diagonal block
+        Eigen::Matrix3d tmp = (spec.Rspec_pos + alpha * Eigen::Matrix3d::Identity()) / (1 + alpha);
+        double* a = am.data() + idx * 6;
+        Eigen::Matrix3d m {{a[0], a[3], a[4]},
+                           {a[3], a[1], a[5]},
+                           {a[4], a[5], a[2]}};
+        m = (tmp.transpose() * m * tmp * spec.n_mult).eval();
+        a[0] = m(0,0);
+        a[1] = m(1,1);
+        a[2] = m(2,2);
+        a[3] = m(0,1);
+        a[4] = m(0,2);
+        a[5] = m(1,2);
+      }
+      if (adp_mode == 1)
+        am[offset_a + idx] *= spec.n_mult;
+      else if (adp_mode == 2) {
+        // correct gradient
+        Eigen::Map<Eigen::VectorXd> v(&vn[offset_v + idx * 6], 6);
+        v = (spec.Rspec_aniso.transpose() * v).eval();
+        // correct diagonal block
+        Eigen::MatrixXd tmp = (spec.Rspec_aniso + alpha * Eigen::Matrix<double,6,6>::Identity()) / (1 + alpha);
+        double* a = am.data() + offset_a + idx * 21;
+        //for(int i = 0; i < 21; ++i)
+        //  a[i] *= spec.n_mult;
+        Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
+                           { a[6],  a[1], a[11], a[12], a[13], a[14]},
+                           { a[7], a[11],  a[2], a[15], a[16], a[17]},
+                           { a[8], a[12], a[15],  a[3], a[18], a[19]},
+                           { a[9], a[13], a[16], a[18],  a[4], a[20]},
+                           {a[10], a[14], a[17], a[19], a[20],  a[5]}};
+        m = (tmp.transpose() * m * tmp * spec.n_mult).eval(); // may need to use pinv
+        int i = 0;
+        for (; i < 6; ++i)
+          a[i] = m(i, i);
+        for (int j = 0; j < 6; ++j)
+          for (int k = j + 1; k < 6; ++k, ++i)
+            a[i] = m(j, k);
+      }
+    }
   }
 };
 

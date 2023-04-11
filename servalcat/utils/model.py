@@ -374,6 +374,7 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
         cra[r.partner1.atom] = r.partner1
 
     if found: logger.writeln("Atoms on special position detected.")
+    tostr = lambda x: ", ".join("{:.3e}".format(v) for v in x)
     ret = []
     for atom in found:
         images = found[atom]
@@ -389,15 +390,21 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
             fdiff = sum([(st.cell.images[i-1].apply(fpos) - fpos).wrap_to_zero() for i in images], gemmi.Fractional(0,0,0)) / n_images
             diff = st.cell.orth.apply(fdiff)
             atom.pos += gemmi.Position(diff)
-            logger.writeln("  correcting position= {} (diff= {})".format(atom.pos.tolist(), diff.tolist()))
+            logger.writeln("  correcting position= {}".format(tostr(atom.pos.tolist())))
+            logger.writeln("             pos_viol= {}".format(tostr(diff.tolist())))
         if fix_adp and atom.aniso.nonzero():
+            aniso_bak = atom.aniso.elements_pdb()
             fani = atom.aniso.transformed_by(st.cell.frac.mat)
             fani_avg = sum([fani.transformed_by(st.cell.images[i-1].mat) for i in images], fani).scaled(1/n_images)
             atom.aniso = fani_avg.transformed_by(st.cell.orth.mat)
-            logger.writeln("  correcting aniso= {}".format(atom.aniso.elements_pdb()))
+            diff = numpy.array(atom.aniso.elements_pdb()) - aniso_bak
+            logger.writeln("  correcting aniso= {}".format(tostr(atom.aniso.elements_pdb())))
+            logger.writeln("        aniso_viol= {}".format(tostr(diff)))
 
-        mat_total = (numpy.identity(3) + sum(numpy.array(st.cell.images[i-1].mat) for i in images)) / n_images
-        ret.append((atom, images, mat_total))
+        mats = [st.cell.orth.combine(st.cell.images[i-1]).combine(st.cell.frac).mat for i in images]
+        mat_total = (numpy.identity(3) + sum(numpy.array(m) for m in mats)) / n_images
+        mat_total_aniso = (numpy.identity(6) + sum(mat33_as66(m.tolist()) for m in mats)) / n_images
+        ret.append((atom, images, mat_total, mat_total_aniso))
 
     return ret
 # find_special_positions()    
@@ -555,29 +562,30 @@ def all_B(st, ignore_zero_occ=True):
     return ret
 # all_B()
 
+def mat33_as66(m):
+    # suppose R is a transformation matrix that is applied to 3x3 symmetric matrix U: R U R^T
+    # this function constructs equivalent transformation for 6-element vector: R' u
+    r = numpy.zeros((6,6))
+    for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
+        r[k,:] = (m[i][0] * m[j][0],
+                  m[i][1] * m[j][1],
+                  m[i][2] * m[j][2],
+                  m[i][0] * m[j][1] + m[i][1] * m[j][0],
+                  m[i][0] * m[j][2] + m[i][2] * m[j][0],
+                  m[i][1] * m[j][2] + m[i][2] * m[j][1])
+    return r
 def adp_constraints(ops, cell, tr0=True):
     # think about f = (b-Rb)^T (b-Rb) = b^T b - b^TRb -b^TR^Tb + b^TR^TRb
     # d^2f/db^2 = 2I - 2(R+R^T) + (R^TR + RR^T)
     # eigenvectors of this second derivative matrix corresponding to 0-valeud eigenvalues are directions to refine
-    def get_6x6(m):
-        r = numpy.zeros((6,6))
-        for k, (i, j) in enumerate(((0,0), (1,1), (2,2), (0,1), (0,2), (1,2))):
-            r[k,:] = (m[i][0] * m[j][0],
-                      m[i][1] * m[j][1],
-                      m[i][2] * m[j][2],
-                      m[i][0] * m[j][1] + m[i][1] * m[j][0],
-                      m[i][0] * m[j][2] + m[i][2] * m[j][0],
-                      m[i][1] * m[j][2] + m[i][2] * m[j][1])
-        return r
-
     Ainv = cell.frac.mat
     x = numpy.zeros((6,6))
     if tr0:
         x[:3,:3] += numpy.ones((3,3)) * 2
     for op in ops:
         m = gemmi.Mat33(op.rot).multiply(Ainv)
-        r1 = get_6x6(Ainv.tolist())
-        r2 = get_6x6(m.tolist()) / op.DEN**2
+        r1 = mat33_as66(Ainv.tolist())
+        r2 = mat33_as66(m.tolist()) / op.DEN**2
         r1r2 = numpy.dot(r1.T, r2)
         x += 2 * numpy.dot(r1.T, r1) - 2 * (r1r2 + r1r2.T) + 2 * numpy.dot(r2.T, r2)
 

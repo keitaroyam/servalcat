@@ -30,8 +30,12 @@ class Geom:
     def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None, jellybody_only=False):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
-        self.specs = utils.model.find_special_positions(self.st)
         self.geom = ext.Geometry(self.st, monlib.ener_lib)
+        self.specs = utils.model.find_special_positions(self.st)
+        cs_count = len(self.st.find_spacegroup().operations())
+        for atom, images, matp, mata in self.specs:
+            n_sym = len([x for x in images if x < cs_count]) + 1
+            self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
         self.sigma_b = sigma_b
         self.jellybody_only = jellybody_only
         if shake_rms > 0:
@@ -92,6 +96,7 @@ class Geom:
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         geom = geom_x + geom_a
+        self.geom.spec_correction()
         return geom
         
     def show_model_stats(self, show_outliers=True):
@@ -257,7 +262,7 @@ class Refine:
         if self.ll is not None:
             ll = self.ll.calc_target()
             if not target_only:
-                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.specs)
+                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.geom.specials)
         else:
             ll = 0
 

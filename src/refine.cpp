@@ -437,12 +437,10 @@ void add_refine(py::module& m) {
     .def_readwrite("atom", &Geometry::Harmonic::atom)
     ;
   py::class_<Geometry::Special>(geom, "Special")
-    .def(py::init<gemmi::Atom*>())
-    .def_readwrite("sigma_t", &Geometry::Special::sigma_t)
-    .def_readwrite("sigma_u", &Geometry::Special::sigma_u)
-    .def_readwrite("u_val_incl", &Geometry::Special::u_val_incl)
-    .def_readwrite("trans_t", &Geometry::Special::trans_t)
-    .def_readwrite("mat_u", &Geometry::Special::mat_u)
+    .def(py::init<gemmi::Atom*, const Geometry::Special::Mat33&, const Geometry::Special::Mat66&, int>())
+    .def_readwrite("Rspec_pos", &Geometry::Special::Rspec_pos)
+    .def_readwrite("Rspec_aniso", &Geometry::Special::Rspec_aniso)
+    .def_readwrite("n_mult", &Geometry::Special::n_mult)
     .def_readwrite("atom", &Geometry::Special::atom)
     ;
   py::class_<Geometry::Stacking>(geom, "Stacking")
@@ -515,6 +513,7 @@ void add_refine(py::module& m) {
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
          py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
+    .def("spec_correction", &Geometry::spec_correction)
     // vdw parameters
     .def_readwrite("vdw_sdi_vdw", &Geometry::vdw_sdi_vdw)
     .def_readwrite("vdw_sdi_torsion", &Geometry::vdw_sdi_torsion)
@@ -554,6 +553,7 @@ void add_refine(py::module& m) {
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
+    .def("spec_correction", &LL::spec_correction)
     .def_property_readonly("fisher_spmat", &LL::make_spmat)
     .def_readonly("table_bs", &LL::table_bs)
     .def_readonly("pp1", &LL::pp1)

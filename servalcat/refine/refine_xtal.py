@@ -155,7 +155,7 @@ def main(args):
     if not args.no_solvent:
         labs.append("FCbulk")
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q"})
 
 # main()
 

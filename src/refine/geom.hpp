@@ -417,12 +417,13 @@ struct Geometry {
     gemmi::Atom* atom;
   };
   struct Special {
-    Special(gemmi::Atom* a) : atom(a) {}
-    double sigma_t;
-    double sigma_u;
-    bool u_val_incl;
-    gemmi::Transform trans_t;
-    gemmi::Mat33 mat_u;
+    using Mat33 = Eigen::Matrix<double, 3, 3>;
+    using Mat66 = Eigen::Matrix<double, 6, 6>;
+    Special(gemmi::Atom* a, const Mat33 &mat_pos, const Mat66 &mat_aniso, int n_mult)
+      : Rspec_pos(mat_pos), Rspec_aniso(mat_aniso), n_mult(n_mult), atom(a) {}
+    Mat33 Rspec_pos;
+    Mat66 Rspec_aniso;
+    int n_mult;
     gemmi::Atom* atom;
   };
   struct Stacking {
@@ -496,7 +497,7 @@ struct Geometry {
               double wchir, double wplane, double wstack, double wvdw);
   double calc_adp_restraint(bool check_only, double sigma);
   void calc_jellybody();
-
+  void spec_correction();
   std::vector<Bond> bonds;
   std::vector<Angle> angles;
   std::vector<Torsion> torsions;
@@ -967,11 +968,11 @@ inline double Geometry::calc_adp_restraint(bool check_only, double sigma) {
           const double df1 = w * (a1[j] - a2[j]);
           target.vn[offset_v + 6 * (atom1->serial-1) + j] += df1;
           target.vn[offset_v + 6 * (atom2->serial-1) + j] += -df1;
-          // diagonal block (6 x 6 symmetric)
+          // diagonal of diagonal block (6 x 6 symmetric)
           target.am[offset_a + 21 * (atom1->serial-1) + j] += w;
           target.am[offset_a + 21 * (atom2->serial-1) + j] += w;
-          // non-diagonal block (6 x 6)
-          target.am[offset_a + 21 * target.n_atoms() + 36 * i + 6 * j] += -w;
+          // diagonal of non-diagonal block (6 x 6)
+          target.am[offset_a + 21 * target.n_atoms() + 36 * i + 7 * j] += -w;
         }
       }
     }
@@ -1472,6 +1473,74 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
   if (reporting != nullptr)
     reporting->vdws.emplace_back(this, db);
   return ret;
+}
+
+void Geometry::spec_correction() {
+  const double alpha = 1e-3;
+  const int n_pairs = target.pairs.size();
+  const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
+  const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
+  for (const auto &spec : specials) {
+    const int idx = spec.atom->serial - 1;
+    if (target.refine_xyz) {
+      // correct gradient
+      Eigen::Map<Eigen::Vector3d> v(&target.vn[idx * 3], 3);
+      v = (spec.Rspec_pos.transpose() * v).eval();
+      // correct diagonal block
+      Eigen::Matrix3d tmp = (spec.Rspec_pos + alpha * Eigen::Matrix3d::Identity()) / (1 + alpha);
+      double* a = target.am.data() + idx * 6;
+      Eigen::Matrix3d m {{a[0], a[3], a[4]},
+                         {a[3], a[1], a[5]},
+                         {a[4], a[5], a[2]}};
+      m = (tmp.transpose() * m * tmp * spec.n_mult).eval();
+      a[0] = m(0,0);
+      a[1] = m(1,1);
+      a[2] = m(2,2);
+      a[3] = m(0,1);
+      a[4] = m(0,2);
+      a[5] = m(1,2);
+      // correct non-diagonal block
+      for (int i = 0; i < n_pairs; ++i) {
+        if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
+          Eigen::Map<Eigen::Matrix3d> m(&target.am[target.nmpos + 9 * i]);
+          if (target.pairs[i].first == idx)
+            m = (tmp.transpose() * m).eval();
+          else
+            m = (m * tmp).eval();
+        }
+      }
+    }
+    if (target.adp_mode == 2) {
+      // correct gradient
+      Eigen::Map<Eigen::VectorXd> v(&target.vn[offset_v + idx * 6], 6);
+      v = (spec.Rspec_aniso.transpose() * v).eval();
+      // correct diagonal block
+      Eigen::MatrixXd tmp = (spec.Rspec_aniso + alpha * Eigen::Matrix<double,6,6>::Identity()) / (1 + alpha);
+      double* a = target.am.data() + offset_a + idx * 21;
+      Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
+                         { a[6],  a[1], a[11], a[12], a[13], a[14]},
+                         { a[7], a[11],  a[2], a[15], a[16], a[17]},
+                         { a[8], a[12], a[15],  a[3], a[18], a[19]},
+                         { a[9], a[13], a[16], a[18],  a[4], a[20]},
+                         {a[10], a[14], a[17], a[19], a[20],  a[5]}};
+      m = (tmp.transpose() * m * tmp * spec.n_mult).eval(); // may need to use pinv
+      for (int i = 0; i < 6; ++i)
+        a[i] = m(i, i);
+      for (int j = 0, i = 6; j < 6; ++j)
+        for (int k = j + 1; k < 6; ++k, ++i)
+          a[i] = m(j, k);
+      // correct non-diagonal block
+      for (int i = 0; i < n_pairs; ++i) {
+        if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
+          Eigen::Map<Eigen::Matrix<double,6,6>> m(&target.am[offset_a + 21 * target.n_atoms() + 36 * i]);
+          if (target.pairs[i].first == idx)
+            m = (tmp.transpose() * m).eval();
+          else
+            m = (m * tmp).eval();
+        }
+      }
+    }
+  }
 }
 
 } // namespace servalcat
