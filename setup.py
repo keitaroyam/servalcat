@@ -100,7 +100,9 @@ class BuildExt(build_ext):
             opts.append(cpp_flag(self.compiler))
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
-            if has_flag(self.compiler, '-g0'):
+            if 0:
+                opts.append('-g')
+            elif has_flag(self.compiler, '-g0'):
                 opts.append('-g0')
             if has_flag(self.compiler, '-Wl,-s'):
                 link_opts.append('-Wl,-s')

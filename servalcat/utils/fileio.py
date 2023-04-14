@@ -628,7 +628,7 @@ def read_small_molecule_files(files):
                 continue
             logger.writeln("Coordinates read from: {}".format(filename))
             if ext == ".cif":
-                b = gemmi.cif.read(cif_in).sole_block()
+                b = gemmi.cif.read(filename).sole_block()
                 res_str = b.find_value("_shelx_res_file")
             else:
                 res_str = open(filename).read()
@@ -648,7 +648,7 @@ def read_small_molecule_files(files):
             if hkl_str:
                 asudata = read_shelx_hkl(st.cell, st.find_spacegroup(), lines_in=hkl_str.splitlines())
                 logger.writeln("reflection data read from: {}".format(filename))
-            elif b.find_value("_refln_index_h"):
+            elif b.find_loop("_refln_index_h"):
                 asudata, hklf = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
         except ValueError: # not a cif file
             if ext == ".hkl":
