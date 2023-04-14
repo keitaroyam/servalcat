@@ -800,7 +800,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
                 n_test += (valid_sel & test_sel).sum()
             else:
                 work = g2.index
-                test = type(work)([])
+                test = type(work)([], dtype=work.dtype)
             centric_and_selections[i_bin].append((c, work, test))
             n_obs += numpy.sum(valid_sel)
             
