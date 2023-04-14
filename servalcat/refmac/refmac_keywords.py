@@ -348,6 +348,11 @@ def read_make_params(l, r):
             if r["hydr"] not in "yanf":
                 raise SystemExit("Invalid make instruction: {}".format(l))
             itk += 2
+        elif s[itk].lower().startswith("hout"): # default n
+            tmp = s[itk+1][0].lower()
+            if tmp == "p": tmp = "y"
+            r["hout"] = tmp == "y"
+            itk += 2
         elif s[itk].lower().startswith("chec"): # default n?
             tmp = s[itk+1].lower()
             if tmp.startswith(("none", "0")):
