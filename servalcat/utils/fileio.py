@@ -83,6 +83,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.scale = True
         groups.assembly = True
         groups.entity = True
+        groups.cis = True
         # FIXME is this all? 
         try:
             doc = read_cif_safe(cif_ref)
@@ -109,6 +110,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
         groups = gemmi.MmcifOutputGroups(True)
         groups.group_pdb = True
+        groups.cis = True
         doc = gemmi.cif.Document()
         block = doc.add_new_block("new")
         st_new.update_mmcif_block(block, groups)
