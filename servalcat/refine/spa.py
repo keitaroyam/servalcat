@@ -90,7 +90,7 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         return {"fsc": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs): # specs not used
+    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
         dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
@@ -124,3 +124,5 @@ class LL_SPA:
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
+        #logger.writeln("disabling spec_correction in spa target")
+        self.ll.spec_correction(specs, use_rr=False)

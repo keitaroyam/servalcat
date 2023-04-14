@@ -577,8 +577,7 @@ struct LL{
     return spmat;
   }
 
-  void spec_correction(const std::vector<Geometry::Special> &specials) {
-    const double alpha = 1e-3;
+  void spec_correction(const std::vector<Geometry::Special> &specials, double alpha=1e-3, bool use_rr=true) {
     const size_t n_atoms = atoms.size();
     const int offset_v = refine_xyz ? 3 * n_atoms : 0;
     const int offset_a = refine_xyz ? 6 * n_atoms : 0;
@@ -589,12 +588,19 @@ struct LL{
         Eigen::Map<Eigen::Vector3d> v(&vn[idx * 3], 3);
         v = (spec.Rspec_pos.transpose() * v).eval();
         // correct diagonal block
-        Eigen::Matrix3d tmp = (spec.Rspec_pos + alpha * Eigen::Matrix3d::Identity()) / (1 + alpha);
         double* a = am.data() + idx * 6;
         Eigen::Matrix3d m {{a[0], a[3], a[4]},
                            {a[3], a[1], a[5]},
                            {a[4], a[5], a[2]}};
-        m = (tmp.transpose() * m * tmp * spec.n_mult).eval();
+        std::cout << "ll_m_diag_before = \n" << m << "\n";
+        const double hmax = m.maxCoeff() * spec.n_mult;
+        m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos * spec.n_mult).eval();
+        if (use_rr)
+          m += (hmax * alpha * (Eigen::Matrix3d::Identity()
+                                        - spec.Rspec_pos * spec.Rspec_pos)).eval();
+        else
+          m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
+        std::cout << "ll_m_diag_after = \n" << m << "\n";
         a[0] = m(0,0);
         a[1] = m(1,1);
         a[2] = m(2,2);
@@ -609,21 +615,23 @@ struct LL{
         Eigen::Map<Eigen::VectorXd> v(&vn[offset_v + idx * 6], 6);
         v = (spec.Rspec_aniso.transpose() * v).eval();
         // correct diagonal block
-        Eigen::MatrixXd tmp = (spec.Rspec_aniso + alpha * Eigen::Matrix<double,6,6>::Identity()) / (1 + alpha);
         double* a = am.data() + offset_a + idx * 21;
-        //for(int i = 0; i < 21; ++i)
-        //  a[i] *= spec.n_mult;
         Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
                            { a[6],  a[1], a[11], a[12], a[13], a[14]},
                            { a[7], a[11],  a[2], a[15], a[16], a[17]},
                            { a[8], a[12], a[15],  a[3], a[18], a[19]},
                            { a[9], a[13], a[16], a[18],  a[4], a[20]},
                            {a[10], a[14], a[17], a[19], a[20],  a[5]}};
-        m = (tmp.transpose() * m * tmp * spec.n_mult).eval(); // may need to use pinv
-        int i = 0;
-        for (; i < 6; ++i)
+        const double hmax = m.maxCoeff() * spec.n_mult;
+        m = (spec.Rspec_aniso.transpose() * m * spec.Rspec_aniso * spec.n_mult).eval();
+        if (use_rr)
+          m += (hmax * alpha * (Eigen::Matrix<double,6,6>::Identity()
+                                        - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
+        else
+          m += (hmax * alpha * Eigen::Matrix<double,6,6>::Identity()).eval();
+        for (int i = 0; i < 6; ++i)
           a[i] = m(i, i);
-        for (int j = 0; j < 6; ++j)
+        for (int j = 0, i = 6; j < 6; ++j)
           for (int k = j + 1; k < 6; ++k, ++i)
             a[i] = m(j, k);
       }

@@ -32,9 +32,10 @@ class Geom:
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.geom = ext.Geometry(self.st, monlib.ener_lib)
         self.specs = utils.model.find_special_positions(self.st)
-        cs_count = len(self.st.find_spacegroup().operations())
+        #cs_count = len(self.st.find_spacegroup().operations())
         for atom, images, matp, mata in self.specs:
-            n_sym = len([x for x in images if x < cs_count]) + 1
+            #n_sym = len([x for x in images if x < cs_count]) + 1
+            n_sym = len(images) + 1
             self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
         self.sigma_b = sigma_b
         self.jellybody_only = jellybody_only
@@ -96,7 +97,8 @@ class Geom:
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         geom = geom_x + geom_a
-        self.geom.spec_correction()
+        if not target_only:
+            self.geom.spec_correction()
         return geom
         
     def show_model_stats(self, show_outliers=True):
@@ -190,10 +192,21 @@ class Refine:
             dxb = dx[offset_b:]
             dxb[dxb > shift_max_allow_B] = shift_max_allow_B
             dxb[dxb < shift_min_allow_B] = shift_min_allow_B
-        elif self.adp_mode == 2: # FIXME aniso. need to find eigenvalues..
+        elif self.adp_mode == 2:
             dxb = dx[offset_b:]
-            dxb[dxb > shift_max_allow_B] = shift_max_allow_B
-            dxb[dxb < shift_min_allow_B] = shift_min_allow_B
+            spec_idxes = {spec.atom.serial - 1: spec.atom for spec in self.geom.geom.specials}
+            for i in range(len(dxb)//6):
+                j = i * 6
+                a = numpy.array([[dxb[j],   dxb[j+3], dxb[j+4]],
+                                 [dxb[j+3], dxb[j+1], dxb[j+5]],
+                                 [dxb[j+4], dxb[j+5], dxb[j+2]]])
+                v, Q = numpy.linalg.eigh(a)
+                v[v > shift_max_allow_B] = shift_max_allow_B
+                v[v < shift_min_allow_B] = shift_min_allow_B
+                a = Q.dot(numpy.diag(v)).dot(Q.T)
+                if i in spec_idxes:
+                    logger.writeln("spec {} shift_org {} shift_new {}".format(spec_idxes[i], dxb[j:j+6], (a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2])))
+                dxb[j:j+6] = a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2]
             
         return dx
 
@@ -298,16 +311,36 @@ class Refine:
         f0 = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
-        cgsolver = ext.CgSolve(self.geom.geom.target, None if self.ll is None else self.ll.ll)
-        cgsolver.gamma = self.gamma
-        dx = cgsolver.solve(weight, logger)
-        self.gamma = cgsolver.gamma
+        if 0:
+            logger.writeln("using cgsolve in c++")
+            cgsolver = ext.CgSolve(self.geom.geom.target, None if self.ll is None else self.ll.ll)
+            cgsolver.gamma = self.gamma
+            dx = cgsolver.solve(weight, logger)
+            #self.gamma = cgsolver.gamma
+        else:
+            logger.writeln("using cgsolve in py")
+            am = self.geom.geom.target.am_spmat
+            vn = numpy.array(self.geom.geom.target.vn)
+            if self.ll is not None:
+                am += self.ll.ll.fisher_spmat * weight
+                vn += numpy.array(self.ll.ll.vn) * weight
+            diag = am.diagonal()
+            diag[diag<=0] = 1.
+            diag = numpy.sqrt(diag)
+            rdiag = 1./diag # sk
+            M = scipy.sparse.diags(rdiag)
+            dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
+
         if self.refine_xyz:
             dxx = dx[:len(self.atoms)*3]
             #logger.writeln("dx = {}".format(dxx))
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
+            for spec in self.geom.geom.specials:
+                idx = spec.atom.serial - 1
+                logger.writeln("spec {} dx= {} grad= {}".format(spec.atom, dxx[idx*3:idx*3+3],
+                                                                numpy.array(self.geom.geom.target.vn)[idx*3:idx*3+3]))
         if self.adp_mode > 0: # TODO for aniso
             db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
             #logger.writeln("dB = {}".format(db))

@@ -5,6 +5,7 @@
 #define SERVALCAT_REFINE_GEOM_HPP_
 
 #include <set>
+#include <iostream>
 #include <gemmi/model.hpp>    // for Structure, Atom
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
 #include <gemmi/topo.hpp>     // for Topo
@@ -497,7 +498,7 @@ struct Geometry {
               double wchir, double wplane, double wstack, double wvdw);
   double calc_adp_restraint(bool check_only, double sigma);
   void calc_jellybody();
-  void spec_correction();
+  void spec_correction(double alpha=1e-3, bool use_rr=true);
   std::vector<Bond> bonds;
   std::vector<Angle> angles;
   std::vector<Torsion> torsions;
@@ -1475,8 +1476,7 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
   return ret;
 }
 
-void Geometry::spec_correction() {
-  const double alpha = 1e-3;
+void Geometry::spec_correction(double alpha, bool use_rr) {
   const int n_pairs = target.pairs.size();
   const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
   const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
@@ -1487,12 +1487,19 @@ void Geometry::spec_correction() {
       Eigen::Map<Eigen::Vector3d> v(&target.vn[idx * 3], 3);
       v = (spec.Rspec_pos.transpose() * v).eval();
       // correct diagonal block
-      Eigen::Matrix3d tmp = (spec.Rspec_pos + alpha * Eigen::Matrix3d::Identity()) / (1 + alpha);
       double* a = target.am.data() + idx * 6;
       Eigen::Matrix3d m {{a[0], a[3], a[4]},
                          {a[3], a[1], a[5]},
                          {a[4], a[5], a[2]}};
-      m = (tmp.transpose() * m * tmp * spec.n_mult).eval();
+      std::cout << "m_diag_before = \n" << m << "\n";
+      const double hmax = m.maxCoeff();
+      m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos).eval();
+      if (use_rr)
+        m += (hmax * alpha * (Eigen::Matrix3d::Identity()
+                                      - spec.Rspec_pos * spec.Rspec_pos)).eval();
+      else
+        m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
+      std::cout << "m_diag_after = \n" << m << "\n";
       a[0] = m(0,0);
       a[1] = m(1,1);
       a[2] = m(2,2);
@@ -1502,11 +1509,14 @@ void Geometry::spec_correction() {
       // correct non-diagonal block
       for (int i = 0; i < n_pairs; ++i) {
         if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
-          Eigen::Map<Eigen::Matrix3d> m(&target.am[target.nmpos + 9 * i]);
+          Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> m(&target.am[target.nmpos + 9 * i]);
+          //std::cout << "non_diag " << target.pairs[i].first << ", " << target.pairs[i].second << "\n"
+          //          << m << "\n";
           if (target.pairs[i].first == idx)
-            m = (tmp.transpose() * m).eval();
+            m = (spec.Rspec_pos.transpose() * m).eval();
           else
-            m = (m * tmp).eval();
+            m = (m * spec.Rspec_pos).eval();
+          //std::cout << "after\n" << m << "\n";
         }
       }
     }
@@ -1515,7 +1525,6 @@ void Geometry::spec_correction() {
       Eigen::Map<Eigen::VectorXd> v(&target.vn[offset_v + idx * 6], 6);
       v = (spec.Rspec_aniso.transpose() * v).eval();
       // correct diagonal block
-      Eigen::MatrixXd tmp = (spec.Rspec_aniso + alpha * Eigen::Matrix<double,6,6>::Identity()) / (1 + alpha);
       double* a = target.am.data() + offset_a + idx * 21;
       Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
                          { a[6],  a[1], a[11], a[12], a[13], a[14]},
@@ -1523,7 +1532,14 @@ void Geometry::spec_correction() {
                          { a[8], a[12], a[15],  a[3], a[18], a[19]},
                          { a[9], a[13], a[16], a[18],  a[4], a[20]},
                          {a[10], a[14], a[17], a[19], a[20],  a[5]}};
-      m = (tmp.transpose() * m * tmp * spec.n_mult).eval(); // may need to use pinv
+      const double hmax = m.maxCoeff();
+      m = (spec.Rspec_aniso.transpose() * m * spec.Rspec_aniso).eval();
+      if (use_rr)
+        m += (hmax * alpha * (Eigen::Matrix<double,6,6>::Identity()
+                                      - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
+      else
+        m += (hmax * alpha * Eigen::Matrix<double,6,6>::Identity()).eval();
+
       for (int i = 0; i < 6; ++i)
         a[i] = m(i, i);
       for (int j = 0, i = 6; j < 6; ++j)
@@ -1532,11 +1548,11 @@ void Geometry::spec_correction() {
       // correct non-diagonal block
       for (int i = 0; i < n_pairs; ++i) {
         if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
-          Eigen::Map<Eigen::Matrix<double,6,6>> m(&target.am[offset_a + 21 * target.n_atoms() + 36 * i]);
+          Eigen::Map<Eigen::Matrix<double,6,6, Eigen::RowMajor>> m(&target.am[offset_a + 21 * target.n_atoms() + 36 * i]);
           if (target.pairs[i].first == idx)
-            m = (tmp.transpose() * m).eval();
+            m = (spec.Rspec_aniso.transpose() * m).eval();
           else
-            m = (m * tmp).eval();
+            m = (m * spec.Rspec_aniso).eval();
         }
       }
     }

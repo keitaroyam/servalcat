@@ -513,7 +513,7 @@ void add_refine(py::module& m) {
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
          py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
-    .def("spec_correction", &Geometry::spec_correction)
+    .def("spec_correction", &Geometry::spec_correction, py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     // vdw parameters
     .def_readwrite("vdw_sdi_vdw", &Geometry::vdw_sdi_vdw)
     .def_readwrite("vdw_sdi_torsion", &Geometry::vdw_sdi_torsion)
@@ -553,7 +553,8 @@ void add_refine(py::module& m) {
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
-    .def("spec_correction", &LL::spec_correction)
+    .def("spec_correction", &LL::spec_correction,
+	 py::arg("specials"), py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     .def_property_readonly("fisher_spmat", &LL::make_spmat)
     .def_readonly("table_bs", &LL::table_bs)
     .def_readonly("pp1", &LL::pp1)

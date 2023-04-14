@@ -404,6 +404,7 @@ def find_special_positions(st, special_pos_threshold=0.1, fix_occ=True, fix_pos=
         mats = [st.cell.orth.combine(st.cell.images[i-1]).combine(st.cell.frac).mat for i in images]
         mat_total = (numpy.identity(3) + sum(numpy.array(m) for m in mats)) / n_images
         mat_total_aniso = (numpy.identity(6) + sum(mat33_as66(m.tolist()) for m in mats)) / n_images
+        mat_total_aniso = numpy.linalg.pinv(mat_total_aniso)
         ret.append((atom, images, mat_total, mat_total_aniso))
 
     return ret
