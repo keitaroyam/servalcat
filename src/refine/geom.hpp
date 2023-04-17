@@ -92,6 +92,45 @@ struct PlaneDeriv {
   std::vector<gemmi::Vec3> dDdx; // derivative of D wrt positions
 };
 
+inline double chiral_abs_volume_sigma(double bond1, double bond2, double bond3,
+                                      double angle1, double angle2, double angle3,
+                                      double sigb1, double sigb2, double sigb3,
+                                      double siga1, double siga2, double siga3) {
+  using gemmi::sq;
+  using gemmi::rad;
+  const double mult = bond1 * bond2 * bond3;
+  auto cosine = [](double a) {return a == 90. ? 0. : std::cos(rad(a));};
+  const double cosa1 = cosine(angle1);
+  const double cosa2 = cosine(angle2);
+  const double cosa3 = cosine(angle3);
+  double x_y = 1 + 2 * cosa1 * cosa2 * cosa3 - sq(cosa1) - sq(cosa2) - sq(cosa3);
+  double varv = x_y * (sq(bond2 * bond3) * sq(sigb1) +
+                       sq(bond1 * bond3) * sq(sigb2) +
+                       sq(bond1 * bond2) * sq(sigb3));
+  varv += sq(mult) / x_y * ((1 - sq(cosa1)) * sq(cosa1 - cosa2 * cosa3) * sq(rad(siga1)) +
+                            (1 - sq(cosa2)) * sq(cosa2 - cosa1 * cosa3) * sq(rad(siga2)) +
+                            (1 - sq(cosa3)) * sq(cosa3 - cosa1 * cosa2) * sq(rad(siga3)));
+  return std::sqrt(varv);
+}
+
+std::pair<double,double>
+ideal_chiral_abs_volume_sigma(const gemmi::Topo &topo, const gemmi::Topo::Chirality &ch) {
+  const gemmi::Restraints::Bond* bond_c1 = topo.take_bond(ch.atoms[0], ch.atoms[1]);
+  const gemmi::Restraints::Bond* bond_c2 = topo.take_bond(ch.atoms[0], ch.atoms[2]);
+  const gemmi::Restraints::Bond* bond_c3 = topo.take_bond(ch.atoms[0], ch.atoms[3]);
+  const gemmi::Restraints::Angle* angle_1c2 = topo.take_angle(ch.atoms[1], ch.atoms[0], ch.atoms[2]);
+  const gemmi::Restraints::Angle* angle_2c3 = topo.take_angle(ch.atoms[2], ch.atoms[0], ch.atoms[3]);
+  const gemmi::Restraints::Angle* angle_3c1 = topo.take_angle(ch.atoms[3], ch.atoms[0], ch.atoms[1]);
+  if (bond_c1 && bond_c2 && bond_c3 && angle_1c2 && angle_2c3 && angle_3c1)
+    return std::make_pair(gemmi::chiral_abs_volume(bond_c1->value, bond_c2->value, bond_c3->value,
+                                                   angle_1c2->value, angle_2c3->value, angle_3c1->value),
+                          chiral_abs_volume_sigma(bond_c1->value, bond_c2->value, bond_c3->value,
+                                                  angle_1c2->value, angle_2c3->value, angle_3c1->value,
+                                                  bond_c1->esd, bond_c2->esd, bond_c3->esd,
+                                                  angle_1c2->esd, angle_2c3->esd, angle_3c1->esd));
+  return std::make_pair(std::numeric_limits<double>::quiet_NaN(), 0);
+}
+
 struct GeomTarget {
   struct MatPos {
     int ipos;
@@ -576,7 +615,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
                  torsions.back().values.back().label = t.restr->label;
                } else if (rule.rkind == gemmi::Topo::RKind::Chirality) {
                  const gemmi::Topo::Chirality& t = topo.chirs[rule.index];
-                 const auto val_sigma = topo.ideal_chiral_abs_volume_sigma(t);
+                 const auto val_sigma = ideal_chiral_abs_volume_sigma(topo, t);
                  if (val_sigma.second <= 0) return;
                  chirs.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
                  chirs.back().value = val_sigma.first;
