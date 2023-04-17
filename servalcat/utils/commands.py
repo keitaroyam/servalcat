@@ -834,8 +834,11 @@ def fcalc(args):
     if not st.cell.is_crystal():
         raise SystemExit("ERROR: No unit cell information. Give --cell or --auto_box_with_padding.")
 
-    monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                             stop_for_unknowns=False)
+    if args.source=="electron" and st[0].has_hydrogen():
+        monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                 stop_for_unknowns=False)
+    else:
+        monlib = None
 
     if args.method == "fft":
         fc_asu = model.calc_fc_fft(st, args.resolution, cutoff=args.cutoff, rate=args.rate,
