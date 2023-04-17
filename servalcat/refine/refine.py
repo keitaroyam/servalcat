@@ -311,12 +311,17 @@ class Refine:
         f0 = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
-        if 0:
-            logger.writeln("using cgsolve in c++")
+        if 1:
+            use_ic = False # incomplete cholesky. problematic at least in geometry optimisation case
+            logger.writeln("using cgsolve in c++, ic={}".format(use_ic))
             cgsolver = ext.CgSolve(self.geom.geom.target, None if self.ll is None else self.ll.ll)
-            cgsolver.gamma = self.gamma
-            dx = cgsolver.solve(weight, logger)
-            #self.gamma = cgsolver.gamma
+            if use_ic:
+                cgsolver.gamma = 0
+                cgsolver.max_gamma_cyc = 1
+            else:
+                cgsolver.gamma = self.gamma
+            dx = cgsolver.solve(weight, logger, use_ic)
+            self.gamma = cgsolver.gamma
         else:
             logger.writeln("using cgsolve in py")
             am = self.geom.geom.target.am_spmat

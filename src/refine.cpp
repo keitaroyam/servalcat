@@ -554,7 +554,7 @@ void add_refine(py::module& m) {
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
     .def("spec_correction", &LL::spec_correction,
-	 py::arg("specials"), py::arg("alpha")=1e-3, py::arg("use_rr")=true)
+         py::arg("specials"), py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     .def_property_readonly("fisher_spmat", &LL::make_spmat)
     .def_readonly("table_bs", &LL::table_bs)
     .def_readonly("pp1", &LL::pp1)
@@ -567,19 +567,16 @@ void add_refine(py::module& m) {
   py::class_<CgSolve>(m, "CgSolve")
     .def(py::init<const GeomTarget *, const LL *>(),
          py::arg("geom"), py::arg("ll")=nullptr)
-    .def("solve", [](CgSolve &self, double weight, const py::object& pystream) {
+    .def("solve", [](CgSolve &self, double weight, const py::object& pystream,
+                     bool use_ic) {
       std::ostream os(nullptr);
       std::unique_ptr<py::detail::pythonbuf> buffer;
       buffer.reset(new py::detail::pythonbuf(pystream));
       os.rdbuf(buffer.get());
-      return self.solve<>(weight, &os);
-    })
-    .def("solve_ic", [](CgSolve &self, double weight, const py::object& pystream) {
-      std::ostream os(nullptr);
-      std::unique_ptr<py::detail::pythonbuf> buffer;
-      buffer.reset(new py::detail::pythonbuf(pystream));
-      os.rdbuf(buffer.get());
-      return self.solve<Eigen::IncompleteCholesky<double>>(weight, &os);
+      if (use_ic)
+        return self.solve<Eigen::IncompleteCholesky<double>>(weight, &os);
+      else
+        return self.solve<>(weight, &os);
     })
     .def_readwrite("gamma", &CgSolve::gamma)
     .def_readwrite("toler", &CgSolve::toler)

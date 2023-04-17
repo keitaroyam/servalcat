@@ -543,7 +543,7 @@ struct LL{
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {
-      if (v == 0) return;
+      if (i != j && v == 0) return; // we need all diagonals
       data.emplace_back(i, j, v);
       if (i != j)
         data.emplace_back(j, i, v);

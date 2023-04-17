@@ -101,6 +101,7 @@ class BuildExt(build_ext):
             if has_flag(self.compiler, '-fvisibility=hidden'):
                 opts.append('-fvisibility=hidden')
             if 0:
+                opts.append('-O0')
                 opts.append('-g')
             elif has_flag(self.compiler, '-g0'):
                 opts.append('-g0')

@@ -233,7 +233,7 @@ struct GeomTarget {
     std::vector<Eigen::Triplet<double>> data;
     size_t i = 0, offset = 0;
     auto add_data = [&data](size_t i, size_t j, double v) {
-      if (v == 0.) return;
+      if (i != j && v == 0.) return; // we need all diagonals
       data.emplace_back(i, j, v);
       if (i != j)
         data.emplace_back(j, i, v);

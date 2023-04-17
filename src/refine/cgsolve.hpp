@@ -12,6 +12,32 @@
 
 namespace servalcat {
 
+Eigen::SparseMatrix<double>
+diagonal_preconditioner(Eigen::SparseMatrix<double> &mat) {
+  const int n = mat.cols();
+  Eigen::SparseMatrix<double> pmat(n, n);
+  std::vector<Eigen::Triplet<double>> data;
+  for(int j = 0; j < mat.outerSize(); ++j) {
+    Eigen::SparseMatrix<double>::InnerIterator it(mat, j);
+    while(it && it.index() != j) ++it;
+    if(it && it.index() == j && it.value() > 0)
+      data.emplace_back(j, j, std::sqrt(1. / it.value()));
+    else
+      data.emplace_back(j, j, 1);
+  }
+  pmat.setFromTriplets(data.begin(), data.end());
+  mat = (pmat * mat * pmat).eval();
+  // in our case if diagonal is zero, all corresponding non-diagonals are also zero.
+  // so it's safe to replace diagonal with one.
+  for(int j = 0; j < mat.outerSize(); ++j) {
+    Eigen::SparseMatrix<double>::InnerIterator it(mat, j);
+    while(it && it.index() != j) ++it;
+    if(it && it.index() == j && it.value() == 0)
+      it.valueRef() = 1.;
+  }
+  return pmat;
+}
+
 struct CgSolve {
   const GeomTarget *geom;
   const LL *ll;
@@ -22,7 +48,7 @@ struct CgSolve {
   CgSolve(const GeomTarget *geom, const LL *ll)
     : geom(geom), ll(ll) {}
 
-  template<typename Preconditioner = Eigen::DiagonalPreconditioner<double>>
+  template<typename Preconditioner = Eigen::IdentityPreconditioner>
   Eigen::VectorXd solve(double weight, std::ostream* logger) {
     Eigen::VectorXd vn = Eigen::VectorXd::Map(geom->vn.data(), geom->vn.size());
     Eigen::SparseMatrix<double> am = geom->make_spmat();
@@ -41,6 +67,26 @@ struct CgSolve {
       *logger << "diag(all) min= " << am.diagonal().minCoeff()
               << " max= " <<  am.diagonal().maxCoeff() << "\n";
     const int n = am.cols();
+
+    // this changes am
+    Eigen::SparseMatrix<double> pmat = diagonal_preconditioner(am);
+    vn = (pmat * vn).eval();
+
+    if (gamma == 0 && max_gamma_cyc == 1) {
+      Eigen::ConjugateGradient<Eigen::SparseMatrix<double>, Eigen::Lower|Eigen::Upper,
+                               Preconditioner> cg;
+      Eigen::VectorXd dv(n);
+      cg.setMaxIterations(ncycle);
+      cg.setTolerance(toler);
+      cg.compute(am);
+      dv = cg.solve(vn);
+      if (logger)
+        *logger << "#iterations:     " << cg.iterations() << "\n"
+                << "estimated error: " << cg.error()      << std::endl;
+      return pmat * dv;
+    }
+
+    // if Preconditioner is not Identity, gamma cycle should not be used.
     Preconditioner precond;
     precond.compute(am);
 
@@ -76,7 +122,7 @@ struct CgSolve {
         if (rnorm2 < test_lim) {
           if (!gamma_flag) {
             if (logger)
-              *logger << "Convergence reached with no gamma cycles\n";
+              *logger << "Convergence reached after " << itr+1 << " iterations with no gamma cycles\n";
             exit_flag = true;
             break;
           } else if (conver_flag) {
@@ -111,6 +157,7 @@ struct CgSolve {
         p = z + beta * p;
       }
       if (exit_flag) break;
+      if (max_gamma_cyc == 1) break; // test
       gamma_flag = true;
       if (!conver_flag)
         dv.setZero();
@@ -121,7 +168,7 @@ struct CgSolve {
           *logger << "Back to gamma equal " << gamma << "\n";
       }
     }
-    return dv;
+    return pmat * dv;
   }
 };
 
