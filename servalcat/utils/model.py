@@ -425,7 +425,7 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
     if not specs: return
     cs_count = len(st.find_spacegroup().operations())
     todel = []
-    for atom, images, _ in specs:
+    for atom, images, _, _ in specs:
         if not lookup[atom]: continue # should not happen
         ic, ir, ia = lookup[atom]
         mult = 1
