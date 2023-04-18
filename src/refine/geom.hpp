@@ -5,7 +5,6 @@
 #define SERVALCAT_REFINE_GEOM_HPP_
 
 #include <set>
-#include <iostream>
 #include <gemmi/model.hpp>    // for Structure, Atom
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
 #include <gemmi/topo.hpp>     // for Topo
@@ -1491,7 +1490,6 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       Eigen::Matrix3d m {{a[0], a[3], a[4]},
                          {a[3], a[1], a[5]},
                          {a[4], a[5], a[2]}};
-      std::cout << "m_diag_before = \n" << m << "\n";
       const double hmax = m.maxCoeff();
       m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos).eval();
       if (use_rr)
@@ -1499,7 +1497,6 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
                                       - spec.Rspec_pos * spec.Rspec_pos)).eval();
       else
         m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
-      std::cout << "m_diag_after = \n" << m << "\n";
       a[0] = m(0,0);
       a[1] = m(1,1);
       a[2] = m(2,2);
@@ -1510,13 +1507,10 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       for (int i = 0; i < n_pairs; ++i) {
         if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
           Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> m(&target.am[target.nmpos + 9 * i]);
-          //std::cout << "non_diag " << target.pairs[i].first << ", " << target.pairs[i].second << "\n"
-          //          << m << "\n";
           if (target.pairs[i].first == idx)
             m = (spec.Rspec_pos.transpose() * m).eval();
           else
             m = (m * spec.Rspec_pos).eval();
-          //std::cout << "after\n" << m << "\n";
         }
       }
     }

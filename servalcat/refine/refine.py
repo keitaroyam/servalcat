@@ -194,7 +194,6 @@ class Refine:
             dxb[dxb < shift_min_allow_B] = shift_min_allow_B
         elif self.adp_mode == 2:
             dxb = dx[offset_b:]
-            spec_idxes = {spec.atom.serial - 1: spec.atom for spec in self.geom.geom.specials}
             for i in range(len(dxb)//6):
                 j = i * 6
                 a = numpy.array([[dxb[j],   dxb[j+3], dxb[j+4]],
@@ -204,8 +203,6 @@ class Refine:
                 v[v > shift_max_allow_B] = shift_max_allow_B
                 v[v < shift_min_allow_B] = shift_min_allow_B
                 a = Q.dot(numpy.diag(v)).dot(Q.T)
-                if i in spec_idxes:
-                    logger.writeln("spec {} shift_org {} shift_new {}".format(spec_idxes[i], dxb[j:j+6], (a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2])))
                 dxb[j:j+6] = a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2]
             
         return dx
@@ -342,10 +339,6 @@ class Refine:
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
-            for spec in self.geom.geom.specials:
-                idx = spec.atom.serial - 1
-                logger.writeln("spec {} dx= {} grad= {}".format(spec.atom, dxx[idx*3:idx*3+3],
-                                                                numpy.array(self.geom.geom.target.vn)[idx*3:idx*3+3]))
         if self.adp_mode > 0: # TODO for aniso
             db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
             #logger.writeln("dB = {}".format(db))

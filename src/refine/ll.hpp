@@ -592,7 +592,6 @@ struct LL{
         Eigen::Matrix3d m {{a[0], a[3], a[4]},
                            {a[3], a[1], a[5]},
                            {a[4], a[5], a[2]}};
-        std::cout << "ll_m_diag_before = \n" << m << "\n";
         const double hmax = m.maxCoeff() * spec.n_mult;
         m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos * spec.n_mult).eval();
         if (use_rr)
@@ -600,7 +599,6 @@ struct LL{
                                         - spec.Rspec_pos * spec.Rspec_pos)).eval();
         else
           m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
-        std::cout << "ll_m_diag_after = \n" << m << "\n";
         a[0] = m(0,0);
         a[1] = m(1,1);
         a[2] = m(2,2);
