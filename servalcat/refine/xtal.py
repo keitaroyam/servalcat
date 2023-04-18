@@ -147,17 +147,19 @@ class LL_Xtal:
         if self.is_int:
             calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.I[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel])**2)
+            rlab = "R2"
         else:
             calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP_org[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel]))
-        ret = {"summary": {"-LL": self.calc_target()}}
+            rlab = "R"
+        ret = {"summary": {}}
         if "FREE" in self.hkldata.df:
             test_sel = (self.hkldata.df.FREE == self.free).fillna(False)
             r_free = calc_r(test_sel)
             r_work = calc_r(~test_sel)
-            logger.writeln("R_work = {:.4f} R_free = {:.4f}".format(r_work, r_free))
-            ret["summary"]["Rfree"] = r_free
-            ret["summary"]["Rwork"] = r_work
+            logger.writeln("{}_work = {:.4f} {}_free = {:.4f}".format(rlab, r_work, rlab, r_free))
+            ret["summary"]["{}work".format(rlab)] = r_work
+            ret["summary"]["{}free".format(rlab)] = r_free
         else:
             if self.is_int:
                 r = utils.hkl.r_factor(self.hkldata.df.I,
@@ -165,12 +167,14 @@ class LL_Xtal:
             else:
                 r = utils.hkl.r_factor(self.hkldata.df.FP_org,
                                        numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
-            logger.writeln("R = {:.4f}".format(r))
-            ret["summary"]["R"] = r
+            logger.writeln("{} = {:.4f}".format(rlab, r))
+            ret["summary"][rlab] = r
             if self.is_int:
                 cc = utils.hkl.correlation(self.hkldata.df.I,
                                            (numpy.abs(self.hkldata.df.FC) * self.hkldata.df.k_aniso)**2)
                 logger.writeln("CC = {:.4f}".format(cc))
+                ret["summary"]["CC"] = cc
+        ret["summary"]["-LL"] = self.calc_target()
         return ret
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):

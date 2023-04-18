@@ -388,33 +388,45 @@ class Refine:
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and not self.unrestrained:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
+            if self.ll is not None:
+                self.ll.overall_scale()
+                stats[-1]["data"] = self.ll.calc_stats()["summary"]
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             logger.writeln("")
 
-            if self.ll is not None:
-                self.ll.overall_scale()
-                stats[-1]["data"] = self.ll.calc_stats()["summary"]
-
-        df = pandas.DataFrame({"Ncyc": range(ncycles+1)})
-        if self.ll is not None:
-            df["FSCaverage"] = [s["data"].get("FSCaverage", numpy.nan) for s in stats]
-            for r in ("R", "Rwork", "Rfree"):
-                df[r] = [s["data"].get(r, numpy.nan) for s in stats]
-            df["-LL"] = [s["data"].get("-LL", numpy.nan) for s in stats]
-        if self.refine_xyz and not self.unrestrained:
-            df["rmsBOND"] =[s["geom"]["r.m.s.d."].get("Bond distances, non H") for s in stats]
-            df["zBOND"] = [s["geom"]["r.m.s.Z"].get("Bond distances, non H") for s in stats]
-            df["rmsANGL"] = [s["geom"]["r.m.s.d."].get("Bond angles, non H") for s in stats]
-            df["zANGL"] = [s["geom"]["r.m.s.Z"].get("Bond angles, non H") for s in stats]
-
+        # Make table
+        data_keys, geom_keys = set(), set()
+        tmp = []
+        for d in stats:
+            x = {"Ncyc": d["Ncyc"]}
+            if "data" in d:
+                x.update(d["data"])
+                data_keys.update(d["data"])
+            if "geom" in d:
+                for k, n, l in (("r.m.s.d.", "Bond distances, non H", "rmsBOND"),
+                                ("r.m.s.Z", "Bond distances, non H", "zBOND"),
+                                ("r.m.s.d.", "Bond angles, non H", "rmsANGL"),
+                                ("r.m.s.Z", "Bond angles, non H", "zANGL")):
+                    if k in d["geom"] and n in d["geom"][k]:
+                        x[l] = d["geom"][k].get(n)
+                        geom_keys.add(l)
+            tmp.append(x)
+        df = pandas.DataFrame(tmp)
         forplot = []
-        if self.ll is not None:
-            forplot.append(["FSC or R", ["Ncyc", "FSCaverage", "R"]])
+        if "FSCaverage" in data_keys:
+            forplot.append(["FSC", ["Ncyc", "FSCaverage"]])
+        r_keys = [x for x in data_keys if x.startswith("R")]
+        if r_keys:
+            forplot.append(["R", ["Ncyc"] + r_keys])
+        if "-LL" in data_keys:
             forplot.append(["-LL", ["Ncyc", "-LL"]])
-        if self.refine_xyz and not self.unrestrained:
-            forplot.extend([["Geometry", ["Ncyc", "rmsBOND", "rmsANGL"]],
-                            ["Geometry Z", ["Ncyc", "zBOND", "zANGL"]]])
+        rms_keys = [x for x in geom_keys if x.startswith("rms")]
+        if rms_keys:
+            forplot.append(["Geometry", ["Ncyc"] + rms_keys])
+        z_keys = [x for x in geom_keys if x.startswith("z")]
+        if z_keys:
+            forplot.append(["Geometry Z", ["Ncyc"] + z_keys])
 
         lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
                                        float_format="{:.4f}".format)
