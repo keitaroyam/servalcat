@@ -136,8 +136,9 @@ void add_refine(py::module& m) {
       for (const auto& t : self.torsions) {
         const auto& val = std::get<1>(t);
         const double d2 = gemmi::sq(std::get<2>(t)), z2 = gemmi::sq(std::get<2>(t) / val->sigma);
-        delsq[val->period].push_back(d2);
-        zsq[val->period].push_back(z2);
+        const int period = std::max(1, val->period);
+        delsq[period].push_back(d2);
+        zsq[period].push_back(z2);
       }
       for (const auto& p : delsq)
         if (!p.second.empty())
