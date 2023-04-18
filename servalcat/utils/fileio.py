@@ -266,9 +266,10 @@ def read_cif_safe(cif_in):
 
 def read_structure(xyz_in):
     spext = splitext(xyz_in)
+    st = None
     if spext[1].lower() in (".pdb", ".ent"):
         logger.writeln("Reading PDB file: {}".format(xyz_in))
-        return gemmi.read_pdb(xyz_in)
+        st = gemmi.read_pdb(xyz_in)
     elif spext[1].lower() in (".cif", ".mmcif"):
         doc = read_cif_safe(xyz_in)
         blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
@@ -276,20 +277,27 @@ def read_structure(xyz_in):
             logger.writeln("Reading mmCIF file: {}".format(xyz_in))
             if len(blocks) > 1:
                 logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
-            return gemmi.make_structure_from_block(blocks[0])
+            st =  gemmi.make_structure_from_block(blocks[0])
         else:
             logger.writeln("Reading smCIF file: {}".format(xyz_in))
             ss = gemmi.read_small_structure(xyz_in)
             if not ss.sites:
                 raise RuntimeError("No atoms found in cif file.")
-            return model.cx_to_mx(ss)
+            st = model.cx_to_mx(ss)
     elif spext[1].lower() in (".ins", ".res"):
         logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
         st = model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
         st.setup_cell_images()
-        return st
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
+    if st is not None:
+        if st.cell.is_crystal():
+            logger.writeln("      Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*st.cell.parameters))
+            logger.writeln("    Space group: {}".format(st.spacegroup_hm))
+        if st.ncs:
+            n_given = sum(1 for x in st.ncs if x.given)
+            logger.writeln(" No. strict NCS: {} ({} already applied)".format(len(st.ncs), n_given))
+    return st
 # read_structure()
 
 def read_structure_from_pdb_and_mmcif(xyz_in):

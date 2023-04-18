@@ -715,11 +715,6 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     
     if sts:
         assert source in ["electron", "xray", "neutron"]
-        logger.writeln("From model 1:")
-        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*sts[0].cell.parameters))
-        logger.writeln("  Space group: {}".format(sts[0].spacegroup_hm))
-        logger.writeln("")
-    
         if not hkldata.cell.approx(sts[0].cell, 1e-3):
             logger.writeln("Warning: unit cell mismatch between model and reflection data")
             logger.writeln("         using unit cell from mtz")

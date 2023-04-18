@@ -126,9 +126,6 @@ def main(args):
     else:
         st = utils.fileio.read_structure(args.model)
         sg_st = st.find_spacegroup()
-        logger.writeln(" Cell from model: {}".format(st.cell))
-        logger.writeln(" Space group from model: {}".format(st.spacegroup_hm))
-
         if args.hklin.endswith(".mtz"): # TODO may be unmerged mtz
             logger.writeln("Reading MTZ file: {}".format(args.hklin))
             mtz = gemmi.read_mtz_file(args.hklin)
