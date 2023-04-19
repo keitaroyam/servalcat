@@ -27,7 +27,7 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=30, shake_rms=0, refmac_keywords=None, jellybody_only=False):
+    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False):
         self.st = st
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.geom = ext.Geometry(self.st, monlib.ener_lib)

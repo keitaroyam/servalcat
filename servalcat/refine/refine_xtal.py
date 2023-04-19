@@ -54,7 +54,7 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float, default=1,
                         help="refinement weight")
-    parser.add_argument('--sigma_b', type=float, default=30,
+    parser.add_argument('--sigma_b', type=float, default=10,
                         help="refinement ADP sigma in B (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
