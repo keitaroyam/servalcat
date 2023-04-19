@@ -126,13 +126,10 @@ def main(args):
     else:
         st = utils.fileio.read_structure(args.model)
         sg_st = st.find_spacegroup()
-        if args.hklin.endswith(".mtz"): # TODO may be unmerged mtz
-            logger.writeln("Reading MTZ file: {}".format(args.hklin))
-            mtz = gemmi.read_mtz_file(args.hklin)
-            logger.writeln(" Cell from mtz: {}".format(mtz.cell))
+        if utils.fileio.is_mmhkl_file(args.hklin): # TODO may be unmerged mtz
+            mtz = utils.fileio.read_mmhkl(args.hklin)
             if not mtz.cell.approx(st.cell, 1e-3):
                 logger.writeln(" Warning: unit cell mismatch!")
-            logger.writeln(" Space group from mtz: {}".format(mtz.spacegroup.xhm()))
             if sg_user:
                 if not mtz.cell.is_compatible_with_spacegroup(sg_user):
                     raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),

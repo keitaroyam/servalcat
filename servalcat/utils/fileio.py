@@ -217,10 +217,45 @@ def read_halfmaps(files, pixel_size=None, fail=True):
     assert maps[0][1] == maps[1][1]
     
     return maps
-# read_halfmaps()    
+# read_halfmaps()
+
+def read_mmhkl(hklin, cif_index=0): # mtz or mmcif
+    spext = splitext(hklin)
+    if spext[1].lower() == ".mtz":
+        logger.writeln("Reading MTZ file: {}".format(hklin))
+        mtz = gemmi.read_mtz_file(hklin)
+    elif spext[1].lower() in (".cif", ".ent"):
+        logger.writeln("Reading mmCIF file (hkl data): {} at index {}".format(hklin, cif_index+1))
+        doc = gemmi.cif.read(hklin)
+        blocks = gemmi.as_refln_blocks(doc)
+        cif2mtz = gemmi.CifToMtz()
+        mtz = cif2mtz.convert_block_to_mtz(blocks[cif_index])
+    else:
+        raise RuntimeError("Unsupported file type: {}".format(spext[1]))
+    logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
+    logger.writeln("  Space group: {}".format(mtz.spacegroup.xhm()))
+    logger.writeln("      Columns: {}".format(" ".join(mtz.column_labels())))
+    logger.writeln("")
+    return mtz
+# read_mmhkl()
+
+def is_mmhkl_file(hklin):
+    spext = splitext(hklin)
+    if spext[1].lower() == ".mtz":
+        return True
+    if spext[1].lower() == ".hkl": # macromolecule files should not have .hkl extension
+        return False
+    if spext[1].lower() in (".cif", ".ent"):
+        for b in gemmi.cif.read(hklin):
+            if b.find_values("_refln.index_h"):
+                return True
+            if b.find_values("_refln_index_h"):
+                return False
+    # otherwise cannot decide
+# is_smhkl()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
-    mtz = gemmi.read_mtz_file(mtz_in)
+    mtz = read_mmhkl(mtz_in)
     d_min = mtz.resolution_high() # TODO get resolution for column?
     if grid_size is None:
         grid_size = mtz.get_size_for_hkl(sample_rate=sample_rate)
@@ -231,7 +266,7 @@ def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
 
 def read_asu_data_from_mtz(mtz_in, cols):
     assert 0 < len(cols) < 3
-    mtz = gemmi.read_mtz_file(mtz_in)
+    mtz = read_mmhkl(mtz_in)
     sg = mtz.spacegroup
     miller = mtz.make_miller_array()
     f = mtz.column_with_label(cols[0])
@@ -292,11 +327,12 @@ def read_structure(xyz_in):
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
     if st is not None:
         if st.cell.is_crystal():
-            logger.writeln("      Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*st.cell.parameters))
-            logger.writeln("    Space group: {}".format(st.spacegroup_hm))
+            logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*st.cell.parameters))
+            logger.writeln("  Space group: {}".format(st.spacegroup_hm))
         if st.ncs:
             n_given = sum(1 for x in st.ncs if x.given)
             logger.writeln(" No. strict NCS: {} ({} already applied)".format(len(st.ncs), n_given))
+        logger.writeln("")
     return st
 # read_structure()
 
@@ -570,12 +606,13 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     # Very crude support for smcif - just because I do not know other varieties.
     # TODO other possible data types? (amplitudes?)
     # TODO check _refln_observed_status?
-    logger.writeln("Reading hkl data from small molecule cif: {}".format(cif_in))
+    logger.writeln("Reading hkl data from smcif: {}".format(cif_in))
     b = gemmi.cif.read(cif_in).sole_block()
     try:
         cell_par = [float(b.find_value("_cell_length_{}".format(x))) for x in ("a", "b", "c")]
         cell_par += [float(b.find_value("_cell_angle_{}".format(x))) for x in ("alpha", "beta", "gamma")]
         cell = gemmi.UnitCell(*cell_par)
+        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*cell.parameters))
     except:
         logger.writeln(" WARNING: no unit cell in this file")
         cell = cell_if_absent
@@ -583,7 +620,9 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     for optag in ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"):
         ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop(optag)]
         sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(ops))
-        if sg: break
+        if sg:
+            logger.writeln("  Space group: {}".format(sg.xhm()))
+            break
     else:
         sg = sg_if_absent
 
@@ -607,6 +646,7 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
+    logger.writeln("")
     i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
                                                                numpy.dtype([("value", numpy.float32),
                                                                             ("sigma", numpy.float32)]))

@@ -242,7 +242,7 @@ def main(args):
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         unit_cell = maps[0][0].unit_cell
     elif args.mtz:
-        mtz = gemmi.read_mtz_file(args.mtz)
+        mtz = utils.fileio.read_mmhkl(hklin)
         if mask is not None and mask.unit_cell != mtz.cell:
             raise SystemExit("Error: Inconsistent unit cell between mtz and mask")
         gr = mtz.transform_f_phi_to_map(f=args.labin[0],

@@ -685,12 +685,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
-    if utils.fileio.splitext(hklin)[1] == ".mtz":
-        mtz = gemmi.read_mtz_file(hklin)
-        logger.writeln("Input mtz: {}".format(hklin))
-        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
-        logger.writeln("  Space group: {}".format(mtz.spacegroup.xhm()))
-        logger.writeln("")
+    if utils.fileio.is_mmhkl_file(hklin):
+        mtz = utils.fileio.read_mmhkl(hklin)
         col_types = {x.label:x.type for x in mtz.columns}
         if labin[0] not in col_types:
             raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))

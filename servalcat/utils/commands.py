@@ -450,7 +450,7 @@ def h_add(args):
 
 def read_map_and_oversample(map_in=None, mtz_in=None, mtz_labs=None, oversample_pixel=None):
     if mtz_in is not None:
-        mtz = gemmi.read_mtz_file(mtz_in)
+        mtz = fileio.read_mmhkl(mtz_in)
         lab_f, lab_phi = mtz_labs.split(",")
         asu = mtz.get_f_phi(lab_f, lab_phi)
         if oversample_pixel is not None:
@@ -923,8 +923,8 @@ def blur(args):
     if args.output_prefix is None:
         args.output_prefix = fileio.splitext(os.path.basename(args.hklin))[0]
     
-    if args.hklin.endswith(".mtz"):
-        mtz = gemmi.read_mtz_file(args.hklin)
+    if fileio.is_mmhkl_file(args.hklin):
+        mtz = fileio.read_mmhkl(args.hklin)
         hkl.blur_mtz(mtz, args.B)
         suffix = ("_blur" if args.B > 0 else "_sharpen") + "_{:.2f}.mtz".format(abs(args.B))
         mtz.write_to_file(args.output_prefix+suffix)

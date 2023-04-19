@@ -126,7 +126,7 @@ def main(args):
     st.assign_cis_flags()
     if args.hklin:
         assert not args.cross_validation
-        mtz = gemmi.read_mtz_file(args.hklin)
+        mtz = utils.fileio.read_mmhkl(args.hklin)
         hkldata = utils.hkl.hkldata_from_mtz(mtz, args.labin.split(","),
                                              newlabels=["FP", ""],
                                              require_types=["F", "P"])
