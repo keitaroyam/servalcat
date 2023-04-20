@@ -413,7 +413,15 @@ class HklData:
         if n_bad > 0:
             logger.writeln("Removing {} reflections with {}<=0".format(n_bad, label))
             self.df = self.df[~sel]
-    # remove_bad_sigma()
+    # remove_nonpositive()
+
+    def remove_systematic_absences(self):
+        is_absent = self.sg.operations().systematic_absences(self.miller_array())
+        n_absent = numpy.sum(is_absent)
+        if n_absent > 0:
+            logger.writeln("Removing {} systematic absences".format(n_absent))
+            self.df = self.df[~is_absent]
+    # remove_systematic_absences()
 
     def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None
@@ -596,7 +604,7 @@ class HklData:
                 data[:,idx+1] = numpy.angle(df[lab], deg=True)
                 idx += 2
             else:
-                data[:,idx] = df[lab]
+                data[:,idx] = df[lab].to_numpy(numpy.float32, na_value=numpy.nan) # for nullable integers
                 idx += 1
 
         mtz = gemmi.Mtz()

@@ -148,9 +148,11 @@ def main(args):
 
     # CHECK ML parameters are determined from the last model?
     if is_int:
-        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections)
+        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
+                           use=use_in_target)
     else:
-        calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log")
+        calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
+                       use=use_in_target)
 
     # Write mtz file
     if is_int:
@@ -160,6 +162,8 @@ def main(args):
     labs.extend(["FWT", "DELFWT", "FC"])
     if not args.no_solvent:
         labs.append("FCbulk")
+    if "FREE" in hkldata.df:
+        labs.append("FREE")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q"})
 

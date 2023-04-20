@@ -636,8 +636,8 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
 
 def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
     nmodels = len(fc_labs)
-    hkldata.df["FWT"] = 0j
-    hkldata.df["DELFWT"] = 0j
+    hkldata.df["FWT"] = 0j * numpy.nan
+    hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan
     Io = hkldata.df.I.to_numpy()
     sigIo = hkldata.df.SIGI.to_numpy()
@@ -647,10 +647,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
         Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
         S = hkldata.binned_df.S[i_bin]
         for c, work, test in centric_and_selections[i_bin]:
-            if use == "all":
-                cidxes = numpy.concatenate([work, test])
-            else:
-                cidxes = work if use == "work" else test
+            cidxes = numpy.concatenate([work, test])
             if c == 0: # acentric
                 k_num, k_den = 0.5, 0.
             else:
@@ -665,6 +662,15 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             exp_ip = numpy.exp(numpy.angle(DFc)*1j)
             hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc
+
+            # remove reflections that should be hidden
+            if use != "all":
+                # usually use == "work"
+                tohide = test if use == "work" else work
+                hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
+                hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
+            fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
+            hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[fill_sel]
 # calculate_maps_int()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
@@ -735,6 +741,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
+    hkldata.remove_systematic_absences()
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
 
     if (d_min, d_max).count(None) != 2:
@@ -859,15 +866,14 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     return scaling.k_overall, b_aniso
 # bulk_solvent_and_lsq_scales()
 
-def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
+def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out, use="all"):
     nmodels = len(fc_labs)
-    hkldata.df["FWT"] = 0j
-    hkldata.df["DELFWT"] = 0j
+    hkldata.df["FWT"] = 0j * numpy.nan
+    hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan
     hkldata.df["X"] = numpy.nan # for FOM
     stats_data = []
-    for i_bin, _ in hkldata.binned():
-        idxes = numpy.concatenate([sel[1] for sel in centric_and_selections[i_bin]]) # w/o missing reflections
+    for i_bin, idxes in hkldata.binned():
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
         Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
@@ -878,9 +884,9 @@ def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
         # 0: acentric 1: centric
         mean_fom = [0, 0]
         nrefs = [0, 0]
-        for c, cidxes, nidxes in centric_and_selections[i_bin]:
+        for c, work, test in centric_and_selections[i_bin]:
+            cidxes = numpy.concatenate([work, test])
             Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
-
             Fc = numpy.abs(hkldata.df.FC.to_numpy()[cidxes])
             phic = numpy.angle(hkldata.df.FC.to_numpy()[cidxes])
             expip = numpy.cos(phic) + 1j*numpy.sin(phic)
@@ -888,7 +894,6 @@ def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
             SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
             epsilon = hkldata.df.epsilon.to_numpy()[cidxes]
             nrefs[c] = len(cidxes)
-
             DFc = calc_abs_DFc(Ds, Fcs)
             if c == 0:
                 Sigma = 2 * SigFo**2 + epsilon * S
@@ -905,9 +910,15 @@ def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
             mean_fom[c] = numpy.nanmean(m)
-            
-            # Fill missing
-            hkldata.df.loc[nidxes, "FWT"] = sum(Ds[i] * hkldata.df[lab].to_numpy()[nidxes] for i, lab in enumerate(fc_labs))
+
+            # remove reflections that should be hidden
+            if use != "all":
+                # usually use == "work"
+                tohide = test if use == "work" else work
+                hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
+                hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
+            fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
+            hkldata.df.loc[cidxes[fill_sel], "FWT"] = (DFc * expip)[fill_sel]
 
         k = hkldata.df.k_aniso.to_numpy()[idxes]
         Fc = hkldata.df.FC.to_numpy()[idxes] * k
@@ -915,8 +926,7 @@ def calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out):
         Fo = hkldata.df.FP.to_numpy()[idxes] * k
         DFc = calc_abs_DFc(Ds, Fcs)
         r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
-        valid_sel = numpy.isfinite(Fo)
-        cc = numpy.corrcoef(numpy.abs(Fc[valid_sel]), Fo[valid_sel])[1,0]
+        cc = utils.hkl.correlation(Fo, numpy.abs(Fc))
         stats_data.append([1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
                            numpy.log(numpy.nanmean(numpy.abs(Fo)**2)),
                            numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
@@ -967,7 +977,8 @@ def main(args):
         assert not args.use_cc
         logger.writeln("Estimating sigma-A parameters using ML..")
         b_aniso = determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_as_exp, args.S_as_exp, args.use)
-        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections)
+        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections,
+                           use={"all": "all", "work": "work", "test": "work"}[args.use])
     else:
         if args.use_cc:
             logger.writeln("Estimating sigma-A parameters from CC..")
@@ -978,7 +989,8 @@ def main(args):
 
         # Calculate maps
         log_out = "{}.log".format(args.output_prefix)
-        calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out)
+        calculate_maps(hkldata, centric_and_selections, fc_labs, D_labs, log_out,
+                       use={"all": "all", "work": "work", "test": "work"}[args.use])
 
     # Write mtz file
     if is_int:
@@ -988,6 +1000,8 @@ def main(args):
     labs.extend(["FWT", "DELFWT", "FC"])
     if not args.no_solvent:
         labs.append("Fbulk")
+    if "FREE" in hkldata.df:
+        labs.append("FREE")
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
     return hkldata
