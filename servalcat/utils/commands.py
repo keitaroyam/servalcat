@@ -163,6 +163,8 @@ def add_arguments(p):
                         help="sigma cutoff to print outliers (default: %(default).1f)")
     #parser.add_argument('--write_z_per_atom', nargs="*", 
     #                    help="write model file(s) with sum of z values of specified metric as B values")
+    parser.add_argument("--check_skew", action='store_true', help="(experimental) check bond skew to test magnification")
+    parser.add_argument("--ignore_h", action='store_true', help="ignore hydrogen")
     parser.add_argument('-o', '--output_prefix', 
                         help="default: taken from input file")
 
@@ -715,6 +717,8 @@ def geometry(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_geom"
     st = fileio.read_structure(args.model)
+    if args.ignore_h:
+        st.remove_hydrogens()
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
                                                  stop_for_unknowns=True)
@@ -742,6 +746,54 @@ def geometry(args):
             ret["outliers"][k] = ret["outliers"][k].to_dict(orient="records")
         json.dump(ret["outliers"], ofs, indent=2)
         logger.writeln("saved: {}".format(ofs.name))
+
+    if args.check_skew:
+        logger.writeln("\nChecking skewness of bond length deviation")
+        # better to ignore hydrogen
+        tab = geom.geom.reporting.get_bond_outliers(use_nucleus=False, min_z=0)
+        for a in "atom1", "atom2":
+            tab[a] = [str(geom.lookup[x]) for x in tab[a]]
+        df = pandas.DataFrame(tab)
+        df["dev"] = df["value"] - df["ideal"]
+        df = df.reindex(df.dev.abs().sort_values(ascending=False).index)
+        logger.writeln("Bond length deviations:")
+        logger.writeln(df.to_string(max_rows=20))
+        q1, q2, q3 = numpy.percentile(df["dev"], [25, 50, 75])
+        sk2 = (q1 + q3 - 2 * q2) / (q3 - q1)
+        logger.writeln("bond_dev_median= {:.6f}".format(q2))
+        logger.writeln("bond_dev_skew=   {:.4f}".format(df["dev"].skew()))
+        logger.writeln("bond_dev_sk2=    {:.4f}".format(sk2))
+        with open(args.output_prefix + "_bond_dev.html", "w") as ofs:
+            ofs.write("""\
+<html>
+<head>
+ <meta charset="utf-8" />
+ <script src="https://cdn.plot.ly/plotly-2.20.0.min.js" charset="utf-8"></script>
+</head>
+<body>
+ <div id="hist"></div>
+ <script>
+  var trace = {
+   x: %s,
+   type: 'histogram'
+  };
+  var layout = {
+   title: "median: %.4f, sk2: %.4f",
+   xaxis: {title: "bond distance - ideal"},
+   yaxis: {title: "count"},
+   shapes: [{
+    type: 'line',
+    yref: 'paper',
+    x0: 0, y0: 0,
+    x1: 0, y1: 1}]
+  };
+  target = document.getElementById('hist');
+  Plotly.newPlot(target, [trace], layout);
+ </script>
+</body>
+</html>
+""" % (str(list(df.dev)), q2, sk2))
+            logger.writeln("check histogram: {}".format(ofs.name))
 # geometry()
 
 def show_power(args):
