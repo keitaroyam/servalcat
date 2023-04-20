@@ -475,7 +475,6 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
     # TODO need to check external restraints
     if use_refmac:
         if use_gemmi_prep:
-            st.assign_cis_flags()
             h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                         "yes":gemmi.HydrogenChange.NoChange,
                         "no":gemmi.HydrogenChange.Remove}[args.hydrogen]

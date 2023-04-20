@@ -12,7 +12,7 @@ import servalcat
 ext_modules = [
     Pybind11Extension(
         "servalcat.ext",
-        sorted(glob.glob("src/*.cpp") + ["gemmi/src/"+x for x in ("topo.cpp", "monlib.cpp", "polyheur.cpp", "resinfo.cpp", "riding_h.cpp")]), 
+        sorted(glob.glob("src/*.cpp") + ["gemmi/src/"+x for x in ("topo.cpp", "monlib.cpp", "polyheur.cpp", "resinfo.cpp", "riding_h.cpp", "eig3.cpp")]), 
         include_dirs=["gemmi/include", "eigen"],
     ),
 ]
@@ -128,7 +128,7 @@ setup(name='servalcat',
     description= 'Structure refinement and validation for crystallography and single particle analysis',
     license='MPL-2.0',
     packages=setuptools.find_packages(),
-    install_requires=['numpy>=1.15','scipy','pandas>=0.24.2', 'gemmi==0.6.0'],
+    install_requires=['numpy>=1.15','scipy','pandas>=0.24.2', 'gemmi==0.6.1'],
     entry_points={
       'console_scripts': [
           'servalcat = servalcat.command_line:main',

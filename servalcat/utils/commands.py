@@ -525,8 +525,8 @@ def map_peaks(args):
         map_val = gr.interpolate_value(bpos)
         if (args.max_volume is not None and b.volume > args.max_volume) or abs(map_val) < cutoff: continue
         x = ns.find_nearest_atom(bpos)
-        if x is None:
-            logger.writeln("too far from model: value={:.2e} volume= {:.2f} pos= {}".format(map_val, b.volume, bpos))
+        if x is None: # this should not happen
+            logger.writeln("no nearest atom: value={:.2e} volume= {:.2f} pos= {}".format(map_val, b.volume, bpos))
             continue
         chain = st[0][x.chain_idx]
         res = chain[x.residue_idx]
@@ -722,7 +722,6 @@ def geometry(args):
         raise SystemExit("Error: {}".format(e))
 
     model.setup_entities(st, clear=True, force_subchain_names=True)
-    st.assign_cis_flags()
     restraints.find_and_fix_links(st, monlib)
     try:
         topo = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,

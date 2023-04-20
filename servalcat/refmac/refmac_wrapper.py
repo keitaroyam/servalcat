@@ -85,7 +85,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    if make.get("cispept", "y") == "y": st.assign_cis_flags()
+    use_cispeps = make.get("cispept", "y") != "y"
     utils.restraints.find_and_fix_links(st, monlib, add_found=(make.get("link", "n")=="y"), find_symmetry_related=False)
     for con in st.connections:
         if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
@@ -105,7 +105,8 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
     try:
         topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
-                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
+                                                 use_cispeps=use_cispeps)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -151,8 +152,9 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes, hout, keep_original_output=False):
+def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=False):
     st = utils.fileio.read_structure(cifout)
+    st.cispeps = cispeps
     if os.path.exists(pdbout):
         st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
     if fixes is not None:
@@ -210,6 +212,7 @@ def main(args):
     # Process model
     crdout = None
     refmac_fixes = None
+    cispeps = []
     if xyzin is not None:
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
@@ -232,6 +235,7 @@ def main(args):
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
                                    no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
         opts["xyzin"] = crdout
+        cispeps = st.cispeps
 
     if keywords["make"].get("exit"):
         return
@@ -264,7 +268,7 @@ def main(args):
     if xyzin is not None:
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
-            modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), args.keep_original_output)
+            modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps, args.keep_original_output)
 # main()
 
 def command_line():
