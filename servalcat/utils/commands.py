@@ -686,6 +686,7 @@ def fix_link(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
+    model.setup_entities(st, clear=True, force_subchain_names=True)
     restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin)
     fileio.write_model(st, file_name=args.output)
 # fix_link()
