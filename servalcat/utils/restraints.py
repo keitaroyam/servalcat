@@ -156,6 +156,29 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     unknown_cc = set()
     link_related = set()
     nan_hydr = set()
+
+    # collect info
+    info = {}
+    for cinfo in topo.chain_infos:
+        toadd = info.setdefault(cinfo.chain_ref.name, {})
+        if cinfo.polymer:
+            toadd["polymer"] = (str(cinfo.polymer_type).replace("PolymerType.", ""),
+                                cinfo.res_infos[0].res.seqid,
+                                cinfo.res_infos[-1].res.seqid,
+                                len(cinfo.res_infos))
+        else:
+            toadd.setdefault("nonpolymer", []).append(cinfo.res_infos[0].res.name)
+    logger.writeln("\nChain info:")
+    for chain in info:
+        logger.writeln(" chain {}".format(chain))
+        if "polymer" in info[chain]:
+            logger.writeln("  {}: {}..{} ({} residues)".format(*info[chain]["polymer"]))
+        if "nonpolymer" in info[chain]:
+            n_res = len(info[chain]["nonpolymer"])
+            uniq = set(info[chain]["nonpolymer"])
+            logger.writeln("  ligands: {} ({} residues)".format(" ".join(uniq), n_res))
+    logger.writeln("")
+    
     for cinfo in topo.chain_infos:
         for rinfo in cinfo.res_infos:
             cc_org = monlib.monomers[rinfo.res.name] if rinfo.res.name in monlib.monomers else None
