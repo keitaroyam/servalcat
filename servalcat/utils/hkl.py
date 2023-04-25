@@ -151,13 +151,6 @@ def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
     return n_bins
 # decide_n_bins()
 
-def intensity_symmetry(sg):
-    ops = sg.operations()
-    ops.add_inversion()
-    newsg = gemmi.find_spacegroup_by_ops(ops)
-    return newsg.point_group_hm()
-# intensity_symmetry()
-    
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
         self.cell = cell

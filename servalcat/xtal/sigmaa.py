@@ -727,9 +727,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         sg_use = hkldata.sg
         if hkldata.sg != sg_st:
             logger.writeln("Warning: space group mismatch between model and mtz")
-            pg_mtz = utils.hkl.intensity_symmetry(hkldata.sg)
-            pg_st = utils.hkl.intensity_symmetry(sg_st)
-            if sg_st and pg_mtz == pg_st:
+            if sg_st and sg_st.laue_str() == hkldata.sg.laue_str():
                 logger.writeln("         using space group from model")
                 sg_use = sg_st
             else:
@@ -737,6 +735,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             logger.writeln("")
 
         for st in sts: st.spacegroup_hm = sg_use.xhm()
+        st.setup_cell_images()
         hkldata.sg = sg_use
         
     hkldata.remove_nonpositive(newlabels[1])
