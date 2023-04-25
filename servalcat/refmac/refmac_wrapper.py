@@ -159,6 +159,10 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
     if fixes is not None:
         fixes.modify_back(st)
+    for con in st.connections:
+        if con.link_id == "disulf":
+            con.type = gemmi.ConnectionType.Disulf
+        # should we check metals and put MetalC?
 
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
