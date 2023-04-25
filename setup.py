@@ -3,7 +3,10 @@ import setuptools
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from setuptools import distutils
-from pybind11.setup_helpers import Pybind11Extension
+try:
+    from pybind11.setup_helpers import Pybind11Extension
+except ImportError:
+    from setuptools import Extension as Pybind11Extension
 import glob
 import sys
 import os
