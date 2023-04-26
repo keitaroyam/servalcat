@@ -444,7 +444,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
                   output_masked_prefix="masked_fs",
                   output_mtz_prefix="starting_map",
                   use_gemmi_prep=False, no_refmac_fix=False,
-                  use_refmac=True):
+                  use_refmac=True, fix_link=True):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -470,31 +470,6 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         if max_seq_num > 9999 and ret["model_format"] == ".pdb":
             logger.writeln("Max residue number ({}) exceeds 9999. Will use mmcif format".format(max_seq_num))
             ret["model_format"] = ".mmcif"
-
-    # workaround for Refmac
-    # TODO need to check external restraints
-    if use_refmac:
-        if use_gemmi_prep:
-            h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                        "yes":gemmi.HydrogenChange.NoChange,
-                        "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-            topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                          reorder=True, ignore_unknown_links=False)
-        elif not no_refmac_fix:
-            topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
-        else:
-            topo = None # not used
-        if not no_refmac_fix:
-            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
-                                                            fix_resimax=not args.no_fix_resi9999,
-                                                            fix_nonpolymer=False)
-        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
-        if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
-            logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
-            ret["model_format"] = ".mmcif"
-        if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
-            ret["refmac_fixes"].fix_nonpolymer(st)
 
     if len(st.ncs) > 0 and args.ignore_symmetry:
         logger.writeln("Removing symmetry information from model.")
@@ -592,6 +567,36 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
                 suba = maps[i][0].get_subarray(starts, new_shape)
                 new_grid = gemmi.FloatGrid(suba, new_cell, spacegroup)
                 maps[i][0] = new_grid
+
+    st.setup_cell_images()
+    if fix_link:
+        utils.restraints.find_and_fix_links(st, monlib,
+                                            # link via ncsc is not supported as of Refmac5.8.0411
+                                            find_symmetry_related=not use_refmac)
+    # workaround for Refmac
+    # TODO need to check external restraints
+    if use_refmac:
+        if use_gemmi_prep:
+            h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                        "yes":gemmi.HydrogenChange.NoChange,
+                        "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+            topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
+                                          reorder=True, ignore_unknown_links=False)
+        elif not no_refmac_fix:
+            topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
+        else:
+            topo = None # not used
+        if not no_refmac_fix:
+            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
+                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
+                                                            fix_resimax=not args.no_fix_resi9999,
+                                                            fix_nonpolymer=False)
+        chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
+        if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
+            logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
+            ret["model_format"] = ".mmcif"
+        if not no_refmac_fix and ret["model_format"] == ".mmcif" and not use_gemmi_prep:
+            ret["refmac_fixes"].fix_nonpolymer(st)
 
     if use_refmac and use_gemmi_prep:
         # TODO: make cispept, make link, remove unknown link id
@@ -740,9 +745,6 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    if not args.no_link_check:
-        utils.restraints.find_and_fix_links(st, monlib)
-
     try:
         utils.restraints.prepare_topology(st.clone(), monlib, h_change=gemmi.HydrogenChange.NoChange,
                                           check_hydrogen=(args.hydrogen=="yes"))
@@ -758,7 +760,8 @@ def main(args):
     _, file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                                  mask_in=args.mask, args=args,
                                  shifted_model_prefix=shifted_model_prefix,
-                                 use_gemmi_prep=use_gemmi_prep)
+                                 use_gemmi_prep=use_gemmi_prep,
+                                 fix_link=not args.no_link_check)
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
@@ -823,7 +826,7 @@ def main(args):
 
     if not args.no_trim:
         st.cell = maps[0][0].unit_cell
-    
+        st.setup_cell_images()
     if "refmac_fixes" in file_info:
         file_info["refmac_fixes"].modify_back(st)
     utils.model.adp_analysis(st)
@@ -898,7 +901,7 @@ def main(args):
         st_sr.setup_entities()
         if not args.no_trim:
             st_sr.cell = maps[0][0].unit_cell
-            
+            st_sr.setup_cell_images()
         if "refmac_fixes" in file_info:
             file_info["refmac_fixes"].modify_back(st_sr)
 

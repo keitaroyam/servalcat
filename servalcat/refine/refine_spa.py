@@ -67,6 +67,8 @@ def add_arguments(parser):
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
+    parser.add_argument('--no_link_check', action='store_true', 
+                        help='Do not find and fix link records in input model.')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
     parser.add_argument('--no_check_ncs_map', action='store_true', 
@@ -122,7 +124,6 @@ def main(args):
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True)
-    utils.restraints.find_and_fix_links(st, monlib)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)
@@ -135,14 +136,16 @@ def main(args):
         st.cell = hkldata.cell
         st.spacegroup_hm = hkldata.sg.xhm()
         info = {}
+        if not args.no_link_check:
+            utils.restraints.find_and_fix_links(st, monlib)
     else:
         if args.halfmaps:
             maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
         else:
             maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
-                                      mask_in=args.mask, args=args, use_refmac=False)
-    st.setup_cell_images()
+                                      mask_in=args.mask, args=args, use_refmac=False,
+                                      fix_link=not args.no_link_check)
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
@@ -197,7 +200,10 @@ def main(args):
     #    cra.atom.pos += gemmi.Position(0.3,0,0)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight)
-    if not args.hklin and not args.no_trim: refiner.st.cell = maps[0][0].unit_cell
+    if not args.hklin and not args.no_trim:
+        refiner.st.cell = maps[0][0].unit_cell
+        refiner.st.setup_cell_images()
+
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
         for s in stats:
