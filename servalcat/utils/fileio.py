@@ -308,18 +308,28 @@ def read_structure(xyz_in):
         st = gemmi.read_pdb(xyz_in)
     elif spext[1].lower() in (".cif", ".mmcif"):
         doc = read_cif_safe(xyz_in)
-        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
-        if len(blocks) > 0:
-            logger.writeln("Reading mmCIF file: {}".format(xyz_in))
-            if len(blocks) > 1:
-                logger.writeln(" WARNING: more than one block having _atom_site found. Will use first one.")
-            st =  gemmi.make_structure_from_block(blocks[0])
-        else:
-            logger.writeln("Reading smCIF file: {}".format(xyz_in))
-            ss = gemmi.read_small_structure(xyz_in)
-            if not ss.sites:
-                raise RuntimeError("No atoms found in cif file.")
-            st = model.cx_to_mx(ss)
+        for block in doc:
+            if block.find_loop("_atom_site.id"):
+                if st is None:
+                    logger.writeln("Reading mmCIF file: {}".format(xyz_in))
+                    st =  gemmi.make_structure_from_block(block)
+                else:
+                    logger.writeln(" WARNING: more than one block having structure found. Will use first one.")
+                    break
+            elif block.find_loop("_atom_site_label"):
+                if st is None:
+                    logger.writeln("Reading smCIF file: {}".format(xyz_in))
+                    ss = gemmi.read_small_structure(xyz_in)
+                    if not ss.sites:
+                        raise RuntimeError("No atoms found in cif file.")
+                    st = model.cx_to_mx(ss)
+                else:
+                    logger.writeln(" WARNING: more than one block having structure found. Will use first one.")
+                    break
+            elif block.find_loop("_chem_comp_atom.x"):
+                if st is None:
+                    logger.writeln("Reading chemical component file: {}".format(xyz_in))
+                    st = gemmi.make_structure_from_chemcomp_block(block)
     elif spext[1].lower() in (".ins", ".res"):
         logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
         st = model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])
