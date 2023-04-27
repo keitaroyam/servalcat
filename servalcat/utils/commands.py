@@ -161,8 +161,8 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--sigma', type=float, default=5,
                         help="sigma cutoff to print outliers (default: %(default).1f)")
-    #parser.add_argument('--write_z_per_atom', nargs="*", 
-    #                    help="write model file(s) with sum of z values of specified metric as B values")
+    parser.add_argument('--per_atom_score_as_b', action='store_true',
+                        help="write model file with per-atom score as B values")
     parser.add_argument("--check_skew", action='store_true', help="(experimental) check bond skew to test magnification")
     parser.add_argument("--ignore_h", action='store_true', help="ignore hydrogen")
     parser.add_argument('-o', '--output_prefix', 
@@ -751,7 +751,7 @@ def geometry(args):
     if args.check_skew:
         logger.writeln("\nChecking skewness of bond length deviation")
         # better to ignore hydrogen
-        tab = geom.geom.reporting.get_bond_outliers(use_nucleus=False, min_z=0)
+        tab = geom.geom.reporting.get_bond_outliers(use_nucleus=geom.use_nucleus, min_z=0)
         for a in "atom1", "atom2":
             tab[a] = [str(geom.lookup[x]) for x in tab[a]]
         df = pandas.DataFrame(tab)
@@ -795,6 +795,14 @@ def geometry(args):
 </html>
 """ % (str(list(df.dev)), q2, sk2))
             logger.writeln("check histogram: {}".format(ofs.name))
+
+    # Note that this modifies st
+    if args.per_atom_score_as_b:
+        model_format = fileio.check_model_format(args.model)
+        peratom = geom.geom.reporting.per_atom_score(len(geom.atoms), geom.use_nucleus, "mean")
+        for i, score in enumerate(peratom["total"]):
+            geom.atoms[i].b_iso = score
+        fileio.write_model(st, file_name="{}_per_atom_score{}".format(args.output_prefix, model_format))
 # geometry()
 
 def show_power(args):

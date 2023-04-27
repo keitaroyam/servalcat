@@ -365,6 +365,78 @@ void add_refine(py::module& m) {
       return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "z"_a=zs, "type"_a=types);
     }, py::arg("min_z"))
+    .def("per_atom_score", [](const Geometry::Reporting& self, int n_atoms,
+                              bool use_nucleus, const std::string& metric) {
+      if (metric != "max" && metric != "mean" && metric != "sum")
+        gemmi::fail("invalid metric");
+      const int imet = metric == "max" ? 0 : metric == "sum" ? 1 : 2;
+      std::vector<std::vector<double>> ret(7);
+      std::vector<std::vector<int>> num(7);
+      for (auto& v : ret)
+        v.assign(n_atoms, 0.);
+      for (auto& v : num)
+        v.assign(n_atoms, 0);
+
+      auto add_residual = [&](int idx, int i, double x) {
+        if (i < 0 || i >= n_atoms) gemmi::fail("invalid atom index");
+        if (imet == 0) // max
+          ret[idx][i] = std::max(ret[idx][i], std::abs(x));
+        else if (imet == 1) // sum
+          ret[idx][i] += std::abs(x);
+        else { // mean
+          ret[idx][i] += gemmi::sq(x);
+          num[idx][i] += 1;
+        }
+      };
+      auto add = [&](int i, double x, int idx) {
+        add_residual(0, i, x); // total
+        add_residual(idx, i, x);
+      };
+
+      for (const auto& t : self.bonds) { // check restr->type?
+        const auto& restr = std::get<0>(t);
+        const auto& val = std::get<1>(t);
+        const double sigma = use_nucleus ? val->sigma_nucleus : val->sigma;
+        for (const auto& a : restr->atoms)
+          add(a->serial - 1, std::get<2>(t) / sigma, 1);
+      }
+      for (const auto& t : self.angles) {
+        const auto& restr = std::get<0>(t);
+        const auto& val = std::get<1>(t);
+        for (const auto& a : restr->atoms)
+          add(a->serial - 1, std::get<2>(t) / val->sigma, 2);
+      }
+      for (const auto& t : self.torsions) {
+        const auto& restr = std::get<0>(t);
+        const auto& val = std::get<1>(t);
+        for (const auto& a : restr->atoms)
+          add(a->serial - 1, std::get<2>(t) / val->sigma, 3);
+      }
+      for (const auto& t : self.chirs) {
+        const auto& restr = std::get<0>(t);
+        for (const auto& a : restr->atoms)
+          add(a->serial - 1, std::get<1>(t) / restr->sigma, 4);
+      }
+      for (const auto& t : self.planes) {
+        const auto& restr = std::get<0>(t);
+        for (size_t i = 0; i < restr->atoms.size(); ++i)
+          add(restr->atoms[i]->serial - 1, std::get<1>(t)[i] / restr->sigma, 5);
+      }
+      // include stac?
+      for (const auto& t : self.vdws) {
+        const auto& restr = std::get<0>(t);
+        for (const auto& a : restr->atoms)
+          add(a->serial - 1, std::get<1>(t) / restr->sigma, 6);
+      }
+      if (imet == 2) { // mean
+        for (size_t j = 0; j < ret.size(); ++j)
+          for (size_t i = 0; i < ret[j].size(); ++i)
+            ret[j][i] = std::sqrt(ret[j][i] / num[j][i]);
+      }
+      return py::dict("total"_a=ret[0], "bonds"_a=ret[1], "angles"_a=ret[2],
+                      "torsions"_a=ret[3], "chirs"_a=ret[4], "planes"_a=ret[5],
+                      "vdws"_a=ret[6]);
+    })
     ;
   py::class_<Geometry::Bond> bond(geom, "Bond");
   py::class_<Geometry::Angle> angle(geom, "Angle");

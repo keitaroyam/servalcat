@@ -29,6 +29,8 @@ b_to_u = utils.model.b_to_u
 class Geom:
     def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False):
         self.st = st
+        self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
+        for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
         self.lookup = {x.atom: x for x in self.st[0].all()}
         self.geom = ext.Geometry(self.st, monlib.ener_lib)
         self.specs = utils.model.find_special_positions(self.st)
@@ -57,7 +59,7 @@ class Geom:
                     self.calc_kwds[k] = kwds[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
         self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
     # __init__()
@@ -147,6 +149,17 @@ class Geom:
                         logger.writeln(" *** {} outliers (Z >= {}) ***\n".format(labs[k], self.outlier_sigmas[k]))
                         logger.writeln(df.to_string(float_format="{:.3f}".format, index=False) + "\n")
 
+        # Per-atom score
+        peratom = self.geom.reporting.per_atom_score(len(self.atoms), self.use_nucleus, "mean")
+        df = pandas.DataFrame(peratom)
+        df.insert(0, "atom", [str(self.lookup[x]) for x in self.atoms])
+        df = df[df["total"] >= self.outlier_sigmas["per_atom"]]
+        if show_outliers and len(df.index) > 0:
+            df.sort_values("total", ascending=False, inplace=True)
+            ret["outliers"]["per_atom"] = df
+            logger.writeln(" *** Per-atom violations (Z >= {}) ***\n".format(self.outlier_sigmas["per_atom"]))
+            logger.writeln(df.to_string(float_format="{:.2f}".format, index=False) + "\n")
+
         df = pandas.DataFrame(self.geom.reporting.get_summary_table(self.use_nucleus))
         df = df.set_index("Restraint type").rename_axis(index=None)
         ret["summary"] = df
@@ -158,8 +171,7 @@ class Refine:
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?
-        self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
-        for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
+        self.atoms = geom.atoms # not a copy
         self.geom = geom
         self.ll = ll
         self.gamma = 0
