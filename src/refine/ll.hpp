@@ -468,7 +468,6 @@ struct LL{
     }
   }
 
-  // from Refmac SUBROUTINE LINTER_VALUE2
   // no need to be a member of this class
   double interp_1d(const std::vector<double> &x_points,
                    const std::vector<double> &y_points,
@@ -481,19 +480,12 @@ struct LL{
       return y_points.front();
 
     const int k1 = std::min((size_t) (std::lower_bound(x_points.begin(), x_points.end(), x) - x_points.begin()),
-                            x_points.size()-2);
-
-    // calculate value of function at the given point
-    double b = y_points[k1];
-    double a = (y_points[k1+1] - y_points[k1]) / (x_points[k1+1] - x_points[k1]);
-    double dx = x - x_points[k1];
-    double y = a * dx + b;
-    if (x < x_points.front())
-      return std::max(0.1 * y_points.front(), std::min(10.0 * y_points.front(), y));
-    else if (x > x_points.back())
-      return std::max(0.1 * y_points.back(), std::min(10.0 * y_points.back(), y));
-    else
-      return y;
+                            x_points.size()-1);
+    if (k1 == 0)
+      return y_points.front();
+    const double a = (y_points[k1] - y_points[k1-1]) / (x_points[k1] - x_points[k1-1]);
+    const double dx = x - x_points[k1-1];
+    return a * dx + y_points[k1-1];
   }
 
   template <typename Table>
