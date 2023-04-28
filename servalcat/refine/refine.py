@@ -402,7 +402,19 @@ class Refine:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
             if self.ll is not None:
                 self.ll.overall_scale()
-                stats[-1]["data"] = self.ll.calc_stats()["summary"]
+                llstats = self.ll.calc_stats(bin_stats=True)#(i==ncycles-1))
+                stats[-1]["data"] = llstats["summary"]
+                if "bin_stats" in llstats:
+                    df = llstats["bin_stats"]
+                    forplot = []
+                    rlabs = [x for x in df if x.startswith("R")]
+                    cclabs = [x for x in df if x.startswith("CC")]
+                    if "fsc_model" in df: forplot.append(["FSC", ["1/resol^2", "fsc_model"]])
+                    if rlabs: forplot.append(["R", ["1/resol^2"] + rlabs])
+                    if cclabs: forplot.append(["CC", ["1/resol^2"] + cclabs])
+                    lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(i+1), forplot,
+                                                   float_format="{:.4f}".format)
+                    logger.writeln(lstr)
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             logger.writeln("")

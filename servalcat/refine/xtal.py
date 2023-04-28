@@ -18,6 +18,40 @@ from servalcat import ext
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
+def calc_bin_stats(hkldata, centric_and_selections):
+    has_int = "I" in hkldata.df
+    has_free = "FREE" in hkldata.df
+    stats = hkldata.binned_df[["d_max", "d_min"]].copy()
+    stats["1/resol^2"] = 1 / stats.d_min**2
+    rlab = "R2" if has_int else "R"
+    cclab = "CCI" if has_int else "CCF"
+    Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
+    if has_int:
+        obs = hkldata.df.I
+        calc = Fc**2
+    else:
+        obs = hkldata.df.FP_org
+        calc = Fc
+    if has_free:
+        for suf in ("work", "free"):
+            stats[cclab+suf] = numpy.nan
+            stats[rlab+suf] = numpy.nan
+    else:
+        stats[cclab] = numpy.nan
+        stats[rlab] = numpy.nan
+
+    for i_bin, idxes in hkldata.binned():
+        if has_free:
+            for j, suf in ((1, "work"), (2, "free")):
+                idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
+                stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
+                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs[idxes2], calc[idxes2])
+        else:
+            stats.loc[i_bin, cclab] = utils.hkl.correlation(obs[idxes], calc[idxes])
+            stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs[idxes], calc[idxes])
+    return stats
+# calc_bin_stats()
+
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all"):
@@ -143,7 +177,7 @@ class LL_Xtal:
         return ret * 2 # friedel mates
     # calc_target()
 
-    def calc_stats(self):
+    def calc_stats(self, bin_stats=False):
         if self.is_int:
             calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.I[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel])**2)
@@ -175,6 +209,8 @@ class LL_Xtal:
                 logger.writeln("CC = {:.4f}".format(cc))
                 ret["summary"]["CC"] = cc
         ret["summary"]["-LL"] = self.calc_target()
+        if bin_stats:
+            ret["bin_stats"] = calc_bin_stats(self.hkldata, self.centric_and_selections)
         return ret
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):

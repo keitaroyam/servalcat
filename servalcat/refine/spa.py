@@ -84,10 +84,12 @@ class LL_SPA:
         return ret * 2 # friedel mates
     # calc_target()
 
-    def calc_stats(self):
+    def calc_stats(self, bin_stats=False):
+        # ignore bin_stats for now. better stats are calculated after refinement
         stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f=self.lab_obs)
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
+        # XXX in fsc object, _full is misleading - it's not full in cross validation mode
         return {"fsc": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
