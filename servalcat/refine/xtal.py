@@ -157,15 +157,20 @@ class LL_Xtal:
         else:
             k_aniso = None
             
-        for i_bin, idxes in self.hkldata.binned():
+        for i_bin, _ in self.hkldata.binned():
             if self.is_int:
                 Ds = [self.hkldata.binned_df[lab][i_bin] for lab in self.D_labs]
-                Fcs = [self.hkldata.df[lab].to_numpy()[idxes] for lab in self.fc_labs]
-                DFc = sigmaa.calc_DFc(Ds, Fcs)
-                ll = ext.ll_int(self.hkldata.df.I[idxes], self.hkldata.df.SIGI[idxes], k_aniso[idxes],
-                                self.hkldata.binned_df.S[i_bin] * self.hkldata.df.epsilon[idxes],
-                                numpy.abs(DFc), self.hkldata.df.centric[idxes]+1)
-                ret += numpy.nansum(ll)
+                for c, work, test in self.centric_and_selections[i_bin]:
+                    if self.use_in_target == "all":
+                        idxes = numpy.concatenate([work, test])
+                    else:
+                        idxes = work if self.use_in_target == "work" else test
+                    Fcs = [self.hkldata.df[lab].to_numpy()[idxes] for lab in self.fc_labs]
+                    DFc = sigmaa.calc_DFc(Ds, Fcs)
+                    ll = ext.ll_int(self.hkldata.df.I[idxes], self.hkldata.df.SIGI[idxes], k_aniso[idxes],
+                                    self.hkldata.binned_df.S[i_bin] * self.hkldata.df.epsilon[idxes],
+                                    numpy.abs(DFc), self.hkldata.df.centric[idxes]+1)
+                    ret += numpy.nansum(ll)
             else:
                 ret += sigmaa.mlf(self.hkldata.df,
                                   self.fc_labs,
