@@ -204,6 +204,7 @@ def main(args):
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()
 
+    refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
         for s in stats:

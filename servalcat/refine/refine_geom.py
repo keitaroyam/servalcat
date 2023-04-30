@@ -118,6 +118,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords)
     refiner = Refine(st, geom)
     stats = refiner.run_cycles(ncycle)
+    refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
     with open(output_prefix + "_stats.json", "w") as ofs:
         for s in stats: s["geom"] = s["geom"].to_dict()

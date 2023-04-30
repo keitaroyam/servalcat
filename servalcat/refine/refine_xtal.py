@@ -144,6 +144,7 @@ def main(args):
                      unrestrained=args.unrestrained)
 
     refiner.run_cycles(args.ncycle, weight=args.weight)
+    refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 
     # CHECK ML parameters are determined from the last model?
