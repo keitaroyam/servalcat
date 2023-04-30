@@ -255,7 +255,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: id= {} atom1= {} atom2= {}".format(con.link_id, con.partner1, con.partner2))
             continue
-        if con.asu == gemmi.Asu.Different:
+        if con.asu == gemmi.Asu.Different: # XXX info from metadata may be wrong
             nimage = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
             image_idx = nimage.sym_idx
             dist = nimage.dist()
@@ -309,7 +309,6 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     onsb = set(gemmi.Element(x) for x in "ONSB")
     n_found = 0
     for r in results:
-        if not find_symmetry_related and r.image_idx != 0: continue
         if st.find_connection_by_cra(r.partner1, r.partner2): continue
         link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
                                             r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
@@ -318,7 +317,14 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             cra1, cra2 = r.partner2, r.partner1
         else:
             cra1, cra2 = r.partner1, r.partner2
+        im = st.cell.find_nearest_pbc_image(cra1.atom.pos, cra2.atom.pos, r.image_idx)
+        #assert r.image_idx == im.sym_idx # should we check this?
+        same_asu = im.sym_idx == 0 and im.pbc_shift == (0,0,0) # from NEXTGEMMI will use im.same_asu()
+        if not find_symmetry_related and not same_asu:
+            continue
         atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, r.image_idx)
+        if im.pbc_shift != (0,0,0):
+            atoms_str += " ({},{},{})".format(*im.pbc_shift)
         if link:
             if r.dist > link.rt.bonds[0].value * bond_margin: continue
             logger.writeln(" New link found: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
@@ -342,7 +348,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             con.type = gemmi.ConnectionType.Disulf if link.id == "disulf" else gemmi.ConnectionType.Covale
         else:
             con.type = gemmi.ConnectionType.MetalC
-        con.asu = gemmi.Asu.Same if r.image_idx == 0 else gemmi.Asu.Different
+        con.asu = gemmi.Asu.Same if same_asu else gemmi.Asu.Different
         con.partner1 = model.cra_to_atomaddress(cra1)
         con.partner2 = model.cra_to_atomaddress(cra2)
         con.reported_distance = r.dist
