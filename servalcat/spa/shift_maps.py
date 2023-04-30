@@ -61,7 +61,7 @@ def check_maps(map_files, pixel_size=None, disable_cell_check=False):
     logger.writeln("Input map files:")
     params = []
     for f in map_files:
-        g, gs = utils.fileio.read_ccp4_map(f, pixel_size=pixel_size)
+        g, gs, _ = utils.fileio.read_ccp4_map(f, pixel_size=pixel_size)
         params.append((g.unit_cell.parameters, g.shape, g.spacing, gs))
 
     shapes = set([x[1] for x in params])

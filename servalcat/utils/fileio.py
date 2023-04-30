@@ -203,7 +203,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
                                           orgc[3], orgc[4], orgc[5])
         logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
 
-    return [m.grid, grid_start] # TODO should return grid_shape so that the same region can be written
+    return [m.grid, grid_start, grid_shape]
 # read_ccp4_map()
 
 def read_halfmaps(files, pixel_size=None, fail=True):

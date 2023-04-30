@@ -241,6 +241,12 @@ def add_arguments(p):
                         help="cutoff value for normalization and trimming (default: %(default)s)")
     parser.add_argument('-o', '--output_prefix')
 
+    # map2mtz
+    parser = subparsers.add_parser("map2mtz", description = 'FFT map and write an mtz')
+    parser.add_argument("--map", required=True)
+    parser.add_argument("-d", '--resolution', type=float)
+    parser.add_argument('-o', '--output')
+
     # sm2mm
     parser = subparsers.add_parser("sm2mm", description = 'Small molecule files (cif/hkl/res/ins) to macromolecules (pdb/mmcif/mtz)')
     parser.add_argument('files', nargs='+', help='Cif/ins/res/hkl files')
@@ -997,7 +1003,7 @@ def mask_from_model(args):
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
     if args.selection:
         gemmi.Selection(args.selection).remove_not_selected(st)
-    gr, grid_start = fileio.read_ccp4_map(args.map)
+    gr, grid_start, _ = fileio.read_ccp4_map(args.map)
     mask = maps.mask_from_model(st, args.radius, soft_edge=args.soft_edge, grid=gr)
     maps.write_ccp4_map(args.output, mask, grid_start=grid_start)
 # mask_from_model()
@@ -1006,7 +1012,7 @@ def applymask(args):
     if args.output_prefix is None:
         args.output_prefix = fileio.splitext(os.path.basename(args.map))[0] + "_masked"
 
-    grid, grid_start = fileio.read_ccp4_map(args.map)
+    grid, grid_start, _ = fileio.read_ccp4_map(args.map)
     mask = fileio.read_ccp4_map(args.mask)[0]
     logger.writeln("Applying mask")
     logger.writeln(" mask min: {:.3f} max: {:.3f}".format(numpy.min(mask), numpy.max(mask)))
@@ -1025,6 +1031,35 @@ def applymask(args):
                         mask_for_extent=mask.array if args.trim else None,
                         mask_threshold=args.mask_cutoff)
 # applymask()
+
+def map2mtz(args):
+    if args.output is None:
+        args.output = fileio.splitext(os.path.basename(args.map))[0] + "_fft.mtz"
+    grid, grid_start, grid_shape = fileio.read_ccp4_map(args.map)
+    if args.resolution is None:
+        args.resolution = maps.nyquist_resolution(grid)
+        logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
+
+    if grid_start != (0,0,0) or grid.shape != tuple(grid_shape):
+        # If only subregion of whole grid in map, unit cell needs to be re-defined.
+        if grid.shape != tuple(grid_shape):
+            new_abc = [grid.unit_cell.parameters[i] * grid_shape[i] / grid.shape[i] for i in range(3)]
+            cell = gemmi.UnitCell(*new_abc, *grid.unit_cell.parameters[3:])
+            logger.writeln("Changing unit cell to {}".format(cell.parameters))
+        else:
+            cell = grid.unit_cell
+        grid = gemmi.FloatGrid(grid.get_subarray(grid_start, grid_shape),
+                               cell, grid.spacegroup)
+    
+    f_grid = gemmi.transform_map_to_f_phi(grid)
+    asudata = f_grid.prepare_asu_data(dmin=args.resolution, with_000=True)
+    hkldata = hkl.hkldata_from_asu_data(asudata, "F")
+    if grid_start != (0,0,0):
+        shifts = grid.get_position(*grid_start)
+        hkldata.translate("F", shifts)
+        logger.writeln("Applying phase shift with translation {}".format(shifts.tolist()))
+    hkldata.write_mtz(args.output, ["F"])
+# map2mtz()
 
 def sm2mm(args):
     if args.output_prefix is None:
@@ -1074,6 +1109,7 @@ def main(args):
                  blur=blur,
                  mask_from_model=mask_from_model,
                  applymask=applymask,
+                 map2mtz=map2mtz,
                  sm2mm=sm2mm)
     
     com = args.subcommand
