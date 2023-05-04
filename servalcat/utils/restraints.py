@@ -268,6 +268,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             inv = False
             if link is None:
                 logger.writeln(" WARNING: link {} not found in the library. Please provide link dictionary.".format(con.link_id))
+                con.link_id = "" # let gemmi find proper link in prepare_topology()
                 continue
             else:
                 match, _, _ = monlib.test_link(link, cra1.residue.name, cra1.atom.name, cra2.residue.name, cra2.atom.name)
