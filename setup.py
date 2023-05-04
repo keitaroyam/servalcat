@@ -123,12 +123,13 @@ class BuildExt(build_ext):
             ext.extra_link_args = link_opts
         build_ext.build_extensions(self)
 
-
 setup(name='servalcat',
     version=servalcat.__version__,
     author='Keitaro Yamashita and Garib N. Murshudov',
     url='https://github.com/keitaroyam/servalcat',
     description= 'Structure refinement and validation for crystallography and single particle analysis',
+    long_description="Please see https://github.com/keitaroyam/servalcat",
+    long_description_content_type='text/markdown',
     license='MPL-2.0',
     packages=setuptools.find_packages(),
     install_requires=['numpy>=1.15','scipy','pandas>=0.24.2', 'gemmi==0.6.1'],

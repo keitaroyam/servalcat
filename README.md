@@ -19,5 +19,6 @@ From ver. 0.4.6, Servalcat is no longer python-only package and has some C++ cod
 ## Usage
 Please read the documentation: https://servalcat.readthedocs.io/en/latest/
 
-## Reference
-[Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**, 1282-1291](https://doi.org/10.1107/S2059798321009475)
+## References
+* [Yamashita, K.,  Wojdyr, M., Long, F., Nicholls, R. A., Murshudov, G. N. (2023) "GEMMI and Servalcat restrain REFMAC5" *Acta Cryst.* D**79**, 368-373](https://doi.org/10.1107/S2059798323002413)
+* [Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**, 1282-1291](https://doi.org/10.1107/S2059798321009475)
