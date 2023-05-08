@@ -765,6 +765,11 @@ def main(args):
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
+
+    if 1:#add_metal_restraints:
+        metalc = utils.restraints.MetalCoordination(monlib)
+        metal_keywords = metalc.setup_restraints(st)
+        args.keywords.extend(metal_keywords)
         
     args.mtz = file_info["mtz_file"]
     if args.halfmaps: # FIXME if no_mask?

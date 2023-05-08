@@ -27,8 +27,8 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False,
-                 use_nucleus=False):
+    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, add_metal_restraints=True,
+                 refmac_keywords=None, jellybody_only=False, use_nucleus=False):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -59,6 +59,10 @@ class Geom:
                 if k in kwds:
                     self.calc_kwds[k] = kwds[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
+        if add_metal_restraints:
+            metalc = utils.restraints.MetalCoordination(monlib)
+            metal_keywords = metalc.setup_restraints(self.st)
+            exte.read_external_restraints(metal_keywords, self.st, self.geom)
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
