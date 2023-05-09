@@ -147,7 +147,20 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 # load_monomer_library()
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
-                     use_cispeps=False):
+                     use_cispeps=False, add_metal_restraints=True):
+    if add_metal_restraints:
+        metalc = MetalCoordination(monlib)
+        keywords, todel = metalc.setup_restraints(st)
+        con_bak = []
+        for i in sorted(todel, reverse=True):
+            # temporarily remove connection not to put a bond restraint
+            con = st.connections.pop(i)
+            con_bak.append((i, con))
+            # flag non-hydrogen
+            cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
+            cra2.atom.calc_flag = gemmi.CalcFlag.NoHydrogen
+    else:
+        keywords = []
     # these checks can be done after sorting links
     logger.writeln("Creating restraints..")
     sio = io.StringIO()
@@ -214,7 +227,10 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
         raise RuntimeError("Some hydrogen positions became NaN. The geometry of your model may be of low quality. Consider not adding hydrogen")
     if not use_cispeps:
         topo.set_cispeps_in_structure(st)
-    return topo
+    if add_metal_restraints:
+        for i, con in sorted(con_bak):
+            st.connections.insert(i, con)
+    return topo, keywords
 # prepare_topology()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
@@ -426,11 +442,12 @@ class MetalCoordination:
         ret = [] # returns Refmac keywords
         lookup = {x.atom: x for x in st[0].all()}
         coords = {}
-        for con in st.connections:
+        todel = []
+        for i, con in enumerate(st.connections):
             if con.link_id == "" and con.type == gemmi.ConnectionType.MetalC:
                 cra1 = st[0].find_cra(con.partner1, ignore_segment=True)
                 cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
-                coords.setdefault(cra1.atom.element, {}).setdefault(cra1.atom, []).append((cra2.atom, con))
+                coords.setdefault(cra1.atom.element, {}).setdefault(cra1.atom, []).append((cra2.atom, i))
         if coords:
             logger.writeln("Metal coordinations detected")
         for metal in coords:
@@ -445,20 +462,21 @@ class MetalCoordination:
                     logger.writeln(" uknown (values from ener_lib will be used)")
                 else:
                     logger.writeln(" ".join("{:.4f} ({} coord)".format(x["median"], x["coord"]) for x in vals))
-                    ideals[el] = [(x["median"], x["mad"]) for x in vals]
+                    ideals[el] = [(x["median"], x["mad"]) for x in vals if x["mad"] > 0]
             logger.writeln("")
             for i, am in enumerate(coords[metal]):
                 logger.writeln("  site {}: {}".format(i+1, lookup[am]))
-                for j, (lig, con) in enumerate(coords[metal][am]):
+                for j, (lig, con_idx) in enumerate(coords[metal][am]):
+                    con = st.connections[con_idx]
                     logger.writeln("    ligand {}: {} dist= {:.2f}".format(j+1, lookup[lig],
                                                                            con.reported_distance))
                     specs = [make_atom_spec(x) for x in (lookup[am], lookup[lig])]
                     if lig.element not in ideals:
                         continue
+                    todel.append(con_idx)
                     for k, (ideal, sigma) in enumerate(ideals[lig.element]):
                         exte_str  = "exte dist first {} seco {} ".format(*specs)
-                        exte_str += "valu {:.4f} sigm {:.4f} ".format(ideal, sigma)
-                        exte_str += "type {} ".format(0 if k == 0 else 1)
+                        exte_str += "valu {:.4f} sigm {:.4f} type 1 ".format(ideal, sigma)
                         if con.asu == gemmi.Asu.Different:
                             exte_str += "symm y"
                         ret.append(exte_str)
@@ -467,5 +485,5 @@ class MetalCoordination:
                         #b.type = 0 if k == 0 else 1
                         #ret.append(b)
                 logger.writeln("")
-        return ret
+        return ret, list(set(todel))
     # setup_restraints()

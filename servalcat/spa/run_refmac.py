@@ -580,8 +580,8 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
             h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                         "yes":gemmi.HydrogenChange.NoChange,
                         "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-            topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger,
-                                          reorder=True, ignore_unknown_links=False)
+            topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change)
+            args.keywords.extend(metal_kws)
         elif not no_refmac_fix:
             topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
         else:
@@ -766,11 +766,6 @@ def main(args):
         logger.writeln("\n--prepare_only is given. Stopping.")
         return
 
-    if 1:#add_metal_restraints:
-        metalc = utils.restraints.MetalCoordination(monlib)
-        metal_keywords = metalc.setup_restraints(st)
-        args.keywords.extend(metal_keywords)
-        
     args.mtz = file_info["mtz_file"]
     if args.halfmaps: # FIXME if no_mask?
         args.mtz_half = [file_info["mtz_file"], file_info["mtz_file"]]

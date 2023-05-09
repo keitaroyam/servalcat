@@ -151,11 +151,11 @@ def main(args):
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
     try:
-        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
-                                                 check_hydrogen=(args.hydrogen=="yes"))
+        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                            check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-
+    refmac_keywords.extend(metal_kws)
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
