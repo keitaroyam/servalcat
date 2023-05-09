@@ -140,7 +140,7 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
-    parser.add_argument('--bond_margin', type=float, default=1.1, help='(default: %(default).1f)')
+    parser.add_argument('--bond_margin', type=float, default=1.3, help='(default: %(default).1f)')
     parser.add_argument('-o','--output', help="Default: input_fixlink.{pdb|mmcif}")
 
     # merge_models
@@ -448,6 +448,7 @@ def h_add(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
+    model.setup_entities(st, clear=True, force_subchain_names=True)
     try:
         restraints.add_hydrogens(st, monlib, args.pos)
     except RuntimeError as e:
