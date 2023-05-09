@@ -736,12 +736,12 @@ def geometry(args):
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib)
     try:
-        topo = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
-                                           check_hydrogen=True)
+        topo, metal_keywords = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                                           check_hydrogen=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
-    geom = Geom(st, topo, monlib)
+    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.geom.setup_nonbonded()
     ret = geom.show_model_stats()

@@ -575,6 +575,7 @@ struct Geometry {
   double vdw_sdi_dummy   = 0.3; // VDWR SIGM DUMM val
   //double dvdw_cut_min    = 1.75; // no need? // VDWR VDWC val
   //double dvdw_cut_min_x  = 1.75; // used as twice in fast_hessian_tabulation.f // VDWR VDWC val
+  double max_vdw_radius = 2.0;
 
   // ADP restraints
   float adpr_max_dist = 4.;
@@ -763,7 +764,9 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
   for (int i = 0; i < 2; ++i) {
     const std::string& chem_type = chemtypes.at(vdw.atoms[i]->serial);
     const auto& libatom = ener_lib->atoms.at(chem_type);
-    vdw_rad[i] = std::isnan(libatom.vdwh_radius) ? libatom.vdw_radius : libatom.vdwh_radius; // XXX needs switch. check hydrogen is there?
+    vdw_rad[i] = std::min(max_vdw_radius,
+                          // XXX needs switch. check hydrogen is there?
+                          std::isnan(libatom.vdwh_radius) ? libatom.vdw_radius : libatom.vdwh_radius);
     ion_rad[i] = libatom.ion_radius;
     auto it = hbtypes.find(vdw.atoms[i]->serial);
     hb_type[i] = (it == hbtypes.end()) ? libatom.hb_type : it->second;

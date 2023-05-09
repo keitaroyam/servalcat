@@ -601,6 +601,7 @@ void add_refine(py::module& m) {
     .def_readwrite("dinc_torsion_all", &Geometry::dinc_torsion_all)
     .def_readwrite("dinc_dummy", &Geometry::dinc_dummy)
     .def_readwrite("vdw_sdi_dummy", &Geometry::vdw_sdi_dummy)
+    .def_readwrite("max_vdw_radius", &Geometry::max_vdw_radius)
     // ADP restraint parameters
     .def_readwrite("adpr_max_dist", &Geometry::adpr_max_dist)
     .def_readwrite("adpr_d_power", &Geometry::adpr_d_power)
