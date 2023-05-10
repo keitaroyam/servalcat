@@ -580,7 +580,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
             h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                         "yes":gemmi.HydrogenChange.NoChange,
                         "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-            topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change)
+            topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, raise_error=False)
             args.keywords.extend(metal_kws)
         elif not no_refmac_fix:
             topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
