@@ -176,7 +176,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
             S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
             w = 1. if no_fsc_weights or not has_halfmaps else S/(S+varn)
             delfwt = w * (Fo-D*Fc)
-            fup = w * Fo + (1.-w)*D*Fc
+            fup = 2 * w * Fo + (1 - 2*w) * D*Fc # <F> + delfwt
             if has_halfmaps: # no point making this map when half maps not given
                 tmp["DELFWT_noscale"][idxes] = delfwt
                 tmp["Fupdate_noscale"][idxes] = fup
