@@ -476,7 +476,13 @@ def parse_line(l, ret):
         ret["wchir"] = float(s[1])
         # TODO read calp
     elif s[0].lower().startswith(("vdwr", "vand", "nonb")) and ntok > 1:
-        ret["wvdw"] = float(s[1])
+        itk = 1
+        try:
+            ret["wvdw"] = float(s[itk])
+            itk += 1
+        except ValueError:
+            pass
+        # TODO read maxr, over, sigm, incr, chan, vdwc, excl
 # parse_line()
 
 def get_lines(lines):
