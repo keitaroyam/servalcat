@@ -69,8 +69,15 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     geom.calc_kwds["wchir"] = 4
     geom.calc_kwds["wvdw"] = 2
     refiner.run_cycles(ncycle1)
+
+    # re-add hydrogen may help
+    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
+                                  warnings=logger)
+    geom = Geom(st, topo, monlib)
+    refiner = Refine(st, geom)
     logger.writeln("Running {} cycles with wchir=1 wvdw=2".format(ncycle2))
     geom.calc_kwds["wchir"] = 1
+    geom.calc_kwds["wvdw"] = 2
     refiner.run_cycles(ncycle2)
 
     # replace xyz
