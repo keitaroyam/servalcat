@@ -167,7 +167,9 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                                 cinfo.res_infos[-1].res.seqid,
                                 len(cinfo.res_infos))
         else:
-            toadd.setdefault("nonpolymer", []).append(cinfo.res_infos[0].res.name)
+            l = toadd.setdefault("nonpolymer", [])
+            for ri in cinfo.res_infos:
+                l.append(ri.res.name)
     logger.writeln("\nChain info:")
     for chain in info:
         logger.writeln(" chain {}".format(chain))
