@@ -106,7 +106,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 
 def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords):
     st = utils.fileio.read_structure(model_in)
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if st.ncs:
         st2 = st.clone()
         logger.writeln("Take NCS constraints into account.")

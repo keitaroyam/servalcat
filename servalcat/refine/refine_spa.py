@@ -123,7 +123,7 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=True)
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)

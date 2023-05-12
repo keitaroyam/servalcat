@@ -744,7 +744,7 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True)
+    utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     try:
         utils.restraints.prepare_topology(st.clone(), monlib, h_change=gemmi.HydrogenChange.NoChange,
                                           check_hydrogen=(args.hydrogen=="yes"))

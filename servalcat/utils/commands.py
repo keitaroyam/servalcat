@@ -448,7 +448,7 @@ def h_add(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
-    model.setup_entities(st, clear=True, force_subchain_names=True)
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     try:
         restraints.add_hydrogens(st, monlib, args.pos)
     except RuntimeError as e:
@@ -693,7 +693,7 @@ def fix_link(args):
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
-    model.setup_entities(st, clear=True, force_subchain_names=True)
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin)
     fileio.write_model(st, file_name=args.output)
 # fix_link()
@@ -733,7 +733,7 @@ def geometry(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    model.setup_entities(st, clear=True, force_subchain_names=True)
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib)
     try:
         topo = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
