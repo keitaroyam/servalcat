@@ -135,6 +135,7 @@ def main(args):
         hkldata.setup_binning(n_bins=10) # need to sort out
         st.cell = hkldata.cell
         st.spacegroup_hm = hkldata.sg.xhm()
+        st.setup_cell_images()
         info = {}
         if not args.no_link_check:
             utils.restraints.find_and_fix_links(st, monlib)
