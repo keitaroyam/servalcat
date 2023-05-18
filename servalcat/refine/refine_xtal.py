@@ -63,7 +63,7 @@ def add_arguments(parser):
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
-    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
     parser.add_argument('--use_all_in_est',  action='store_true',
@@ -78,6 +78,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
+    if args.source == "neutron": assert not args.refine_h # we need deuterium fraction handling in LL
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
 
@@ -112,6 +113,7 @@ def main(args):
 
     is_int = "I" in hkldata.df
     st = sts[0]
+    utils.model.fix_deuterium_residues(st)
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                    stop_for_unknowns=False)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
@@ -130,7 +132,7 @@ def main(args):
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords,
-                jellybody_only=args.jellyonly)
+                jellybody_only=args.jellyonly, use_nucleus=(args.source=="neutron"))
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params

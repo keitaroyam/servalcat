@@ -55,7 +55,7 @@ class XtalTests(unittest.TestCase):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
-                                  "--labin", "FP,SIGFP", "--nbins", "10"])
+                                  "--labin", "FP,SIGFP", "--nbins", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.log")
         os.remove("sigmaa.mtz")
@@ -84,7 +84,7 @@ class XtalTests(unittest.TestCase):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
-                                  "--labin", "I,SIGI", "--nbins", "10"])
+                                  "--labin", "I,SIGI", "--nbins", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.mtz")
         numpy.testing.assert_allclose(hkldata.binned_df.D0,

@@ -322,7 +322,10 @@ struct Geometry {
   struct Reporting;
   struct Bond {
     struct Value {
-      Value(double v, double s, double vn, double sn) : value(v), sigma(s), value_nucleus(vn), sigma_nucleus(sn) {}
+      Value(double v, double s, double vn, double sn)
+	: value(v), sigma(s),
+	  value_nucleus(std::isnan(vn) ? v : vn),
+	  sigma_nucleus(std::isnan(sn) ? s : sn) {}
       double value;
       double sigma;
       double value_nucleus;
@@ -346,7 +349,7 @@ struct Geometry {
     }
     const Value* find_closest_value(double dist, bool use_nucleus) const {
       double db = std::numeric_limits<double>::infinity();
-      const Value* ret = nullptr;
+      const Value* ret = nullptr; // XXX safer to initialise with first item
       for (const auto &v : values) {
         double tmp = std::abs((use_nucleus ? v.value_nucleus : v.value) - dist);
         if (tmp < db) {

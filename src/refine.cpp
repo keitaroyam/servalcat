@@ -5,6 +5,7 @@
 #include "refine/ll.hpp"      // for LL
 #include "refine/cgsolve.hpp" // for CgSolve
 #include <gemmi/it92.hpp>
+#include <gemmi/neutron92.hpp>
 #include <gemmi/monlib.hpp>
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
@@ -624,8 +625,11 @@ void add_refine(py::module& m) {
          py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_h"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
+    .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
+    .def("make_fisher_table_diag_fast_n92", &LL::make_fisher_table_diag_fast<gemmi::Neutron92<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
+    .def("fisher_diag_from_table_n92", &LL::fisher_diag_from_table<gemmi::Neutron92<double>>)
     .def("spec_correction", &LL::spec_correction,
          py::arg("specials"), py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     .def_property_readonly("fisher_spmat", &LL::make_spmat)

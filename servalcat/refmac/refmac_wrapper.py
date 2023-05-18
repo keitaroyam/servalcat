@@ -67,13 +67,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
-    # we do not have DOD. will not change ND4->NH4 and SPW->SPK, as hydrogen atom names are different
-    for chain in st[0]:
-        for res in chain:
-            if res.name == "DOD":
-                logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
-                res.name = "HOH"
-
+    utils.model.fix_deuterium_residues(st)
     gemmi.setup_for_crd(st)
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin

@@ -55,7 +55,7 @@ def calc_bin_stats(hkldata, centric_and_selections):
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all"):
-        assert source in ("electron", "xray") # neutron?
+        assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
@@ -291,14 +291,21 @@ class LL_Xtal:
         
         self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        self.ll.calc_grad_it92(dll_dab_den, blur)
+        if self.source == "neutron":
+            self.ll.calc_grad_n92(dll_dab_den, blur)
+        else:
+            self.ll.calc_grad_it92(dll_dab_den, blur)
 
         # second derivative
         d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         valid_sel = numpy.isfinite(d2ll_dab2)
         d2dfw_table.make_table(1./self.hkldata.d_spacings().to_numpy()[valid_sel], d2ll_dab2[valid_sel])
-        self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
-        self.ll.fisher_diag_from_table_it92()
+        if self.source == "neutron":
+            self.ll.make_fisher_table_diag_fast_n92(d2dfw_table)
+            self.ll.fisher_diag_from_table_n92()
+        else:
+            self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
+            self.ll.fisher_diag_from_table_it92()
         #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()

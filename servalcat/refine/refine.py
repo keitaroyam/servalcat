@@ -27,7 +27,8 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False):
+    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False,
+                 use_nucleus=False):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -49,7 +50,7 @@ class Geom:
             self.geom.load_topo(topo)
         else:
             self.geom.ridge_exclude_short_dist = False
-        self.use_nucleus = False
+        self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if refmac_keywords:
             exte.read_external_restraints(refmac_keywords, self.st, self.geom)

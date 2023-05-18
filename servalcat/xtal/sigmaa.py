@@ -36,8 +36,8 @@ def add_arguments(parser):
     #parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int,
                         help="Number of bins (default: auto)")
-    parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], default="xray",
-                        help="Scattering factor choice (default: %(default)s)")
+    parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], required=True,
+                        help="Scattering factor choice")
     parser.add_argument('--D_as_exp',  action='store_true',
                         help="estimate D through exp(x) as a positivity constraint")
     parser.add_argument('--S_as_exp',  action='store_true',
