@@ -687,13 +687,25 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
 
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
                   n_per_bin=None, use="all", max_bins=None):
-    assert 1 < len(labin) < 4
+    if labin: assert 1 < len(labin) < 4
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
     if utils.fileio.is_mmhkl_file(hklin):
         mtz = utils.fileio.read_mmhkl(hklin)
         col_types = {x.label:x.type for x in mtz.columns}
+        if not labin:
+            dlabs = utils.hkl.mtz_find_data_columns(mtz)
+            if dlabs["F"]: # F is preferred for now
+                labin = dlabs["F"][0]
+            elif dlabs["J"]:
+                labin = dlabs["J"][0]
+            else:
+                raise RuntimeError("Data not found from mtz")
+            flabs = utils.hkl.mtz_find_free_columns(mtz)
+            if flabs:
+                labin += [flabs[0]]
+            logger.writeln("MTZ columns automatically selected: {}".format(labin))
         if labin[0] not in col_types:
             raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))
         if col_types[labin[0]] == "F":
@@ -779,7 +791,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     stats["n_all"] = 0
     stats["n_obs"] = 0
     snr = "I/sigma" if newlabels[0] == "I" else "F/sigma"
-    stats[snr] = 0.
+    stats[snr] = numpy.nan
     if "FREE" in hkldata.df:
         stats["n_work"] = 0
         stats["n_test"] = 0
@@ -806,7 +818,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         stats.loc[i_bin, "n_all"] = len(idxes)
         obs = hkldata.df[newlabels[0]].to_numpy()[idxes]
         sigma = hkldata.df[newlabels[1]].to_numpy()[idxes]
-        stats.loc[i_bin, snr] = numpy.nanmean(obs / sigma)
+        if n_obs > 0:
+            stats.loc[i_bin, snr] = numpy.nanmean(obs / sigma)
         if "FREE" in hkldata.df:
             stats.loc[i_bin, "n_work"] = n_work
             stats.loc[i_bin, "n_test"] = n_test

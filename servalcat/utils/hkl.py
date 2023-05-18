@@ -43,6 +43,33 @@ def hkldata_from_asu_data(asu_data, label):
     return HklData(asu_data.unit_cell, asu_data.spacegroup, df)
 # hkldata_from_asu_data()
 
+def mtz_find_data_columns(mtz, require_sigma=True):
+    # for now (+)/(-) (types K/M and L/G) are not supported
+    col_types = {x.label:x.type for x in mtz.columns}
+    ret = {"J": [], "F": []}
+    for col in col_types:
+        typ = col_types[col]
+        if typ in ("J", "F"):
+            ret[typ].append([col])
+            sig = "SIG" + col
+            if col_types.get(sig) == "Q":
+                ret[typ][-1].append(sig)
+            elif require_sigma:
+                ret[typ].pop()
+    return ret
+# mtz_find_data_columns()
+
+def mtz_find_free_columns(mtz):
+    col_types = {x.label:x.type for x in mtz.columns}
+    free_names = ("FREE", "RFREE", "FREER", "FreeR_flag", "R-free-flags", "FreeRflag")
+    ret = []
+    for col in col_types:
+        typ = col_types[col]
+        if typ == "I" and col in free_names:
+            ret.append(col)
+    return ret
+# mtz_find_free_columns()
+
 def hkldata_from_mtz(mtz, labels, newlabels=None, require_types=None):
     assert type(mtz) == gemmi.Mtz
     notfound = set(labels) - set(mtz.column_labels())

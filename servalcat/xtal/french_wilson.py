@@ -28,7 +28,7 @@ def add_arguments(parser):
     parser.description = 'Convert intensity to amplitude'
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
-    parser.add_argument('--labin', required=True,
+    parser.add_argument('--labin', 
                         help='MTZ column for I,SIGI')
     parser.add_argument('--d_min', type=float)
     parser.add_argument('--d_max', type=float)
@@ -195,9 +195,22 @@ def french_wilson(hkldata, B_aniso, labout=None):
 def main(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
-
+    if not args.labin:
+        mtz = utils.fileio.read_mmhkl(args.hklin)
+        dlabs = utils.hkl.mtz_find_data_columns(mtz)
+        if dlabs["J"]:
+            labin = dlabs["J"][0]
+        else:
+            raise SystemExit("Intensity not found from mtz")
+        flabs = utils.hkl.mtz_find_free_columns(mtz)
+        if flabs:
+            labin += [flabs[0]]
+        logger.writeln("MTZ columns automatically selected: {}".format(labin))
+    else:
+        labin = args.labin.split(",")
+        
     hkldata, _, _, _ = process_input(hklin=args.hklin,
-                                     labin=args.labin.split(","),
+                                     labin=labin,
                                      n_bins=args.nbins,
                                      free=None,
                                      xyzins=[],
@@ -208,10 +221,13 @@ def main(args):
     
     B_aniso = determine_Sigma_and_aniso(hkldata)
     french_wilson(hkldata, B_aniso)
-
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=["F","SIGF","I","SIGI"],
-                      types={"F":"F", "SIGF":"Q", "I":"J", "SIGI":"Q"})
+    lab_out = ["F", "SIGF", "I", "SIGI"]
+    labo_types = {"F":"F", "SIGF":"Q", "I":"J", "SIGI":"Q"}
+    if len(labin) == 3:
+        lab_out.append("FREE")
+        labo_types[lab_out[-1]] = "I"
+    hkldata.write_mtz(mtz_out, lab_out, types=labo_types)
     return B_aniso, hkldata
 # main()
 
