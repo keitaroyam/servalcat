@@ -203,7 +203,11 @@ def main(args):
             logger.writeln("updating CCP4_SCR from {}={}".format(k, opts[k]))
             os.environ["CCP4_SCR"] = os.path.dirname(opts[k]) # XXX "." may be given, which causes problem (os.path.isdir("") is False)
     utils.refmac.ensure_ccp4scr()
-    
+    if args.prefix:
+        if "xyzin" in opts and "xyzout" not in opts: opts["xyzout"] = args.prefix + ".pdb"
+        if "hklin" in opts and "hklout" not in opts: opts["hklout"] = args.prefix + ".mtz"
+        if "tlsin" in opts and "tlsout" not in opts: opts["tlsout"] = args.prefix + ".tls"
+        
     # TODO what if restin is given or make cr prepared is given?
     # TODO check make pept/link/suga/ss/conn/symm/chain
 
@@ -228,7 +232,9 @@ def main(args):
             st.ncs.clear()
             st.setup_cell_images()
             # TODO set st.ncs if ncsc instructions given - but should be done outside of this function?
-        crdout = "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid())
+        xyzout_dir = os.path.dirname(get_output_model_names(opts.get("xyzout"))[0])
+        crdout = os.path.join(xyzout_dir,
+                              "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid()))
         refmac_fixes = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                    h_pos="nucl" if keywords.get("source")=="ne" else "elec",
                                    no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
@@ -238,11 +244,6 @@ def main(args):
     if keywords["make"].get("exit"):
         return
 
-    if args.prefix:
-        if "xyzin" in opts and "xyzout" not in opts: opts["xyzout"] = args.prefix + ".pdb"
-        if "hklin" in opts and "hklout" not in opts: opts["hklout"] = args.prefix + ".mtz"
-        if "tlsin" in opts and "tlsout" not in opts: opts["tlsout"] = args.prefix + ".tls"
-        
     # Run Refmac
     cmd = [args.exe] + list(sum(tuple(opts.items()), ()))
     env = os.environ
