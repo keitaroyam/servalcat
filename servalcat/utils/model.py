@@ -751,8 +751,15 @@ def cx_to_mx(ss): #SmallStructure to Structure
 
 def fix_deuterium_residues(st):
     # we do not have DOD. will not change ND4->NH4 and SPW->SPK, as hydrogen atom names are different
+    n_changed = 0
     for chain in st[0]:
         for res in chain:
             if res.name == "DOD":
-                logger.writeln("Warning: changing DOD to HOH (chain {} residue {})".format(chain.name, res.seqid))
                 res.name = "HOH"
+                n_changed += 1
+    for con in st.connections:
+        for p in (con.partner1, con.partner2):
+            if p.res_id.name == "DOD":
+                p.res_id.name = "HOH"
+    if n_changed > 0:
+        logger.writeln("Warning: {} DOD residues have been renamed to HOH".format(n_changed))
