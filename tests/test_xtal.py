@@ -54,7 +54,7 @@ class XtalTests(unittest.TestCase):
     def test_sigmaa(self):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
-        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
+        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_trans", "exp", "--S_trans", "exp",
                                   "--labin", "FP,SIGFP", "--nbins", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.log")
@@ -83,17 +83,17 @@ class XtalTests(unittest.TestCase):
     def test_sigmaa_int(self):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
-        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_as_exp", "--S_as_exp",
+        args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_trans", "splus", "--S_trans", "splus",
                                   "--labin", "I,SIGI", "--nbins", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.mtz")
         numpy.testing.assert_allclose(hkldata.binned_df.D0,
-                                      [0.8437, 0.9814, 1.0212, 0.9620, 0.9935,
-                                       1.0079, 0.9952, 0.9876, 0.9332, 0.9192],
+                                      [0.84437, 0.982306, 1.021129, 0.96096, 0.991754,
+                                       1.004697, 0.992007, 0.983568, 0.927687, 0.914073],
                                       rtol=1e-4)
         numpy.testing.assert_allclose(hkldata.binned_df.S,
-                                      [84.4183, 95.3190, 70.4358, 96.5995, 76.2247,
-                                       112.4735, 123.3169, 102.3399, 85.0303, 44.1779],
+                                      [94.475683, 101.072198, 71.013585, 97.724741, 77.388387,
+                                       112.879826, 124.220414, 104.079037, 85.010132, 44.221456],
                                       rtol=1e-3)
 
     def test_fw(self):

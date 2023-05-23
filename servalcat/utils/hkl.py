@@ -217,6 +217,10 @@ class HklData:
         return HklData(self.cell, self.sg,  df, binned_df)
     # copy()
 
+    def selected(self, sel):
+        df = self.df[sel].copy()
+        return HklData(self.cell, self.sg,  df)
+
     def merge_asu_data(self, asu_data, label, common_only=True):
         if self.df is not None and label in self.df:
             raise Exception("Duplicated label")

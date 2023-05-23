@@ -5,6 +5,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/complex.h>
 #include <gemmi/bessel.hpp>
+#include <gemmi/math.hpp>
 #include "math.hpp"
 namespace py = pybind11;
 using namespace servalcat;
@@ -67,7 +68,7 @@ double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c
 double find_root(double k, double to, double tf, double sig1, int c, double det, bool use_exp2) {
   if (tf == 0.) {
     if (use_exp2)
-      return solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4)), 1e-2); // XXX may not be exact
+      return solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4)), 1e-4); // XXX may not be exact
     return det;
   }
   const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
@@ -77,36 +78,59 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   if (use_exp2) {
     const double X1 = (3-c) * tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5));
     const double m1 = fom(X1, c);
-    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5)), 1e-2);
+    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5)), 1e-4);
+    if (std::isnan(x0))
+      printf("ERROR: x0= %e, use_exp2= %d, X1=%e, m1=%e in_log=%e\n", x0, use_exp2, X1, m1,
+             0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5));
     const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 1));
-    x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-2);
+    x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-4);
+  } else {
+    const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 0.5));
+    x1 = 0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)));
   }
   if (std::isinf(x0) || std::isnan(x0))
-    printf("ERROR: x0= %f, use_exp2= %d, z=%f, to=%f, tf=%f, sig1=%f, c=%d, det=%f\n", x0, use_exp2, z, to, tf, sig1, c, det);
+    printf("ERROR: x0= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n", x0, use_exp2, z, to, tf, sig1, c, det);
   auto func = [&](double x) { return fder1(x, z, to, tf, sig1, c); };
   auto fprime = [&](double x) { return fder2(x, z, to, tf, sig1, c); };
+  //printf("debug %d x0= %f x1= %f f'_x0= %f f'_x1= %f\n", use_exp2, x0, x1, func(x0), func(x1));
+  if (std::abs(func(x0)) < 1e-2) // need to check. 1e-2 is small enough?
+    return x0;
   double root;
   try {
     root = newton(func, fprime, x0);
+    //printf("newton %f %f\n", root, func(root));
+    if (std::abs(func(root)) < 1e-2) // need to check. 1e-2 is small enough?
+      return root;
   } catch (const std::runtime_error& err) {
-    double a = x0, b = std::isnan(x1) ? x0 : x1;
-    double fa = func(a), fb = func(b);
-    if (fa * fb > 0) { // should not happen for use_exp2 case, just for safety
-      double inc = fa < 0 ? 0.1 : -0.1;
-      for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
-        fb = func(b);
-        if (fa * fb < 0) break;
-      }
-      if (fa * fb >= 0) throw std::runtime_error("interval not found");
+    // proceed to bisect
+  }
+
+  double a = x0, b = std::isnan(x1) ? x0 : x1;
+  double fa = func(a), fb = func(b);
+  if (fa * fb > 0) { // should not happen, just for safety
+    printf("DEBUG: bad_interval x0= %e, x1= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n",
+           x0, x1, use_exp2, z, to, tf, sig1, c, det);
+    double inc = fa < 0 ? 0.1 : -0.1;
+    for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
+      fb = func(b);
+      if (fa * fb < 0) break;
     }
-    root = bisect(func, a, b, 100, 1e-2);
+    if (fa * fb >= 0) throw std::runtime_error("interval not found");
+  }
+  try {
+    root = bisect(func, a, b, 10000, 1e-2);
+  } catch (const std::runtime_error& err) {
+    printf("DEBUG: bisect_fail x0= %e, x1= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n",
+           x0, x1, use_exp2, z, to, tf, sig1, c, det);
+    return NAN;
+    //throw std::runtime_error(err.what());
   }
   return root;
 }
 
 double integ_j(double k, double to, double tf, double sig1, int c, bool return_log,
                double exp2_threshold=3., double h=0.5, int N=200, double ewmax=20.) {
-  if (std::isnan(to)) return NAN;
+  if (std::isnan(to) || sig1 <= 0) return NAN; // perhaps sig1<0 should not return nan.. they considered 0 in sum
   const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k + 1)));
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
@@ -115,6 +139,12 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
   const double root = find_root(k, to, tf, sig1, c, det, use_exp2);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
+  if (f2der * f1val * f1val > 1e10) { // Laplace approximation threshould needs to be revisited
+    if (use_exp2) {
+      const double lap = -f1val - 0.5 * std::log(f2der) + 0.5 * std::log(gemmi::pi() * 0.5);
+      return return_log ? lap : std::exp(lap);
+    }
+  }
   const double delta = h * std::sqrt(2 / f2der);
   double s = 1; // for i = 0
   for (int sign : {-1, 1}) {
@@ -134,7 +164,7 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
 double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c,
                      double exp2_threshold=3., double h=0.5, int N=200, double ewmax=20.) {
   // factor of sig^{k_num - k_den} is needed, which should be done outside.
-  if (std::isnan(to)) return NAN;
+  if (std::isnan(to) || sig1 <= 0) return NAN;
   const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k_den + 2 : 2 * k_den + 1;
@@ -167,12 +197,14 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
 
 // ML intensity target; -log(Io; Fc) without constants
 double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) {
-  if (std::isnan(Io)) return NAN;
+  if (std::isnan(Io) || S <= 0) return NAN;
   const double k = c == 1 ? 0 : -0.5;
   const double to = Io / sigIo - sigIo / c / sq(k_ani) / S;
   const double Ic = sq(Fc);
   const double tf = k_ani * Fc / std::sqrt(sigIo);
   const double sig1 = sq(k_ani) * S / sigIo;
+  if (sig1 < 0)
+    printf("ERROR: negative sig1= %f k_ani= %f S= %f sigIo= %f\n", sig1, k_ani, S, sigIo);
   const double logj = integ_j(k, to, tf, sig1, c, true);
   if (c == 1) // acentrics
     return 2 * std::log(k_ani) + std::log(S) + Ic / S - logj;
@@ -232,7 +264,7 @@ ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::arr
                   return s;
                 };
   for (size_t i = 0; i < n_ref; ++i) {
-    if (std::isnan(Io_(i))) {
+    if (S <= 0 || std::isnan(Io_(i))) {
       for (size_t j = 0; j < n_cols; ++j)
         ptr[i * n_cols + j] = NAN;
       continue;
@@ -243,6 +275,8 @@ ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::arr
     const double sqrt_sigIo = std::sqrt(sigIo_(i));
     const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
     const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+    if (sig1 < 0)
+      printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
     const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
     const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
     const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i);
@@ -283,7 +317,7 @@ ll_int_fw_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::
     }
     const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
     const double k_num = c_(i) == 1 ? 1. : 0.5;
-    const double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 0., c_(i)) * sigIo_(i);
+    const double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i)) * sigIo_(i);
     if (for_S)
       ptr[i] = ll_int_der1_S(k_ani_(i), S, 0., c_(i), eps_(i), j_ratio_1, 0.);
     else
@@ -307,4 +341,8 @@ void add_intensity(py::module& m) {
   m.def("ll_int_fw_der1_S", &ll_int_fw_der1_params_py<true>);
   m.def("ll_int_fw_der1_ani", &ll_int_fw_der1_params_py<false>);
   m.def("lambertw", py::vectorize(lambertw::lambertw));
+  m.def("find_root", &find_root);
+  m.def("f1_exp2", py::vectorize(f1_exp2));
+  m.def("f1_exp2_der1", py::vectorize(f1_exp2_der1));
+  m.def("f1_exp2_der2", py::vectorize(f1_exp2_der2));
 }

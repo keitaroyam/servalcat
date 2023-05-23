@@ -88,7 +88,7 @@ class LL_Xtal:
         if self.is_int:
             self.b_aniso = sigmaa.determine_mli_params(self.hkldata, self.fc_labs, self.D_labs, self.b_aniso,
                                                        self.centric_and_selections, use=self.use_in_est,
-                                                       )#D_as_exp=True, S_as_exp=True)
+                                                       D_trans="splus", S_trans="splus")
             self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         else:
             sigmaa.determine_mlf_params(self.hkldata, self.fc_labs, self.D_labs,
@@ -120,8 +120,7 @@ class LL_Xtal:
             Fmask = sigmaa.calc_Fmask(self.st, self.d_min - 1e-6, self.hkldata.miller_array())
             fc_list.append(Fmask)
 
-        obs = self.hkldata.df["I" if self.is_int else "FP_org"].to_numpy()
-        scaling = sigmaa.LsqScale(self.hkldata, obs, fc_list, self.is_int)
+        scaling = sigmaa.LsqScale(self.hkldata, fc_list, self.is_int, sigma_cutoff=0)
         scaling.scale()
         b_aniso = scaling.b_aniso
         b = scaling.b_iso
@@ -135,7 +134,8 @@ class LL_Xtal:
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
         k_aniso = self.hkldata.debye_waller_factors(b_cart=b_aniso)
         if self.use_solvent:
-            solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol)
+            solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol,
+                                                      1. / self.hkldata.d_spacings().to_numpy()**2)
             self.hkldata.df[self.fc_labs[-1]] = Fmask * solvent_scale
         if self.is_int:
             self.b_aniso = b_aniso

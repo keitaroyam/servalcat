@@ -294,10 +294,6 @@ class Refine:
 
     #@profile
     def run_cycle(self, weight=1):
-        if self.ll is not None:
-            self.ll.overall_scale()
-            self.ll.update_ml_params()
-
         self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
             
         if 0: # test of grad
@@ -403,6 +399,7 @@ class Refine:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
             if self.ll is not None:
                 self.ll.overall_scale()
+                self.ll.update_ml_params()
                 llstats = self.ll.calc_stats(bin_stats=True)#(i==ncycles-1))
                 stats[-1]["data"] = llstats["summary"]
                 if "bin_stats" in llstats:

@@ -149,7 +149,6 @@ def main(args):
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
 
-    # CHECK ML parameters are determined from the last model?
     if is_int:
         calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
                            use=use_in_target)

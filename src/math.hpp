@@ -47,7 +47,7 @@ double newton(Func&& func, Fprime&& fprime, double x0,
       return x0;
     double fder = fprime(x0);
     if (fder == 0)
-      return x0;
+      throw std::runtime_error("newton did not converge (der=0)");
     x = x0 - fval / fder;
     if (std::abs(x - x0) < tol)
       return x;
