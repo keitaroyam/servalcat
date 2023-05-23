@@ -167,7 +167,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     if hout:
-        st.expand_hd_mixture()
+        st.store_deuterium_as_fraction(False)
     else:
         st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
         
