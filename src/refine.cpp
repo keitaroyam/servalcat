@@ -528,6 +528,7 @@ void add_refine(py::module& m) {
   vdw
     .def(py::init<gemmi::Atom*,gemmi::Atom*>())
     .def("set_image", &Geometry::Vdw::set_image)
+    .def("same_asu", &Geometry::Vdw::same_asu)
     .def_readwrite("type", &Geometry::Vdw::type)
     .def_readwrite("value", &Geometry::Vdw::value)
     .def_readwrite("sigma", &Geometry::Vdw::sigma)
