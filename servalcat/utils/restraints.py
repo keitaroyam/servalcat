@@ -447,6 +447,7 @@ class MetalCoordination:
             if con.link_id == "" and con.type == gemmi.ConnectionType.MetalC:
                 cra1 = st[0].find_cra(con.partner1, ignore_segment=True)
                 cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
+                if None in (cra1.atom, cra2.atom): continue
                 coords.setdefault(cra1.atom.element, {}).setdefault(cra1.atom, []).append((cra2.atom, i))
         if coords:
             logger.writeln("Metal coordinations detected")
