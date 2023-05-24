@@ -11,6 +11,7 @@ import gemmi
 import numpy
 import pandas
 import itertools
+import time
 import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
@@ -500,15 +501,26 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     # Initial values
     for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
+    k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     for i_bin, _ in hkldata.binned():
         idxes = get_idxes(i_bin)
         valid_sel = numpy.isfinite(hkldata.df.I[idxes]) # as there is no nan-safe numpy.corrcoef
         idxes = idxes[valid_sel]
-        FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes])
-        I = hkldata.df.I.to_numpy()[idxes]
-        D = numpy.corrcoef(I, FC**2)[1,0]
+        Ic = k_ani[idxes]**2 * numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
+        Io = hkldata.df.I.to_numpy()[idxes]
+        mean_Io = numpy.mean(Io)
+        mean_Ic = numpy.mean(Ic)
+        cc = numpy.corrcoef(Io, Ic)[1,0]
+        if cc > 0 and mean_Io > 0:
+            D = numpy.sqrt(mean_Io / mean_Ic * cc)
+        else:
+            D = 0 # will be taken care later
         hkldata.binned_df.loc[i_bin, D_labs[0]] = D
-        hkldata.binned_df.loc[i_bin, "S"] = numpy.sqrt(numpy.var(I - (D * FC)**2)) / 4 * (2-D)
+        if mean_Io > 0:
+            S = mean_Io - 2 * numpy.sqrt(mean_Io * mean_Ic * numpy.maximum(0, cc)) + mean_Ic
+        else:
+            S = numpy.std(Io) # similar initial to french_wilson
+        hkldata.binned_df.loc[i_bin, "S"] = S
 
     for D_lab in D_labs:
         if hkldata.binned_df[D_lab].min() <= 0:
@@ -520,6 +532,8 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     logger.writeln(hkldata.binned_df.to_string())
     refpar = "all"
     for i_cyc in range(n_cycle):
+        t0 = time.time()
+        nfev_total = 0
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
         for i_bin, _ in hkldata.binned():
             idxes = get_idxes(i_bin)
@@ -586,6 +600,26 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 H = numpy.nansum(numpy.matmul(tmp[:,:,None], tmp[:,None]), axis=0)
                 return -numpy.dot(g, numpy.linalg.pinv(H))
 
+            def shift_S(x):
+                Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
+                S = trans.S(x)
+                r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                                       hkldata.df[fc_labs].to_numpy()[idxes], Ds,
+                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                g = numpy.nansum(r[:,-1])
+                g *= trans.S_deriv(x)
+                H = numpy.nansum(r[:,-1]**2) * trans.S_deriv(x)**2
+                return -g / H
+
+            if 0:
+                refpar = "S"
+                x0 = trans.S_inv(hkldata.binned_df.S[i_bin])
+                with open("s_line_{}.dat".format(i_bin), "w") as ofs:
+                    for sval in numpy.linspace(1, x0*2, 100):
+                        ofs.write("{:.4e} {:.10e} {:.10e}\n".format(sval,
+                                                                    target([sval]),
+                                                                    grad([sval])[0]))
+                continue
             #print("Bin", i_bin)
             if 1: # refine D and S iteratively
                 vals_last = None
@@ -594,6 +628,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                     x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs]
                     res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                                   bounds=((-5 if D_trans else 1e-5, None),)*len(x0))
+                    nfev_total += res.nfev
                     #print(i_bin, "mini cycle", ids, refpar)
                     #print(res)
                     vals_now = []
@@ -602,11 +637,38 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                         vals_now.append(hkldata.binned_df.loc[i_bin, lab])
                     refpar = "S"
                     x0 = [trans.S_inv(hkldata.binned_df.S[i_bin])]
-                    res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
-                                                  bounds=((-3 if S_trans else 5e-2, None),))
-                    #print(i_bin, "mini cycle", ids, refpar)
-                    #print(res)
-                    hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
+                    if 1:
+                        for cyc_s in range(1):
+                            x0 = trans.S_inv(hkldata.binned_df.S[i_bin])
+                            f0 = target([x0])
+                            nfev_total += 1
+                            shift = shift_S(x0)
+                            if abs(shift) < 1e-3: break
+                            for itry in range(10):
+                                x1 = x0 + shift
+                                if (S_trans and x1 < -3) or (not S_trans and x1 < 5e-2):
+                                    #print(i_bin, cyc_s, trans.S(x0), trans.S(x1), shift, "BAD")
+                                    shift /= 2
+                                    continue
+                                f1 = target([x1])
+                                nfev_total += 1
+                                if f1 > f0:
+                                    shift /= 2
+                                    continue
+                                else: # good
+                                    #print(i_bin, cyc_s, trans.S(x0), trans.S(x1), shift)
+                                    hkldata.binned_df.loc[i_bin, "S"] = trans.S(x1)
+                                    break
+                            else:
+                                #print("all bad")
+                                break
+                    else:
+                        res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
+                                                      bounds=((-3 if S_trans else 5e-2, None),))
+                        nfev_total += res.nfev
+                        #print(i_bin, "mini cycle", ids, refpar)
+                        #print(res)
+                        hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
                     vals_now.append(hkldata.binned_df.loc[i_bin, "S"])
                     vals_now = numpy.array(vals_now)
                     if vals_last is not None and numpy.all(numpy.abs((vals_last - vals_now) / vals_now) < 1e-2):
@@ -618,6 +680,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
                 res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                               bounds=((-5 if D_trans else 1e-5, None), )*len(D_labs) + ((-3 if S_trans else 5e-2, None),))
+                nfev_total += res.nfev
                 #print(i_bin)
                 #print(res)
                 for i, lab in enumerate(D_labs):
@@ -645,6 +708,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
 
         logger.writeln("Refined estimates:")
         logger.writeln(hkldata.binned_df.to_string())
+        logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
 
         # Refine b_aniso
         adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
