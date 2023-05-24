@@ -263,6 +263,9 @@ def main(args):
     retcode = p.wait()
     logger.writeln("\nRefmac finished with exit code= {}".format(retcode))
 
+    if not args.keep_original_output and crdout and os.path.exists(crdout):
+        os.remove(crdout)
+
     # Modify output
     if xyzin is not None:
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
