@@ -98,9 +98,9 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
 
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
     try:
-        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
-                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
-                                                 use_cispeps=use_cispeps)
+        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
+                                                            check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
+                                                            use_cispeps=use_cispeps)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -117,7 +117,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
-    return refmac_fixes
+    return refmac_fixes, [x+"\n" for x in metal_kws]
 # prepare_crd()
 
 def get_output_model_names(xyzout):
@@ -167,7 +167,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     if hout:
-        st.expand_hd_mixture()
+        st.store_deuterium_as_fraction(False)
     else:
         st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
         
@@ -235,9 +235,10 @@ def main(args):
         xyzout_dir = os.path.dirname(get_output_model_names(opts.get("xyzout"))[0])
         crdout = os.path.join(xyzout_dir,
                               "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid()))
-        refmac_fixes = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
-                                   h_pos="nucl" if keywords.get("source")=="ne" else "elec",
-                                   no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
+        refmac_fixes, metal_kws = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
+                                              h_pos="nucl" if keywords.get("source")=="ne" else "elec",
+                                              no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
+        inputs = metal_kws + inputs # add metal exte first; otherwise it may be affected by user-defined inputs
         opts["xyzin"] = crdout
         cispeps = st.cispeps
 

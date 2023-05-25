@@ -91,7 +91,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         st = st.clone()
         if source == "neutron":
             # nothing happens if not st.has_d_fraction
-            st.expand_hd_mixture()
+            st.store_deuterium_as_fraction(False)
         if omit_proton or omit_h_electron:
             assert mott_bethe
             if omit_proton and omit_h_electron:

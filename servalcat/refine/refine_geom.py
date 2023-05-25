@@ -58,8 +58,8 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
                                                    cif_files=[cif_in],
                                                    stop_for_unknowns=True)
     try:
-        topo = utils.restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
-                                                 check_hydrogen=False)
+        topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
+                                                    check_hydrogen=False)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -118,10 +118,11 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                                                    stop_for_unknowns=True)
     utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
     try:
-        topo = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
-                                                 check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                            check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+    refmac_keywords.extend(metal_kws)
     geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords)
     refiner = Refine(st, geom)
     stats = refiner.run_cycles(ncycle)

@@ -27,8 +27,8 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0, refmac_keywords=None, jellybody_only=False,
-                 use_nucleus=False):
+    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0,
+                 refmac_keywords=None, jellybody_only=False, use_nucleus=False):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
