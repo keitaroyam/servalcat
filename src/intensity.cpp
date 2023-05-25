@@ -295,6 +295,54 @@ ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::arr
   return ret;
 }
 
+// an attemp to fast update of Sigma, but it does look good.
+double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
+					       double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
+					       py::array_t<int> c, py::array_t<int> eps) {
+  if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
+  const size_t n_models = Fcs.shape(1);
+  const size_t n_ref = Fcs.shape(0);
+  auto Io_ = Io.unchecked<1>();
+  auto sigIo_ = sigIo.unchecked<1>();
+  auto k_ani_ = k_ani.unchecked<1>();
+  auto Fcs_ = Fcs.unchecked<2>();
+  auto c_ = c.unchecked<1>();
+  auto eps_ = eps.unchecked<1>();
+
+  auto sum_Fc = [&](int i) {
+                  std::complex<double> s = Fcs_(i, 0) * Ds[0];
+                  for (size_t j = 1; j < n_models; ++j)
+                    s += Fcs_(i, j) * Ds[j];
+                  return s;
+                };
+  int count = 0;
+  double ret = 0;
+  for (size_t i = 0; i < n_ref; ++i) {
+    if (S <= 0 || std::isnan(Io_(i)))
+      continue;
+    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
+    const double Fc_abs = std::abs(Fc_total_conj);
+    const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+    const double sqrt_sigIo = std::sqrt(sigIo_(i));
+    const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+    const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+    if (sig1 < 0)
+      printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
+    const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+    const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i);
+    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo;
+    const double tmp = ll_int_der1_D(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+    if (c_(i) == 1) // acentrics
+      ret += (sq(Fc_abs) + j_ratio_1 / sq(k_ani_(i)) / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2 / k_ani_(i)) / eps_(i);
+    else
+      ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) / k_ani_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / k_ani_(i)) / eps_(i);
+    ++count;
+  }
+  if (count == 0) return NAN;
+  return ret / count;
+}
+
 // For French-Wilson
 template<bool for_S>
 py::array_t<double>
@@ -338,6 +386,7 @@ void add_intensity(py::module& m) {
         py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"));
   m.def("ll_int_der1_DS", &ll_int_der1_params_py<true>);
   m.def("ll_int_der1_ani", &ll_int_der1_params_py<false>);
+  m.def("find_ll_int_S_from_current_estimates", &find_ll_int_S_from_current_estimates_py);
   m.def("ll_int_fw_der1_S", &ll_int_fw_der1_params_py<true>);
   m.def("ll_int_fw_der1_ani", &ll_int_fw_der1_params_py<false>);
   m.def("lambertw", py::vectorize(lambertw::lambertw));
