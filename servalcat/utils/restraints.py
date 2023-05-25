@@ -349,8 +349,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             cra1, cra2 = r.partner1, r.partner2
         im = st.cell.find_nearest_pbc_image(cra1.atom.pos, cra2.atom.pos, r.image_idx)
         #assert r.image_idx == im.sym_idx # should we check this?
-        same_asu = im.sym_idx == 0 and im.pbc_shift == (0,0,0) # from NEXTGEMMI will use im.same_asu()
-        if not find_symmetry_related and not same_asu:
+        if not find_symmetry_related and not im.same_asu():
             continue
         atoms_str = "atom1= {} atom2= {} image= {}".format(cra1, cra2, r.image_idx)
         if im.pbc_shift != (0,0,0):
@@ -378,7 +377,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             con.type = gemmi.ConnectionType.Disulf if link.id == "disulf" else gemmi.ConnectionType.Covale
         else:
             con.type = gemmi.ConnectionType.MetalC
-        con.asu = gemmi.Asu.Same if same_asu else gemmi.Asu.Different
+        con.asu = gemmi.Asu.Same if im.same_asu() else gemmi.Asu.Different
         con.partner1 = model.cra_to_atomaddress(cra1)
         con.partner2 = model.cra_to_atomaddress(cra2)
         con.reported_distance = r.dist
