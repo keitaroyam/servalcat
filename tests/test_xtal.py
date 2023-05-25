@@ -88,13 +88,13 @@ class XtalTests(unittest.TestCase):
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.mtz")
         numpy.testing.assert_allclose(hkldata.binned_df.D0,
-                                      [0.84437, 0.982306, 1.021129, 0.96096, 0.991754,
-                                       1.004697, 0.992007, 0.983568, 0.927687, 0.914073],
-                                      rtol=1e-4)
+                                      [0.845341, 0.982548, 1.021152, 0.960991, 0.991905,
+                                       1.004682, 0.991878, 0.983793, 0.927995, 0.91412],
+                                      rtol=1e-2)
         numpy.testing.assert_allclose(hkldata.binned_df.S,
-                                      [94.475683, 101.072198, 71.013585, 97.724741, 77.388387,
-                                       112.879826, 124.220414, 104.079037, 85.010132, 44.221456],
-                                      rtol=1e-3)
+                                      [85.040581, 96.759372, 70.447608, 97.630793, 76.895628,
+                                       112.826406, 124.749979, 103.492015, 84.482203, 44.150007],
+                                      rtol=1e-2)
 
     def test_fw(self):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")

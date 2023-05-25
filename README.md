@@ -11,7 +11,7 @@ pip install servalcat
 ```
 will install the stable version.
 
-The required GEMMI version is now [v0.6.1](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.1). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
+The required GEMMI version is now [v0.6.2](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.2). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
 
 **Notice:**
 From ver. 0.4.6, Servalcat is no longer python-only package and has some C++ code. If you build Servalcat by yourself, probably you also need to build GEMMI using the same compiler.
@@ -20,5 +20,5 @@ From ver. 0.4.6, Servalcat is no longer python-only package and has some C++ cod
 Please read the documentation: https://servalcat.readthedocs.io/en/latest/
 
 ## References
-* [Yamashita, K.,  Wojdyr, M., Long, F., Nicholls, R. A., Murshudov, G. N. (2023) "GEMMI and Servalcat restrain REFMAC5" *Acta Cryst.* D**79**, 368-373](https://doi.org/10.1107/S2059798323002413)
+* [Yamashita, K., Wojdyr, M., Long, F., Nicholls, R. A., Murshudov, G. N. (2023) "GEMMI and Servalcat restrain REFMAC5" *Acta Cryst.* D**79**, 368-373](https://doi.org/10.1107/S2059798323002413)
 * [Yamashita, K., Palmer, C. M., Burnley, T., Murshudov, G. N. (2021) "Cryo-EM single particle structure refinement and map calculation using Servalcat" *Acta Cryst. D***77**, 1282-1291](https://doi.org/10.1107/S2059798321009475)

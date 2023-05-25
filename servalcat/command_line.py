@@ -63,7 +63,7 @@ def test_installation():
 
 def main():
     parser = argparse.ArgumentParser(prog="servalcat",
-                                     description="A tool for model refinement and map calculation for cryo-EM SPA.")
+                                     description="A tool for model refinement and map calculation for crystallography and cryo-EM SPA.")
     parser.add_argument("--skip_test", action="store_true", help="Skip installation test")
     parser.add_argument("-v", "--version", action="version",
                         version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
