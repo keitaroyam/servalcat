@@ -391,6 +391,9 @@ void add_intensity(py::module& m) {
   m.def("ll_int_fw_der1_ani", &ll_int_fw_der1_params_py<false>);
   m.def("lambertw", py::vectorize(lambertw::lambertw));
   m.def("find_root", &find_root);
+  m.def("f1_orig2", py::vectorize(f1_orig2));
+  m.def("f1_orig2_der1", py::vectorize(f1_orig2_der1));
+  m.def("f1_orig2_der2", py::vectorize(f1_orig2_der2));
   m.def("f1_exp2", py::vectorize(f1_exp2));
   m.def("f1_exp2_der1", py::vectorize(f1_exp2_der1));
   m.def("f1_exp2_der2", py::vectorize(f1_exp2_der2));

@@ -185,8 +185,8 @@ def french_wilson(hkldata, B_aniso, labout=None):
         eps = hkldata.df.epsilon.to_numpy()[idxes]
         to = Io / sigo - sigo / c / k_ani[idxes]**2 / S / eps
         k_num = numpy.where(c == 1,  0.5, 0.)
-        F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 0., c)
-        Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 0., c)
+        F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c)
+        Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c)
         varF = Fsq - F**2
         hkldata.df.loc[idxes, labout[0]] = F
         hkldata.df.loc[idxes, labout[1]] = numpy.sqrt(varF)
