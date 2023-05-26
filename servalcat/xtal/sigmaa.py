@@ -904,7 +904,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             logger.writeln("")
 
         for st in sts:
-            st.spacegroup_hm = sg_use.xhm()
+            if st.find_spacegroup() != sg_use:
+                st.spacegroup_hm = sg_use.xhm()
             st.setup_cell_images()
         hkldata.sg = sg_use
         
