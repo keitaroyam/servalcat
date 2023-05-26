@@ -28,7 +28,7 @@ b_to_u = utils.model.b_to_u
 
 class Geom:
     def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0,
-                 refmac_keywords=None, jellybody_only=False, use_nucleus=False):
+                 refmac_keywords=None, unrestrained=False, use_nucleus=False):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -41,15 +41,14 @@ class Geom:
             n_sym = len(images) + 1
             self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
         self.sigma_b = sigma_b
-        self.jellybody_only = jellybody_only
+        self.unrestrained = unrestrained
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
             utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
-        if not self.jellybody_only:
+        if not self.unrestrained:
             self.geom.load_topo(topo)
-        else:
-            self.geom.ridge_exclude_short_dist = False
+            self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if refmac_keywords:
@@ -62,7 +61,6 @@ class Geom:
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
-        self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
     # __init__()
 
     def check_chemtypes(self, enerlib_path, topo):
@@ -87,7 +85,7 @@ class Geom:
                 self.parents[bond.atoms[1]] = bond.atoms[0]
     # set_h_parents()
     def setup_nonbonded(self, refine_xyz):
-        skip_critical_dist = not refine_xyz or self.jellybody_only
+        skip_critical_dist = not refine_xyz or self.unrestrained
         self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist)
     def calc(self, target_only):
         return self.geom.calc(check_only=target_only, **self.calc_kwds)

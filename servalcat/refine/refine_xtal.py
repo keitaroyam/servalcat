@@ -114,28 +114,37 @@ def main(args):
     is_int = "I" in hkldata.df
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
-    monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                   stop_for_unknowns=False)
-    utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-    utils.restraints.find_and_fix_links(st, monlib)
-    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
-                "yes":gemmi.HydrogenChange.NoChange,
-                "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
-    try:
-        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
-                                                            check_hydrogen=(args.hydrogen=="yes"))
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
-    keywords.extend(metal_kws)
+    if args.unrestrained:
+        monlib = gemmi.MonLib()
+        topo = None
+        if args.hydrogen == "all":
+            logger.writeln("WARNING: in unrestrained refinement hydrogen atoms are not generated.")
+        elif args.hydrogen == "no":
+            st.remove_hydrogens()
+    else:
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
+                                                       stop_for_unknowns=False)
+        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+        utils.restraints.find_and_fix_links(st, monlib)
+        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+                    "yes":gemmi.HydrogenChange.NoChange,
+                    "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+        try:
+            topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                                check_hydrogen=(args.hydrogen=="yes"))
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
+        keywords.extend(metal_kws)
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
     
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords,
-                jellybody_only=args.jellyonly, use_nucleus=(args.source=="neutron"))
+                unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"))
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
+    if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
     ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target)

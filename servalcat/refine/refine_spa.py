@@ -182,7 +182,7 @@ def main(args):
         logger.writeln(" Will use weight= {:.2f}".format(args.weight))
 
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b,
-                refmac_keywords=refmac_keywords, jellybody_only=args.jellyonly)
+                refmac_keywords=refmac_keywords, unrestrained=args.jellyonly)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
@@ -195,6 +195,7 @@ def main(args):
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac
     if args.jellybody or args.jellyonly: geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
+    if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
     #logger.writeln("TEST: shift x+0.3 A")
     #for cra in st[0].all():
