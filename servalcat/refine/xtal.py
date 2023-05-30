@@ -30,7 +30,7 @@ def calc_bin_stats(hkldata, centric_and_selections):
         obs = hkldata.df.I
         calc = Fc**2
     else:
-        obs = hkldata.df.FP_org
+        obs = hkldata.df.FP
         calc = Fc
     if has_free:
         for suf in ("work", "free"):
@@ -72,11 +72,8 @@ class LL_Xtal:
             self.hkldata.df["FCbulk"] = 0j
         self.D_labs = ["D{}".format(i) for i in range(len(self.fc_labs))]
         self.k_overall = numpy.ones(len(self.hkldata.df.index))
-        self.b_aniso = None # used by MLI for now
+        self.b_aniso = None
         self.hkldata.df["k_aniso"] = 1.
-        if not self.is_int:
-            self.hkldata.df["FP_org"] = self.hkldata.df["FP"]
-            self.hkldata.df["SIGFP_org"] = self.hkldata.df["SIGFP"]
         self.use_in_est = use_in_est
         self.use_in_target = use_in_target
         self.ll = None
@@ -122,7 +119,7 @@ class LL_Xtal:
 
         scaling = sigmaa.LsqScale(self.hkldata, fc_list, self.is_int, sigma_cutoff=0)
         scaling.scale()
-        b_aniso = scaling.b_aniso
+        self.b_aniso = scaling.b_aniso
         b = scaling.b_iso
         min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
         tmp = min_b_iso + b
@@ -132,19 +129,17 @@ class LL_Xtal:
         logger.writeln(" Applying overall B to model: {:.2f}".format(b))
         utils.model.shift_b(self.st[0], b)
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
-        k_aniso = self.hkldata.debye_waller_factors(b_cart=b_aniso)
+        self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         if self.use_solvent:
             solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol,
                                                       1. / self.hkldata.d_spacings().to_numpy()**2)
             self.hkldata.df[self.fc_labs[-1]] = Fmask * solvent_scale
         if self.is_int:
-            self.b_aniso = b_aniso
             self.hkldata.df["I"] /= scaling.k_overall**2
             self.hkldata.df["SIGI"] /= scaling.k_overall**2
         else:
-            self.hkldata.df["k_aniso"] = scaling.k_overall * k_aniso
-            self.hkldata.df["FP"] = self.hkldata.df["FP_org"] / self.hkldata.df.k_aniso
-            self.hkldata.df["SIGFP"] = self.hkldata.df["SIGFP_org"] /self.hkldata.df.k_aniso            
+            self.hkldata.df["FP"] /= scaling.k_overall
+            self.hkldata.df["SIGFP"] /= scaling.k_overall
 
         for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
@@ -152,10 +147,8 @@ class LL_Xtal:
 
     def calc_target(self): # -LL target for MLF or MLI
         ret = 0
-        if self.is_int:
-            k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        else:
-            k_aniso = None
+        k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
+        # in MLF, df.k_aniso is used
             
         for i_bin, _ in self.hkldata.binned():
             if self.is_int:
@@ -188,7 +181,7 @@ class LL_Xtal:
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel])**2)
             rlab = "R2"
         else:
-            calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP_org[sel],
+            calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel]))
             rlab = "R"
         ret = {"summary": {}}
@@ -204,7 +197,7 @@ class LL_Xtal:
                 r = utils.hkl.r_factor(self.hkldata.df.I,
                                        numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso)**2)
             else:
-                r = utils.hkl.r_factor(self.hkldata.df.FP_org,
+                r = utils.hkl.r_factor(self.hkldata.df.FP,
                                        numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
             logger.writeln("{} = {:.4f}".format(rlab, r))
             ret["summary"][rlab] = r
@@ -224,10 +217,7 @@ class LL_Xtal:
         d2ll_dab2[:] = numpy.nan
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
-        if self.is_int:
-            k_ani = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        else:
-            k_ani = None
+        k_ani = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         for i_bin, _ in self.hkldata.binned():
             bin_d_min = self.hkldata.binned_df.d_min[i_bin]
             bin_d_max = self.hkldata.binned_df.d_max[i_bin]
@@ -263,20 +253,20 @@ class LL_Xtal:
                     Fo = self.hkldata.df.FP.to_numpy()[cidxes]
                     SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes]
                     if c == 0: # acentric
-                        Sigma = 2 * SigFo**2 + epsilon * S
-                        X = 2 * Fo * Fc_abs / Sigma
+                        Sigma = 2 * SigFo**2 + epsilon * S * k_ani[cidxes]**2
+                        X = 2 * Fo * Fc_abs * k_ani[cidxes] / Sigma
                         m = gemmi.bessel_i1_over_i0(X)
-                        g = (2 * Fc_abs / Sigma - m * 2 * Fo / Sigma) * Ds[0]  # XXX assuming 0 is atomic structure
+                        g = (2 * k_ani[cidxes]**2 * Fc_abs / Sigma - m * 2 * Fo * k_ani[cidxes] / Sigma) * Ds[0]  # XXX assuming 0 is atomic structure
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (2 / Sigma - (1 - m / X - m**2) * (2 * Fo / Sigma)**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (2 * k_ani[cidxes]**2 / Sigma - (1 - m / X - m**2) * (2 * Fo * k_ani[cidxes] / Sigma)**2) * Ds[0]**2
                     else:
-                        Sigma = SigFo**2 + epsilon * S
-                        X = Fo * Fc_abs / Sigma
+                        Sigma = SigFo**2 + epsilon * S * k_ani[cidxes]**2
+                        X = Fo * Fc_abs * k_ani[cidxes] / Sigma
                         #X = X.astype(numpy.float64)
                         m = numpy.tanh(X)
-                        g = (Fc_abs / Sigma - m * Fo / Sigma) * Ds[0]
+                        g = (Fc_abs * k_ani[cidxes]**2 / Sigma - m * Fo * k_ani[cidxes] / Sigma) * Ds[0]
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (1 / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (k_ani[cidxes]**2 / Sigma - (Fo * k_ani[cidxes] / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
 
         if self.mott_bethe:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()

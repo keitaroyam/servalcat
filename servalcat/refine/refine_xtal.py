@@ -162,7 +162,7 @@ def main(args):
         calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
                            use=use_in_target)
     else:
-        calculate_maps(ll.hkldata, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
+        calculate_maps(ll.hkldata, ll.b_aniso, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
                        use=use_in_target)
 
     # Write mtz file
