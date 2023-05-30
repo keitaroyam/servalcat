@@ -1001,7 +1001,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
         S = hkldata.binned_df.S[i_bin]
         
         # 0: acentric 1: centric
-        mean_fom = [0, 0]
+        mean_fom = [numpy.nan, numpy.nan]
         nrefs = [0, 0]
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
@@ -1011,7 +1011,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
             Fo = hkldata.df.FP.to_numpy()[cidxes]
             SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
             epsilon = hkldata.df.epsilon.to_numpy()[cidxes]
-            nrefs[c] = len(cidxes)
+            nrefs[c] = numpy.sum(numpy.isfinite(Fo))
             DFc = calc_abs_DFc(Ds, Fcs)
             if c == 0:
                 Sigma = 2 * SigFo**2 + epsilon * S * k_ani[cidxes]**2
@@ -1027,7 +1027,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
             hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
-            mean_fom[c] = numpy.nanmean(m)
+            if nrefs[c] > 0: mean_fom[c] = numpy.nanmean(m)
 
             # remove reflections that should be hidden
             if use != "all":
