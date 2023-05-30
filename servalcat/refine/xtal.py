@@ -11,7 +11,6 @@ import numpy
 import json
 import scipy.sparse
 from servalcat.utils import logger
-#from servalcat.xtal.sigmaa import determine_mlf_params, determine_mlf_params_from_cc, mlf, calc_DFc
 from servalcat.xtal import sigmaa
 from servalcat import utils
 from servalcat import ext
@@ -81,15 +80,10 @@ class LL_Xtal:
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
     def update_ml_params(self):
-        # FIXME make sure D > 0
-        if self.is_int:
-            self.b_aniso = sigmaa.determine_mli_params(self.hkldata, self.fc_labs, self.D_labs, self.b_aniso,
-                                                       self.centric_and_selections, use=self.use_in_est,
-                                                       D_trans="splus", S_trans="splus")
-            self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        else:
-            sigmaa.determine_mlf_params(self.hkldata, self.fc_labs, self.D_labs,
-                                        self.centric_and_selections, use=self.use_in_est)#, D_as_exp=True, S_as_exp=True)
+        self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
+                                                   self.centric_and_selections, use=self.use_in_est,
+                                                   D_trans="splus", S_trans="splus")
+        self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         for lab in self.D_labs + ["S"]:
             self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] > 0, 0.01, inplace=True)
             self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] < numpy.inf, 1, inplace=True)

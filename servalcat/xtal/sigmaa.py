@@ -279,11 +279,11 @@ def deriv_mlf_wrt_D_S_acentric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     DFc *= k_aniso
     i1_i0_x = gemmi.bessel_i1_over_i0(2*Fo*DFc/Sigma) # m
-    for i, (sqder, der) in enumerate(tmp):
-        deriv[i] = -numpy.nansum(-sqder * k_aniso**2 / Sigma + i1_i0_x * 2 * Fo * der * k_aniso / Sigma)
-    
-    deriv[-1] = -numpy.nansum((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon * k_aniso**2)
-    return deriv
+    ret = []
+    for sqder, der in tmp:
+        ret.append(-sqder * k_aniso**2 / Sigma + i1_i0_x * 2 * Fo * der * k_aniso / Sigma)
+    ret.append((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon * k_aniso**2)
+    return -numpy.vstack(ret).T
 # deriv_mlf_wrt_D_S_acentric()
 
 def mlf_centric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
@@ -298,16 +298,16 @@ def mlf_centric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
 # mlf_centric()
 
 def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
-    deriv = numpy.zeros(1+len(Ds))
     Sigma = varFo + epsilon * S * k_aniso**2
     Fo2 = Fo**2
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
     DFc *= k_aniso
     tanh_x = numpy.tanh(Fo*DFc/Sigma)
-    for i, (sqder, der) in enumerate(tmp):
-        deriv[i] = -numpy.nansum(-0.5 * sqder * k_aniso**2 / Sigma + tanh_x * Fo * der * k_aniso / Sigma)
-    deriv[-1] = -numpy.nansum((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon * k_aniso**2)
-    return deriv
+    ret = []
+    for sqder, der in tmp:
+        ret.append(-0.5 * sqder * k_aniso**2 / Sigma + tanh_x * Fo * der * k_aniso / Sigma)
+    ret.append((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon * k_aniso**2)
+    return -numpy.vstack(ret).T
 # deriv_mlf_wrt_D_S_centric()
 
 #import line_profiler
@@ -339,10 +339,27 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
         else:
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
-        ret.append((func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
-                            Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes])))
+        r = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
+                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes])
+        ret.append(numpy.nansum(r, axis=0))
     return sum(ret)
 # deriv_mlf_wrt_D_S()
+
+def mlf_shift_S(df, fc_labs, Ds, S, centric_sel, use):
+    func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
+    g, H = 0., 0.
+    for c, work, test in centric_sel:
+        if use == "all":
+            cidxes = numpy.concatenate([work, test])
+        else:
+            cidxes = work if use == "work" else test
+        Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
+        r = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
+                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes])
+        g += numpy.nansum(r[:,-1])
+        H += numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
+    return -g / H
+# mlf_shift_S()
 
 def mli(df, fc_labs, Ds, S, k_ani, idxes):
     DFc = (Ds * df.loc[idxes, fc_labs]).sum(axis=1)
@@ -460,74 +477,10 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     logger.writeln(hkldata.binned_df.to_string())
 # determine_mlf_params_from_cc()
 
-def determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, D_trans=None, S_trans=None, use="all"):
+def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_selections,
+                        D_trans=None, S_trans=None, use="all", n_cycle=1):
     assert use in ("all", "work", "test")
-    trans = VarTrans(D_trans, S_trans)
-    
-    # Initial values
-    for lab in D_labs: hkldata.binned_df[lab] = 1.
-    hkldata.binned_df["S"] = 10000.
-    for i_bin, _ in hkldata.binned():
-        if use == "all":
-            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
-        else:
-            i = 1 if use == "work" else 2
-            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
-        valid_sel = numpy.isfinite(hkldata.df.FP[idxes]) # as there is no nan-safe numpy.corrcoef
-        idxes = idxes[valid_sel]
-        FC = numpy.abs(hkldata.df.FC.to_numpy()[idxes]) * hkldata.df.k_aniso.to_numpy()[idxes]
-        FP = hkldata.df.FP.to_numpy()[idxes]
-        D = numpy.corrcoef(FP, FC)[1,0]
-        hkldata.binned_df.loc[i_bin, D_labs[0]] = D
-        hkldata.binned_df.loc[i_bin, "S"] = numpy.var(FP - D * FC)
-
-    for D_lab in D_labs:
-        if hkldata.binned_df[D_lab].min() <= 0:
-            min_D = hkldata.binned_df[D_lab][hkldata.binned_df[D_lab] > 0].min() * 0.1
-            logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
-            hkldata.binned_df[D_lab].where(hkldata.binned_df[D_lab] > 0, min_D, inplace=True) # arbitrary
-        
-    logger.writeln("Initial estimates:")
-    logger.writeln(hkldata.binned_df.to_string())
-
-    for i_bin, idxes in hkldata.binned():
-        x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
-        def target(x):
-            return mlf(hkldata.df, fc_labs, trans.D(x[:-1]), trans.S(x[-1]), centric_and_selections[i_bin], use)
-        def grad(x):
-            g = deriv_mlf_wrt_D_S(hkldata.df, fc_labs, trans.D(x[:-1]), trans.S(x[-1]), centric_and_selections[i_bin], use)
-            g[:-1] *= trans.D_deriv(x[:-1])
-            g[-1] *= trans.S_deriv(x[-1])
-            return g
-
-        # test derivative
-        if 0:
-            gana = grad(x0)
-            e = 1e-4
-            for i in range(len(x0)):
-                tmp = x0.copy()
-                f0 = target(tmp)
-                tmp[i] += e
-                fe = target(tmp)
-                gnum = (fe-f0)/e
-                print("DERIV:", i, gnum, gana[i], gana[i]/gnum)
-
-        #print("Bin", i_bin)
-        res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad)
-        #print(res)
-        
-        for i, lab in enumerate(D_labs):
-            hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
-        hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
-
-    logger.writeln("Refined estimates:")
-    logger.writeln(hkldata.binned_df.to_string())
-    return D_labs
-# determine_mlf_params()
-
-def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections,
-                         D_trans=None, S_trans=None, use="all", n_cycle=1):
-    assert use in ("all", "work", "test")
+    logger.writeln("Estimating sigma-A parameters using {}..".format("intensities" if use_int else "amplitudes"))
     trans = VarTrans(D_trans, S_trans)
     def get_idxes(i_bin):
         if use == "all":
@@ -542,10 +495,15 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     for i_bin, _ in hkldata.binned():
         idxes = get_idxes(i_bin)
-        valid_sel = numpy.isfinite(hkldata.df.I[idxes]) # as there is no nan-safe numpy.corrcoef
-        idxes = idxes[valid_sel]
+        if use_int:
+            valid_sel = numpy.isfinite(hkldata.df.I[idxes]) # as there is no nan-safe numpy.corrcoef
+            idxes = idxes[valid_sel]
+            Io = hkldata.df.I.to_numpy()[idxes]
+        else:
+            valid_sel = numpy.isfinite(hkldata.df.FP[idxes])
+            idxes = idxes[valid_sel]
+            Io = hkldata.df.FP.to_numpy()[idxes]**2
         Ic = k_ani[idxes]**2 * numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
-        Io = hkldata.df.I.to_numpy()[idxes]
         mean_Io = numpy.mean(Io)
         mean_Ic = numpy.mean(Ic)
         cc = numpy.corrcoef(Io, Ic)[1,0]
@@ -585,7 +543,10 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 else:
                     Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                     S = trans.S(x[-1])
-                return mli(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+                if use_int:
+                    return mli(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+                else:
+                    return mlf(hkldata.df, fc_labs, Ds, S, centric_and_selections[i_bin], use)
             def grad(x):
                 if refpar == "all":
                     Ds = trans.D(x[:len(fc_labs)])
@@ -599,7 +560,10 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                     Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                     S = trans.S(x[-1])
                     n_par = 1
-                r = deriv_mli_wrt_D_S(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+                if use_int:
+                    r = deriv_mli_wrt_D_S(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+                else:
+                    r = deriv_mlf_wrt_D_S(hkldata.df, fc_labs, Ds, S, centric_and_selections[i_bin], use)
                 g = numpy.zeros(n_par)
                 if refpar in ("all", "D"):
                     g[:len(fc_labs)] = r[:len(fc_labs)]
@@ -640,7 +604,11 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                             f0 = target([x0])
                             Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                             nfev_total += 1
-                            shift = mli_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
+                            if use_int:
+                                shift = mli_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
+                            else:
+                                shift = mlf_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0),
+                                                    centric_and_selections[i_bin], use)
                             shift /= trans.S_deriv(x0)
                             if abs(shift) < 1e-3: break
                             for itry in range(10):
@@ -691,6 +659,9 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
         logger.writeln(hkldata.binned_df.to_string())
         logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
 
+        if not use_int:
+            break # did not implement MLF B_aniso optimization
+        
         # Refine b_aniso
         adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
         SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
@@ -765,7 +736,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
         logger.writeln("Refined B_aniso = {}".format(b_aniso))
         logger.writeln("cycle {} f= {}".format(i_cyc, f1))
     return b_aniso
-# determine_mli_params()
+# determine_ml_params()
 
 def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
     nmodels = len(fc_labs)
@@ -1123,21 +1094,16 @@ def main(args):
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
+    if args.use_cc:
+        assert not is_int
+        logger.writeln("Estimating sigma-A parameters from CC..")
+        determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
+    else:
+        b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use)
     if is_int:
-        assert not args.use_cc
-        logger.writeln("Estimating sigma-A parameters using ML..")
-        b_aniso = determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use)
         calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections,
                            use={"all": "all", "work": "work", "test": "work"}[args.use])
     else:
-        if args.use_cc:
-            logger.writeln("Estimating sigma-A parameters from CC..")
-            determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
-        else:
-            logger.writeln("Estimating sigma-A parameters using ML..")
-            determine_mlf_params(hkldata, fc_labs, D_labs, centric_and_selections, args.D_trans, args.S_trans, args.use)
-
-        # Calculate maps
         log_out = "{}.log".format(args.output_prefix)
         calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, log_out,
                        use={"all": "all", "work": "work", "test": "work"}[args.use])
