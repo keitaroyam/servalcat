@@ -22,6 +22,9 @@ def calc_bin_stats(hkldata, centric_and_selections):
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df[["d_max", "d_min"]].copy()
     stats["1/resol^2"] = 1 / stats.d_min**2
+    stats["n_obs"] = 0
+    if has_free:
+        stats[["n_work", "n_free"]] = 0
     rlab = "R2" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
     Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
@@ -40,9 +43,11 @@ def calc_bin_stats(hkldata, centric_and_selections):
         stats[rlab] = numpy.nan
 
     for i_bin, idxes in hkldata.binned():
+        stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
         if has_free:
             for j, suf in ((1, "work"), (2, "free")):
                 idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
+                stats.loc[i_bin, "n_"+suf] = numpy.sum(numpy.isfinite(obs[idxes2]))
                 stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
                 stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs[idxes2], calc[idxes2])
         else:
@@ -50,6 +55,20 @@ def calc_bin_stats(hkldata, centric_and_selections):
             stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs[idxes], calc[idxes])
     return stats
 # calc_bin_stats()
+
+def calc_cc_avg(stats):
+    cc_labs = [x for x in stats if x.startswith("CC")]
+    ret = {x+"avg" : numpy.nan for x in cc_labs}
+    for lab in cc_labs:
+        if lab.endswith("work"):
+            weights = stats["n_work"]
+        elif lab.endswith("free"):
+            weights = stats["n_free"]
+        else:
+            weights = stats["n_obs"]
+        ret[lab+"avg"] = numpy.average(stats[lab], weights=stats["n_obs"])
+    return ret
+# calc_cc_avg()
 
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
@@ -174,11 +193,15 @@ class LL_Xtal:
             calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.I[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel])**2)
             rlab = "R2"
+            cclab = "CCI"
         else:
             calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP[sel],
                                                     numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel]))
             rlab = "R"
+            cclab = "CCF"
         ret = {"summary": {}}
+        stats = calc_bin_stats(self.hkldata, self.centric_and_selections)
+        ret["summary"].update(calc_cc_avg(stats))
         if "FREE" in self.hkldata.df:
             test_sel = (self.hkldata.df.FREE == self.free).fillna(False)
             r_free = calc_r(test_sel)
@@ -186,23 +209,18 @@ class LL_Xtal:
             logger.writeln("{}_work = {:.4f} {}_free = {:.4f}".format(rlab, r_work, rlab, r_free))
             ret["summary"]["{}work".format(rlab)] = r_work
             ret["summary"]["{}free".format(rlab)] = r_free
+            cc_free = ret["summary"]["{}freeavg".format(cclab)]
+            cc_work = ret["summary"]["{}workavg".format(cclab)]
+            logger.writeln("{}avg_work = {:.4f} {}avg_free = {:.4f}".format(cclab, cc_work, cclab, cc_free))
         else:
-            if self.is_int:
-                r = utils.hkl.r_factor(self.hkldata.df.I,
-                                       numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso)**2)
-            else:
-                r = utils.hkl.r_factor(self.hkldata.df.FP,
-                                       numpy.abs(self.hkldata.df.FC * self.hkldata.df.k_aniso))
+            r = calc_r(slice(None))
+            cc = ret["summary"]["{}avg".format(cclab)]
             logger.writeln("{} = {:.4f}".format(rlab, r))
+            logger.writeln("{}avg = {:.4f}".format(cclab, cc))
             ret["summary"][rlab] = r
-            if self.is_int:
-                cc = utils.hkl.correlation(self.hkldata.df.I,
-                                           (numpy.abs(self.hkldata.df.FC) * self.hkldata.df.k_aniso)**2)
-                logger.writeln("CC = {:.4f}".format(cc))
-                ret["summary"]["CC"] = cc
         ret["summary"]["-LL"] = self.calc_target()
         if bin_stats:
-            ret["bin_stats"] = calc_bin_stats(self.hkldata, self.centric_and_selections)
+            ret["bin_stats"] = stats
         return ret
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
