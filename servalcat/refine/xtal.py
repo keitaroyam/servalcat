@@ -151,23 +151,23 @@ class LL_Xtal:
         # in MLF, df.k_aniso is used
             
         for i_bin, _ in self.hkldata.binned():
+            Ds = [self.hkldata.binned_df.loc[i_bin, lab] for lab in self.D_labs]
             if self.is_int:
-                Ds = [self.hkldata.binned_df[lab][i_bin] for lab in self.D_labs]
-                for c, work, test in self.centric_and_selections[i_bin]:
-                    if self.use_in_target == "all":
-                        idxes = numpy.concatenate([work, test])
-                    else:
-                        idxes = work if self.use_in_target == "work" else test
-                    Fcs = [self.hkldata.df[lab].to_numpy()[idxes] for lab in self.fc_labs]
-                    DFc = sigmaa.calc_DFc(Ds, Fcs)
-                    ll = ext.ll_int(self.hkldata.df.I[idxes], self.hkldata.df.SIGI[idxes], k_aniso[idxes],
-                                    self.hkldata.binned_df.S[i_bin] * self.hkldata.df.epsilon[idxes],
-                                    numpy.abs(DFc), self.hkldata.df.centric[idxes]+1)
-                    ret += numpy.nansum(ll)
+                if self.use_in_target == "all":
+                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin] for i in (1,2)])
+                else:
+                    i = 1 if self.use_in_target == "work" else 2
+                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin]])
+                ret += sigmaa.mli(self.hkldata.df,
+                                  self.fc_labs,
+                                  Ds,
+                                  self.hkldata.binned_df.S[i_bin],
+                                  k_aniso,
+                                  idxes)
             else:
                 ret += sigmaa.mlf(self.hkldata.df,
                                   self.fc_labs,
-                                  [self.hkldata.binned_df.loc[i_bin, lab] for lab in self.D_labs],
+                                  Ds,
                                   self.hkldata.binned_df.S[i_bin],
                                   self.centric_and_selections[i_bin],
                                   use=self.use_in_target)

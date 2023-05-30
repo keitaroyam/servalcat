@@ -344,6 +344,40 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
+def mli(df, fc_labs, Ds, S, k_ani, idxes):
+    DFc = (Ds * df.loc[idxes, fc_labs]).sum(axis=1)
+    ll = ext.ll_int(df.I[idxes], df.SIGI[idxes], k_ani[idxes], S * df.epsilon[idxes],
+                    numpy.abs(DFc), df.centric[idxes]+1)
+    if numpy.nansum(ll) == -numpy.inf:
+        dbg = numpy.where(ll == -numpy.inf)[0]
+        logger.writeln("debug: -inf params= {}".format([df.I[idxes].to_numpy()[dbg],
+                                                        df.SIGI[idxes].to_numpy()[dbg],
+                                                        k_ani[idxes][dbg],
+                                                        S * df.epsilon[idxes].to_numpy()[dbg],
+                                                        numpy.abs(DFc.to_numpy())[dbg],
+                                                        df.centric[idxes].to_numpy()[dbg]+1]))
+    return numpy.nansum(ll)
+# mli()
+
+def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
+    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                           df[fc_labs].to_numpy()[idxes], Ds,
+                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+    g = numpy.zeros(len(fc_labs)+1)
+    g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
+    g[-1] = numpy.nansum(r[:,-1]) # S
+    return g
+# deriv_mli_wrt_D_S()
+
+def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
+    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                           df[fc_labs].to_numpy()[idxes], Ds,
+                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+    g = numpy.nansum(r[:,-1])
+    H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
+    return -g / H
+# mli_shift_S()
+
 def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, use="all"):
     # theorhetical values
     cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
@@ -551,21 +585,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 else:
                     Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                     S = trans.S(x[-1])
-                #print("Ds=", Ds, x[:len(fc_labs)])
-                #print("S=", S, x[-1])
-                DFc = (Ds * hkldata.df.loc[idxes, fc_labs]).sum(axis=1)
-                ll = ext.ll_int(hkldata.df.I[idxes], hkldata.df.SIGI[idxes], k_ani[idxes], S * hkldata.df.epsilon[idxes],
-                                numpy.abs(DFc), hkldata.df.centric[idxes]+1)
-                if numpy.nansum(ll) == -numpy.inf:
-                    dbg = numpy.where(ll == -numpy.inf)[0]
-                    logger.writeln("debug: -inf params= {}".format([hkldata.df.I[idxes].to_numpy()[dbg],
-                                                                    hkldata.df.SIGI[idxes].to_numpy()[dbg],
-                                                                    k_ani[idxes][dbg],
-                                                                    S * hkldata.df.epsilon[idxes].to_numpy()[dbg],
-                                                                    numpy.abs(DFc.to_numpy())[dbg],
-                                                                    hkldata.df.centric[idxes].to_numpy()[dbg]+1]))
-
-                return numpy.nansum(ll)
+                return mli(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
             def grad(x):
                 if refpar == "all":
                     Ds = trans.D(x[:len(fc_labs)])
@@ -579,41 +599,15 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                     Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                     S = trans.S(x[-1])
                     n_par = 1
-                r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                                       hkldata.df[fc_labs].to_numpy()[idxes], Ds,
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                r = deriv_mli_wrt_D_S(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
                 g = numpy.zeros(n_par)
                 if refpar in ("all", "D"):
-                    g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
+                    g[:len(fc_labs)] = r[:len(fc_labs)]
                     g[:len(fc_labs)] *= trans.D_deriv(x[:len(fc_labs)])
                 if refpar in ("all", "S"):
-                    g[-1] = numpy.nansum(r[:,-1]) # S
+                    g[-1] = r[-1]
                     g[-1] *= trans.S_deriv(x[-1])
-                #print("grad=", g)
                 return g
-
-            def shift_DS(x):
-                r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], trans.S(x[-1]),
-                                       hkldata.df[fc_labs].to_numpy()[idxes], trans.D(x[:len(fc_labs)]),
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
-                g = numpy.zeros(len(fc_labs)+1)
-                g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) * trans.D_deriv(x[:len(fc_labs)]) # D
-                g[-1] = numpy.nansum(r[:,-1]) * trans.S_deriv(x[-1]) # S
-                tmp = numpy.hstack([r[:,:len(fc_labs)] * trans.D_deriv(x[:len(fc_labs)]),
-                                    r[:,-1,None] * trans.S_deriv(x[-1])])
-                H = numpy.nansum(numpy.matmul(tmp[:,:,None], tmp[:,None]), axis=0)
-                return -numpy.dot(g, numpy.linalg.pinv(H))
-
-            def shift_S(x):
-                Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
-                S = trans.S(x)
-                r = ext.ll_int_der1_DS(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                                       hkldata.df[fc_labs].to_numpy()[idxes], Ds,
-                                       hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
-                g = numpy.nansum(r[:,-1])
-                g *= trans.S_deriv(x)
-                H = numpy.nansum(r[:,-1]**2) * trans.S_deriv(x)**2
-                return -g / H
 
             if 0:
                 refpar = "S"
@@ -640,13 +634,14 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                         hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
                         vals_now.append(hkldata.binned_df.loc[i_bin, lab])
                     refpar = "S"
-                    x0 = [trans.S_inv(hkldata.binned_df.S[i_bin])]
                     if 1:
                         for cyc_s in range(1):
                             x0 = trans.S_inv(hkldata.binned_df.S[i_bin])
                             f0 = target([x0])
+                            Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                             nfev_total += 1
-                            shift = shift_S(x0)
+                            shift = mli_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
+                            shift /= trans.S_deriv(x0)
                             if abs(shift) < 1e-3: break
                             for itry in range(10):
                                 x1 = x0 + shift
@@ -667,6 +662,8 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                                 #print("all bad")
                                 break
                     else:
+                        # somehow this does not work well.
+                        x0 = [trans.S_inv(hkldata.binned_df.S[i_bin])]
                         res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                                       bounds=((-3 if S_trans else 5e-2, None),))
                         nfev_total += res.nfev
@@ -679,8 +676,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                         #logger.writeln("converged in mini cycle {}".format(ids+1))
                         break
                     vals_last = vals_now
-                    
-            elif 1:
+            else:
                 x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
                 res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                               bounds=((-5 if D_trans else 1e-5, None), )*len(D_labs) + ((-3 if S_trans else 5e-2, None),))
@@ -690,25 +686,6 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
                 for i, lab in enumerate(D_labs):
                     hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
                 hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
-            else:
-                DS_converged = False
-                for j in range(10):
-                    x = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
-                    f0 = target(x)
-                    shift = shift_DS(x)
-                    for i in range(3):
-                        ss = shift / 2**i
-                        f1 = target(x + ss)
-                        #logger.writeln("{:2d} f0 = {:.3e} shift = {} df = {:.3e}".format(j, f0, ss, f1 - f0))
-                        if f1 < f0:
-                            for i, lab in enumerate(D_labs):
-                                hkldata.binned_df.loc[i_bin, lab] = trans.D((x+ss)[i])
-                            hkldata.binned_df.loc[i_bin, "S"] = trans.S((x+ss)[-1])
-                            if numpy.max(numpy.abs(ss)) < 1e-4: DS_converged = True
-                            break
-                    else:
-                        DS_converged = True
-                    if DS_converged: break
 
         logger.writeln("Refined estimates:")
         logger.writeln(hkldata.binned_df.to_string())
@@ -725,12 +702,7 @@ def determine_mli_params(hkldata, fc_labs, D_labs, b_aniso, centric_and_selectio
             for i_bin, _ in hkldata.binned():
                 idxes = get_idxes(i_bin)
                 Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
-                Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
-                DFc = calc_DFc(Ds, Fcs)
-                ll = ext.ll_int(hkldata.df.I[idxes], hkldata.df.SIGI[idxes], k_ani[idxes],
-                                hkldata.binned_df.S[i_bin] * hkldata.df.epsilon[idxes],
-                                numpy.abs(DFc), hkldata.df.centric[idxes]+1)
-                ret += numpy.nansum(ll)
+                ret += mli(hkldata.df, fc_labs, Ds, hkldata.binned_df.S[i_bin], k_ani, idxes)
             return ret
         def grad_ani(x):
             b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
