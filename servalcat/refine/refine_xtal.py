@@ -123,6 +123,8 @@ def main(args):
             logger.writeln("WARNING: in unrestrained refinement hydrogen atoms are not generated.")
         elif args.hydrogen == "no":
             st.remove_hydrogens()
+        for i, cra in enumerate(st[0].all()):
+            cra.atom.serial = i + 1
     else:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                        stop_for_unknowns=False)
