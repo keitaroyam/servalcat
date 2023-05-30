@@ -482,6 +482,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
     assert use in ("all", "work", "test")
     logger.writeln("Estimating sigma-A parameters using {}..".format("intensities" if use_int else "amplitudes"))
     trans = VarTrans(D_trans, S_trans)
+    lab_obs = "I" if use_int else "FP"
     def get_idxes(i_bin):
         if use == "all":
             return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
@@ -495,13 +496,13 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     for i_bin, _ in hkldata.binned():
         idxes = get_idxes(i_bin)
+        valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
+        if numpy.sum(valid_sel) < 2:
+            continue
+        idxes = idxes[valid_sel]
         if use_int:
-            valid_sel = numpy.isfinite(hkldata.df.I[idxes]) # as there is no nan-safe numpy.corrcoef
-            idxes = idxes[valid_sel]
             Io = hkldata.df.I.to_numpy()[idxes]
         else:
-            valid_sel = numpy.isfinite(hkldata.df.FP[idxes])
-            idxes = idxes[valid_sel]
             Io = hkldata.df.FP.to_numpy()[idxes]**2
         Ic = k_ani[idxes]**2 * numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
         mean_Io = numpy.mean(Io)
@@ -533,6 +534,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
         for i_bin, _ in hkldata.binned():
             idxes = get_idxes(i_bin)
+            valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
+            if numpy.sum(valid_sel) < 5:
+                logger.writeln("WARNING: bin {} has no sufficient reflections".format(i_bin))
+                continue
+
             def target(x):
                 if refpar == "all":
                     Ds = trans.D(x[:len(fc_labs)])
@@ -876,7 +882,10 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             sel &= hkldata.df.FREE != free
         elif use == "test":
             sel &= hkldata.df.FREE == free
-        n_bins = utils.hkl.decide_n_bins(n_per_bin, 1/hkldata.d_spacings()[sel], max_bins=max_bins)
+        s_array = 1/hkldata.d_spacings()[sel]
+        if len(s_array) == 0:
+            raise RuntimeError("no reflections in {} set".format(use))
+        n_bins = utils.hkl.decide_n_bins(n_per_bin, s_array, max_bins=max_bins)
         logger.writeln("n_per_bin={} requested for {}. n_bins set to {}".format(n_per_bin, use, n_bins))
 
     hkldata.setup_binning(n_bins=n_bins)
@@ -1042,10 +1051,14 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
         Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         DFc = calc_abs_DFc(Ds, Fcs)
-        r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
-        cc = utils.hkl.correlation(Fo, numpy.abs(Fc))
+        if sum(nrefs) > 0:
+            r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
+            cc = utils.hkl.correlation(Fo, numpy.abs(Fc))
+            mean_Fo2 = numpy.nanmean(numpy.abs(Fo)**2)
+        else:
+            r, cc, mean_Fo2 = numpy.nan, numpy.nan, numpy.nan
         stats_data.append([1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
-                           numpy.log(numpy.nanmean(numpy.abs(Fo)**2)),
+                           numpy.log(mean_Fo2),
                            numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
                            numpy.log(numpy.nanmean(DFc**2)),
                            numpy.log(S), mean_fom[0], mean_fom[1], r, cc] + Ds + DFcs)
