@@ -66,7 +66,7 @@ def calc_cc_avg(stats):
             weights = stats["n_free"]
         else:
             weights = stats["n_obs"]
-        ret[lab+"avg"] = numpy.average(stats[lab], weights=stats["n_obs"])
+        ret[lab+"avg"] = numpy.average(stats[lab], weights=weights)
     return ret
 # calc_cc_avg()
 
