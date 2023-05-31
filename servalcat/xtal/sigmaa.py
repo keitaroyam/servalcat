@@ -839,6 +839,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     
     if sts:
         assert source in ["electron", "xray", "neutron"]
+        for st in sts:
+            if st[0].count_atom_sites() == 0:
+                raise RuntimeError("No atom in the model")
         if not hkldata.cell.approx(sts[0].cell, 1e-3):
             logger.writeln("Warning: unit cell mismatch between model and reflection data")
             logger.writeln("         using unit cell from mtz")

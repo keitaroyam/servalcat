@@ -446,7 +446,7 @@ def merge_ligand_cif(cifs_in, cif_out):
     doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
 # merge_ligand_cif()
 
-def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
+def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO support gz?
     assert (ins_in, lines_in).count(None) == 1
     ss = gemmi.SmallStructure()
 
@@ -526,7 +526,7 @@ def read_shelx_ins(ins_in=None, lines_in=None): # TODO support gz?
                 logger.error("failed to parse: {}".format(l))
                 continue
 
-            if site.label.startswith("Q"):
+            if site.label.startswith("Q") and ignore_q_peaks:
                 logger.writeln("skip Q peak: {}".format(l))
                 continue
             
