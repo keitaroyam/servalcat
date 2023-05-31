@@ -90,7 +90,7 @@ class LL_SPA:
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         # XXX in fsc object, _full is misleading - it's not full in cross validation mode
-        return {"fsc": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
+        return {"bin_stats": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
         dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])

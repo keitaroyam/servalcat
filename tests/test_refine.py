@@ -49,7 +49,7 @@ class TestRefine(unittest.TestCase):
         self.assertTrue(os.path.isfile("refined_expanded.pdb"))
         
         stats = json.load(open("refined_stats.json"))
-        self.assertGreater(stats[-1]["data"]["FSCaverage"], 0.66)
+        self.assertGreater(stats[-1]["data"]["summary"]["FSCaverage"], 0.66)
         
 if __name__ == '__main__':
     unittest.main()

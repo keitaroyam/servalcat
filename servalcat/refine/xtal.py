@@ -20,7 +20,7 @@ u_to_b = utils.model.u_to_b
 def calc_bin_stats(hkldata, centric_and_selections):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
-    stats = hkldata.binned_df[["d_max", "d_min"]].copy()
+    stats = hkldata.binned_df.copy()
     stats["n_obs"] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
@@ -101,7 +101,7 @@ class LL_Xtal:
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
                                                    self.centric_and_selections, use=self.use_in_est,
-                                                   D_trans="splus", S_trans="splus")
+                                                  )#D_trans="splus", S_trans="splus")
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         for lab in self.D_labs + ["S"]:
             self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] > 0, 0.01, inplace=True)

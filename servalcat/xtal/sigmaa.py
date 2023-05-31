@@ -404,6 +404,17 @@ def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
     return g
 # deriv_mli_wrt_D_S()
 
+def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
+    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                           df[fc_labs].to_numpy()[idxes], Ds,
+                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])[:,:len(fc_labs)]
+    g = numpy.nansum(r, axis=0)# * trans.D_deriv(x[:len(fc_labs)]) # D
+    #tmp = numpy.hstack([r[:,:len(fc_labs)] #* trans.D_deriv(x[:len(fc_labs)]),
+    #                    r[:,-1,None] * trans.S_deriv(x[-1])])
+    H = numpy.nansum(numpy.matmul(r[:,:,None], r[:,None]), axis=0)
+    return -numpy.dot(g, numpy.linalg.pinv(H))
+# mli_shift_D()
+
 def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
                            df[fc_labs].to_numpy()[idxes], Ds,
@@ -496,25 +507,18 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     logger.writeln(hkldata.binned_df.to_string())
 # determine_mlf_params_from_cc()
 
-def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_selections,
-                        D_trans=None, S_trans=None, use="all", n_cycle=1):
-    assert use in ("all", "work", "test")
-    logger.writeln("Estimating sigma-A parameters using {}..".format("intensities" if use_int else "amplitudes"))
-    trans = VarTrans(D_trans, S_trans)
-    lab_obs = "I" if use_int else "FP"
-    def get_idxes(i_bin):
-        if use == "all":
-            return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
-        else:
-            i = 1 if use == "work" else 2
-            return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
-    
+def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use):
     # Initial values
     for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+    lab_obs = "I" if use_int else "FP"
     for i_bin, _ in hkldata.binned():
-        idxes = get_idxes(i_bin)
+        if use == "all":
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
         valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
         if numpy.sum(valid_sel) < 2:
             continue
@@ -547,6 +551,24 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
         
     logger.writeln("Initial estimates:")
     logger.writeln(hkldata.binned_df.to_string())
+# initialize_ml_params()
+
+def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_selections,
+                        D_trans=None, S_trans=None, use="all", n_cycle=1):
+    assert use in ("all", "work", "test")
+    logger.writeln("Estimating sigma-A parameters using {}..".format("intensities" if use_int else "amplitudes"))
+    trans = VarTrans(D_trans, S_trans)
+    lab_obs = "I" if use_int else "FP"
+    def get_idxes(i_bin):
+        if use == "all":
+            return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
+
+    if not set(D_labs + ["S"]).issubset(hkldata.binned_df):
+        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use)
+
     refpar = "all"
     for i_cyc in range(n_cycle):
         t0 = time.time()
@@ -613,16 +635,42 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 vals_last = None
                 for ids in range(10):
                     refpar = "D"
-                    x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs]
-                    res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
-                                                  bounds=((-5 if D_trans else 1e-5, None),)*len(x0))
-                    nfev_total += res.nfev
-                    #print(i_bin, "mini cycle", ids, refpar)
-                    #print(res)
+                    x0 = numpy.array([trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs])
                     vals_now = []
-                    for i, lab in enumerate(D_labs):
-                        hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
-                        vals_now.append(hkldata.binned_df.loc[i_bin, lab])
+                    if 0:
+                        f0 = target(x0)
+                        nfev_total += 1
+                        shift = mli_shift_D(hkldata.df, fc_labs, trans.D(x0), hkldata.binned_df.S[i_bin], k_ani, idxes)
+                        shift /= trans.D_deriv(x0)
+                        #if abs(shift) < 1e-3: break
+                        for itry in range(10):
+                            x1 = x0 + shift
+                            if (D_trans and any(x1 < -3)) or (not D_trans and any(x1 < 5e-2)):
+                                #print(i_bin, cyc_s, trans.S(x0), trans.S(x1), shift, "BAD")
+                                shift /= 2
+                                continue
+                            f1 = target(x1)
+                            nfev_total += 1
+                            if f1 > f0:
+                                shift /= 2
+                                continue
+                            else: # good
+                                for i, lab in enumerate(D_labs):
+                                    hkldata.binned_df.loc[i_bin, lab] = trans.D(x1[i])
+                                    vals_now.append(hkldata.binned_df.loc[i_bin, lab])
+                                break
+                        else:
+                            break
+                    else:
+                        #print(mli_shift_D(hkldata.df, fc_labs, trans.D(x0), hkldata.binned_df.S[i_bin], k_ani, idxes))
+                        res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
+                                                      bounds=((-5 if D_trans else 1e-5, None),)*len(x0))
+                        nfev_total += res.nfev
+                        #print(i_bin, "mini cycle", ids, refpar)
+                        #print(res)
+                        for i, lab in enumerate(D_labs):
+                            hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
+                            vals_now.append(hkldata.binned_df.loc[i_bin, lab])
                     refpar = "S"
                     if 1:
                         for cyc_s in range(1):

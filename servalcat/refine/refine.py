@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import os
+import re
 import gemmi
 import numpy
 import pandas
@@ -391,7 +392,9 @@ class Refine:
             self.ll.update_fc()
             self.ll.overall_scale()
             self.ll.update_ml_params()
-            stats[-1]["data"] = self.ll.calc_stats()["summary"]
+            llstats = self.ll.calc_stats(bin_stats=True)
+            stats[-1]["data"] = {"summary": llstats["summary"],
+                                 "binned": llstats["bin_stats"].to_dict(orient="records")}
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
 
@@ -410,15 +413,19 @@ class Refine:
                 if llstats["summary"]["-LL"] > f0:
                     logger.writeln("WARNING: -LL has increased after ML parameter optimization:"
                                    "{} to {}".format(f0, llstats["summary"]["-LL"]))
-                stats[-1]["data"] = llstats["summary"]
+                stats[-1]["data"] = {"summary": llstats["summary"],
+                                     "binned": llstats["bin_stats"].to_dict(orient="records")}
                 if "bin_stats" in llstats:
                     df = llstats["bin_stats"]
                     forplot = []
                     rlabs = [x for x in df if x.startswith("R")]
                     cclabs = [x for x in df if x.startswith("CC")]
+                    dlabs = [x for x in df if re.search("D[0-9]*", x)]
                     if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
                     if rlabs: forplot.append(["R", rlabs])
                     if cclabs: forplot.append(["CC", cclabs])
+                    if dlabs: forplot.append(["ML parameters - D", dlabs])
+                    if "S" in df: forplot.append(["ML parameters - Sigma", ["S"]])
                     lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(i+1), forplot,
                                                    s2=1/df["d_min"]**2,
                                                    float_format="{:.4f}".format)
@@ -432,9 +439,9 @@ class Refine:
         tmp = []
         for d in stats:
             x = {"Ncyc": d["Ncyc"]}
-            if "data" in d:
-                x.update(d["data"])
-                data_keys.update(d["data"])
+            if "data" in d and "summary" in d["data"]:
+                x.update(d["data"]["summary"])
+                data_keys.update(d["data"]["summary"])
             if "geom" in d:
                 for k, n, l in (("r.m.s.d.", "Bond distances, non H", "rmsBOND"),
                                 ("r.m.s.Z", "Bond distances, non H", "zBOND"),
