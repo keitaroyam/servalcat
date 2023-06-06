@@ -620,6 +620,7 @@ void add_refine(py::module& m) {
     .def_readonly("y_values", &TableS3::y_values)
     .def("make_table",&TableS3::make_table)
     .def("get_value", &TableS3::get_value)
+    .def_readwrite("maxbin", &TableS3::maxbin)
     ;
   py::class_<LL>(m, "LL")
     .def(py::init<const gemmi::Structure &, bool, bool, int, bool>(),

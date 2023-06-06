@@ -34,11 +34,11 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
     double fn = 0.0;
     double dx = 0, dx0 = 1.0, dx1 = 0;
     for (int i = 0; i < n_points; ++i) {
-      dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2;
+      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
       dx0 = std::min(std::abs(dx), dx0);
     }
     for (int i = 0; i < n_points; ++i) {
-      dx = (x_current - x_points[i]) * (x_current - x_points[i]) / kernel_width2;
+      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
       dx1 = dx - dx0;
       if (dx1 <= 120.0) {
         const double expdx = std::exp(-dx1);
@@ -56,7 +56,7 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2;
+      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
       const double dx1 = dx - dx0;
       if (dx1 <= 120.0)
         y_derivs[i] /= an;
@@ -64,13 +64,13 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
         y_derivs[i] = 0.0;
     }
   } else if (x_current > x_points.back()) {
-    const double dx1 = (x_current - x_points.back())*(x_current - x_points.back()) / kernel_width2;
+    const double dx1 = gemmi::sq(x_current - x_points.back()) / kernel_width2;
     double an = 1.0;
     double fn = y_points.back();
     double dx;
     y_derivs.back() = 1.0;
     for (int i = 0; i < n_points-1; ++i) {
-      dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2 - dx1;
+      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0) {
         const double expdx = std::exp(-dx);
         an += expdx;
@@ -87,24 +87,24 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2 - dx1;
+      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0)
         y_derivs[i] /= an;
       else
         y_derivs[i] = 0.0;
     }
   } else if (x_current < x_points.front()) {
-    const double dx1 = (x_current-x_points.front())*(x_current-x_points.front()) / kernel_width2;
+    const double dx1 = gemmi::sq(x_current-x_points.front()) / kernel_width2;
     double an = 1.0;
     double fn = y_points.front();
     double dx = 0;
     y_derivs[0] = 1.0;
     for (int i = 1; i < n_points; ++i) {
-      dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2 - dx1;
+      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0) {
         const double expdx = std::exp(-dx);
         an += expdx;
-        fn = y_points[i]*expdx;
+        fn += y_points[i]*expdx;
         y_derivs[i] = expdx;
       }
     }
@@ -117,7 +117,7 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = (x_current - x_points[i])*(x_current - x_points[i]) / kernel_width2 - dx1;
+      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0)
         y_derivs[i] /= an;
       else
@@ -133,7 +133,7 @@ struct TableS3 {
   int n_points;
   std::vector<double> s3_values;
   std::vector<double> y_values;
-
+  int maxbin = 500;
   TableS3(double d_min, double d_max) {
     s_min = 1. / d_max;
     s_max = 1. / d_min;
@@ -160,7 +160,7 @@ struct TableS3 {
 
     // from Refmac SUBROUTINE DEFINE_BINS_FOR_ML in oppro_allocate.f
     const double binsize_ml = 0.0005;
-    int nbin_ml =  std::max(1, std::min(500,
+    int nbin_ml =  std::max(1, std::min(maxbin,
                                         (int)((smax_ml*smax_ml - smin_ml*smin_ml)/binsize_ml)+1
                                         ));
     int nbin_rad = nbin_ml;
@@ -191,6 +191,8 @@ struct TableS3 {
     for (int i = 0; i < nbin_rad; ++i)
       if (sec_der_bin[i] > 0 && nref_sec_bin[i] > 0)
         sec_der_bin[i] = std::log(sec_der_bin[i] / nref_sec_bin[i]);
+      else
+        nref_sec_bin[i] = 0;
 
     // sort out bins with no (usable) reflections
     for (int i = 1; i < nbin_rad; ++i)
