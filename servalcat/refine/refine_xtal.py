@@ -159,9 +159,14 @@ def main(args):
                      refine_h=args.refine_h,
                      unrestrained=args.unrestrained)
 
-    refiner.run_cycles(args.ncycle, weight=args.weight)
+    stats = refiner.run_cycles(args.ncycle, weight=args.weight)
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
+    with open(args.output_prefix + "_stats.json", "w") as ofs:
+        for s in stats:
+            if "geom" in s: s["geom"] = s["geom"].to_dict()
+        json.dump(stats, ofs, indent=2)
+        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 
     if is_int:
         calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
