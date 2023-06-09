@@ -124,7 +124,7 @@ void add_refine(py::module& m) {
         const auto& restr = std::get<0>(a);
         const auto& val = std::get<1>(a);
         const double d2 = gemmi::sq(std::get<2>(a)), z2 = gemmi::sq(std::get<2>(a) / val->sigma);
-        const int k = (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen()) ? 1 : 0;
+        const int k = (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen() || restr->atoms[2]->is_hydrogen()) ? 1 : 0;
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
       }
