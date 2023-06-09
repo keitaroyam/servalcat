@@ -68,8 +68,8 @@ def add_arguments(parser):
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
-    parser.add_argument('--use_all_in_est',  action='store_true',
-                        help="Use all reflections in ML parameter estimates")
+    parser.add_argument('--use_work_in_est',  action='store_true',
+                        help="Use work reflections in ML parameter estimates")
     parser.add_argument('-o','--output_prefix')
 # add_arguments()
 
@@ -91,8 +91,8 @@ def main(args):
 
     if len(args.labin.split(",")) == 3: # with test flags
         use_in_target = "work"
-        if args.use_all_in_est:
-            use_in_est = "all"
+        if args.use_work_in_est:
+            use_in_est = "work"
             n_per_bin = 100
         else:
             use_in_est = "test"
