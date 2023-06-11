@@ -102,7 +102,7 @@ class XtalTests(unittest.TestCase):
         B_aniso, hkldata = french_wilson.main(args)
         os.remove("5e5z_fw.mtz")
         numpy.testing.assert_allclose(B_aniso.elements_pdb(),
-                                      [2.62404, 1.71037, -4.33441, 0, -1.08405, 0],
+                                      [2.640011, 1.679485, -4.319497, 0. ,-1.072883, 0.],
                                       rtol=1e-3)                                       
 
     @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")

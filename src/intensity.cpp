@@ -128,6 +128,7 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   return root;
 }
 
+// factor of (sig/k_ani^2)^(k+1) is needed, which should be done outside.
 double integ_j(double k, double to, double tf, double sig1, int c, bool return_log,
                double exp2_threshold=3., double h=0.5, int N=200, double ewmax=20.) {
   if (std::isnan(to) || sig1 <= 0) return NAN; // perhaps sig1<0 should not return nan.. they considered 0 in sum
@@ -214,29 +215,20 @@ double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c)
 
 // d/dDj -log(Io; Fc)
 // note Re(Fcj Fc*) needs to be multiplied
-double ll_int_der1_D(double k_ani, double S, double Fc, int c, double eps, double j_ratio_2) {
+double ll_int_der1_D(double S, double Fc, int c, double eps, double j_ratio_2) {
   const double invepsS = 1. / (S * eps);
   if (c == 1) // acentrics
-    return (2 - (3-c) / k_ani / Fc * j_ratio_2) * invepsS;
+    return (2 - (3-c) / Fc * j_ratio_2) * invepsS;
   else
-    return (1. - (3-c) * j_ratio_2 / k_ani / Fc) * invepsS;
+    return (1. - (3-c) * j_ratio_2 / Fc) * invepsS;
 }
 // d/dS -log(Io; Fc)
-double ll_int_der1_S(double k_ani, double S, double Fc, int c, double eps, double j_ratio_1, double j_ratio_2) {
+double ll_int_der1_S(double S, double Fc, int c, double eps, double j_ratio_1, double j_ratio_2) {
   const double invepsS2 = 1. / (S * S * eps);
   if (c == 1) // acentrics
-    return 1. / S - (sq(Fc) + j_ratio_1 / sq(k_ani) / c - (3-c) * Fc * j_ratio_2 / k_ani) * invepsS2;
+    return 1. / S - (sq(Fc) + j_ratio_1 / c - (3-c) * Fc * j_ratio_2) * invepsS2;
   else
-    return 0.5 / S - 0.5 * sq(Fc) * invepsS2 - (j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) / k_ani * invepsS2;
-}
-// k_aniso * d/dk_aniso -log(Io; Fc)
-// note k_aniso is multiplied to the derivative
-double ll_int_der1_ani(double k_ani, double S, double Fc, int c, double eps, double j_ratio_1, double j_ratio_2) {
-  const double invepsS = 1. / (S * eps);
-  if (c == 1) // acentrics
-    return 2.  - (2 / c / k_ani * j_ratio_1 - (3-c) * Fc * j_ratio_2) / k_ani * invepsS;
-  else
-    return 1.  - (2 * j_ratio_1 / c / k_ani - (3-c) * Fc * j_ratio_2) * invepsS / k_ani;
+    return 0.5 / S - 0.5 * sq(Fc) * invepsS2 - (j_ratio_1 / c - (3-c) * Fc * j_ratio_2) * invepsS2;
 }
 template<bool for_DS>
 py::array_t<double>
@@ -279,26 +271,32 @@ ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::arr
       printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
     const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
     const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i);
-    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo;
+    double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i));
+    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo / k_ani_(i);
     if (for_DS) {
-      const double tmp = ll_int_der1_D(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+      j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
+      const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
       for (size_t j = 0; j < n_models; ++j) {
         const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
         ptr[i*n_cols + j] = tmp * r_fcj_fc;
       }
-      ptr[i*n_cols + n_models] = ll_int_der1_S(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+      ptr[i*n_cols + n_models] = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
     }
-    else
-      ptr[i] = ll_int_der1_ani(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+    else {
+      // k_aniso * d/dk_aniso -log p(Io; Fc)
+      // note k_aniso is multiplied to the derivative
+      const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
+      const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, tf, sig1, c_(i));// * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
+      ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+    }
   }
   return ret;
 }
 
 // an attemp to fast update of Sigma, but it does look good.
 double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-					       double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
-					       py::array_t<int> c, py::array_t<int> eps) {
+                                               double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
+                                               py::array_t<int> c, py::array_t<int> eps) {
   if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
   const size_t n_models = Fcs.shape(1);
   const size_t n_ref = Fcs.shape(0);
@@ -330,13 +328,13 @@ double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array
       printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
     const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
     const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i);
-    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo;
-    const double tmp = ll_int_der1_D(k_ani_(i), S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i) / sq(k_ani_(i));
+    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo / k_ani_(i);
+    const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
     if (c_(i) == 1) // acentrics
-      ret += (sq(Fc_abs) + j_ratio_1 / sq(k_ani_(i)) / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2 / k_ani_(i)) / eps_(i);
+      ret += (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
     else
-      ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) / k_ani_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / k_ani_(i)) / eps_(i);
+      ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2)) / eps_(i);
     ++count;
   }
   if (count == 0) return NAN;
@@ -365,11 +363,17 @@ ll_int_fw_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::
     }
     const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
     const double k_num = c_(i) == 1 ? 1. : 0.5;
-    const double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i)) * sigIo_(i);
-    if (for_S)
-      ptr[i] = ll_int_der1_S(k_ani_(i), S, 0., c_(i), eps_(i), j_ratio_1, 0.);
-    else
-      ptr[i] = ll_int_der1_ani(k_ani_(i), S, 0., c_(i), eps_(i), j_ratio_1, 0.);
+    double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i));
+    if (for_S) {
+      j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
+      ptr[i] = ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
+    }
+    else {
+      // note k_aniso is multiplied to the derivative
+      const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
+      const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, 0., 1., c_(i));
+      ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+    }
   }
   return ret;
 }

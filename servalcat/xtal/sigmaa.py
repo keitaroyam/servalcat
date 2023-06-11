@@ -504,7 +504,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             Io = hkldata.df.I.to_numpy()[idxes]
         else:
             Io = hkldata.df.FP.to_numpy()[idxes]**2
-        Ic = k_ani[idxes]**2 * numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
+        Io /= k_ani[idxes]**2 
+        Ic = numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
         mean_Io = numpy.mean(Io)
         mean_Ic = numpy.mean(Ic)
         cc = numpy.corrcoef(Io, Ic)[1,0]

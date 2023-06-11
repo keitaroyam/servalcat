@@ -252,15 +252,13 @@ class LL_Xtal:
                     to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / epsilon
                     tf = k_ani[cidxes] * Fc_abs / numpy.sqrt(sigIo[cidxes])
                     sig1 = numpy.sqrt(k_ani[cidxes]) * S / sigIo[cidxes]
-                    if c == 0: # acentric
-                        k_num, k_den = 0.5, 0.
-                    else:
-                        k_num, k_den = 0., -0.5
-                    r = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes])
-                    dll_dab[cidxes] =  (2-c) * (Fc_abs - r / k_ani[cidxes]) / epsilon / S  * Ds[0] * expip
+                    k_num = 0.5 if c == 0 else 0. # acentric:0.5, centric: 0.
+                    r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
+                    g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[0] 
+                    dll_dab[cidxes] = g * expip
                     #d2ll_dab2[cidxes] = (2-c)**2 / S / epsilon * Ds[0]**2 # approximation
                     #d2ll_dab2[cidxes] = ((2-c) / S / epsilon + ((2-c) * r / k_ani[cidxes] / epsilon / S)**2) * Ds[0]**2
-                    d2ll_dab2[cidxes] =  ((2-c) * (Fc_abs - r / k_ani[cidxes]) / epsilon / S  * Ds[0])**2
+                    d2ll_dab2[cidxes] =  g**2
                 else:
                     Fo = self.hkldata.df.FP.to_numpy()[cidxes]
                     SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes]
