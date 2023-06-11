@@ -260,23 +260,23 @@ class LL_Xtal:
                     #d2ll_dab2[cidxes] = ((2-c) / S / epsilon + ((2-c) * r / k_ani[cidxes] / epsilon / S)**2) * Ds[0]**2
                     d2ll_dab2[cidxes] =  g**2
                 else:
-                    Fo = self.hkldata.df.FP.to_numpy()[cidxes]
-                    SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes]
+                    Fo = self.hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
+                    SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
                     if c == 0: # acentric
-                        Sigma = 2 * SigFo**2 + epsilon * S * k_ani[cidxes]**2
-                        X = 2 * Fo * Fc_abs * k_ani[cidxes] / Sigma
+                        Sigma = 2 * SigFo**2 + epsilon * S
+                        X = 2 * Fo * Fc_abs / Sigma
                         m = gemmi.bessel_i1_over_i0(X)
-                        g = (2 * k_ani[cidxes]**2 * Fc_abs / Sigma - m * 2 * Fo * k_ani[cidxes] / Sigma) * Ds[0]  # XXX assuming 0 is atomic structure
+                        g = 2 * (Fc_abs - m * Fo) / Sigma * Ds[0]  # XXX assuming 0 is atomic structure
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (2 * k_ani[cidxes]**2 / Sigma - (1 - m / X - m**2) * (2 * Fo * k_ani[cidxes] / Sigma)**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (2 / Sigma - (1 - m / X - m**2) * (2 * Fo / Sigma)**2) * Ds[0]**2
                     else:
-                        Sigma = SigFo**2 + epsilon * S * k_ani[cidxes]**2
-                        X = Fo * Fc_abs * k_ani[cidxes] / Sigma
+                        Sigma = SigFo**2 + epsilon * S
+                        X = Fo * Fc_abs / Sigma
                         #X = X.astype(numpy.float64)
                         m = numpy.tanh(X)
-                        g = (Fc_abs * k_ani[cidxes]**2 / Sigma - m * Fo * k_ani[cidxes] / Sigma) * Ds[0]
+                        g = (Fc_abs - m * Fo) / Sigma * Ds[0]
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (k_ani[cidxes]**2 / Sigma - (Fo * k_ani[cidxes] / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (1. / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
 
         if self.mott_bethe:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()

@@ -261,52 +261,50 @@ def deriv_DFc2_and_DFc_dDj(Ds, Fcs):
     return DFc_abs, ret
 # deriv_DFc2_and_DFc_dDj()
 
-def mlf_acentric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
+def mlf_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     # https://doi.org/10.1107/S0907444911001314
     # eqn (4)
-    Sigma = 2 * varFo + epsilon * S * k_aniso**2
-    DFc = calc_abs_DFc(Ds, Fcs) * k_aniso
+    Sigma = 2 * varFo + epsilon * S
+    DFc = calc_abs_DFc(Ds, Fcs)
     ret = numpy.log(2) + numpy.log(Fo) - numpy.log(Sigma)
     ret += -(Fo**2 + DFc**2)/Sigma
     ret += gemmi.log_bessel_i0(2*Fo*DFc/Sigma)
     return -ret
 # mlf_acentric()
 
-def deriv_mlf_wrt_D_S_acentric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
+def deriv_mlf_wrt_D_S_acentric(Fo, varFo, Fcs, Ds, S, epsilon):
     deriv = numpy.zeros(1+len(Ds))
-    Sigma = 2 * varFo + epsilon * S * k_aniso**2
+    Sigma = 2 * varFo + epsilon * S
     Fo2 = Fo**2
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
-    DFc *= k_aniso
     i1_i0_x = gemmi.bessel_i1_over_i0(2*Fo*DFc/Sigma) # m
     ret = []
     for sqder, der in tmp:
-        ret.append(-sqder * k_aniso**2 / Sigma + i1_i0_x * 2 * Fo * der * k_aniso / Sigma)
-    ret.append((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon * k_aniso**2)
+        ret.append(-sqder / Sigma + i1_i0_x * 2 * Fo * der / Sigma)
+    ret.append((-1/Sigma + (Fo2 + DFc**2 - i1_i0_x * 2 * Fo * DFc) / Sigma**2) * epsilon)
     return -numpy.vstack(ret).T
 # deriv_mlf_wrt_D_S_acentric()
 
-def mlf_centric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
+def mlf_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     # https://doi.org/10.1107/S0907444911001314
     # eqn (4)
-    Sigma = varFo + epsilon * S * k_aniso**2
-    DFc = calc_abs_DFc(Ds, Fcs) * k_aniso
+    Sigma = varFo + epsilon * S
+    DFc = calc_abs_DFc(Ds, Fcs)
     ret = 0.5 * (numpy.log(2 / numpy.pi) - numpy.log(Sigma))
     ret += -0.5 * (Fo**2 + DFc**2) / Sigma
     ret += gemmi.log_cosh(Fo * DFc / Sigma)
     return -ret
 # mlf_centric()
 
-def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon, k_aniso):
-    Sigma = varFo + epsilon * S * k_aniso**2
+def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
+    Sigma = varFo + epsilon * S
     Fo2 = Fo**2
     DFc, tmp = deriv_DFc2_and_DFc_dDj(Ds, Fcs)
-    DFc *= k_aniso
     tanh_x = numpy.tanh(Fo*DFc/Sigma)
     ret = []
     for sqder, der in tmp:
-        ret.append(-0.5 * sqder * k_aniso**2 / Sigma + tanh_x * Fo * der * k_aniso / Sigma)
-    ret.append((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon * k_aniso**2)
+        ret.append(-0.5 * sqder / Sigma + tanh_x * Fo * der / Sigma)
+    ret.append((-0.5 / Sigma + (0.5*(Fo2+DFc**2) - tanh_x * Fo*DFc)/Sigma**2)*epsilon)
     return -numpy.vstack(ret).T
 # deriv_mlf_wrt_D_S_centric()
 
@@ -324,8 +322,10 @@ def mlf(df, fc_labs, Ds, S, centric_sel, use):
         else:
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
-        ret += numpy.nansum(func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
-                                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes]))
+        k_ani = df.k_aniso.to_numpy()[cidxes]
+        ret += numpy.nansum(func[c](df.FP.to_numpy()[cidxes] / k_ani,
+                                    (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
+                                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
     return ret
 # mlf()
 
@@ -339,8 +339,10 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
         else:
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
-        r = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
-                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes])
+        k_ani = df.k_aniso.to_numpy()[cidxes]
+        r = func[c](df.FP.to_numpy()[cidxes] / k_ani,
+                    (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
+                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
         ret.append(numpy.nansum(r, axis=0))
     return sum(ret)
 # deriv_mlf_wrt_D_S()
@@ -354,8 +356,10 @@ def mlf_shift_S(df, fc_labs, Ds, S, centric_sel, use):
         else:
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
-        r = func[c](df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes]**2,
-                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes], df.k_aniso.to_numpy()[cidxes])
+        k_ani = df.k_aniso.to_numpy()[cidxes]
+        r = func[c](df.FP.to_numpy()[cidxes] / k_ani,
+                    (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
+                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
         g += numpy.nansum(r[:,-1])
         H += numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -425,10 +429,11 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
         valid_sel = numpy.isfinite(hkldata.df.FP.to_numpy()[cidxes])
         cidxes = cidxes[valid_sel]
         factor = inv_sqrt_c_eps[cidxes]
-        Fo = hkldata.df.FP.to_numpy()[cidxes] * factor
+        k_ani = hkldata.df.k_aniso.to_numpy()[cidxes]
+        Fo = hkldata.df.FP.to_numpy()[cidxes] * factor / k_ani
         mean_Fo2 = numpy.mean(Fo**2)
-        SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
-        Fcs = [hkldata.df[lab].to_numpy()[cidxes] * hkldata.df.k_aniso.to_numpy()[cidxes] * factor for lab in fc_labs]
+        SigFo = hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani
+        Fcs = [hkldata.df[lab].to_numpy()[cidxes] * factor for lab in fc_labs]
         mean_Fk2 = numpy.array([numpy.mean(numpy.abs(fk)**2) for fk in Fcs])
         
         # estimate D
@@ -980,10 +985,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
                                                   1. / hkldata.d_spacings().to_numpy()**2)
         hkldata.df[fc_labs[-1]] = Fmask * solvent_scale
 
-    # Apply scales.
-    #  - k_aniso^-1 is applied to FP (isotropize), 
-    #    but k_aniso should be applied to FC when calculating R or CC
-    #  - k_iso should be applied to FC
+    # Apply scales
     if use_int:
         # in intensity case, we try to refine b_aniso with ML. perhaps we should do it in amplitude case also
         hkldata.df.I /= scaling.k_overall**2
@@ -1018,21 +1020,21 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
         nrefs = [0, 0]
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
-            Fcs = [hkldata.df[lab].to_numpy()[cidxes] * k_ani[cidxes] for lab in fc_labs]
+            Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
             phic = numpy.angle(hkldata.df.FC.to_numpy()[cidxes])
             expip = numpy.cos(phic) + 1j*numpy.sin(phic)
-            Fo = hkldata.df.FP.to_numpy()[cidxes]
-            SigFo = hkldata.df.SIGFP.to_numpy()[cidxes]
+            Fo = hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
+            SigFo = hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
             epsilon = hkldata.df.epsilon.to_numpy()[cidxes]
             nrefs[c] = numpy.sum(numpy.isfinite(Fo))
             DFc = calc_abs_DFc(Ds, Fcs)
             if c == 0:
-                Sigma = 2 * SigFo**2 + epsilon * S * k_ani[cidxes]**2
+                Sigma = 2 * SigFo**2 + epsilon * S
                 X = 2 * Fo * DFc / Sigma
                 m = gemmi.bessel_i1_over_i0(X)
                 hkldata.df.loc[cidxes, "FWT"] = (2 * m * Fo - DFc) * expip
             else:
-                Sigma = SigFo**2 + epsilon * S * k_ani[cidxes]**2
+                Sigma = SigFo**2 + epsilon * S
                 X = Fo * DFc / Sigma
                 m = numpy.tanh(X)
                 hkldata.df.loc[cidxes, "FWT"] = (m * Fo) * expip
@@ -1051,8 +1053,8 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
             hkldata.df.loc[cidxes[fill_sel], "FWT"] = (DFc * expip)[fill_sel]
 
-        Fc = hkldata.df.FC.to_numpy()[idxes]
-        Fcs = [hkldata.df[lab].to_numpy()[idxes] for lab in fc_labs]
+        Fc = hkldata.df.FC.to_numpy()[idxes] * k_ani[idxes]
+        Fcs = [hkldata.df[lab].to_numpy()[idxes] * k_ani[idxes] for lab in fc_labs]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         DFc = calc_abs_DFc(Ds, Fcs)
         if sum(nrefs) > 0:
@@ -1066,10 +1068,6 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
                            numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
                            numpy.log(numpy.nanmean(DFc**2)),
                            numpy.log(S), mean_fom[0], mean_fom[1], r, cc] + Ds + DFcs)
-
-    # make maps isotropic
-    hkldata.df["FWT"] /= k_ani
-    hkldata.df["DELFWT"] /= k_ani    
 
     s2lab = "1/resol^2"
     DFc_labs = ["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]
