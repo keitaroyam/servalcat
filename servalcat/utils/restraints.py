@@ -271,12 +271,13 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     logger.writeln("Checking links defined in the model")
     for con in st.connections:
         if con.type == gemmi.ConnectionType.Hydrog: continue
+        if con.link_id == "gap": continue # TODO check residues?
         cra1, cra2 = st[0].find_cra(con.partner1, ignore_segment=True), st[0].find_cra(con.partner2, ignore_segment=True)
-        if cra1.atom.element.is_metal or cra2.atom.element.is_metal:
-            con.type = gemmi.ConnectionType.MetalC
         if None in (cra1.atom, cra2.atom):
             logger.writeln(" WARNING: atom(s) not found for link: id= {} atom1= {} atom2= {}".format(con.link_id, con.partner1, con.partner2))
             continue
+        if cra1.atom.element.is_metal or cra2.atom.element.is_metal:
+            con.type = gemmi.ConnectionType.MetalC
         if con.asu == gemmi.Asu.Different: # XXX info from metadata may be wrong
             nimage = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
             image_idx = nimage.sym_idx
