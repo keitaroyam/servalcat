@@ -168,6 +168,12 @@ def add_arguments(p):
     parser.add_argument('-o', '--output_prefix', 
                         help="default: taken from input file")
 
+    # adp
+    parser = subparsers.add_parser("adp", description = 'ADP analysis')
+    parser.add_argument('model')
+    parser.add_argument('-o', '--output_prefix',
+                        help="default: taken from input file")
+    
     # power
     parser = subparsers.add_parser("power", description = 'Show power spectrum')
     parser.add_argument("--map",  nargs="*", action="append")
@@ -812,6 +818,50 @@ def geometry(args):
         fileio.write_model(st, file_name="{}_per_atom_score{}".format(args.output_prefix, model_format))
 # geometry()
 
+def adp_stats(args):
+    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_adp"
+    st = fileio.read_structure(args.model)
+    model.adp_analysis(st)
+    traces = []
+    traces.append("x: [%s], type: 'histogram', name: 'All'"
+                  % ",".join("%.2f"%cra.atom.b_iso for cra in st[0].all() if cra.atom.occ > 0))
+    if len(st[0]) > 1:
+        b_chain = {}
+        for c in st[0]:
+            b_chain.setdefault(c.name, []).extend(a.b_iso for r in c for a in r if a.occ > 0)
+        for c in b_chain:
+            bs = ",".join("%.2f" % x for x in b_chain[c])
+            traces.append("x: [%s], type: 'histogram', name: 'Chain %s'" % (bs, c))
+    
+    with open(args.output_prefix + "_hist.html", "w") as ofs:
+        ofs.write("""\
+<html>
+<head>
+ <meta charset="utf-8" />
+ <script src="https://cdn.plot.ly/plotly-2.20.0.min.js" charset="utf-8"></script>
+</head>
+<body>
+ <div id="hist"></div>
+ <script>
+""")
+        for i, t in enumerate(traces):
+            ofs.write("var trace%d = {%s};\n" % (i+1, t))
+        ofs.write("""\
+  var layout = {
+   title: "isotropic B histogram",
+   xaxis: {title: "B"},
+   yaxis: {title: "count"},
+   barmode: "stack"
+  };
+  target = document.getElementById('hist');
+  Plotly.newPlot(target, [%s], layout);
+ </script>
+</body>
+</html>
+""" % (",".join("trace%d" % (i+1) for i in range(len(traces)))))
+        logger.writeln("check histogram: {}".format(ofs.name))
+# adp_stats()
+
 def show_power(args):
     maps_in = []
     if args.map:
@@ -1104,6 +1154,7 @@ def main(args):
                  merge_models=merge_models,
                  merge_dicts=merge_dicts,
                  geom=geometry,
+                 adp=adp_stats,
                  power=show_power,
                  fcalc=fcalc,
                  nemap=nemap,
