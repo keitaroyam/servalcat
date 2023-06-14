@@ -89,6 +89,7 @@ void add_refine(py::module& m) {
     .def_readonly("planes", &Geometry::Reporting::planes)
     .def_readonly("stackings", &Geometry::Reporting::stackings)
     .def_readonly("vdws", &Geometry::Reporting::vdws)
+    .def_readonly("adps", &Geometry::Reporting::adps)
     .def("get_summary_table", [](const Geometry::Reporting& self, bool use_nucleus) {
       std::vector<std::string> keys;
       std::vector<int> nrest;
@@ -205,6 +206,24 @@ void add_refine(py::module& m) {
                   "VDW dummy-dummy") + std::string(p.first > 6 ? ", symmetry" : ""),
                  p.second, zsq[p.first]);
         }
+
+      // ADP
+      delsq.clear(); zsq.clear();
+      for (const auto& a : self.adps) {
+        const int rkind = std::get<2>(a);
+        const float delta_b = std::get<5>(a);
+        const float sigma = std::get<4>(a);
+        const double d2 = gemmi::sq(delta_b), z2 = gemmi::sq(delta_b / sigma);
+        const int k = std::min(rkind, 3);
+        delsq[k].push_back(d2);
+        zsq[k].push_back(z2);
+      }
+      for (const auto& p : delsq)
+        if (!p.second.empty())
+          append(p.first == 1 ? "B values (bond)" :
+                 p.first == 2 ? "B values (angle)" :
+                 "B values (long range)", p.second, zsq[p.first]);
+
       return py::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
                       "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz);
     })
@@ -607,6 +626,7 @@ void add_refine(py::module& m) {
     .def_readwrite("adpr_max_dist", &Geometry::adpr_max_dist)
     .def_readwrite("adpr_d_power", &Geometry::adpr_d_power)
     .def_readwrite("adpr_exp_fac", &Geometry::adpr_exp_fac)
+    .def_readwrite("adpr_long_range", &Geometry::adpr_long_range)
     // jelly body parameters
     .def_readwrite("ridge_dmax", &Geometry::ridge_dmax)
     .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)

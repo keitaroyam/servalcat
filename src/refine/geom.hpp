@@ -206,6 +206,7 @@ struct GeomTarget {
   std::vector<size_t> rest_per_atom;
   std::vector<size_t> rest_pos_per_atom;
   std::vector<std::pair<int,int>> pairs;
+  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, ...)
   int nmpos;
   size_t n_atoms() const { return atoms.size(); }
   MatPos find_restraint(int ia1, int ia2) const {
@@ -323,9 +324,9 @@ struct Geometry {
   struct Bond {
     struct Value {
       Value(double v, double s, double vn, double sn)
-	: value(v), sigma(s),
-	  value_nucleus(std::isnan(vn) ? v : vn),
-	  sigma_nucleus(std::isnan(sn) ? s : sn) {}
+        : value(v), sigma(s),
+          value_nucleus(std::isnan(vn) ? v : vn),
+          sigma_nucleus(std::isnan(sn) ? s : sn) {}
       double value;
       double sigma;
       double value_nucleus;
@@ -507,6 +508,7 @@ struct Geometry {
     using plane_reporting_t = std::tuple<const Plane*, std::vector<double>>;
     using stacking_reporting_t = std::tuple<const Stacking*, double, double, double>; // delta_angle, delta_dist1, delta_dist2
     using vdw_reporting_t = std::tuple<const Vdw*, double>;
+    using adp_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
     std::vector<bond_reporting_t> bonds;
     std::vector<angle_reporting_t> angles;
     std::vector<torsion_reporting_t> torsions;
@@ -514,6 +516,7 @@ struct Geometry {
     std::vector<plane_reporting_t> planes;
     std::vector<stacking_reporting_t> stackings;
     std::vector<vdw_reporting_t> vdws;
+    std::vector<adp_reporting_t> adps;
   };
   Geometry(gemmi::Structure& s, const gemmi::EnerLib* ener_lib) : st(s), bondindex(s.first_model()), ener_lib(ener_lib) {}
   void load_topo(const gemmi::Topo& topo);
@@ -581,6 +584,7 @@ struct Geometry {
   float adpr_max_dist = 4.;
   double adpr_d_power = 4;
   double adpr_exp_fac = 0.011271; //1 ./ (2*4*4*4*std::log(2.));
+  bool adpr_long_range = true;
 
   // Jelly body
   float ridge_dmax = 0;
@@ -884,56 +888,62 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
 }
 
 inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
-  std::vector<std::pair<int,int>> tmp;
+  std::vector<std::tuple<int,int,int>> tmp;
   for (const auto &t : bonds)
-    tmp.emplace_back(t.atoms[0]->serial-1, t.atoms[1]->serial-1);
+    tmp.emplace_back(t.atoms[0]->serial-1, t.atoms[1]->serial-1, 1);
 
   for (const auto &t : angles)
     for (int i = 0; i < 2; ++i)
       for (int j = i+1; j < 3; ++j)
-        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1);
+        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1, 2);
 
   for (const auto &t : torsions)
     for (int i = 0; i < 3; ++i)
       for (int j = i+1; j < 4; ++j)
-        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1);
+        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1, 3);
 
   for (const auto &t : chirs)
     for (int i = 0; i < 3; ++i)
       for (int j = i+1; j < 4; ++j)
-        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1);
+        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1, 4);
 
   for (const auto &t : planes)
     for (size_t i = 1; i < t.atoms.size(); ++i)
       for (size_t j = 0; j < i; ++j)
-        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1);
+        tmp.emplace_back(t.atoms[i]->serial-1, t.atoms[j]->serial-1, 5);
+
+  for (const auto &t : vdws)
+    tmp.emplace_back(t.atoms[0]->serial-1, t.atoms[1]->serial-1, 6);
 
   for (const auto &t : stackings) {
     for (size_t i = 0; i < 2; ++i)
       for (size_t j = 1; j < t.planes[i].size(); ++j)
         for (size_t k = 0; k < j; ++k)
-          tmp.emplace_back(t.planes[i][j]->serial-1, t.planes[i][k]->serial-1);
+          tmp.emplace_back(t.planes[i][j]->serial-1, t.planes[i][k]->serial-1, 8);
 
     for (size_t j = 0; j < t.planes[0].size(); ++j)
       for (size_t k = 0; k < t.planes[1].size(); ++k)
-        tmp.emplace_back(t.planes[0][j]->serial-1, t.planes[1][k]->serial-1);
+        tmp.emplace_back(t.planes[0][j]->serial-1, t.planes[1][k]->serial-1, 8);
   }
-
-  for (const auto &t : vdws)
-    tmp.push_back({t.atoms[0]->serial-1, t.atoms[1]->serial-1});
 
   // sort_and_compress_distances
   for (auto &p : tmp)
-    if (p.first > p.second)
-      std::swap(p.first, p.second);
+    if (std::get<0>(p) > std::get<1>(p))
+      std::swap(std::get<0>(p), std::get<1>(p));
 
   target.pairs.clear();
+  target.pairs_kind.clear();
   if (!tmp.empty()) {
-    std::sort(tmp.begin(), tmp.end());
-    target.pairs.push_back(tmp[0]);
+    std::sort(tmp.begin(), tmp.end()); // smallest restraint kind will be kept
+    target.pairs.emplace_back(std::get<0>(tmp[0]), std::get<1>(tmp[0]));
+    target.pairs_kind.push_back(std::get<2>(tmp[0]));
     for (size_t i = 1; i < tmp.size(); ++i)
-      if (tmp[i] != target.pairs.back() && tmp[i].first != tmp[i].second)
-        target.pairs.push_back(tmp[i]); // n_target, n_object
+      if ((std::get<0>(tmp[i]) != target.pairs.back().first ||
+           std::get<1>(tmp[i]) != target.pairs.back().second) &&
+          std::get<0>(tmp[i]) != std::get<1>(tmp[i])) {
+        target.pairs.emplace_back(std::get<0>(tmp[i]), std::get<1>(tmp[i])); // n_target, n_object
+        target.pairs_kind.push_back(std::get<2>(tmp[i]));
+      }
   }
 
   target.setup(st.first_model(), refine_xyz, adp_mode);
@@ -944,7 +954,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
                              double wchir, double wplane, double wstack,
                              double wvdw) {
   if (check_only)
-    reporting = {};
+    reporting = {}; // also deletes adp. is it ok?
   else
     assert(target.refine_xyz); // otherwise vector and matrix not ready
 
@@ -974,20 +984,24 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 }
 
 inline double Geometry::calc_adp_restraint(bool check_only, double sigma) {
-  assert(target.adp_mode > 0);
+  if (!check_only)
+    assert(target.adp_mode > 0);
+  reporting.adps.clear();
   const int n_pairs = target.pairs.size();
   const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
   const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
   const double weight = 1. / (sigma * sigma);
   double ret = 0.;
   for (int i = 0; i < n_pairs; ++i) {
+    if (!adpr_long_range && target.pairs_kind[i] > 2) continue;
     const gemmi::Atom* atom1 = target.atoms[target.pairs[i].first];
     const gemmi::Atom* atom2 = target.atoms[target.pairs[i].second];
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
     if (dsq > gemmi::sq(adpr_max_dist)) continue;
-    const double w_fac = std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac);
+    const bool bonded = target.pairs_kind[i] < 3; // bond and angle related
+    const double w_fac = bonded ? 1 : std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac);
     const double w = weight * w_fac;
     if (target.adp_mode == 1) {
       const double f = 0.5 * w * (atom1->b_iso - atom2->b_iso) * (atom1->b_iso - atom2->b_iso);
@@ -1002,6 +1016,11 @@ inline double Geometry::calc_adp_restraint(bool check_only, double sigma) {
         target.am[offset_a + atom2->serial - 1] += w;
         // non-diagonal
         target.am[offset_a + target.n_atoms() + i] += -w;
+      } else {
+        if (!atom1->is_hydrogen() && !atom2->is_hydrogen())
+          // atom1, atom2, type, dist, sigma, delta
+          reporting.adps.emplace_back(atom1, atom2, target.pairs_kind[i], std::sqrt(dsq),
+                                      sigma / std::sqrt(w_fac), atom1->b_iso - atom2->b_iso);
       }
     } else if (target.adp_mode == 2) {
       const auto& a1 = atom1->aniso.scaled(gemmi::u_to_b()).elements_pdb();

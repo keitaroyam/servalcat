@@ -103,7 +103,8 @@ class Geom:
         return geom
         
     def show_model_stats(self, show_outliers=True):
-        f0 = self.calc(True)
+        f0_x = self.calc(True)
+        f0_a = self.calc_adp_restraint(True)
         ret = {"outliers": {}}
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
@@ -258,6 +259,7 @@ class Refine:
             self.ll.update_fc()
         
         self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
@@ -292,8 +294,6 @@ class Refine:
 
     #@profile
     def run_cycle(self, weight=1):
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
-            
         if 0: # test of grad
             self.ll.update_fc()
             x0 = self.get_x()
@@ -379,6 +379,7 @@ class Refine:
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         if self.refine_xyz and not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
@@ -387,7 +388,9 @@ class Refine:
             self.ll.overall_scale()
             self.ll.update_ml_params()
             stats[-1]["data"] = self.ll.calc_stats()["summary"]
-            
+        if self.adp_mode > 0:
+            utils.model.adp_analysis(self.st)
+
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             self.run_cycle(weight=weight) # check ret?

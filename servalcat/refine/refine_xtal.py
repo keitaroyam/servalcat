@@ -65,6 +65,7 @@ def add_arguments(parser):
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
     parser.add_argument('--adp_restraint_power', type=float)
     parser.add_argument('--adp_restraint_exp_fac', type=float)
+    parser.add_argument('--adp_restraint_no_long_range', action='store_true')
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
@@ -151,6 +152,7 @@ def main(args):
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac
+    if args.adp_restraint_no_long_range: geom.geom.adpr_long_range = False
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
