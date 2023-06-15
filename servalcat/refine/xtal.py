@@ -251,7 +251,7 @@ class LL_Xtal:
                     sigIo = self.hkldata.df.SIGI.to_numpy()
                     to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / epsilon
                     tf = k_ani[cidxes] * Fc_abs / numpy.sqrt(sigIo[cidxes])
-                    sig1 = numpy.sqrt(k_ani[cidxes]) * S / sigIo[cidxes]
+                    sig1 = k_ani[cidxes]**2 * epsilon * S / sigIo[cidxes]
                     k_num = 0.5 if c == 0 else 0. # acentric:0.5, centric: 0.
                     r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
                     g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[0] 
