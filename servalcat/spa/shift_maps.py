@@ -258,11 +258,13 @@ def main(args):
                     cra.atom.pos += shifts
 
             # apply shifts to translations
-            spext = utils.fileio.splitext(os.path.basename(args.model[i]))
-            if len(st.ncs) > 0 and not args.no_expand_ncs:
+            if len(st.ncs) > 0:
                 new_ops = utils.symmetry.apply_shift_for_ncsops(st.ncs, shifts)
                 st.ncs.clear()
                 st.ncs.extend(new_ops)
+            st.setup_cell_images()
+            spext = utils.fileio.splitext(os.path.basename(args.model[i]))
+            if len(st.ncs) > 0 and not args.no_expand_ncs:
                 logger.writeln(" Writing symmetry expanded model for shifted model")
                 utils.symmetry.write_symmetry_expanded_model(st, spext[0]+"_trimmed_local_expanded",
                                                              pdb=True, cif=True)
