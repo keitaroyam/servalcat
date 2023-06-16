@@ -95,6 +95,7 @@ class LL_Xtal:
         self.use_in_est = use_in_est
         self.use_in_target = use_in_target
         self.ll = None
+        self.scaling = sigmaa.LsqScale()
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -130,10 +131,10 @@ class LL_Xtal:
             Fmask = sigmaa.calc_Fmask(self.st, self.d_min - 1e-6, self.hkldata.miller_array())
             fc_list.append(Fmask)
 
-        scaling = sigmaa.LsqScale(self.hkldata, fc_list, self.is_int, sigma_cutoff=0)
-        scaling.scale()
-        self.b_aniso = scaling.b_aniso
-        b = scaling.b_iso
+        self.scaling.set_data(self.hkldata, fc_list, self.is_int, sigma_cutoff=0)
+        self.scaling.scale()
+        self.b_aniso = self.scaling.b_aniso
+        b = self.scaling.b_iso
         min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
         tmp = min_b_iso + b
         if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
@@ -144,18 +145,22 @@ class LL_Xtal:
         k_iso = self.hkldata.debye_waller_factors(b_iso=b)
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         if self.use_solvent:
-            solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol,
+            solvent_scale = self.scaling.get_solvent_scale(self.scaling.k_sol, self.scaling.b_sol,
                                                       1. / self.hkldata.d_spacings().to_numpy()**2)
             self.hkldata.df[self.fc_labs[-1]] = Fmask * solvent_scale
         if self.is_int:
-            self.hkldata.df["I"] /= scaling.k_overall**2
-            self.hkldata.df["SIGI"] /= scaling.k_overall**2
+            self.hkldata.df["I"] /= self.scaling.k_overall**2
+            self.hkldata.df["SIGI"] /= self.scaling.k_overall**2
         else:
-            self.hkldata.df["FP"] /= scaling.k_overall
-            self.hkldata.df["SIGFP"] /= scaling.k_overall
+            self.hkldata.df["FP"] /= self.scaling.k_overall
+            self.hkldata.df["SIGFP"] /= self.scaling.k_overall
 
         for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
+
+        # for next cycle
+        self.scaling.k_overall = 1.
+        self.scaling.b_iso = 0.
     # overall_scale()
 
     def calc_target(self): # -LL target for MLF or MLI

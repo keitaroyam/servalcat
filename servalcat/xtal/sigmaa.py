@@ -79,7 +79,20 @@ class VarTrans:
 
 class LsqScale:
     # parameter x = [k_overall, adp_pars, k_sol, B_sol]
-    def __init__(self, hkldata, fc_list, use_int=False, k_as_exp=False, sigma_cutoff=None):
+    def __init__(self, k_as_exp=False):
+        self.k_trans = lambda x: numpy.exp(x) if k_as_exp else x
+        self.k_trans_der = lambda x: numpy.exp(x) if k_as_exp else 1
+        self.k_trans_inv = lambda x: numpy.log(x) if k_as_exp else x
+        self.reset()
+        
+    def reset(self):
+        self.k_sol = 0.35 # same default as gemmi/scaling.hpp
+        self.b_sol = 46.
+        self.k_overall = None
+        self.b_iso = None
+        self.b_aniso = None
+
+    def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None):
         assert 0 < len(fc_list) < 3
         self.use_int = use_int
         if sigma_cutoff is not None:
@@ -97,11 +110,6 @@ class LsqScale:
         self.s2mat = hkldata.ssq_mat()[:,sel]
         self.s2 = 1. / hkldata.d_spacings().to_numpy()[sel]**2
         self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=False)
-        self.k_trans = lambda x: numpy.exp(x) if k_as_exp else x
-        self.k_trans_der = lambda x: numpy.exp(x) if k_as_exp else 1
-        self.k_trans_inv = lambda x: numpy.log(x) if k_as_exp else x
-        self.k_sol_ini = 0.35 # same default as gemmi/scaling.hpp
-        self.b_sol_ini = 46.
         if use_int:
             self.sqrt_obs = numpy.sqrt(numpy.maximum(self.obs, 0))
         
@@ -168,7 +176,7 @@ class LsqScale:
         fc0 = self.calc[0]
         if len(self.calc) == 2:
             fmask = self.calc[1]
-            fbulk = self.get_solvent_scale(self.k_sol_ini, self.b_sol_ini) * fmask
+            fbulk = self.get_solvent_scale(self.k_sol, self.b_sol) * fmask
             fc = fc0 + fbulk
         else:
             fc = fc0
@@ -195,11 +203,16 @@ class LsqScale:
         msg = "Scaling Fc to {} {} bulk solvent contribution".format("Io" if self.use_int else "Fo",
                                                                      "with" if use_sol else "without")
         logger.writeln(msg)
-        k, b = self.initial_kb()
+        if self.k_overall is None or self.b_iso is None:
+            k, b = self.initial_kb()
+        else:
+            k, b = self.k_overall, self.b_iso
+        if self.b_aniso is None:
+            self.b_aniso = gemmi.SMat33d(b,b,b,0,0,0)
         x0 = [self.k_trans_inv(k)]
-        x0.extend(numpy.dot([b,b,b,0,0,0], self.adpdirs.T))
+        x0.extend(numpy.dot(self.b_aniso.elements_pdb(), self.adpdirs.T))
         if use_sol:
-            x0.extend([self.k_sol_ini, self.b_sol_ini])
+            x0.extend([self.k_sol, self.b_sol])
         if 0:
             f0 = self.target(x0)
             ader = self.grad(x0)
@@ -218,6 +231,7 @@ class LsqScale:
             
         res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad)
         #logger.writeln(str(res))
+        logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
         self.k_overall = self.k_trans(res.x[0])
         nadp = self.adpdirs.shape[0]
         b_overall = gemmi.SMat33d(*numpy.dot(res.x[1:nadp+1], self.adpdirs))
@@ -971,7 +985,8 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
         Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
         fc_list.append(Fmask)
 
-    scaling = LsqScale(hkldata, fc_list, use_int, sigma_cutoff=0)
+    scaling = LsqScale()
+    scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0)
     scaling.scale()
     b_aniso = scaling.b_aniso
     b_iso = scaling.b_iso
