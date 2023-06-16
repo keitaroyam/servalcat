@@ -389,44 +389,47 @@ struct LL{
   }
   */
 
-  // preparation for fisher_diag_from_table()
-  // Steiner et al. (2003) doi: 10.1107/S0907444903018675
   template <typename Table>
-  void make_fisher_table_diag_fast(const TableS3 &d2dfw_table) {
-    // find b_sf_max
-    double b_sf_max = 0.;
+  double b_sf_max() const {
+    double ret = 0.;
     std::set<gemmi::Element> elems;
     for (auto atom : atoms)
       elems.insert(atom->element);
     for (const auto &el : elems) {
       const auto &coef = Table::get(el);
       for (int i = 0; i < Table::Coef::ncoeffs; ++i)
-        if (coef.b(i) > b_sf_max)
-          b_sf_max = coef.b(i);
+        if (coef.b(i) > ret)
+          ret = coef.b(i);
     }
-    // find b_min and b_max
+    return ret;
+  }
+  std::pair<double, double> b_min_max() const {
     double b_min = INFINITY, b_max = 0;
     for (const auto atom : atoms) {
       const double b_iso = atom->aniso.nonzero() ? gemmi::u_to_b() * atom->aniso.trace() / 3 : atom->b_iso;
       if (b_iso < b_min) b_min = b_iso;
       if (b_iso > b_max) b_max = b_iso;
     }
-    b_max = 2 * (b_max + b_sf_max);
+    return std::make_pair(b_min, b_max);
+  }
+  // preparation for fisher_diag_from_table()
+  // Steiner et al. (2003) doi: 10.1107/S0907444903018675
+  template <typename Table>
+  void make_fisher_table_diag_fast(const TableS3 &d2dfw_table) {
+    double b_min, b_max;
+    std::tie(b_min, b_max) = b_min_max();
+    b_max = 2 * (b_max + b_sf_max<Table>());
     printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
 
-    pp1.resize(1);
-    bb.resize(1);
-    aa.resize(1);
     const double b_step = 5;
     const double s_min = d2dfw_table.s_min, s_max = d2dfw_table.s_max;
     const int s_dim = 120; // actually +1 is allocated
+    const double s_step = (s_max - s_min) / s_dim;
     int b_dim = static_cast<int>((b_max - b_min) / b_step) + 2;
     if (b_dim % 2 == 0) ++b_dim; // TODO: need to set maximum b_dim?
-    pp1[0].resize(b_dim);
-    bb[0].resize(b_dim);
-    aa[0].resize(b_dim);
-
-    const double s_step = (s_max - s_min) / s_dim;
+    pp1.assign(1, std::vector<double>(b_dim));
+    bb.assign(1, std::vector<double>(b_dim));
+    aa.assign(1, std::vector<double>(b_dim));
 
     table_bs.clear();
     table_bs.reserve(b_dim);
@@ -467,6 +470,54 @@ struct LL{
       pp1[0][ib] = (tpp[0] + tpp.back() + 4 * sum_tpp1 + 2 * sum_tpp2) * s_step / 3.;
       bb[0][ib] = (tbb[0] + tbb.back() + 4 * sum_tbb1 + 2 * sum_tbb2) * s_step / 3.;
       aa[0][ib] = (taa[0] + taa.back() + 4 * sum_taa1 + 2 * sum_taa2) * s_step / 3.;
+    }
+  }
+
+  template <typename Table>
+  void make_fisher_table_diag_direct(const std::vector<double> &svals, const std::vector<double> &yvals) {
+    assert(svals.size() == yvals.size());
+    double b_min, b_max;
+    std::tie(b_min, b_max) = b_min_max();
+    b_max = 2 * (b_max + b_sf_max<Table>());
+    printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
+
+    const double b_step = 5;
+    int b_dim = static_cast<int>((b_max - b_min) / b_step) + 2;
+    if (b_dim % 2 == 0) ++b_dim; // TODO: need to set maximum b_dim?
+    pp1.assign(1, std::vector<double>(b_dim));
+    bb.assign(1, std::vector<double>(b_dim));
+    aa.assign(1, std::vector<double>(b_dim));
+    table_bs.clear();
+    table_bs.reserve(b_dim);
+
+    // assumes data cover asu
+    //const double fac = sg->operations().sym_ops.size() * (sg->is_centrosymmetric() ? 1 : 2);
+    const double fac = sg->operations().order() * (sg->is_centrosymmetric() ? 1 : 2);
+    // only for D = 0 (same atoms) for now
+    for (int ib = 0; ib < b_dim; ++ib) {
+      const double b = b_min + b_step * ib;
+      table_bs.push_back(b);
+      for (size_t i = 0; i < svals.size(); ++i) {
+        const double s = svals[i], w_c = yvals[i];
+	if (std::isnan(w_c)) continue;
+        const double w_c_ft_c = w_c * std::exp(-b*s*s/4.);
+        double tpp = 4. * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 /3
+        double tbb = 1. / 16 * w_c_ft_c; // 1/16
+        double taa = 1. / 80 * w_c_ft_c; // 1/16 /5 (later *1, *1/3, *4/3)
+        if (mott_bethe) {
+          tpp /= s*s;
+        } else {
+          tpp *= s*s;
+          tbb *= s*s*s*s;
+          taa *= s*s*s*s;
+        }
+        pp1[0][ib] += tpp;
+        bb[0][ib] += tbb;
+        aa[0][ib] += taa;
+      }
+      pp1[0][ib] *= fac;
+      bb[0][ib] *= fac;
+      aa[0][ib] *= fac;
     }
   }
 

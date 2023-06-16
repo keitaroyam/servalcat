@@ -189,8 +189,8 @@ class Refine:
         #ave_shift = numpy.mean(dx)
         #max_shift = numpy.maximum(dx)
         #rms_shift = numpy.std(dx)
-        shift_allow_high =  0.5
-        shift_allow_low  = -0.5
+        shift_allow_high =  1.0
+        shift_allow_low  = -1.0
         shift_max_allow_B = 30.0
         shift_min_allow_B = -30.0
         dx = scale * dx
@@ -284,6 +284,7 @@ class Refine:
                                      self.adp_mode)
         if self.ll is not None:
             ll = self.ll.calc_target()
+            logger.writeln(" ll= {}".format(ll))
             if not target_only:
                 self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.geom.specials)
         else:
@@ -357,14 +358,17 @@ class Refine:
             with open("minimise_line.dat", "w") as ofs:
                 ofs.write("s f\n")
                 for s in numpy.arange(-2, 2, 0.1):
-                    self.set_x(x0 + s * dx)
+                    dx2 = self.scale_shifts(dx, s)
+                    self.set_x(x0 + dx2)
                     fval = self.calc_target(weight, target_only=True)[0]
                     ofs.write("{} {}\n".format(s, fval))
             quit()
 
         ret = True # success
+        shift_scale = 1
         for i in range(3):
-            dx2 = self.scale_shifts(dx, 1/2**i)
+            shift_scale = 1/2**i
+            dx2 = self.scale_shifts(dx, shift_scale)
             self.set_x(x0 - dx2)
             f1 = self.calc_target(weight, target_only=True)
             logger.writeln("f1, {}= {:.4e}".format(i, f1))
@@ -374,8 +378,8 @@ class Refine:
             logger.writeln("WARNING: function not minimised")
             #self.set_x(x0) # Refmac accepts it even when function increases
 
-        return ret
-    
+        return ret, shift_scale, f1
+
     def run_cycles(self, ncycles, weight=1, debug=False):
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
@@ -393,8 +397,8 @@ class Refine:
 
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
-            self.run_cycle(weight=weight) # check ret?
-            stats.append({"Ncyc": i+1})
+            is_ok, shift_scale, fval = self.run_cycle(weight=weight)
+            stats.append({"Ncyc": i+1, "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok})
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and not self.unrestrained:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]

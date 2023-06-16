@@ -651,6 +651,8 @@ void add_refine(py::module& m) {
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
     .def("make_fisher_table_diag_fast_n92", &LL::make_fisher_table_diag_fast<gemmi::Neutron92<double>>)
+    .def("make_fisher_table_diag_direct_it92", &LL::make_fisher_table_diag_direct<gemmi::IT92<double>>)
+    .def("make_fisher_table_diag_direct_n92", &LL::make_fisher_table_diag_direct<gemmi::Neutron92<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_n92", &LL::fisher_diag_from_table<gemmi::Neutron92<double>>)
     .def("spec_correction", &LL::spec_correction,

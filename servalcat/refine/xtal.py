@@ -287,8 +287,7 @@ class LL_Xtal:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 
-        # we need V for Hessian and V**2/n for gradient.
-        d2ll_dab2 *= self.hkldata.cell.volume
+        # we need V**2/n for gradient.
         dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
         #asu = dll_dab_den.masked_asu()
@@ -302,14 +301,13 @@ class LL_Xtal:
             self.ll.calc_grad_it92(dll_dab_den, blur)
 
         # second derivative
-        d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
-        valid_sel = numpy.isfinite(d2ll_dab2)
-        d2dfw_table.make_table(1./self.hkldata.d_spacings().to_numpy()[valid_sel], d2ll_dab2[valid_sel])
         if self.source == "neutron":
-            self.ll.make_fisher_table_diag_fast_n92(d2dfw_table)
+            self.ll.make_fisher_table_diag_direct_n92(1./self.hkldata.d_spacings().to_numpy(),
+                                                      d2ll_dab2)
             self.ll.fisher_diag_from_table_n92()
         else:
-            self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
+            self.ll.make_fisher_table_diag_direct_it92(1./self.hkldata.d_spacings().to_numpy(),
+                                                       d2ll_dab2)
             self.ll.fisher_diag_from_table_it92()
         #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
