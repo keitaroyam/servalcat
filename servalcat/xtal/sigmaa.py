@@ -693,16 +693,16 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
         SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
 
         def target_ani(x):
-            b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
-            k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+            b = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+            k_ani = hkldata.debye_waller_factors(b_cart=b)
             ret = 0.
             for i_bin, idxes in hkldata.binned():
                 Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                 ret += mli(hkldata.df, fc_labs, Ds, hkldata.binned_df.S[i_bin], k_ani, idxes)
             return ret
         def grad_ani(x):
-            b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
-            k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+            b = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+            k_ani = hkldata.debye_waller_factors(b_cart=b)
             S2mat = hkldata.ssq_mat() # ssqmat
             g = numpy.zeros(6)
             for i_bin, idxes in hkldata.binned():
@@ -714,8 +714,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
             return numpy.dot(g, adpdirs.T)
         def shift_ani(x):
-            b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
-            k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+            b = gemmi.SMat33d(*numpy.dot(x, adpdirs))
+            k_ani = hkldata.debye_waller_factors(b_cart=b)
             S2mat = hkldata.ssq_mat() # ssqmat
             g = numpy.zeros(6)
             H = numpy.zeros((6, 6))

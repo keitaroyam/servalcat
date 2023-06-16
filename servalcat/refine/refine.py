@@ -400,8 +400,12 @@ class Refine:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
             if self.ll is not None:
                 self.ll.overall_scale()
+                f0 = self.ll.calc_target()
                 self.ll.update_ml_params()
                 llstats = self.ll.calc_stats(bin_stats=True)#(i==ncycles-1))
+                if llstats["summary"]["-LL"] > f0:
+                    logger.writeln("WARNING: -LL has increased after ML parameter optimization:"
+                                   "{} to {}".format(f0, llstats["summary"]["-LL"]))
                 stats[-1]["data"] = llstats["summary"]
                 if "bin_stats" in llstats:
                     df = llstats["bin_stats"]
