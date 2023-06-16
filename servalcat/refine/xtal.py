@@ -21,7 +21,6 @@ def calc_bin_stats(hkldata, centric_and_selections):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df[["d_max", "d_min"]].copy()
-    stats["1/resol^2"] = 1 / stats.d_min**2
     stats["n_obs"] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0

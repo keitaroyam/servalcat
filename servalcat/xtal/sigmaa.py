@@ -1075,28 +1075,28 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
             mean_Fo2 = numpy.nanmean(numpy.abs(Fo)**2)
         else:
             r, cc, mean_Fo2 = numpy.nan, numpy.nan, numpy.nan
-        stats_data.append([1/bin_d_min**2, i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
+        stats_data.append([i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
                            numpy.log(mean_Fo2),
                            numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
                            numpy.log(numpy.nanmean(DFc**2)),
                            numpy.log(S), mean_fom[0], mean_fom[1], r, cc] + Ds + DFcs)
 
-    s2lab = "1/resol^2"
     DFc_labs = ["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]
-    cols = [s2lab, "bin", "n_a", "n_c", "d_max", "d_min",
+    cols = ["bin", "n_a", "n_c", "d_max", "d_min",
             "log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))",
             "log(Sigma)", "FOM_a", "FOM_c", "R", "CC(|Fo|,|Fc|)"] + D_labs + DFc_labs
     stats = pandas.DataFrame(stats_data, columns=cols)
-    title_labs = [["log(Mn(|F|^2)) and variances", [s2lab, "log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))", "log(Sigma)"]],
-                  ["FOM", [s2lab, "FOM_a", "FOM_c"]],
-                  ["D", [s2lab] + D_labs],
-                  ["DFc", [s2lab] + DFc_labs],
-                  ["R-factor", [s2lab, "R"]],
-                  ["CC", [s2lab, "CC(|Fo|,|Fc|)"]],
-                  ["number of reflections", [s2lab, "n_a", "n_c"]]]
+    title_labs = [["log(Mn(|F|^2)) and variances", ["log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))", "log(Sigma)"]],
+                  ["FOM", ["FOM_a", "FOM_c"]],
+                  ["D", D_labs],
+                  ["DFc", DFc_labs],
+                  ["R-factor", ["R"]],
+                  ["CC", ["CC(|Fo|,|Fc|)"]],
+                  ["number of reflections", ["n_a", "n_c"]]]
     with open(log_out, "w") as ofs:
         ofs.write(utils.make_loggraph_str(stats, main_title="Statistics",
-                                          title_labs=title_labs))
+                                          title_labs=title_labs,
+                                          s2=1/stats["d_min"]**2))
     logger.writeln("output log: {}".format(log_out))
 # calculate_maps()
 

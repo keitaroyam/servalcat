@@ -61,28 +61,27 @@ def write_loggraph(stats, labs_fc, log_out):
         else:
             half_labs1 = []
 
-    s2lab = "1/resol^2"
     stats2 = stats.copy()
-    stats2.insert(0, s2lab, 1./stats["d_min"]**2)
-    stats2.insert(1, "bin", stats.index)
+    stats2.insert(0, "bin", stats.index)
     for l in power_labs: stats2[l] = numpy.log(stats2[l])
     title_labs = []
     if half_labs1:
         title_labs.append(("Phase randomized FSC" if len(half_labs1) > 1 else "Half map FSC",
-                           [s2lab] + half_labs1))
+                           half_labs1))
     if half_labs2:
         title_labs.append(("Half map amplitude CC and Mean(cos(dphi))",
-                           [s2lab] + half_labs2))
+                           half_labs2))
     if model_labs1:
-        title_labs.append(("Map-model FSC", [s2lab] + model_labs1))
+        title_labs.append(("Map-model FSC", model_labs1))
     if model_labs2:
-        title_labs.append(("Map-model amplitude CC and Mean(cos(dphi))", [s2lab] + model_labs2))
+        title_labs.append(("Map-model amplitude CC and Mean(cos(dphi))", model_labs2))
     if power_labs:
-        title_labs.append(("log(Power)", [s2lab] + power_labs))
+        title_labs.append(("log(Power)", power_labs))
 
-    title_labs.append(("number of Fourier coefficients", [s2lab, "ncoeffs"]))
+    title_labs.append(("number of Fourier coefficients", ["ncoeffs"]))
     with open(log_out, "w") as ofs:
-        ofs.write(utils.make_loggraph_str(stats2, main_title="FSC", title_labs=title_labs))
+        ofs.write(utils.make_loggraph_str(stats2, main_title="FSC", title_labs=title_labs,
+                                          s2=1./stats2["d_min"]**2))
 # write_loggraph()
 
 def fsc_average(n, fsc):

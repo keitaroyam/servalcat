@@ -416,10 +416,11 @@ class Refine:
                     forplot = []
                     rlabs = [x for x in df if x.startswith("R")]
                     cclabs = [x for x in df if x.startswith("CC")]
-                    if "fsc_model" in df: forplot.append(["FSC", ["1/resol^2", "fsc_model"]])
-                    if rlabs: forplot.append(["R", ["1/resol^2"] + rlabs])
-                    if cclabs: forplot.append(["CC", ["1/resol^2"] + cclabs])
+                    if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
+                    if rlabs: forplot.append(["R", rlabs])
+                    if cclabs: forplot.append(["CC", cclabs])
                     lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(i+1), forplot,
+                                                   s2=1/df["d_min"]**2,
                                                    float_format="{:.4f}".format)
                     logger.writeln(lstr)
             if self.adp_mode > 0:
