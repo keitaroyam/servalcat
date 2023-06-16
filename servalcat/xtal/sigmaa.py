@@ -696,8 +696,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             b_aniso = gemmi.SMat33d(*numpy.dot(x, adpdirs))
             k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
             ret = 0.
-            for i_bin, _ in hkldata.binned():
-                idxes = get_idxes(i_bin)
+            for i_bin, idxes in hkldata.binned():
                 Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
                 ret += mli(hkldata.df, fc_labs, Ds, hkldata.binned_df.S[i_bin], k_ani, idxes)
             return ret
@@ -706,8 +705,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
             S2mat = hkldata.ssq_mat() # ssqmat
             g = numpy.zeros(6)
-            for i_bin, _ in hkldata.binned():
-                idxes = get_idxes(i_bin)
+            for i_bin, idxes in hkldata.binned():
                 r = ext.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
                                         k_ani[idxes], hkldata.binned_df.S[i_bin],
                                         hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
@@ -721,8 +719,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             S2mat = hkldata.ssq_mat() # ssqmat
             g = numpy.zeros(6)
             H = numpy.zeros((6, 6))
-            for i_bin, _ in hkldata.binned():
-                idxes = get_idxes(i_bin)
+            for i_bin, idxes in hkldata.binned():
                 r = ext.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
                                         k_ani[idxes], hkldata.binned_df.S[i_bin],
                                         hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
