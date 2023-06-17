@@ -129,8 +129,11 @@ def main(args):
         for i, cra in enumerate(st[0].all()):
             cra.atom.serial = i + 1
     else:
-        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                       stop_for_unknowns=False)
+        try:
+            monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
+                                                           stop_for_unknowns=True)
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         if not args.no_link_check:
             utils.restraints.find_and_fix_links(st, monlib)
