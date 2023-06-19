@@ -33,9 +33,10 @@ import servalcat.refine.refine_xtal
 from servalcat.utils import logger
 
 def test_installation():
+    import packaging.version
     vers = logger.dependency_versions()
-    pandas_ver = [int(x) for x in vers["pandas"].split(".")]
-    numpy_ver = [int(x) for x in vers["numpy"].split(".")]
+    pandas_ver = packaging.version.parse(vers["pandas"])
+    numpy_ver = packaging.version.parse(vers["numpy"])
     msg_unknown = "Unexpected error occurred (related to numpy+pandas). Please report to authors with the result of servalcat -v."
     msg_skip = "If you want to ignore this error, please specify --skip_test."
     ret = True
@@ -45,7 +46,7 @@ def test_installation():
         x.merge(x)
     except TypeError:
         ret = False
-        if pandas_ver >= [1,3,0] and numpy_ver < [1,19,1]:
+        if pandas_ver >= packaging.version.parse("1.3.0") and numpy_ver < packaging.version.parse("1.19.1"):
             print("There is a problem in pandas+numpy. Please update numpy to 1.19.1 or newer (or use pandas < 1.3.0).")
         else:
             print(traceback.format_exc())
