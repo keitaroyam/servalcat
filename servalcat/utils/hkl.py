@@ -425,6 +425,20 @@ class HklData:
             df_both = df[df._merge=="both"]
     # merge()
 
+    def guess_free_number(self, obs):
+        logger.writeln("Guessing test flag number")
+        sel = ~self.df[obs].isna()
+        free = self.df.loc[sel, "FREE"]
+        threshold = len(free.index) / 2
+        if free.isna().any():
+            raise RuntimeError("missing or invalid test flag")
+        counts = self.df.loc[sel, "FREE"].value_counts().sort_values()
+        logger.writeln(counts.to_string(header=False))
+        flag_num = min(n for n, c in counts.items() if c < threshold)
+        logger.writeln(" best guess: free = {}".format(flag_num))
+        return flag_num
+    # guess_free_number()        
+
     def as_numpy_arrays(self, labels, omit_nan=True):
         tmp = self.df[labels]
         if omit_nan: tmp = tmp[~tmp.isna().any(axis=1)]

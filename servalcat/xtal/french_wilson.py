@@ -209,15 +209,15 @@ def main(args):
     else:
         labin = args.labin.split(",")
         
-    hkldata, _, _, _ = process_input(hklin=args.hklin,
-                                     labin=labin,
-                                     n_bins=args.nbins,
-                                     free=None,
-                                     xyzins=[],
-                                     source=None,
-                                     d_min=args.d_min,
-                                     n_per_bin=500,
-                                     max_bins=30)
+    hkldata, _, _, _, _ = process_input(hklin=args.hklin,
+                                        labin=labin,
+                                        n_bins=args.nbins,
+                                        free=None,
+                                        xyzins=[],
+                                        source=None,
+                                        d_min=args.d_min,
+                                        n_per_bin=500,
+                                        max_bins=30)
     
     B_aniso = determine_Sigma_and_aniso(hkldata)
     french_wilson(hkldata, B_aniso)

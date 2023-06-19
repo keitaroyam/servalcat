@@ -29,7 +29,7 @@ def add_arguments(parser):
                         help='Input MTZ file')
     parser.add_argument('--labin', required=True,
                         help='MTZ column for F,SIGF,FREE')
-    parser.add_argument('--free', type=int, default=0,
+    parser.add_argument('--free', type=int,
                         help='flag number for test set')
     parser.add_argument('--model', required=True, nargs="+", action="append",
                         help='Input atomic model file(s)')
@@ -944,6 +944,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.calc_epsilon()
     hkldata.calc_centric()
 
+    if "FREE" in hkldata.df and free is None:
+        free = hkldata.guess_free_number(newlabels[0])
+
     if n_bins is None:
         sel = hkldata.df[newlabels[0]].notna()
         if use == "work":
@@ -1008,7 +1011,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             
     stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
     logger.writeln(stats.to_string())
-    return hkldata, sts, fc_labs, centric_and_selections
+    return hkldata, sts, fc_labs, centric_and_selections, free
 # process_input()
 
 def calc_Fmask(st, d_min, miller_array):
@@ -1150,16 +1153,16 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
 
 def main(args):
     n_per_bin = {"all": 500, "work": 500, "test": 50}[args.use]
-    hkldata, sts, fc_labs, centric_and_selections = process_input(hklin=args.hklin,
-                                                                  labin=args.labin.split(","),
-                                                                  n_bins=args.nbins,
-                                                                  free=args.free,
-                                                                  xyzins=sum(args.model, []),
-                                                                  source=args.source,
-                                                                  d_min=args.d_min,
-                                                                  n_per_bin=n_per_bin,
-                                                                  use=args.use,
-                                                                  max_bins=30)
+    hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
+                                                                       labin=args.labin.split(","),
+                                                                       n_bins=args.nbins,
+                                                                       free=args.free,
+                                                                       xyzins=sum(args.model, []),
+                                                                       source=args.source,
+                                                                       d_min=args.d_min,
+                                                                       n_per_bin=n_per_bin,
+                                                                       use=args.use,
+                                                                       max_bins=30)
     is_int = "I" in hkldata.df
     
     # Overall scaling & bulk solvent
