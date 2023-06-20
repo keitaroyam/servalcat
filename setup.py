@@ -132,7 +132,7 @@ setup(name='servalcat',
     long_description_content_type='text/markdown',
     license='MPL-2.0',
     packages=setuptools.find_packages(),
-    install_requires=['packaging', 'numpy>=1.15','scipy','pandas>=0.24.2', 'gemmi==0.6.2'],
+    install_requires=['packaging', 'numpy>=1.15','scipy','pandas>=1.1.0', 'gemmi==0.6.2'],
     entry_points={
       'console_scripts': [
           'servalcat = servalcat.command_line:main',
