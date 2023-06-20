@@ -22,17 +22,14 @@ def make_loggraph_str(df, main_title, title_labs, s2=None, float_format=None):
         df.insert(0, "1/resol^2", s2)
     ret = "$TABLE: {} :\n".format(main_title)
     ret += "$GRAPHS\n"
-    #all_labs = []
     all_labs = list(df.columns)
     for t, labs in title_labs:
         if s2 is not None: labs = ["1/resol^2"] + labs
         ret += ": {} :A:{}:\n".format(t, ",".join(str(all_labs.index(l)+1) for l in labs))
-        #all_labs.extend(l for l in labs if l not in all_labs)
     ret += "$$\n"
-    ret += " ".join(all_labs) + "\n"
-    ret += "$$\n$$\n"
-    #ret += df.to_string(columns=all_labs, index=False, index_names=False, header=False) + "\n"
-    ret += df.to_string(index=False, index_names=False, header=False, float_format=float_format) + "\n$$\n"
+    lines = df.to_string(index=False, index_names=False, header=True, float_format=float_format).splitlines()
+    ret += lines[0] + "\n$$\n$$\n"
+    ret += "\n".join(lines[1:]) + "\n$$\n"
     return ret
 # make_loggraph_str()
 
