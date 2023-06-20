@@ -59,6 +59,57 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def calc_r_and_cc(hkldata, centric_and_selections):
+    has_int = "I" in hkldata.df
+    has_free = "FREE" in hkldata.df
+    stats = hkldata.binned_df.copy()
+    stats["n_obs"] = 0
+    if has_free:
+        stats[["n_work", "n_free"]] = 0
+    rlab = "R2" if has_int else "R"
+    cclab = "CCI" if has_int else "CCF"
+    Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
+    if has_int:
+        obs = hkldata.df.I
+        calc = Fc**2
+    else:
+        obs = hkldata.df.FP
+        calc = Fc
+    if has_free:
+        for lab in (cclab, rlab):
+            for suf in ("work", "free"):
+                stats[lab+suf] = numpy.nan
+    else:
+        stats[cclab] = numpy.nan
+        stats[rlab] = numpy.nan
+
+    for i_bin, idxes in hkldata.binned():
+        stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
+        if has_free:
+            for j, suf in ((1, "work"), (2, "free")):
+                idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
+                stats.loc[i_bin, "n_"+suf] = numpy.sum(numpy.isfinite(obs[idxes2]))
+                stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
+                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs[idxes2], calc[idxes2])
+        else:
+            stats.loc[i_bin, cclab] = utils.hkl.correlation(obs[idxes], calc[idxes])
+            stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs[idxes], calc[idxes])
+
+    # Overall
+    ret = {}
+    if has_free:
+        for suf in ("work", "free"):
+            ret[cclab+suf+"avg"] = numpy.average(stats[cclab+suf], weights=stats["n_"+suf])
+        for j, suf in ((1, "work"), (2, "free")):
+            idxes = numpy.concatenate([sel[j] for i_bin, _ in hkldata.binned() for sel in centric_and_selections[i_bin]])
+            ret[rlab+suf] = utils.hkl.r_factor(obs[idxes], calc[idxes])
+    else:
+        ret[cclab+"avg"] = numpy.average(stats[cclab], weights=stats["n_obs"])
+        ret[rlab] = utils.hkl.r_factor(obs, calc)
+        
+    return stats, ret
+# calc_r_and_cc()
+
 class VarTrans:
     def __init__(self, D_trans, S_trans):
         # splus (softplus) appears to be better than exp

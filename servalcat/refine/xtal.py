@@ -17,58 +17,6 @@ from servalcat import ext
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
-def calc_bin_stats(hkldata, centric_and_selections):
-    has_int = "I" in hkldata.df
-    has_free = "FREE" in hkldata.df
-    stats = hkldata.binned_df.copy()
-    stats["n_obs"] = 0
-    if has_free:
-        stats[["n_work", "n_free"]] = 0
-    rlab = "R2" if has_int else "R"
-    cclab = "CCI" if has_int else "CCF"
-    Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
-    if has_int:
-        obs = hkldata.df.I
-        calc = Fc**2
-    else:
-        obs = hkldata.df.FP
-        calc = Fc
-    if has_free:
-        for suf in ("work", "free"):
-            stats[cclab+suf] = numpy.nan
-            stats[rlab+suf] = numpy.nan
-    else:
-        stats[cclab] = numpy.nan
-        stats[rlab] = numpy.nan
-
-    for i_bin, idxes in hkldata.binned():
-        stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
-        if has_free:
-            for j, suf in ((1, "work"), (2, "free")):
-                idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
-                stats.loc[i_bin, "n_"+suf] = numpy.sum(numpy.isfinite(obs[idxes2]))
-                stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
-                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs[idxes2], calc[idxes2])
-        else:
-            stats.loc[i_bin, cclab] = utils.hkl.correlation(obs[idxes], calc[idxes])
-            stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs[idxes], calc[idxes])
-    return stats
-# calc_bin_stats()
-
-def calc_cc_avg(stats):
-    cc_labs = [x for x in stats if x.startswith("CC")]
-    ret = {x+"avg" : numpy.nan for x in cc_labs}
-    for lab in cc_labs:
-        if lab.endswith("work"):
-            weights = stats["n_work"]
-        elif lab.endswith("free"):
-            weights = stats["n_free"]
-        else:
-            weights = stats["n_obs"]
-        ret[lab+"avg"] = numpy.average(stats[lab], weights=weights)
-    return ret
-# calc_cc_avg()
-
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all"):
@@ -193,38 +141,13 @@ class LL_Xtal:
     # calc_target()
 
     def calc_stats(self, bin_stats=False):
-        if self.is_int:
-            calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.I[sel],
-                                                    numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel])**2)
-            rlab = "R2"
-            cclab = "CCI"
-        else:
-            calc_r = lambda sel: utils.hkl.r_factor(self.hkldata.df.FP[sel],
-                                                    numpy.abs(self.hkldata.df.FC[sel] * self.hkldata.df.k_aniso[sel]))
-            rlab = "R"
-            cclab = "CCF"
-        ret = {"summary": {}}
-        stats = calc_bin_stats(self.hkldata, self.centric_and_selections)
-        ret["summary"].update(calc_cc_avg(stats))
-        if "FREE" in self.hkldata.df:
-            test_sel = (self.hkldata.df.FREE == self.free).fillna(False)
-            r_free = calc_r(test_sel)
-            r_work = calc_r(~test_sel)
-            logger.writeln("{}_work = {:.4f} {}_free = {:.4f}".format(rlab, r_work, rlab, r_free))
-            ret["summary"]["{}work".format(rlab)] = r_work
-            ret["summary"]["{}free".format(rlab)] = r_free
-            cc_free = ret["summary"]["{}freeavg".format(cclab)]
-            cc_work = ret["summary"]["{}workavg".format(cclab)]
-            logger.writeln("{}avg_work = {:.4f} {}avg_free = {:.4f}".format(cclab, cc_work, cclab, cc_free))
-        else:
-            r = calc_r(slice(None))
-            cc = ret["summary"]["{}avg".format(cclab)]
-            logger.writeln("{} = {:.4f}".format(rlab, r))
-            logger.writeln("{}avg = {:.4f}".format(cclab, cc))
-            ret["summary"][rlab] = r
+        stats, overall = sigmaa.calc_r_and_cc(self.hkldata, self.centric_and_selections)
+        ret = {"summary": overall}
         ret["summary"]["-LL"] = self.calc_target()
         if bin_stats:
             ret["bin_stats"] = stats
+        for lab in "R", "CC":
+            logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
         return ret
 
     def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
