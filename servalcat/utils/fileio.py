@@ -233,6 +233,8 @@ def read_mmhkl(hklin, cif_index=0): # mtz or mmcif
         mtz = cif2mtz.convert_block_to_mtz(blocks[cif_index])
     else:
         raise RuntimeError("Unsupported file type: {}".format(spext[1]))
+    if mtz.spacegroup is None:
+        raise RuntimeError("Missing space group information")
     logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*mtz.cell.parameters))
     logger.writeln("  Space group: {}".format(mtz.spacegroup.xhm()))
     logger.writeln("      Columns: {}".format(" ".join(mtz.column_labels())))

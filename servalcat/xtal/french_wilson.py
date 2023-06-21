@@ -198,7 +198,10 @@ def main(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
     if not args.labin:
-        mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
+        try:
+            mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
         dlabs = utils.hkl.mtz_find_data_columns(mtz)
         if dlabs["J"]:
             labin = dlabs["J"][0]
