@@ -952,6 +952,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         st, hkldata = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
         sts = [st]
         newlabels = hkldata.columns()
+
+    if hkldata.df.empty:
+        raise RuntimeError("No data in hkl data")
     
     if sts:
         assert source in ["electron", "xray", "neutron"]
@@ -984,6 +987,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
+    if hkldata.df.empty:
+        raise RuntimeError("No data left in hkl data")
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
 
     if (d_min, d_max).count(None) != 2:
@@ -1204,16 +1209,20 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
 
 def main(args):
     n_per_bin = {"all": 500, "work": 500, "test": 50}[args.use]
-    hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
-                                                                       labin=args.labin.split(","),
-                                                                       n_bins=args.nbins,
-                                                                       free=args.free,
-                                                                       xyzins=sum(args.model, []),
-                                                                       source=args.source,
-                                                                       d_min=args.d_min,
-                                                                       n_per_bin=n_per_bin,
-                                                                       use=args.use,
-                                                                       max_bins=30)
+    try:
+        hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
+                                                                           labin=args.labin.split(","),
+                                                                           n_bins=args.nbins,
+                                                                           free=args.free,
+                                                                           xyzins=sum(args.model, []),
+                                                                           source=args.source,
+                                                                           d_min=args.d_min,
+                                                                           n_per_bin=n_per_bin,
+                                                                           use=args.use,
+                                                                           max_bins=30)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+
     is_int = "I" in hkldata.df
     
     # Overall scaling & bulk solvent

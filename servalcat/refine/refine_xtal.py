@@ -105,16 +105,19 @@ def main(args):
         use_in_target = "all"
         n_per_bin = 100
 
-    hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=args.hklin,
-                                                                             labin=args.labin.split(","),
-                                                                             n_bins=args.nbins,
-                                                                             free=args.free,
-                                                                             xyzins=[args.model],
-                                                                             source=args.source,
-                                                                             d_min=args.d_min,
-                                                                             n_per_bin=n_per_bin,
-                                                                             use=use_in_est,
-                                                                             max_bins=30)
+    try:
+        hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=args.hklin,
+                                                                                 labin=args.labin.split(","),
+                                                                                 n_bins=args.nbins,
+                                                                                 free=args.free,
+                                                                                 xyzins=[args.model],
+                                                                                 source=args.source,
+                                                                                 d_min=args.d_min,
+                                                                                 n_per_bin=n_per_bin,
+                                                                                 use=use_in_est,
+                                                                                 max_bins=30)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
 
     is_int = "I" in hkldata.df
     st = sts[0]
