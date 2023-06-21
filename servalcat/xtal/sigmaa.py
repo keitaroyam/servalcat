@@ -912,13 +912,13 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
 # merge_models()
 
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
-                  n_per_bin=None, use="all", max_bins=None):
+                  n_per_bin=None, use="all", max_bins=None, cif_index=0):
     if labin: assert 1 < len(labin) < 4
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
     if utils.fileio.is_mmhkl_file(hklin):
-        mtz = utils.fileio.read_mmhkl(hklin)
+        mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
         col_types = {x.label:x.type for x in mtz.columns}
         if not labin:
             dlabs = utils.hkl.mtz_find_data_columns(mtz)

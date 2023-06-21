@@ -28,6 +28,8 @@ def add_arguments(parser):
     parser.description = 'Convert intensity to amplitude'
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
+    parser.add_argument('--hklin_index', type=int, default=0,
+                        help='block index if hklin is mmcif file (default: %(default)d)')
     parser.add_argument('--labin', 
                         help='MTZ column for I,SIGI')
     parser.add_argument('--d_min', type=float)
@@ -125,12 +127,12 @@ def determine_Sigma_and_aniso(hkldata):
             logger.writeln("B_aniso= {}".format(B))
             break
 
-    with open("fw_cycles.dat", "w") as ofs:
-        ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df.index) + "\n")
-        for data in cycle_data:
-            ofs.write("{:2d} ".format(data[0]+1))
-            ofs.write(" ".join("{:.4e}".format(x) for x in data[1:]))
-            ofs.write("\n")
+    #with open("fw_cycles.dat", "w") as ofs:
+    #    ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df.index) + "\n")
+    #    for data in cycle_data:
+    #        ofs.write("{:2d} ".format(data[0]+1))
+    #        ofs.write(" ".join("{:.4e}".format(x) for x in data[1:]))
+    #        ofs.write("\n")
         
     return B
 
@@ -196,7 +198,7 @@ def main(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
     if not args.labin:
-        mtz = utils.fileio.read_mmhkl(args.hklin)
+        mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
         dlabs = utils.hkl.mtz_find_data_columns(mtz)
         if dlabs["J"]:
             labin = dlabs["J"][0]
@@ -217,7 +219,8 @@ def main(args):
                                         source=None,
                                         d_min=args.d_min,
                                         n_per_bin=500,
-                                        max_bins=30)
+                                        max_bins=30,
+                                        cif_index=args.hklin_index)
     
     B_aniso = determine_Sigma_and_aniso(hkldata)
     french_wilson(hkldata, B_aniso)
