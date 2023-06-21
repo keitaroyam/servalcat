@@ -590,7 +590,7 @@ def adp_constraints(ops, cell, tr0=True):
         r1r2 = numpy.dot(r1.T, r2)
         x += 2 * numpy.dot(r1.T, r1) - 2 * (r1r2 + r1r2.T) + 2 * numpy.dot(r2.T, r2)
 
-    evals, evecs = numpy.linalg.eig(x)
+    evals, evecs = numpy.linalg.eigh(x)
     ret = []
     for i in range(6):
         if numpy.isclose(evals[i], 0):
