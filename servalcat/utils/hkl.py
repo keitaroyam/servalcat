@@ -432,9 +432,15 @@ class HklData:
         threshold = len(free.index) / 2
         if free.isna().any():
             raise RuntimeError("missing or invalid test flag")
-        counts = self.df.loc[sel, "FREE"].value_counts().sort_values()
+        counts = self.df.loc[sel, "FREE"].value_counts().sort_index()
         logger.writeln(counts.to_string(header=False))
-        flag_num = min(n for n, c in counts.items() if c < threshold)
+        if len(counts.index) < 2:
+            raise RuntimeError("this does not appear to be test flag")
+        good_flags = [n for n, c in counts.items() if c < threshold]
+        if len(good_flags) > 0:
+            flag_num = min(good_flags)
+        else:
+            flag_num = min(counts.index)
         logger.writeln(" best guess: free = {}".format(flag_num))
         return flag_num
     # guess_free_number()        
