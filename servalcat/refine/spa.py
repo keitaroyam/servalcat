@@ -80,7 +80,8 @@ class LL_SPA:
         for i_bin, idxes in self.hkldata.binned():
             Fo = self.hkldata.df[self.lab_obs].to_numpy()[idxes]
             DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df.D[i_bin]
-            ret += numpy.nansum(numpy.abs(Fo - DFc)**2) / self.hkldata.binned_df.S[i_bin]
+            S = self.hkldata.binned_df.S[i_bin]
+            ret += numpy.nansum(numpy.abs(Fo - DFc)**2) / S + numpy.log(S) * len(idxes)
         return ret * 2 # friedel mates
     # calc_target()
 
