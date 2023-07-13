@@ -59,6 +59,10 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def nanaverage(cc, w):
+    sel = ~numpy.isnan(cc)
+    return numpy.average(cc[sel], weights=w[sel]) 
+
 def calc_r_and_cc(hkldata, centric_and_selections):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
@@ -99,12 +103,12 @@ def calc_r_and_cc(hkldata, centric_and_selections):
     ret = {}
     if has_free:
         for suf in ("work", "free"):
-            ret[cclab+suf+"avg"] = numpy.average(stats[cclab+suf], weights=stats["n_"+suf])
+            ret[cclab+suf+"avg"] = nanaverage(stats[cclab+suf], stats["n_"+suf])
         for j, suf in ((1, "work"), (2, "free")):
             idxes = numpy.concatenate([sel[j] for i_bin, _ in hkldata.binned() for sel in centric_and_selections[i_bin]])
             ret[rlab+suf] = utils.hkl.r_factor(obs[idxes], calc[idxes])
     else:
-        ret[cclab+"avg"] = numpy.average(stats[cclab], weights=stats["n_obs"])
+        ret[cclab+"avg"] = nanaverage(stats[cclab], stats["n_obs"])
         ret[rlab] = utils.hkl.r_factor(obs, calc)
         
     return stats, ret
@@ -987,12 +991,12 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
-    if hkldata.df.empty:
-        raise RuntimeError("No data left in hkl data")
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
 
     if (d_min, d_max).count(None) != 2:
         hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
+    if hkldata.df.empty:
+        raise RuntimeError("No data left in hkl data")
     d_min, d_max = hkldata.d_min_max()
         
     hkldata.complete()
