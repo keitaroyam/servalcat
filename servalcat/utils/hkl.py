@@ -292,7 +292,8 @@ class HklData:
 
     def complete(self):
         # make complete set
-        all_hkl = gemmi.make_miller_array(self.cell, self.sg, self.d_min_max()[0])
+        d_min, d_max = self.d_min_max()
+        all_hkl = gemmi.make_miller_array(self.cell, self.sg, d_min, d_max)
         match = gemmi.HklMatch(self.miller_array(), all_hkl)
         missing_hkl_df = pandas.DataFrame(all_hkl[numpy.asarray(match.pos) < 0], columns=["H","K","L"])
         self.df = pandas.concat([self.df, missing_hkl_df])
