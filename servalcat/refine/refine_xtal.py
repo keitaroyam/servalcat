@@ -54,8 +54,8 @@ def add_arguments(parser):
                         help='Shake coordinates with specified rmsd')
     parser.add_argument('--ncycle', type=int, default=10,
                         help="number of CG cycles (default: %(default)d)")
-    parser.add_argument('--weight', type=float, default=1,
-                        help="refinement weight")
+    parser.add_argument('--weight', type=float,
+                        help="refinement weight (default: auto)")
     parser.add_argument('--sigma_b', type=float, default=10,
                         help="refinement ADP sigma in B (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
@@ -152,7 +152,14 @@ def main(args):
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
-    
+        
+    # auto weight
+    if args.weight is None:
+        logger.writeln("Estimating weight using resolution")
+        reso = hkldata.d_min_max()[0]
+        args.weight = numpy.exp(reso * 0.9104 + 0.2162)
+        logger.writeln(" Will use weight= {:.2f}".format(args.weight))
+        
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"))
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
