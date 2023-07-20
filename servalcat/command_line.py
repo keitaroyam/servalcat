@@ -110,6 +110,8 @@ def main():
         except SystemExit as e:
             logger.error(str(e))
             sys.exit(1)
+        logger.exit_success()
+        logger.close()
     else:
         parser.print_help()
 

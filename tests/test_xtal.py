@@ -15,7 +15,6 @@ import os
 import shutil
 import sys
 import tempfile
-import shlex
 import hashlib
 from servalcat import utils
 from servalcat.xtal import sigmaa
@@ -109,8 +108,8 @@ class XtalTests(unittest.TestCase):
     def test_refine_cx(self):
         mtzin = os.path.join(root, "biotin", "biotin_talos.mtz")
         pdbin = os.path.join(root, "biotin", "biotin_talos.pdb")
-        sys.argv = ["", "refine_cx", "--model", shlex.quote(pdbin),
-                    "--hklin", shlex.quote(mtzin), "--bref", "iso_then_aniso"]
+        sys.argv = ["", "refine_cx", "--model", pdbin,
+                    "--hklin", mtzin, "--bref", "iso_then_aniso"]
         command_line.main()
         self.assertTrue(os.path.isfile("refined_2_aniso.mtz"))
         r_factor = None

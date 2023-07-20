@@ -15,7 +15,6 @@ import os
 import shutil
 import sys
 import tempfile
-import shlex
 import hashlib
 from servalcat import utils
 from servalcat import command_line
@@ -112,8 +111,8 @@ class TestSPACommands(unittest.TestCase):
     # tearDown()
 
     def test_fofc(self):
-        sys.argv = ["", "fofc", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--model", shlex.quote(data["pdb"]), "-d", "1.9"]
+        sys.argv = ["", "fofc", "--halfmaps", data["half1"], data["half2"],
+                    "--model", data["pdb"], "-d", "1.9"]
         command_line.main()
         self.assertTrue(os.path.isfile("diffmap.mtz"))
         mtz = gemmi.read_mtz_file("diffmap.mtz")
@@ -121,8 +120,8 @@ class TestSPACommands(unittest.TestCase):
     # test_fofc()
 
     def test_fsc(self):
-        sys.argv = ["", "fsc", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--model", shlex.quote(data["pdb"]), "--mask", shlex.quote(data["mask"])]
+        sys.argv = ["", "fsc", "--halfmaps", data["half1"], data["half2"],
+                    "--model", data["pdb"], "--mask", data["mask"]]
         command_line.main()
         self.assertTrue(os.path.isfile("fsc.dat"))
         df = pandas.read_table("fsc.dat", comment="#", sep="\s+")
@@ -150,8 +149,8 @@ class TestSPACommands(unittest.TestCase):
 
     @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")
     def test_refine(self):
-        sys.argv = ["", "refine_spa", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--model", shlex.quote(data["pdb"]), "--mask_for_fofc", shlex.quote(data["mask"]),
+        sys.argv = ["", "refine_spa", "--halfmaps", data["half1"], data["half2"],
+                    "--model", data["pdb"], "--mask_for_fofc", data["mask"],
                     "--trim_fofc_mtz", "--resolution", "1.9", "--ncycle", "5", "--cross_validation"]
         command_line.main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
@@ -173,8 +172,8 @@ class TestSPACommands(unittest.TestCase):
     # test_refine()
 
     def test_trim(self):
-        sys.argv = ["", "trim", "--maps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--model", shlex.quote(data["pdb"]), "--mask", shlex.quote(data["mask"]),
+        sys.argv = ["", "trim", "--maps", data["half1"], data["half2"],
+                    "--model", data["pdb"], "--mask", data["mask"],
                     "--no_shift", "--noncubic", "--noncentered"]
         command_line.main()
         self.assertTrue(os.path.isfile("emd_30913_half_map_1_trimmed.mrc"))
@@ -182,7 +181,8 @@ class TestSPACommands(unittest.TestCase):
         self.assertTrue(os.path.isfile("emd_30913_msk_1_trimmed.mrc"))
         self.assertTrue(os.path.isfile("trim_shifts.json"))
 
-        shifts = json.load(open("trim_shifts.json"))
+        with open("trim_shifts.json") as ifs:
+            shifts = json.load(ifs)
         numpy.testing.assert_allclose(shifts["shifts"], [-1.59999327, -4.79997982, -7.99996636], rtol=1e-5)
         self.assertEqual(shifts["new_grid"], [106, 98, 90])
     # test_trim()
@@ -191,8 +191,8 @@ class TestSPACommands(unittest.TestCase):
         pass
 
     def test_localcc(self):
-        sys.argv = ["", "localcc", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--model", shlex.quote(data["pdb"]), "--mask", shlex.quote(data["mask"]), "--kernel", "5"]
+        sys.argv = ["", "localcc", "--halfmaps", data["half1"], data["half2"],
+                    "--model", data["pdb"], "--mask", data["mask"], "--kernel", "5"]
         command_line.main()
         self.assertTrue(os.path.isfile("ccmap_r5px_half.mrc"))
         self.assertTrue(os.path.isfile("ccmap_r5px_model.mrc"))
@@ -207,26 +207,26 @@ class TestSPACommands(unittest.TestCase):
                                0.6619259582976047, places=3)
 
     def test_commands(self): # util commands
-        sys.argv = ["", "util", "symmodel", "--model", shlex.quote(data["pdb"]), "--map", shlex.quote(data["mask"]),
+        sys.argv = ["", "util", "symmodel", "--model", data["pdb"], "--map", data["mask"],
                     "--pg", "D2", "--biomt"]
         command_line.main()
 
         sys.argv = ["", "util", "expand", "--model", "pdb7dy0_asu.pdb"]
         command_line.main()
 
-        sys.argv = ["", "util", "h_add", shlex.quote(data["pdb"])]
+        sys.argv = ["", "util", "h_add", data["pdb"]]
         command_line.main()
 
         # TODO merge_models
 
-        sys.argv = ["", "util", "power", "--map", shlex.quote(data["mask"]), shlex.quote(data["half1"]), shlex.quote(data["half2"])]
+        sys.argv = ["", "util", "power", "--map", data["mask"], data["half1"], data["half2"]]
         command_line.main()
 
-        sys.argv = ["", "util", "fcalc", "--model", shlex.quote(data["pdb"]), "-d", "1.7", "--auto_box_with_padding=5"]
+        sys.argv = ["", "util", "fcalc", "--model", data["pdb"], "-d", "1.7", "--auto_box_with_padding=5"]
         command_line.main()
 
-        sys.argv = ["", "util", "nemap", "--halfmaps", shlex.quote(data["half1"]), shlex.quote(data["half2"]),
-                    "--mask", shlex.quote(data["mask"]), "--trim_mtz", "-d", "1.7"]
+        sys.argv = ["", "util", "nemap", "--halfmaps", data["half1"], data["half2"],
+                    "--mask", data["mask"], "--trim_mtz", "-d", "1.7"]
         command_line.main()
 
         sys.argv = ["", "util", "blur", "--hklin", "nemap.mtz", "-B", "100"]

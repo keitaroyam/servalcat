@@ -83,13 +83,14 @@ def check_maps(map_files, pixel_size=None, disable_cell_check=False):
 # check_maps()
 
 def write_shifts_json(filename, cell, shape, new_cell, new_shape, starts, shifts):
-    json.dump(dict(cell=cell,
-                   grid=shape,
-                   new_cell=new_cell,
-                   new_grid=new_shape,
-                   starts=starts,
-                   shifts=shifts),
-              open(filename, "w"), indent=2)
+    with open(filename, "w") as ofs:
+        json.dump(dict(cell=cell,
+                       grid=shape,
+                       new_cell=new_cell,
+                       new_grid=new_shape,
+                       starts=starts,
+                       shifts=shifts),
+                  ofs, indent=2)
 # write_shifts_json()
 
 def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1e-5, noncentered=False, noncubic=False,

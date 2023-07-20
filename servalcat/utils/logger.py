@@ -11,7 +11,6 @@ import datetime
 import platform
 import getpass
 import traceback
-import atexit
 import shlex
 import servalcat
 
@@ -93,8 +92,6 @@ def write_header(command="servalcat"):
 def exit_success():
     _logger.writeln("\n# Finished on {}\n".format(datetime.datetime.now()))
 
-atexit.register(exit_success)
-
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
@@ -104,7 +101,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     #_logger.writeln("Uncaught exception: {}: {}".format(name, exc_value))
     _logger.error("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
     _logger.writeln("# Abnormally finished on {}\n".format(datetime.datetime.now()))
-    atexit.unregister(exit_success)
+    _logger.close()
 
 # handle_exception()
 
