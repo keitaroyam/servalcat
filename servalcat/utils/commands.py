@@ -21,6 +21,8 @@ import numpy
 import scipy.spatial
 import pandas
 import json
+import textwrap
+import re
 import argparse
 
 def add_arguments(p):
@@ -257,6 +259,11 @@ def add_arguments(p):
     parser = subparsers.add_parser("sm2mm", description = 'Small molecule files (cif/hkl/res/ins) to macromolecules (pdb/mmcif/mtz)')
     parser.add_argument('files', nargs='+', help='Cif/ins/res/hkl files')
     parser.add_argument('-o', '--output_prefix')
+
+    # seq
+    parser = subparsers.add_parser("seq", description = 'Print/align model sequence')
+    parser.add_argument("--model", required=True)
+    parser.add_argument('--seq', nargs="*", action="append", help="Sequence file(s)")
 
 # add_arguments()
 
@@ -1124,6 +1131,52 @@ def sm2mm(args):
                           types=dict(I="J", SIGI="Q", FP="F", SIGFP="Q"))
 # sm2mm()
 
+def seq(args):
+    wrap_width = 100
+    seqs = []
+    if args.seq:
+        args.seq = sum(args.seq, [])
+        for sf in args.seq:
+            seqs.extend(fileio.read_sequence_file(sf))
+        
+    st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
+    for chain in st[0]:
+        p = chain.get_polymer()
+        if not p: continue
+        p_seq = gemmi.one_letter_code(p)
+        p_type = p.check_polymer_type()
+        results = []
+        for name, seq in seqs:
+            if p_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD):
+                s = [gemmi.expand_protein_one_letter(x) for x in seq]
+            else:
+                s = [x for x in seq]
+            results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type), seq])
+
+        if results:
+            logger.writeln("Chain: {}".format(chain.name))
+            name, al, s1 = max(results, key=lambda x: x[1].score)
+            logger.writeln(" match: {}".format(name))
+            logger.writeln(" score: {}".format(al.score))
+            p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
+            mismatches = [x.start() for x in re.finditer("\.", al.match_string)]
+            if mismatches:
+                idxes = {x.start(): i for i, x in enumerate(re.finditer("[^-]", p2))}
+                seqnums = [str(x.seqid) for x in p]
+                logger.write(" mismatches: ")
+                logger.writeln(", ".join("{}({}>{})".format(seqnums[idxes[i]], p1[i], p2[i]) for i in mismatches))
+            logger.writeln("")
+            for x in zip(textwrap.wrap(p1, wrap_width, drop_whitespace=False),
+                         textwrap.wrap(al.match_string, wrap_width, drop_whitespace=False),
+                         textwrap.wrap(p2, wrap_width, drop_whitespace=False)):
+                logger.writeln(" " + "\n ".join(x)+"\n")
+        else:
+            logger.writeln("> Chain: {}".format(chain.name))
+            for x in textwrap.wrap(gemmi.one_letter_code(p), wrap_width):
+                logger.writeln(x)
+            logger.writeln("")
+# seq()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -1162,7 +1215,8 @@ def main(args):
                  mask_from_model=mask_from_model,
                  applymask=applymask,
                  map2mtz=map2mtz,
-                 sm2mm=sm2mm)
+                 sm2mm=sm2mm,
+                 seq=seq)
     
     com = args.subcommand
     f = comms.get(com)

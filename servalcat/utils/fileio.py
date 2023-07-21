@@ -728,3 +728,17 @@ def read_small_molecule_files(files):
         hkldata = None
 
     return st, hkldata
+
+def read_sequence_file(f):
+    # TODO needs improvement
+    # return a list of [name, sequence]
+    ret = []
+    for l in open(f):
+        l = l.strip()
+        if l.startswith(">"):
+            name = l[1:].strip()
+            ret.append([name, ""])
+        elif l:
+            if not ret: ret.append(["", ""])
+            ret[-1][1] += l.replace("*", "").replace("-", "")
+    return ret
