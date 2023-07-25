@@ -84,6 +84,7 @@ def parse_args(arg_list):
 
 def main(args):
     if args.source == "neutron": assert not args.refine_h # we need deuterium fraction handling in LL
+    if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
 
