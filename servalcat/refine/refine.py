@@ -28,7 +28,7 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, sigma_b=10, shake_rms=0,
+    def __init__(self, st, topo, monlib, adpr_w=1, shake_rms=0,
                  refmac_keywords=None, unrestrained=False, use_nucleus=False):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
@@ -41,7 +41,7 @@ class Geom:
             #n_sym = len([x for x in images if x < cs_count]) + 1
             n_sym = len(images) + 1
             self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
-        self.sigma_b = sigma_b
+        self.adpr_w = adpr_w
         self.unrestrained = unrestrained
         if shake_rms > 0:
             numpy.random.seed(0)
@@ -91,7 +91,7 @@ class Geom:
     def calc(self, target_only):
         return self.geom.calc(check_only=target_only, **self.calc_kwds)
     def calc_adp_restraint(self, target_only):
-        return self.geom.calc_adp_restraint(target_only, self.sigma_b)
+        return self.geom.calc_adp_restraint(target_only, self.adpr_w)
     def calc_target(self, target_only, refine_xyz, adp_mode):
         self.geom.clear_target()
         geom_x = self.calc(target_only) if refine_xyz else 0
@@ -184,6 +184,20 @@ class Refine:
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
     # __init__()
+    
+    def print_weights(self): # TODO unfinished
+        logger.writeln("Geometry weights")
+        g = self.geom.geom
+        if self.adp_mode > 0:
+            logger.writeln(" ADP restraints")
+            logger.writeln("  weight: {}".format(self.geom.adpr_w))
+            logger.writeln("  mode: {}".format(g.adpr_mode))
+            if g.adpr_mode == "diff":
+                logger.writeln("  sigmas: {}".format(" ".join("{:.2f}".format(x) for x in g.adpr_diff_sigs)))
+            elif g.adpr_mode == "kldiv":
+                logger.writeln("  sigmas: {}".format(" ".join("{:.2f}".format(x) for x in g.adpr_kl_sigs)))
+            else:
+                raise LookupError("unknown adpr_mode")
 
     def scale_shifts(self, dx, scale):
         n_atoms = len(self.atoms)
@@ -382,6 +396,7 @@ class Refine:
         return ret, shift_scale, f1
 
     def run_cycles(self, ncycles, weight=1, debug=False):
+        self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
         self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)

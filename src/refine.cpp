@@ -222,7 +222,7 @@ void add_refine(py::module& m) {
         if (!p.second.empty())
           append(p.first == 1 ? "B values (bond)" :
                  p.first == 2 ? "B values (angle)" :
-                 "B values (long range)", p.second, zsq[p.first]);
+                 "B values (others)", p.second, zsq[p.first]);
 
       return py::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
                       "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz);
@@ -627,6 +627,24 @@ void add_refine(py::module& m) {
     .def_readwrite("adpr_d_power", &Geometry::adpr_d_power)
     .def_readwrite("adpr_exp_fac", &Geometry::adpr_exp_fac)
     .def_readwrite("adpr_long_range", &Geometry::adpr_long_range)
+    .def_readwrite("adpr_kl_sigs", &Geometry::adpr_kl_sigs)
+    .def_readwrite("adpr_diff_sigs", &Geometry::adpr_diff_sigs)
+    .def_property("adpr_mode",
+                  [](const Geometry& self) {
+                    switch(self.adpr_mode) {
+                      case 0: return "diff";
+                      case 1: return "kldiv";
+                    }
+                    return "unknown"; // should not happen
+                  },
+                  [](Geometry& self, const std::string& mode) {
+                    if (mode == "diff")
+                      self.adpr_mode = 0;
+                    else if (mode == "kldiv")
+                      self.adpr_mode = 1;
+                    else
+                      throw std::runtime_error("unknown adpr mode");
+                  })
     // jelly body parameters
     .def_readwrite("ridge_dmax", &Geometry::ridge_dmax)
     .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)

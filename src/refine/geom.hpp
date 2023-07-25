@@ -12,8 +12,31 @@
 #include <gemmi/eig3.hpp>     // for eigen_decomposition
 #include <gemmi/bond_idx.hpp> // for BondIndex
 #include <Eigen/Sparse>
+#include <Eigen/Dense>
 
 namespace servalcat {
+
+Eigen::Matrix<double,6,6> mat33_as66(const Eigen::Matrix<double,3,3> &m) {
+  // suppose R is a transformation matrix that is applied to 3x3 symmetric matrix U: R U R^T
+  // this function constructs equivalent transformation for 6-element vector: R' u
+  Eigen::Matrix<double,6,6> r;
+  const std::vector<std::pair<int,int>> idxes = {{0,0}, {1,1}, {2,2}, {0,1}, {0,2}, {1,2}};
+  for (int k = 0; k < 6; ++k) {
+    const int i = idxes[k].first, j = idxes[k].second;
+    r(k, Eigen::all) <<
+      m(i,0) * m(j,0),
+      m(i,1) * m(j,1),
+      m(i,2) * m(j,2),
+      m(i,0) * m(j,1) + m(i,1) * m(j,0),
+      m(i,0) * m(j,2) + m(i,2) * m(j,0),
+      m(i,1) * m(j,2) + m(i,2) * m(j,1);
+  }
+  return r;
+}
+
+Eigen::Matrix<double,6,6> mat33_as66(const gemmi::Mat33 &m) {
+  return mat33_as66(Eigen::Matrix<double,3,3>(&m.a[0][0]));
+}
 
 gemmi::Mat33 eigen_decomp_inv(const gemmi::SMat33<double> &m, double e, bool for_precond) {
   // good e = 1.e-9 for plane and ~1e-6 or 1e-4 for precondition
@@ -206,7 +229,7 @@ struct GeomTarget {
   std::vector<size_t> rest_per_atom;
   std::vector<size_t> rest_pos_per_atom;
   std::vector<std::pair<int,int>> pairs;
-  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, ...)
+  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, torsion=3, chir=4, plane=5, vdw=6, stack=8)
   int nmpos;
   size_t n_atoms() const { return atoms.size(); }
   MatPos find_restraint(int ia1, int ia2) const {
@@ -541,7 +564,7 @@ struct Geometry {
   }
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
               double wchir, double wplane, double wstack, double wvdw);
-  double calc_adp_restraint(bool check_only, double sigma);
+  double calc_adp_restraint(bool check_only, double wbskal);
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
   std::vector<Bond> bonds;
@@ -585,6 +608,9 @@ struct Geometry {
   double adpr_d_power = 4;
   double adpr_exp_fac = 0.011271; //1 ./ (2*4*4*4*std::log(2.));
   bool adpr_long_range = true;
+  std::array<float, 8> adpr_kl_sigs = {0.1f, 0.15f, 0.3f, 0.5f, 0.7f, 0.7f, 0.7f, 1.0f};
+  std::array<float, 8> adpr_diff_sigs = {5.f, 7.5f, 15.f, 25.f, 35.f, 35.f, 35.f, 50.f};
+  int adpr_mode = 0; // 0: diff, 1: KLdiv
 
   // Jelly body
   float ridge_dmax = 0;
@@ -983,61 +1009,138 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   return ret;
 }
 
-inline double Geometry::calc_adp_restraint(bool check_only, double sigma) {
+inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
+  if (wbskal <= 0) return 0.;
   if (!check_only)
     assert(target.adp_mode > 0);
   reporting.adps.clear();
   const int n_pairs = target.pairs.size();
   const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
   const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
-  const double weight = 1. / (sigma * sigma);
   double ret = 0.;
   for (int i = 0; i < n_pairs; ++i) {
-    if (!adpr_long_range && target.pairs_kind[i] > 2) continue;
+    if (!adpr_long_range && target.pairs_kind[i] > 4) continue;
     const gemmi::Atom* atom1 = target.atoms[target.pairs[i].first];
     const gemmi::Atom* atom2 = target.atoms[target.pairs[i].second];
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
     if (dsq > gemmi::sq(adpr_max_dist)) continue;
-    const bool bonded = target.pairs_kind[i] < 3; // bond and angle related
-    const double w_fac = bonded ? 1 : std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac);
-    const double w = weight * w_fac;
+    double w = 0;
+    if (adpr_mode == 0) {
+      const float sig = adpr_diff_sigs.at(target.pairs_kind[i]-1);
+      const bool bonded = target.pairs_kind[i] < 3; // bond and angle related
+      w = gemmi::sq(wbskal / sig) * (bonded ? 1 : std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac));
+    } else {
+      const float sig = adpr_kl_sigs.at(target.pairs_kind[i]-1);
+      w = gemmi::sq(wbskal / sig) / (std::max(4., dsq) / 4.);
+    };
+    if (target.adp_mode == 2) w /= 3;
+
     if (target.adp_mode == 1) {
-      const double f = 0.5 * w * (atom1->b_iso - atom2->b_iso) * (atom1->b_iso - atom2->b_iso);
+      const double b_diff = atom1->b_iso - atom2->b_iso;
+      double delta = 0;
+      if (adpr_mode == 0)
+        delta = b_diff;
+      else // KL divergence
+        delta = b_diff / std::sqrt(atom1->b_iso * atom2->b_iso);
+      const double f = 0.5 * w * gemmi::sq(delta);
       ret += f;
       if (!check_only) {
         target.target += f;
-        const double df1 = w * (atom1->b_iso - atom2->b_iso);
-        target.vn[offset_v + atom1->serial - 1] += df1;
-        target.vn[offset_v + atom2->serial - 1] += -df1;
+        double df1 = 0, df2 = 0;
+        if (adpr_mode == 0) {
+          df1 = 1.;
+          df2 = -1.;
+        } else { // KL divergence
+          df1 =  (std::sqrt(atom2->b_iso) / std::pow(atom1->b_iso, 1.5) + 1. / std::sqrt(atom1->b_iso * atom2->b_iso)) * 0.5;
+          df2 = -(std::sqrt(atom1->b_iso) / std::pow(atom2->b_iso, 1.5) + 1. / std::sqrt(atom1->b_iso * atom2->b_iso)) * 0.5;
+        }
+        target.vn[offset_v + atom1->serial - 1] += w * delta * df1;
+        target.vn[offset_v + atom2->serial - 1] += w * delta * df2;
         // diagonal
-        target.am[offset_a + atom1->serial - 1] += w;
-        target.am[offset_a + atom2->serial - 1] += w;
+        target.am[offset_a + atom1->serial - 1] += w * gemmi::sq(df1);
+        target.am[offset_a + atom2->serial - 1] += w * gemmi::sq(df2);
         // non-diagonal
-        target.am[offset_a + target.n_atoms() + i] += -w;
+        target.am[offset_a + target.n_atoms() + i] += w * df1 * df2;
       } else {
-        if (!atom1->is_hydrogen() && !atom2->is_hydrogen())
+        if (!atom1->is_hydrogen() && !atom2->is_hydrogen()) {
+          double report_sigma = wbskal / std::sqrt(w);
+          if (adpr_mode == 1) report_sigma *= std::sqrt(atom1->b_iso * atom2->b_iso);
           // atom1, atom2, type, dist, sigma, delta
           reporting.adps.emplace_back(atom1, atom2, target.pairs_kind[i], std::sqrt(dsq),
-                                      sigma / std::sqrt(w_fac), atom1->b_iso - atom2->b_iso);
+                                      report_sigma, b_diff);
+        }
       }
     } else if (target.adp_mode == 2) {
-      const auto& a1 = atom1->aniso.scaled(gemmi::u_to_b()).elements_pdb();
-      const auto& a2 = atom2->aniso.scaled(gemmi::u_to_b()).elements_pdb();
-      for (int j = 0; j < 6; ++j) {
-        const double f = 0.5 * w * (a1[j] - a2[j]) * (a1[j] - a2[j]);
+      const gemmi::Transform tr = get_transform(st.cell, im.sym_idx, {0,0,0}); // shift does not matter
+      const Eigen::Matrix<double,6,6> R = mat33_as66(tr.mat);
+      const Eigen::Matrix<double,6,1> a1(atom1->aniso.scaled(gemmi::u_to_b()).elements_pdb().data()); // safe?
+      Eigen::Matrix<double,6,1> a2(atom2->aniso.scaled(gemmi::u_to_b()).elements_pdb().data());
+      a2 = R * a2;
+      const auto a_diff = a1 - a2;
+      if (adpr_mode == 0) {
+        // TODO take symmetry into account!!
+        for (int j = 0; j < 6; ++j) {
+          const double f = 0.5 * w * gemmi::sq(a_diff[j]);
+          ret += f;
+          if (!check_only) {
+            target.target += f;
+            const double df1 = w * a_diff[j];
+            target.vn[offset_v + 6 * (atom1->serial-1) + j] += df1;
+            target.vn[offset_v + 6 * (atom2->serial-1) + j] += -df1;
+            // diagonal of diagonal block (6 x 6 symmetric)
+            target.am[offset_a + 21 * (atom1->serial-1) + j] += w;
+            target.am[offset_a + 21 * (atom2->serial-1) + j] += w;
+            // diagonal of non-diagonal block (6 x 6)
+            target.am[offset_a + 21 * target.n_atoms() + 36 * i + 7 * j] += -w;
+          }
+        }
+      } else { // KL divergence (not exactly)
+        const double B1 = a1(Eigen::seq(0,2)).sum() / 3;
+        const double B2 = a2(Eigen::seq(0,2)).sum() / 3;
+        const double B1_B2 = B1 * B2;
+        const Eigen::Matrix<double,6,1> B = {1./3, 1./3, 1./3, 0, 0, 0};
+        const Eigen::Matrix<double,6,6> B_B = B * B.transpose();
+        const Eigen::DiagonalMatrix<double, 6> A(2,2,2,4,4,4);
+        const double f = 0.5 * w * (a_diff.transpose() * (A * 0.5) * a_diff).value() / B1_B2;
         ret += f;
         if (!check_only) {
           target.target += f;
-          const double df1 = w * (a1[j] - a2[j]);
-          target.vn[offset_v + 6 * (atom1->serial-1) + j] += df1;
-          target.vn[offset_v + 6 * (atom2->serial-1) + j] += -df1;
-          // diagonal of diagonal block (6 x 6 symmetric)
-          target.am[offset_a + 21 * (atom1->serial-1) + j] += w;
-          target.am[offset_a + 21 * (atom2->serial-1) + j] += w;
-          // diagonal of non-diagonal block (6 x 6)
-          target.am[offset_a + 21 * target.n_atoms() + 36 * i + 7 * j] += -w;
+          const auto v1 = A * a_diff / B1_B2;
+          const auto v2 = (a_diff.transpose() * (A * 0.5) * a_diff).value() / B1_B2 * B;
+          const auto der1 = 0.5 * w * (v1 - v2 / B1);
+          const auto der2 = 0.5 * w * R.transpose() * (-v1 - v2 / B2);
+          for (int j = 0; j < 6; ++j) {
+            target.vn[offset_v + 6 * (atom1->serial-1) + j] += der1[j];
+            target.vn[offset_v + 6 * (atom2->serial-1) + j] += der2[j];
+          }
+          // diagonal blocks (6 x 6 symmetric)
+          const Eigen::Matrix<double,6,6> tmp = 0.5 * w / B1_B2 * A;
+          const auto am11 = tmp + 2 * f / gemmi::sq(B1) * B_B;
+          const auto am22 = R.transpose() * (tmp + 2 * f / gemmi::sq(B2) * B_B) * R;
+          for (int j = 0; j < 6; ++j) { // diagonals
+            target.am[offset_a + 21 * (atom1->serial-1) + j] += am11(j, j);
+            target.am[offset_a + 21 * (atom2->serial-1) + j] += am22(j, j);
+          }
+          for (int j = 0, l = 6; j < 6; ++j) // non-diagonals
+            for (int k = j + 1; k < 6; ++k, ++l) {
+              target.am[offset_a + 21 * (atom1->serial-1) + l] += am11(j, k);
+              target.am[offset_a + 21 * (atom2->serial-1) + l] += am22(j, k);
+            }
+          // non-diagonal block (6 x 6)
+          const auto am12 = R.transpose() * (-tmp + f / B1_B2 * B_B);
+          for (int j = 0, l = 0; j < 6; ++j)
+            for (int k = 0; k < 6; ++k, ++l)
+              target.am[offset_a + 21 * target.n_atoms() + 36 * i + l] += am12(k, j);
+        } else {
+          if (!atom1->is_hydrogen() && !atom2->is_hydrogen()) {
+            double report_sigma = wbskal / std::sqrt(w);
+            if (adpr_mode == 1) report_sigma *= std::sqrt(B1_B2);
+            // atom1, atom2, type, dist, sigma, delta
+            reporting.adps.emplace_back(atom1, atom2, target.pairs_kind[i], std::sqrt(dsq),
+                                        report_sigma, a_diff.norm());
+          }
         }
       }
     }

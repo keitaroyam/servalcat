@@ -56,8 +56,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float,
                         help="refinement weight (default: auto)")
-    parser.add_argument('--sigma_b', type=float, default=10,
-                        help="refinement ADP sigma in B (default: %(default)f)")
+    parser.add_argument('--adpr_weight', type=float, default=1.,
+                        help="ADP restraint weight (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
@@ -66,6 +66,7 @@ def add_arguments(parser):
     parser.add_argument('--adp_restraint_power', type=float)
     parser.add_argument('--adp_restraint_exp_fac', type=float)
     parser.add_argument('--adp_restraint_no_long_range', action='store_true')
+    parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="kldiv")
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
@@ -161,12 +162,13 @@ def main(args):
         args.weight = numpy.exp(reso * 0.9104 + 0.2162)
         logger.writeln(" Will use weight= {:.2f}".format(args.weight))
         
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, sigma_b=args.sigma_b, refmac_keywords=keywords,
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, refmac_keywords=keywords,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"))
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac
     if args.adp_restraint_no_long_range: geom.geom.adpr_long_range = False
+    geom.geom.adpr_mode = args.adp_restraint_mode
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
