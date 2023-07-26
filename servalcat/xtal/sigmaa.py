@@ -49,6 +49,8 @@ def add_arguments(parser):
                         help="Use CC(|F1|,|F2|) to CC(F1,F2) conversion to derive D and S")
     parser.add_argument('--use', choices=["all", "work", "test"], default="all",
                         help="Which reflections to be used for the parameter estimate.")
+    parser.add_argument('--mask',
+                        help="A solvent mask (by default calculated from the coordinates)")
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -265,9 +267,12 @@ class LsqScale:
         if self.b_aniso is None:
             self.b_aniso = gemmi.SMat33d(b,b,b,0,0,0)
         x0 = [self.k_trans_inv(k)]
+        bounds = [(0, None)]
         x0.extend(numpy.dot(self.b_aniso.elements_pdb(), self.adpdirs.T))
+        bounds.extend([(None, None)]*(len(x0)-1))
         if use_sol:
             x0.extend([self.k_sol, self.b_sol])
+            bounds.extend([(0, None), (None, None)])
         if 0:
             f0 = self.target(x0)
             ader = self.grad(x0)
@@ -284,7 +289,15 @@ class LsqScale:
             print(ader / nder)
             quit()
             
-        res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad)
+        if 0:
+            # soft L1
+            res = scipy.optimize.minimize(fun=lambda x: 2*(numpy.sqrt(1+self.target(x))-1),
+                                          x0=x0,
+                                          jac=lambda x: 1/numpy.sqrt(1+self.target(x))*self.grad(x),
+                                          )#bounds=bounds)
+        else:
+            res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad,
+                                          )#bounds=bounds)
         #logger.writeln(str(res))
         logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
         self.k_overall = self.k_trans(res.x[0])
@@ -1087,10 +1100,14 @@ def calc_Fmask(st, d_min, miller_array):
     return Fmask
 # calc_Fmask()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False):
+def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None):
     fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
     if use_solvent:
-        Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
+        if mask is None:
+            Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
+        else:
+            fmask_gr = gemmi.transform_map_to_f_phi(mask)
+            Fmask = fmask_gr.get_value_by_hkl(hkldata.miller_array())
         fc_list.append(Fmask)
 
     scaling = LsqScale()
@@ -1228,11 +1245,21 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     is_int = "I" in hkldata.df
+
+    if args.mask:
+        mask = utils.fileio.read_ccp4_map(args.mask)[0]
+    else:
+        mask = None
     
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
     k_overall, b_aniso = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
-                                                     use_int=is_int)
+                                                     use_int=is_int, mask=mask)
+    # stats
+    stats, overall = calc_r_and_cc(hkldata, centric_and_selections)
+    for lab in "R", "CC":
+        logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
+
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
