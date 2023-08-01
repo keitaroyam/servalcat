@@ -63,6 +63,8 @@ def parse_args(arg_list):
 
 def nanaverage(cc, w):
     sel = ~numpy.isnan(cc)
+    if numpy.sum(w[sel]) == 0:
+        return numpy.nan
     return numpy.average(cc[sel], weights=w[sel]) 
 
 def calc_r_and_cc(hkldata, centric_and_selections):
@@ -280,7 +282,9 @@ class LsqScale:
             dfdy2 = 2 * diff_der**2 + 2 * diff * diff_der2
         elif self.func_type == "log_cosh":
             dfdy = numpy.tanh(diff) * diff_der
-            dfdy2 = 1. / numpy.cosh(diff)**2 * diff_der**2 + numpy.tanh(diff) * diff_der2
+            #dfdy2 = 1 /numpy.cosh(diff)**2 * diff_der**2 + numpy.tanh(diff) * diff_der2 # problematic with large diff
+            #dfdy2 = numpy.where(diff==0, 1., numpy.abs(numpy.tanh(diff)) / gemmi.log_cosh(diff)) * diff_der**2 + numpy.tanh(diff) * diff_der2
+            dfdy2 = numpy.where(diff==0, 1., numpy.tanh(diff) / diff) * diff_der**2 + numpy.tanh(diff) * diff_der2
         else:
             raise RuntimeError("bad func_type")
         
@@ -337,9 +341,12 @@ class LsqScale:
         if self.b_aniso is None:
             self.b_aniso = gemmi.SMat33d(b,b,b,0,0,0)
         x0 = [self.k_trans_inv(k)]
+        bounds = [(0, None)]
         x0.extend(numpy.dot(self.b_aniso.elements_pdb(), self.adpdirs.T))
+        bounds.extend([(None, None)]*(len(x0)-1))
         if use_sol:
             x0.extend([self.k_sol, self.b_sol])
+            bounds.extend([(1e-4, None), (10., 400.)])
         if 0:
             f0 = self.target(x0)
             ader = self.grad(x0)
@@ -357,9 +364,9 @@ class LsqScale:
             quit()
 
         t0 = time.time()
-        if 0:
+        if 1:
             x = x0
-            for i in range(20):
+            for i in range(40):
                 x_ini = x.copy()
                 f0 = self.target(x)
                 dx = self.calc_shift(x)
@@ -374,13 +381,20 @@ class LsqScale:
                                 ofs.write("{:4e} {:4e}\n".format(s, f1))
                     shift = dx * s
                     x = x_ini + shift
+                    if x[0] < 0: x[0] = x0[0]
+                    if use_sol:
+                        if x[-1] < 10: x[-1] = 10
+                        elif x[-1] > 400: x[-1] = 400
+                        if x[-2] < 1e-4: x[-2] = 1e-4
                     f1 = self.target(x)
                     if f1 < f0: break
-                print("cycle", i, f0, f1, s, shift, f0 - f1)
+                #logger.writeln("cycle {} {} {} {} {} {}".format(i, f0, f1, s, shift, (f0 - f1) / f0))
+                if 0 < (f0 - f1) / f0 < 1e-6:
+                    break
             res_x = x
         else:
-            res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad)
-            logger.writeln(str(res))
+            res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad, bounds=bounds)
+            #logger.writeln(str(res))
             logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
             res_x = res.x
         logger.writeln(" time: {:.3f} sec".format(time.time() - t0))
