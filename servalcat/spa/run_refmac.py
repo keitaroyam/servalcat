@@ -176,6 +176,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, monlib=monlib, source="electron",
                                                miller_array=hkldata.miller_array())
+    # XXX didn't apply mask to FC!!
     labs_fc = ["FC"]
 
     if st_sr is not None:

@@ -12,12 +12,13 @@ import numpy
 import pandas
 from servalcat.utils import logger
 from servalcat import spa
+from servalcat.spa.run_refmac import determine_b_before_mask
 from servalcat import utils
 
 def add_arguments(parser):
     parser.description = 'FSC calculation'
 
-    parser.add_argument('--model', nargs="*", action="append",
+    parser.add_argument('--model',
                         help="")
     parser.add_argument('--map',
                         help='Input map file(s)')
@@ -29,6 +30,16 @@ def add_arguments(parser):
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--mask', help='Mask file')
+    parser.add_argument('--mask_radius',
+                        type=float, default=3,
+                        help='calculate mask from model if provided')
+    parser.add_argument('--mask_soft_edge',
+                        type=float, default=0,
+                        help='Add soft edge to model mask.')
+    parser.add_argument("--b_before_mask", type=float,
+                        help="when model-based mask is used: sharpening B value for sharpen-mask-unsharpen procedure. By default it is determined automatically.")
+    parser.add_argument('--no_sharpen_before_mask', action='store_true',
+                        help='when model-based mask is used: by default half maps are sharpened before masking by std of signal and unsharpened after masking. This option disables it.')
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('-d', '--resolution',
                         type=float,
@@ -222,12 +233,10 @@ def calc_fsc_all(hkldata, labs_fc, lab_f, labs_half=None,
 # calc_fsc_all()
 
 def main(args):
+    if args.b_before_mask is not None and args.model is None:
+        raise SystemExit("--b_before_mask can be only used with --model.")
+    
     numpy.random.seed(args.random_seed)
-    if args.model:
-        args.model = sum(args.model, [])
-    else:
-        args.model = []
-        
     if args.mask:
         logger.writeln("Input mask file: {}".format(args.mask))
         mask = utils.fileio.read_ccp4_map(args.mask)[0]
@@ -262,31 +271,46 @@ def main(args):
         args.resolution = utils.maps.nyquist_resolution(maps[0][0])
         logger.writeln("WARNING: --resolution is not specified. Using Nyquist resolution: {:.2f}".format(args.resolution))
         
-    sts = []
-    for xyzin in args.model:
-        st = utils.fileio.read_structure(xyzin)
+    if args.model:
+        st = utils.fileio.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P1"
         utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0])
+        st_expanded = st.clone()
         if len(st.ncs) > 0:
-            utils.model.expand_ncs(st)
-            
-        sts.append(st)
+            utils.model.expand_ncs(st_expanded)
+        if mask is None and args.mask_radius > 0:
+            # XXX if helical..
+            if args.twist is not None:
+                logger.writeln("Generating all helical copies in the box")
+                st_for_mask = st.clone()
+                utils.symmetry.update_ncs_from_args(args, st_for_mask, map_and_start=maps[0], filter_contacting=True)
+                utils.model.expand_ncs(st_for_mask)
+            else:
+                st_for_mask = st_expanded
+            mask = utils.maps.mask_from_model(st_for_mask, args.mask_radius, soft_edge=args.mask_soft_edge, grid=maps[0][0])
+            #utils.maps.write_ccp4_map("mask_from_model.ccp4", mask)
+            if not args.no_sharpen_before_mask and args.b_before_mask is None:
+                args.b_before_mask = determine_b_before_mask(st_for_mask, maps, maps[0][1], mask, args.resolution)
+    else:
+        st_expanded = None
 
     hkldata = None
-    for i, m in enumerate(maps):
-        if len(maps) == 2:
-            lab = "F_map{}".format(i+1)
-        else:
-            lab = "FP"
-        for j in range(2):
-            if j == 1 and mask is None: break
-            lab_suffix = ["_nomask", "_mask"][j]
-            g = m[0]
-            if j == 1:
-                g.array[:] *= mask # modifies original data
-            f_grid = gemmi.transform_map_to_f_phi(g)
-
+    for j in range(2):
+        if j == 1:
+            if mask is None: break
+            if args.b_before_mask is None:
+                # modifies original data
+                for ma in maps: ma[0].array[:] *= mask
+            else:
+                maps = utils.maps.sharpen_mask_unsharpen(maps, mask, args.resolution, b=args.b_before_mask)
+        lab_suffix = ["_nomask", "_mask"][j]
+        for i, m in enumerate(maps):
+            if len(maps) == 2:
+                lab = "F_map{}".format(i+1)
+            else:
+                lab = "FP"
+            f_grid = gemmi.transform_map_to_f_phi(m[0])
             if hkldata is None:
                 asudata = f_grid.prepare_asu_data(dmin=args.resolution, with_000=True)
                 hkldata = utils.hkl.hkldata_from_asu_data(asudata, lab + lab_suffix)
@@ -308,15 +332,19 @@ def main(args):
         labs_half, labs_half_masked = [], []
     lab_f = "FP_nomask" if mask is None else "FP_mask"
     labs_fc = []
-    for i, st in enumerate(sts): 
-        labs_fc.append("FC_{}".format(i) if len(sts)>1 else "FC")
-        hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st, args.resolution - 1e-6, source="electron",
+    if st_expanded is not None:
+        labs_fc.append("FC")
+        hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st_expanded, args.resolution - 1e-6, source="electron",
                                                           miller_array=hkldata.miller_array())
-        if mask is not None: # TODO F000
-            g = hkldata.fft_map(labs_fc[-1], grid_size=mask.shape)
+        if mask is not None:
+            if args.b_before_mask is None:
+                normalizer = 1.
+            else:
+                normalizer = hkldata.debye_waller_factors(b_iso=args.b_before_mask)
+            g = hkldata.fft_map(data=hkldata.df[labs_fc[-1]] / normalizer, grid_size=mask.shape)
             g.array[:] *= mask
             fg = gemmi.transform_map_to_f_phi(g)
-            hkldata.df[labs_fc[-1]] = fg.get_value_by_hkl(hkldata.miller_array())
+            hkldata.df[labs_fc[-1]] = fg.get_value_by_hkl(hkldata.miller_array()) * normalizer
 
     hkldata.setup_relion_binning()
     stats = calc_fsc_all(hkldata, labs_fc=labs_fc, lab_f=lab_f,
@@ -325,8 +353,8 @@ def main(args):
     with open(args.fsc_out, "w") as ofs:
         if args.mask:
             ofs.write("# Mask= {}\n".format(args.mask))
-        for lab, xyzin in zip(labs_fc, args.model):
-            ofs.write("# {} from {}\n".format(lab, xyzin))
+        if args.model is not None:
+            ofs.write("# {} from {}\n".format(labs_fc[0], args.model))
 
         ofs.write(stats.to_string(index=False, index_names=False)+"\n")
         for k in stats:
