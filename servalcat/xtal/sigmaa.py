@@ -1197,10 +1197,9 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     scaling = LsqScale()
     scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0)
     scaling.scale()
-    b_aniso = scaling.b_aniso
     b_iso = scaling.b_iso
     k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
-    k_aniso = hkldata.debye_waller_factors(b_cart=b_aniso)
+    k_aniso = hkldata.debye_waller_factors(b_cart=scaling.b_aniso)
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
     
     if use_solvent:
@@ -1220,7 +1219,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     for lab in fc_labs: hkldata.df[lab] *= k_iso
     # total Fc
     hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
-    return scaling.k_overall, b_aniso
+    return scaling
 # bulk_solvent_and_lsq_scales()
 
 def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, log_out, use="all"):
@@ -1337,8 +1336,9 @@ def main(args):
     
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
-    k_overall, b_aniso = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
-                                                     use_int=is_int, mask=mask)
+    lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+                                      use_int=is_int, mask=mask)
+    b_aniso = lsq.b_aniso
     # stats
     stats, overall = calc_r_and_cc(hkldata, centric_and_selections)
     for lab in "R", "CC":
