@@ -1072,75 +1072,73 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
                                       report_sigma, b_diff);
         }
       }
-    } else if (target.adp_mode == 2) {
+    } else if (target.adp_mode == 2) { // Aniso
       const gemmi::Transform tr = get_transform(st.cell, im.sym_idx, {0,0,0}); // shift does not matter
       const Eigen::Matrix<double,6,6> R = mat33_as66(tr.mat);
       const Eigen::Matrix<double,6,1> a1(atom1->aniso.scaled(gemmi::u_to_b()).elements_pdb().data()); // safe?
       Eigen::Matrix<double,6,1> a2(atom2->aniso.scaled(gemmi::u_to_b()).elements_pdb().data());
       a2 = R * a2;
       const auto a_diff = a1 - a2;
+      double f = 0;
+      Eigen::Matrix<double,6,1> der1, der2;
+      Eigen::Matrix<double,6,6> am11, am22, am12; // diagonal and non-diagonal blocks
+      double B1_B2 = 0;
       if (adpr_mode == 0) {
-        // TODO take symmetry into account!!
-        for (int j = 0; j < 6; ++j) {
-          const double f = 0.5 * w * gemmi::sq(a_diff[j]);
-          ret += f;
-          if (!check_only) {
-            target.target += f;
-            const double df1 = w * a_diff[j];
-            target.vn[offset_v + 6 * (atom1->serial-1) + j] += df1;
-            target.vn[offset_v + 6 * (atom2->serial-1) + j] += -df1;
-            // diagonal of diagonal block (6 x 6 symmetric)
-            target.am[offset_a + 21 * (atom1->serial-1) + j] += w;
-            target.am[offset_a + 21 * (atom2->serial-1) + j] += w;
-            // diagonal of non-diagonal block (6 x 6)
-            target.am[offset_a + 21 * target.n_atoms() + 36 * i + 7 * j] += -w;
-          }
+        f = 0.5 * w * (a_diff.transpose() * a_diff).value();
+        if (!check_only) {
+          der1 = w * a_diff;
+          der2 = R.transpose() * (-der1);
+          am11 = w * Eigen::Matrix<double,6,6>::Identity();
+          am22 = R.transpose() * am11 * R;
+          am12 = R.transpose() * (-am11);
         }
       } else { // KL divergence (not exactly)
         const double B1 = a1(Eigen::seq(0,2)).sum() / 3;
         const double B2 = a2(Eigen::seq(0,2)).sum() / 3;
-        const double B1_B2 = B1 * B2;
+        B1_B2 = B1 * B2;
         const Eigen::Matrix<double,6,1> B = {1./3, 1./3, 1./3, 0, 0, 0};
         const Eigen::Matrix<double,6,6> B_B = B * B.transpose();
         const Eigen::DiagonalMatrix<double, 6> A(2,2,2,4,4,4);
-        const double f = 0.5 * w * (a_diff.transpose() * (A * 0.5) * a_diff).value() / B1_B2;
-        ret += f;
+        f = 0.5 * w * (a_diff.transpose() * (A * 0.5) * a_diff).value() / B1_B2;
         if (!check_only) {
-          target.target += f;
           const auto v1 = A * a_diff / B1_B2;
           const auto v2 = (a_diff.transpose() * (A * 0.5) * a_diff).value() / B1_B2 * B;
-          const auto der1 = 0.5 * w * (v1 - v2 / B1);
-          const auto der2 = 0.5 * w * R.transpose() * (-v1 - v2 / B2);
-          for (int j = 0; j < 6; ++j) {
-            target.vn[offset_v + 6 * (atom1->serial-1) + j] += der1[j];
-            target.vn[offset_v + 6 * (atom2->serial-1) + j] += der2[j];
-          }
-          // diagonal blocks (6 x 6 symmetric)
+          der1 = 0.5 * w * (v1 - v2 / B1);
+          der2 = 0.5 * w * R.transpose() * (-v1 - v2 / B2);
           const Eigen::Matrix<double,6,6> tmp = 0.5 * w / B1_B2 * A;
-          const auto am11 = tmp + 2 * f / gemmi::sq(B1) * B_B;
-          const auto am22 = R.transpose() * (tmp + 2 * f / gemmi::sq(B2) * B_B) * R;
-          for (int j = 0; j < 6; ++j) { // diagonals
-            target.am[offset_a + 21 * (atom1->serial-1) + j] += am11(j, j);
-            target.am[offset_a + 21 * (atom2->serial-1) + j] += am22(j, j);
+          am11 = tmp + 2 * f / gemmi::sq(B1) * B_B;
+          am22 = R.transpose() * (tmp + 2 * f / gemmi::sq(B2) * B_B) * R;
+          am12 = R.transpose() * (-tmp + f / B1_B2 * B_B);
+        }
+      }
+      ret += f;
+      if (!check_only) {
+        target.target += f;
+        for (int j = 0; j < 6; ++j) {
+          target.vn[offset_v + 6 * (atom1->serial-1) + j] += der1[j];
+          target.vn[offset_v + 6 * (atom2->serial-1) + j] += der2[j];
+        }
+        // diagonal blocks (6 x 6 symmetric)
+        for (int j = 0; j < 6; ++j) { // diagonals
+          target.am[offset_a + 21 * (atom1->serial-1) + j] += am11(j, j);
+          target.am[offset_a + 21 * (atom2->serial-1) + j] += am22(j, j);
+        }
+        for (int j = 0, l = 6; j < 6; ++j) // non-diagonals
+          for (int k = j + 1; k < 6; ++k, ++l) {
+            target.am[offset_a + 21 * (atom1->serial-1) + l] += am11(j, k);
+            target.am[offset_a + 21 * (atom2->serial-1) + l] += am22(j, k);
           }
-          for (int j = 0, l = 6; j < 6; ++j) // non-diagonals
-            for (int k = j + 1; k < 6; ++k, ++l) {
-              target.am[offset_a + 21 * (atom1->serial-1) + l] += am11(j, k);
-              target.am[offset_a + 21 * (atom2->serial-1) + l] += am22(j, k);
-            }
-          // non-diagonal block (6 x 6)
-          const auto am12 = R.transpose() * (-tmp + f / B1_B2 * B_B);
-          for (int j = 0, l = 0; j < 6; ++j)
-            for (int k = 0; k < 6; ++k, ++l)
-              target.am[offset_a + 21 * target.n_atoms() + 36 * i + l] += am12(k, j);
-        } else {
-          if (!atom1->is_hydrogen() && !atom2->is_hydrogen()) {
-            double report_sigma = wbskal / std::sqrt(w);
-            if (adpr_mode == 1) report_sigma *= std::sqrt(B1_B2);
-            // atom1, atom2, type, dist, sigma, delta
-            reporting.adps.emplace_back(atom1, atom2, target.pairs_kind[i], std::sqrt(dsq),
-                                        report_sigma, a_diff.norm());
-          }
+        // non-diagonal block (6 x 6)
+        for (int j = 0, l = 0; j < 6; ++j)
+          for (int k = 0; k < 6; ++k, ++l)
+            target.am[offset_a + 21 * target.n_atoms() + 36 * i + l] += am12(k, j);
+      } else {
+        if (!atom1->is_hydrogen() && !atom2->is_hydrogen()) {
+          double report_sigma = wbskal / std::sqrt(w);
+          if (adpr_mode == 1) report_sigma *= std::sqrt(B1_B2);
+          // atom1, atom2, type, dist, sigma, delta
+          reporting.adps.emplace_back(atom1, atom2, target.pairs_kind[i], std::sqrt(dsq),
+                                      report_sigma, a_diff.norm());
         }
       }
     }
