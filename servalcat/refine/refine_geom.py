@@ -31,6 +31,8 @@ def add_arguments(parser):
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
+    parser.add_argument('--find_links', action='store_true', 
+                        help='Automatically add links')
     parser.add_argument('--randomize', type=float, default=0,
                         help='Shake coordinates with specified rmsd')
     parser.add_argument('--keywords', nargs='+', action="append",
@@ -104,7 +106,8 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
 # refine_and_update_dictionary()
 
-def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords):
+def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords,
+                find_links=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if st.ncs:
@@ -116,7 +119,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,
                                                    cif_files=cif_files,
                                                    stop_for_unknowns=True)
-    utils.restraints.find_and_fix_links(st, monlib) # should remove unknown id here?
+    utils.restraints.find_and_fix_links(st, monlib, add_found=find_links) # should remove unknown id here?
     try:
         topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                             check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
@@ -155,7 +158,8 @@ def main(args):
                     ncycle=args.ncycle,
                     output_prefix=args.output_prefix,
                     randomize=args.randomize,
-                    refmac_keywords=keywords)
+                    refmac_keywords=keywords,
+                    find_links=args.find_links)
     else:
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.update_dictionary)

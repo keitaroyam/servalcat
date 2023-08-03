@@ -44,8 +44,8 @@ def add_arguments(parser):
                         help="Jelly body sigma and dmax (default: %(default)s)")
     parser.add_argument('--jellyonly', action='store_true',
                         help="Jelly body only (experimental, may not be useful)")
-    parser.add_argument('--no_link_check', action='store_true', 
-                        help='Do not find and fix link records in input model.')
+    parser.add_argument('--find_links', action='store_true', 
+                        help='Automatically add links')
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -140,8 +140,7 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-        if not args.no_link_check:
-            utils.restraints.find_and_fix_links(st, monlib)
+        utils.restraints.find_and_fix_links(st, monlib, add_found=args.find_links)
         h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                     "yes":gemmi.HydrogenChange.NoChange,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]

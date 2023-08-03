@@ -60,8 +60,8 @@ def add_arguments(parser):
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
-    parser.add_argument('--no_link_check', action='store_true', 
-                        help='Do not find and fix link records in input model.')
+    parser.add_argument('--find_links', action='store_true', 
+                        help='Automatically add links')
     parser.add_argument("--b_before_mask", type=float,
                         help="sharpening B value for sharpen-mask-unsharpen procedure. By default it is determined automatically.")
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
@@ -445,7 +445,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
                   output_masked_prefix="masked_fs",
                   output_mtz_prefix="starting_map",
                   use_gemmi_prep=False, no_refmac_fix=False,
-                  use_refmac=True, fix_link=True):
+                  use_refmac=True, find_links=False):
     ret = {} # instructions for refinement
     maps = utils.maps.copy_maps(maps) # not to modify maps
     
@@ -570,10 +570,9 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
                 maps[i][0] = new_grid
 
     st.setup_cell_images()
-    if fix_link:
-        utils.restraints.find_and_fix_links(st, monlib,
-                                            # link via ncsc is not supported as of Refmac5.8.0411
-                                            find_symmetry_related=not use_refmac)
+    utils.restraints.find_and_fix_links(st, monlib, add_found=find_links,
+                                        # link via ncsc is not supported as of Refmac5.8.0411
+                                        find_symmetry_related=not use_refmac)
     # workaround for Refmac
     # TODO need to check external restraints
     if use_refmac:
@@ -762,7 +761,7 @@ def main(args):
                                  mask_in=args.mask, args=args,
                                  shifted_model_prefix=shifted_model_prefix,
                                  use_gemmi_prep=use_gemmi_prep,
-                                 fix_link=not args.no_link_check)
+                                 find_links=args.find_links)
     if args.prepare_only:
         logger.writeln("\n--prepare_only is given. Stopping.")
         return

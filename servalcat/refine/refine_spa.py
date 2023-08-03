@@ -67,8 +67,8 @@ def add_arguments(parser):
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
-    parser.add_argument('--no_link_check', action='store_true', 
-                        help='Do not find and fix link records in input model.')
+    parser.add_argument('--find_links', action='store_true', 
+                        help='Automatically add links')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
                         help='Disable model overlap (e.g. expanded model is used with --pg) test')
     parser.add_argument('--no_check_ncs_map', action='store_true', 
@@ -145,8 +145,7 @@ def main(args):
         st.spacegroup_hm = hkldata.sg.xhm()
         st.setup_cell_images()
         info = {}
-        if not args.no_link_check:
-            utils.restraints.find_and_fix_links(st, monlib)
+        utils.restraints.find_and_fix_links(st, monlib, add_found=args.find_links)
     else:
         if args.halfmaps:
             maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
@@ -154,7 +153,7 @@ def main(args):
             maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                                       mask_in=args.mask, args=args, use_refmac=False,
-                                      fix_link=not args.no_link_check)
+                                      find_links=args.find_links)
     h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
