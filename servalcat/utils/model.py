@@ -597,7 +597,9 @@ def adp_constraints(ops, cell, tr0=True):
             ret.append(evecs[:, i])
 
     if len(ret) > 0:
-        return numpy.vstack(ret)
+        ret = numpy.vstack(ret)
+        ret = numpy.where(numpy.abs(ret) < 1e-9, 0, ret)
+        return ret
     return numpy.empty((0, 6))
 # adp_constraints()
 

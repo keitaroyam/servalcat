@@ -130,6 +130,7 @@ def generate_cyclic(axis, order):
         stheta = numpy.sin(angle_l)
         ctheta = numpy.cos(angle_l)
         m_l = exp_matr*stheta + m_int*ctheta +axis_outer
+        m_l = numpy.where(numpy.abs(m_l) < 1e-9, 0, m_l)
         gout.append(m_l)
 
     return gout
@@ -151,6 +152,7 @@ def AngleAxis2rotatin(axis, angle):
     stheta = numpy.sin(angle)
     ctheta = numpy.cos(angle)
     m_l = exp_matr*stheta + m_int*ctheta +axis_outer
+    m_l = numpy.where(numpy.abs(m_l) < 1e-9, 0, m_l)
     return m_l
 # AngleAxis2rotatin()
 
