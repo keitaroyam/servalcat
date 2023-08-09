@@ -166,7 +166,23 @@ class Geom:
         ret["summary"] = df
         logger.writeln(df.to_string(float_format="{:.3f}".format) + "\n")
         return ret
-        
+
+def show_binstats(df, cycle_number):
+    forplot = []
+    rlabs = [x for x in df if x.startswith("R")]
+    cclabs = [x for x in df if x.startswith("CC")]
+    dlabs = [x for x in df if re.search("D[0-9]*", x)]
+    if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
+    if rlabs: forplot.append(["R", rlabs])
+    if cclabs: forplot.append(["CC", cclabs])
+    if dlabs: forplot.append(["ML parameters - D", dlabs])
+    if "S" in df: forplot.append(["ML parameters - Sigma", ["S"]])
+    lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(cycle_number), forplot,
+                                   s2=1/df["d_min"]**2,
+                                   float_format="{:.4f}".format)
+    logger.writeln(lstr)
+# show_binstats()
+
 class Refine:
     def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, unrestrained=False):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
@@ -410,6 +426,7 @@ class Refine:
             llstats = self.ll.calc_stats(bin_stats=True)
             stats[-1]["data"] = {"summary": llstats["summary"],
                                  "binned": llstats["bin_stats"].to_dict(orient="records")}
+            show_binstats(llstats["bin_stats"], 0)
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
 
@@ -430,21 +447,7 @@ class Refine:
                                    "{} to {}".format(f0, llstats["summary"]["-LL"]))
                 stats[-1]["data"] = {"summary": llstats["summary"],
                                      "binned": llstats["bin_stats"].to_dict(orient="records")}
-                if "bin_stats" in llstats:
-                    df = llstats["bin_stats"]
-                    forplot = []
-                    rlabs = [x for x in df if x.startswith("R")]
-                    cclabs = [x for x in df if x.startswith("CC")]
-                    dlabs = [x for x in df if re.search("D[0-9]*", x)]
-                    if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
-                    if rlabs: forplot.append(["R", rlabs])
-                    if cclabs: forplot.append(["CC", cclabs])
-                    if dlabs: forplot.append(["ML parameters - D", dlabs])
-                    if "S" in df: forplot.append(["ML parameters - Sigma", ["S"]])
-                    lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(i+1), forplot,
-                                                   s2=1/df["d_min"]**2,
-                                                   float_format="{:.4f}".format)
-                    logger.writeln(lstr)
+                show_binstats(llstats["bin_stats"], i+1)
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             logger.writeln("")
