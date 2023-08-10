@@ -50,8 +50,9 @@ class Logger(object):
     # error()
 
     def close(self):
-        self.ofs.close()
-        self.ofs = None
+        if self.ofs is not None:
+            self.ofs.close()
+            self.ofs = None
     # close()
 
     def flush(self): # to act as a file object
