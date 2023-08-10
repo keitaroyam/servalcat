@@ -198,7 +198,7 @@ def main(args):
 
     # Write mtz file
     if is_int:
-        labs = ["I", "SIGI"]
+        labs = ["I", "SIGI", "FOM"]
     else:
         labs = ["FP", "SIGFP", "FOM"]
     labs.extend(["FWT", "DELFWT", "FC"])

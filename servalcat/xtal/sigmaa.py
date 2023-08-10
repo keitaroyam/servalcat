@@ -979,7 +979,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     nmodels = len(fc_labs)
     hkldata.df["FWT"] = 0j * numpy.nan
     hkldata.df["DELFWT"] = 0j * numpy.nan
-    hkldata.df["FOM"] = numpy.nan
+    hkldata.df["FOM"] = numpy.nan # FOM proxy, |<F>| / <|F|>
     Io = hkldata.df.I.to_numpy()
     sigIo = hkldata.df.SIGI.to_numpy()
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
@@ -1001,9 +1001,10 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
             f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
             exp_ip = numpy.exp(numpy.angle(DFc)*1j)
+            m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1)
             hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc
-
+            hkldata.df.loc[cidxes, "FOM"] = m_proxy
             # remove reflections that should be hidden
             if use != "all":
                 # usually use == "work"
@@ -1377,7 +1378,7 @@ def main(args):
 
     # Write mtz file
     if is_int:
-        labs = ["I", "SIGI"]
+        labs = ["I", "SIGI", "FOM"]
     else:
         labs = ["FP", "SIGFP", "FOM"]
     labs.extend(["FWT", "DELFWT", "FC"])
