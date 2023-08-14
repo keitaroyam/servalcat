@@ -576,19 +576,15 @@ def mat33_as66(m):
                   m[i][1] * m[j][2] + m[i][2] * m[j][1])
     return r
 def adp_constraints(ops, cell, tr0=True):
-    # think about f = (b-Rb)^T (b-Rb) = b^T b - b^TRb -b^TR^Tb + b^TR^TRb
-    # d^2f/db^2 = 2I - 2(R+R^T) + (R^TR + RR^T)
+    # think about f = (b-Rb)^T (b-Rb) = b^T b - b^T R b -b^T R^T b + b^T R^T R b
+    # d^2f/db db^T = 2I - 2(R+R^T) + 2(R^T R)
     # eigenvectors of this second derivative matrix corresponding to 0-valeud eigenvalues are directions to refine
-    Ainv = cell.frac.mat
     x = numpy.zeros((6,6))
     if tr0:
         x[:3,:3] += numpy.ones((3,3)) * 2
     for op in ops:
-        m = gemmi.Mat33(op.rot).multiply(Ainv)
-        r1 = mat33_as66(Ainv.tolist())
-        r2 = mat33_as66(m.tolist()) / op.DEN**2
-        r1r2 = numpy.dot(r1.T, r2)
-        x += 2 * numpy.dot(r1.T, r1) - 2 * (r1r2 + r1r2.T) + 2 * numpy.dot(r2.T, r2)
+        r = mat33_as66(cell.op_as_transform(op).mat.tolist())
+        x += 2 * numpy.identity(6) - 2 * (r + r.T) + 2 * numpy.dot(r.T, r)
 
     evals, evecs = numpy.linalg.eigh(x)
     ret = []
