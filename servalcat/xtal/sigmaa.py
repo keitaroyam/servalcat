@@ -1188,11 +1188,20 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 
 def calc_Fmask(st, d_min, miller_array):
     logger.writeln("Calculating solvent contribution..")
+    sel_occ = gemmi.Selection(";q=0")
+    if st[0].has_hydrogen() or sel_occ.first(st)[0] is not None:
+        n_org = st[0].count_atom_sites()
+        st = st.clone()
+        st.remove_hydrogens()
+        sel_occ.remove_selected(st)
+        n_del = n_org - st[0].count_atom_sites()
+        logger.writeln(" {} atoms out of {} have been ignored (H or zero-occupancy atoms)".format(n_del, n_org))
+    
     grid = gemmi.FloatGrid()
     spacing = min(1 / (2 * x / d_min + 1) / xr for x, xr in zip(st.cell.parameters[:3],
                                                                 st.cell.reciprocal().parameters[:3]))
     grid.setup_from(st, spacing=min(0.4, spacing))
-    masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Cctbx)
+    masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
     masker.put_mask_on_float_grid(grid, st[0])
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
     Fmask = fmask_gr.get_value_by_hkl(miller_array)
