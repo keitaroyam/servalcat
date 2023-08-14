@@ -17,8 +17,12 @@ dtypes64 = dict(i=numpy.int64, u=numpy.uint64, f=numpy.float64, c=numpy.complex1
 to64 = lambda x: x.astype(dtypes64.get(x.dtype.kind, x.dtype))
 
 def r_factor(fo, fc):
+    if fo.size == 0:
+        return numpy.nan
     return numpy.nansum(numpy.abs(fo-fc)) / numpy.nansum(fo)
 def correlation(obs, calc):
+    if obs.size == 0:
+        return numpy.nan
     sel = numpy.isfinite(obs)
     return numpy.corrcoef(obs[sel], calc[sel])[0,1]
 
