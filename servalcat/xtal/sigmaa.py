@@ -734,6 +734,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
 
     if not set(D_labs + ["S"]).issubset(hkldata.binned_df):
         initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use)
+        for dlab, fclab in zip(D_labs, fc_labs):
+            hkldata.binned_df["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
 
     refpar = "all"
     for i_cyc in range(n_cycle):
@@ -895,6 +897,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                     hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
                 hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
 
+        for i_bin, idxes in hkldata.binned():
+            for dlab, fclab in zip(D_labs, fc_labs):
+                mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df[dlab][i_bin] * hkldata.df[fclab][idxes]))
+                hkldata.binned_df.loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
+                
         logger.writeln("Refined estimates:")
         logger.writeln(hkldata.binned_df.to_string())
         logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
@@ -1147,8 +1154,11 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     stats = hkldata.binned_df.copy()
     stats["n_all"] = 0
     stats["n_obs"] = 0
+    stats[newlabels[0]] = numpy.nan
     snr = "I/sigma" if newlabels[0] == "I" else "F/sigma"
     stats[snr] = numpy.nan
+    if newlabels[0] == "I":
+        stats["Mn(I)/Std(I)"] = numpy.nan
     if "FREE" in hkldata.df:
         stats["n_work"] = 0
         stats["n_test"] = 0
@@ -1177,6 +1187,10 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         sigma = hkldata.df[newlabels[1]].to_numpy()[idxes]
         if n_obs > 0:
             stats.loc[i_bin, snr] = numpy.nanmean(obs / sigma)
+            mean_obs = numpy.nanmean(obs)
+            stats.loc[i_bin, newlabels[0]] = mean_obs
+            if newlabels[0] == "I":
+                stats.loc[i_bin, "Mn(I)/Std(I)"] = mean_obs / numpy.nanstd(obs)
         if "FREE" in hkldata.df:
             stats.loc[i_bin, "n_work"] = n_work
             stats.loc[i_bin, "n_test"] = n_test
