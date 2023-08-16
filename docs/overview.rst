@@ -48,12 +48,12 @@ Make a new directory and run:
 Specify unsharpened and unweighted half maps (e.g. those after Refine3D of RELION) after ``--halfmaps``.
 
 If map has been symmetrised with a point group, asymmetric unit model should be given together with ``--pg`` to specify a point group symbol.
-It assumes the center of the box is the origin of the symmetry and the axis convention follows `RELION <https://relion.readthedocs.io/en/latest/Reference/Conventions.html#symmetry>`_.
+It assumes the centre of the box is the origin of the symmetry and the axis convention follows `RELION <https://relion.readthedocs.io/en/latest/Reference/Conventions.html#symmetry>`_.
 
 Other useful options:
    * ``--ligand lig.cif`` : specify restraint dictionary (.cif) file(s)
-   * ``--mask_for_fofc mask.mrc`` : speify mask file for Fo-Fc map calculation
-   * ``--jellybody`` : turn on jelly body refinment
+   * ``--mask_for_fofc mask.mrc`` : specify mask file for Fo-Fc map calculation
+   * ``--jellybody`` : turn on jelly body refinement
    * ``--weight_auto_scale value`` : specify weight auto scale. by default Servalcat determines it from resolution and mask/box ratio
    * ``--keyword_file file`` : specify any refmac keyword file(s) (e.g. prosmart restraint file)
    * ``--pixel_size value`` : override pixel size of map
@@ -63,7 +63,7 @@ Output files:
    * ``refined.pdb``: refined model
    * ``refined_expanded.pdb``: symmetry-expanded version
    * ``diffmap.mtz``: can be auto-opened with coot. sharpened and weighted Fo map and Fo-Fc map
-   * ``diffmap_normalized_fofc.mrc``: Fo-Fc map normalized within a mask. Look at raw values
+   * ``diffmap_normalized_fofc.mrc``: Fo-Fc map normalised within a mask. Look at raw values
    * ``shifted_refined.log``: refmac log file
 
 Fo-Fc map calculation
@@ -83,7 +83,7 @@ Fo-Fc map is calculated in ``refine_spa`` command (explained above) so usually y
 
 Map trimming
 ~~~~~~~~~~~~
-Maps from single particle analysis often have very large size due to unnccesary region outside the molecule. You can save disk space by trimming the unnccesary region.
+Maps from single particle analysis often have very large size due to unnecessary region outside the molecule. You can save disk space by trimming the unnecessary region.
 
 .. code-block:: console
 
@@ -91,8 +91,8 @@ Maps from single particle analysis often have very large size due to unnccesary 
       --maps postprocess.mrc halfmap1.mrc halfmap2.mrc \
       [--mask mask.mrc] [--model model.pdb] [--padding 10]
 
-Maps specified with ``--maps`` are trimed. The boundary is decided by ``--mask`` or ``--model`` if mask is not available.
+Maps specified with ``--maps`` are trimmed. The boundary is decided by ``--mask`` or ``--model`` if mask is not available.
 Model(s) are shifted into a new box.
-By default new boundary is centered on the original map and cubic, but they can be turned off with ``--noncentered`` and ``--noncubic``.
+By default new boundary is centred on the original map and cubic, but they can be turned off with ``--noncentered`` and ``--noncubic``.
 If you do not want to shift maps and models, specify ``--no_shift`` to keep origin.
 
