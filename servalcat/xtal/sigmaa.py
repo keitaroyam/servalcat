@@ -546,7 +546,7 @@ def mlf_shift_S(df, fc_labs, Ds, S, centric_sel, use):
 # mlf_shift_S()
 
 def mli(df, fc_labs, Ds, S, k_ani, idxes):
-    DFc = (Ds * df.loc[idxes, fc_labs]).sum(axis=1)
+    DFc = (Ds * df.loc[idxes, fc_labs].to_numpy()).sum(axis=1)
     ll = ext.ll_int(df.I[idxes], df.SIGI[idxes], k_ani[idxes], S * df.epsilon[idxes],
                     numpy.abs(DFc), df.centric[idxes]+1)
     if numpy.nansum(ll) == -numpy.inf:
@@ -979,6 +979,17 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
 
         logger.writeln("Refined B_aniso = {}".format(b_aniso))
         logger.writeln("cycle {} f= {}".format(i_cyc, f1))
+
+    # smoothing
+    bin_centers = (0.5 / hkldata.binned_df[["d_min", "d_max"]]**2).sum(axis=1).to_numpy()
+    vals = ext.smooth_gauss(bin_centers,
+                            hkldata.binned_df[D_labs + ["S"]].to_numpy(),
+                            1./hkldata.df.d.to_numpy()**2,
+                            100, # min(n_ref?)
+                            (bin_centers[1] - bin_centers[0]))
+    for i, lab in enumerate(D_labs + ["S"]):
+        hkldata.df[lab] = vals[:, i]
+
     return b_aniso
 # determine_ml_params()
 
@@ -992,17 +1003,15 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     eps = hkldata.df.epsilon.to_numpy()
     for i_bin, idxes in hkldata.binned():
-        Ds = [max(0., hkldata.binned_df[lab][i_bin]) for lab in D_labs] # negative D is replaced with zero here
-        S = hkldata.binned_df.S[i_bin]
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
             if c == 0: # acentric
                 k_num, k_den = 0.5, 0.
             else:
                 k_num, k_den = 0., -0.5
+            S = hkldata.df["S"].to_numpy()[cidxes]
             Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
-            #DFc = (hkldata.binned_df.loc[i_bin, D_labs] * hkldata.df.loc[cidxes, fc_labs]).sum(axis=1)#.to_numpy() does not work
-            DFc = calc_DFc(Ds, Fcs)
+            DFc = (hkldata.df.loc[cidxes, D_labs].to_numpy() * hkldata.df.loc[cidxes, fc_labs].to_numpy()).sum(axis=1)
             to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
             tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
             sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
@@ -1409,6 +1418,7 @@ def main(args):
         labs.append("Fbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    labs += D_labs + ["S"]
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
     return hkldata

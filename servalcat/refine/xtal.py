@@ -51,9 +51,6 @@ class LL_Xtal:
                                                    self.centric_and_selections, use=self.use_in_est,
                                                   )#D_trans="splus", S_trans="splus")
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        for lab in self.D_labs + ["S"]:
-            self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] > 0, 0.01, inplace=True)
-            self.hkldata.binned_df[lab].where(self.hkldata.binned_df[lab] < numpy.inf, 1, inplace=True)
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs,
         #                             self.centric_and_selections)
 
@@ -125,8 +122,8 @@ class LL_Xtal:
                     idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin]])
                 ret += sigmaa.mli(self.hkldata.df,
                                   self.fc_labs,
-                                  Ds,
-                                  self.hkldata.binned_df.S[i_bin],
+                                  self.hkldata.df.loc[idxes, self.D_labs].to_numpy(),
+                                  self.hkldata.df.loc[idxes, "S"].to_numpy(),
                                   k_aniso,
                                   idxes)
             else:
@@ -160,20 +157,21 @@ class LL_Xtal:
         for i_bin, _ in self.hkldata.binned():
             bin_d_min = self.hkldata.binned_df.d_min[i_bin]
             bin_d_max = self.hkldata.binned_df.d_max[i_bin]
-            Ds = [max(0., self.hkldata.binned_df[lab][i_bin]) for lab in self.D_labs] # negative D is replaced with zero here
+            Ds = [self.hkldata.binned_df[lab][i_bin] for lab in self.D_labs]
             S = self.hkldata.binned_df.S[i_bin]
             for c, work, test in self.centric_and_selections[i_bin]:
                 if self.use_in_target == "all":
                     cidxes = numpy.concatenate([work, test])
                 else:
                     cidxes = work if self.use_in_target == "work" else test
-                Fcs = [self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]
-                Fc = sigmaa.calc_DFc(Ds, Fcs) # sum(D * Fc)
-                expip = numpy.exp(1j * numpy.angle(Fc))
                 epsilon = self.hkldata.df.epsilon.to_numpy()[cidxes]
-                Fc_abs = numpy.abs(Fc)
 
                 if self.is_int:
+                    Ds = self.hkldata.df.loc[cidxes, self.D_labs].to_numpy()
+                    S = self.hkldata.df["S"].to_numpy()[cidxes]
+                    Fc = (Ds * self.hkldata.df.loc[cidxes, self.fc_labs].to_numpy()).sum(axis=1)
+                    Fc_abs = numpy.abs(Fc)
+                    expip = numpy.exp(1j * numpy.angle(Fc))
                     Io = self.hkldata.df.I.to_numpy()
                     sigIo = self.hkldata.df.SIGI.to_numpy()
                     to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / epsilon
@@ -181,12 +179,16 @@ class LL_Xtal:
                     sig1 = k_ani[cidxes]**2 * epsilon * S / sigIo[cidxes]
                     k_num = 0.5 if c == 0 else 0. # acentric:0.5, centric: 0.
                     r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
-                    g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[0] 
+                    g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[:,0]
                     dll_dab[cidxes] = g * expip
                     #d2ll_dab2[cidxes] = (2-c)**2 / S / epsilon * Ds[0]**2 # approximation
                     #d2ll_dab2[cidxes] = ((2-c) / S / epsilon + ((2-c) * r / k_ani[cidxes] / epsilon / S)**2) * Ds[0]**2
                     d2ll_dab2[cidxes] =  g**2
                 else:
+                    Fcs = [self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]
+                    Fc = sigmaa.calc_DFc(Ds, Fcs) # sum(D * Fc)
+                    Fc_abs = numpy.abs(Fc)
+                    expip = numpy.exp(1j * numpy.angle(Fc))
                     Fo = self.hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
                     SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
                     if c == 0: # acentric

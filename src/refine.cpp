@@ -703,4 +703,48 @@ void add_refine(py::module& m) {
     .def_readwrite("ncycle", &CgSolve::ncycle)
     .def_readwrite("max_gamma_cyc", &CgSolve::max_gamma_cyc)
     ;
+
+  m.def("smooth_gauss", [](py::array_t<double> bin_centers, py::array_t<double> bin_values,
+                           py::array_t<double> s_array, int n, double kernel_width) {
+    // assume all values are sorted by resolution
+    if (bin_centers.size() != (size_t)bin_values.shape(0)) throw std::runtime_error("bin_centers and bin_values shape mismatch");
+    if (s_array.ndim() != 1) throw std::runtime_error("s_array dimension != 1");
+    if (n < 1) throw std::runtime_error("non positive n");
+    const double krn2 = gemmi::sq(kernel_width) * 2;
+    const size_t n_par = bin_values.shape(1);
+    const size_t n_bin = bin_values.shape(0);
+    const size_t n_ref = s_array.size();
+    auto s_ = s_array.unchecked<1>();
+    auto bin_cen_ = bin_centers.unchecked<1>();
+    auto bin_val_ = bin_values.unchecked<2>();
+    auto ret = py::array_t<double>({n_ref, n_par});
+    double* ptr = (double*) ret.request().ptr;
+
+    // setup new (finer) binning
+    const double s_step = (s_(n_ref-1) - s_(0)) / n;
+    std::vector<std::vector<double>> smoothed(n_par);
+    for (int i = 0; i < n_par; ++i) smoothed[i].resize(n);
+    for (int i = 0; i < n; ++i) {
+      const double s_i = s_(0) + s_step * (i + 0.5);
+      double an = 0.;
+      for (int j = 0; j < n_bin; ++j) {
+        double dx = gemmi::sq(s_i - bin_cen_(j)) / krn2;
+        if (dx > 30) continue; // skip small contribution
+        double expdx = std::exp(-dx);
+        an += expdx;
+        for (int k = 0; k < n_par; ++k)
+          smoothed[k][i] += expdx * bin_val_(j, k);
+      }
+      for (int k = 0; k < n_par; ++k)
+        smoothed[k][i] /= an; // FIXME an may be zero
+    }
+
+    // apply to array with the nearest neighbour
+    for (int i = 0; i < n_ref; ++i) {
+      int nearest = std::max(0, std::min(n - 1, static_cast<int>((s_(i) - s_(0)) / s_step)));
+      for (int j = 0; j < n_par; ++j)
+        ptr[i * n_par + j] = smoothed[j][nearest];
+    }
+    return ret;
+  });
 }

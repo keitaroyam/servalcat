@@ -206,6 +206,7 @@ def main(args):
         labs.append("FCbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    labs += ll.D_labs + ["S"] # for debugging, for now
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q"})
 
