@@ -10,7 +10,7 @@
 //     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 namespace lambertw {
-double lambertw_approx(double x) {
+inline double lambertw_approx(double x) {
   const double e = std::exp(1.);
   if (x <= 1) {
     const double sqrt2 = std::sqrt(2.);
@@ -23,7 +23,7 @@ double lambertw_approx(double x) {
 }
 
 // may not work if x < exp(-36)
-double lambertw(double x, double prec) {
+inline double lambertw(double x, double prec) {
   if (x < -std::exp(-1.))
     return NAN;
 

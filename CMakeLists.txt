@@ -48,7 +48,7 @@ find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Developmen
 find_package(pybind11 2.6 CONFIG REQUIRED)
 message(STATUS "Found pybind11 ${pybind11_VERSION}: ${pybind11_INCLUDE_DIRS}")
 
-pybind11_add_module(ext src/ext.cpp src/intensity.cpp src/refine.cpp)
+pybind11_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp)
 
 if (EXISTS "${CMAKE_HOME_DIRECTORY}/eigen/Eigen")
  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/eigen")

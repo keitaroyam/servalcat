@@ -488,11 +488,11 @@ def deriv_mlf_wrt_D_S_centric(Fo, varFo, Fcs, Ds, S, epsilon):
     return -numpy.vstack(ret).T
 # deriv_mlf_wrt_D_S_centric()
 
-#import line_profiler
-#profile = line_profiler.LineProfiler()
-#import atexit
-#atexit.register(profile.print_stats)
-#@profile
+import line_profiler
+profile = line_profiler.LineProfiler()
+import atexit
+atexit.register(profile.print_stats)
+@profile
 def mlf(df, fc_labs, Ds, S, centric_sel, use):
     ret = 0.
     func = (mlf_acentric, mlf_centric)
@@ -501,15 +501,27 @@ def mlf(df, fc_labs, Ds, S, centric_sel, use):
             cidxes = numpy.concatenate([work, test])
         else:
             cidxes = work if use == "work" else test
-        Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         k_ani = df.k_aniso.to_numpy()[cidxes]
-        ret += numpy.nansum(func[c](df.FP.to_numpy()[cidxes] / k_ani,
+        #DFc = (Ds * df.loc[cidxes, fc_labs].to_numpy()).sum(axis=1)
+        Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
+        DFc = (Ds * numpy.vstack(Fcs).T).sum(axis=1)
+        #print("+++++")
+        #print(DFc.shape, k_ani.shape, df.FP)
+        #print(df.FP[cidxes] / k_ani, df.SIGFP[cidxes], k_ani, S * df.epsilon[cidxes],
+        #                  numpy.abs(DFc), df.centric[cidxes]+1)
+        cpp = numpy.nansum(ext.ll_amp(df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes],
+                                      k_ani, S * df.epsilon.to_numpy()[cidxes],
+                                      numpy.abs(DFc), df.centric.to_numpy()[cidxes]+1))
+        ret += cpp
+        #continue
+        py = numpy.nansum(func[c](df.FP.to_numpy()[cidxes] / k_ani,
                                     (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
                                     Fcs, Ds, S, df.epsilon.to_numpy()[cidxes]))
+        #print("cpp vs py", cpp / py)
     return ret
 # mlf()
 
-#@profile
+@profile
 def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
     ret = []
     func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
@@ -520,13 +532,27 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, centric_sel, use):
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         k_ani = df.k_aniso.to_numpy()[cidxes]
-        r = func[c](df.FP.to_numpy()[cidxes] / k_ani,
-                    (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
-                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
+        if 1:
+            pyr = func[c](df.FP.to_numpy()[cidxes] / k_ani,
+                        (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
+                        Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
+        r = ext.ll_amp_der1_DS(df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes], k_ani, S,
+                               numpy.vstack(Fcs).T, Ds,
+                               df.centric.to_numpy()[cidxes]+1, df.epsilon.to_numpy()[cidxes])
         ret.append(numpy.nansum(r, axis=0))
+        continue
+        sel = ~numpy.isclose(pyr, r, equal_nan=True)
+        if numpy.any(sel):
+            print(c, "py, c++=", pyr[sel], r[sel])
+            sel = sel.sum(axis=1).astype(bool)
+            print(sel)
+            print("inp=", df.FP.to_numpy()[cidxes][sel], df.SIGFP.to_numpy()[cidxes][sel], k_ani[sel], S,
+                  df[fc_labs].to_numpy()[cidxes][sel], Ds,
+                  (df.centric.to_numpy()[cidxes]+1)[sel], df.epsilon.to_numpy()[cidxes][sel])
     return sum(ret)
 # deriv_mlf_wrt_D_S()
 
+@profile
 def mlf_shift_S(df, fc_labs, Ds, S, centric_sel, use):
     func = (deriv_mlf_wrt_D_S_acentric, deriv_mlf_wrt_D_S_centric)
     g, H = 0., 0.
@@ -537,9 +563,13 @@ def mlf_shift_S(df, fc_labs, Ds, S, centric_sel, use):
             cidxes = work if use == "work" else test
         Fcs = [df[lab].to_numpy()[cidxes] for lab in fc_labs]
         k_ani = df.k_aniso.to_numpy()[cidxes]
-        r = func[c](df.FP.to_numpy()[cidxes] / k_ani,
-                    (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
-                    Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
+        pyr = func[c](df.FP.to_numpy()[cidxes] / k_ani,
+                        (df.SIGFP.to_numpy()[cidxes] / k_ani)**2,
+                        Fcs, Ds, S, df.epsilon.to_numpy()[cidxes])
+
+        r = ext.ll_amp_der1_DS(df.FP.to_numpy()[cidxes], df.SIGFP.to_numpy()[cidxes], k_ani, S,
+                               numpy.vstack(Fcs).T, Ds,
+                                   df.centric.to_numpy()[cidxes]+1, df.epsilon.to_numpy()[cidxes])
         g += numpy.nansum(r[:,-1])
         H += numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -1119,7 +1149,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
-    #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI"]})
+    #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI","FP","SIGFP"] if name in hkldata.df})
 
     if (d_min, d_max).count(None) != 2:
         hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
@@ -1131,6 +1161,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.sort_by_resolution()
     hkldata.calc_epsilon()
     hkldata.calc_centric()
+    #hkldata.df = hkldata.df.astype({name: 'int64' for name in hkldata.df.select_dtypes("int") if name not in "HKL"})
+
 
     if "FREE" in hkldata.df and free is None:
         free = hkldata.guess_free_number(newlabels[0])
@@ -1383,6 +1415,8 @@ def main(args):
     
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
+    print(hkldata.df.dtypes)
+    #quit()
     lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
                                       use_int=is_int, mask=mask)
     b_aniso = lsq.b_aniso

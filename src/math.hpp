@@ -8,23 +8,27 @@
 
 namespace servalcat {
 
-double sq(double x) {return x * x;}
+constexpr double sq(double x) {return x * x;}
 
-double log_cosh(double x) {
+inline double log_cosh(double x) {
   // from gemmi/python/gemmi.cpp
   x = std::abs(x);
-  return x + std::log1p(std::exp(-2 * x)) - std::log(2);
+  return x + std::log1p(std::exp(-2 * x)) - std::log(2.);
 }
 
-double fom(double X, int c) {
+inline double log_i0_or_cosh(double X, int c) {
+  return c == 1 ? gemmi::log_bessel_i0(2*X) : log_cosh(X);
+}
+
+inline double fom(double X, int c) {
   return c == 1 ? gemmi::bessel_i1_over_i0(2*X) : std::tanh(X);
 }
 
-double fom_der(double m, double X, int c) {
+inline double fom_der(double m, double X, int c) {
   return c == 1 ? 1 - 0.5 * m / X - m * m : 1 - m * m;
 }
 
-double x_plus_sqrt_xsq_plus_y(double x, double y) {
+inline double x_plus_sqrt_xsq_plus_y(double x, double y) {
   // avoid precision loss
   const double tmp = std::sqrt(sq(x) + y);
   return x < 0 ? y / (tmp - x) : x + tmp;
@@ -32,7 +36,7 @@ double x_plus_sqrt_xsq_plus_y(double x, double y) {
 
 // solve y - exp(-y) = x for y.
 // solution is y = W(exp(-x)) + x
-double solve_y_minus_exp_minus_y(double x, double prec) {
+inline double solve_y_minus_exp_minus_y(double x, double prec) {
   if (x > 20) return x;
   return lambertw::lambertw(std::exp(-x), prec) + x;
 }
