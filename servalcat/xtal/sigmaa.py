@@ -458,23 +458,18 @@ def mlf_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
 # mlf_shift_S()
 
 def mli(df, fc_labs, Ds, S, k_ani, idxes):
-    DFc = (Ds * df.loc[idxes, fc_labs].to_numpy()).sum(axis=1)
-    ll = ext.ll_int(df.I[idxes], df.SIGI[idxes], k_ani[idxes], S * df.epsilon[idxes],
-                    numpy.abs(DFc), df.centric[idxes]+1)
-    if numpy.nansum(ll) == -numpy.inf:
-        dbg = numpy.where(ll == -numpy.inf)[0]
-        logger.writeln("debug: -inf params= {}".format([df.I[idxes].to_numpy()[dbg],
-                                                        df.SIGI[idxes].to_numpy()[dbg],
-                                                        k_ani[idxes][dbg],
-                                                        S * df.epsilon[idxes].to_numpy()[dbg],
-                                                        numpy.abs(DFc.to_numpy())[dbg],
-                                                        df.centric[idxes].to_numpy()[dbg]+1]))
+    Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
+    DFc = (Ds * Fcs).sum(axis=1)
+    ll = ext.ll_int(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes],
+                    k_ani[idxes], S * df.epsilon.to_numpy()[idxes],
+                    numpy.abs(DFc), df.centric.to_numpy()[idxes]+1)
     return numpy.nansum(ll)
 # mli()
 
 def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
+    Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           df[fc_labs].to_numpy()[idxes], Ds,
+                           Fcs, Ds,
                            df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
     g = numpy.zeros(len(fc_labs)+1)
     g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
@@ -483,8 +478,9 @@ def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
 # deriv_mli_wrt_D_S()
 
 def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
+    Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           df[fc_labs].to_numpy()[idxes], Ds,
+                           Fcs, Ds,
                            df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])[:,:len(fc_labs)]
     g = numpy.nansum(r, axis=0)# * trans.D_deriv(x[:len(fc_labs)]) # D
     #tmp = numpy.hstack([r[:,:len(fc_labs)] #* trans.D_deriv(x[:len(fc_labs)]),
@@ -494,8 +490,9 @@ def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
 # mli_shift_D()
 
 def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
+    Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           df[fc_labs].to_numpy()[idxes], Ds,
+                           Fcs, Ds,
                            df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
@@ -931,7 +928,10 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
             exp_ip = numpy.exp(numpy.angle(DFc)*1j)
             m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1)
-            hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc # FIXME just f for centrics
+            if c == 0:
+                hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
+            else:
+                hkldata.df.loc[cidxes, "FWT"] = f * exp_ip
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
             # remove reflections that should be hidden
@@ -1202,8 +1202,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
             S = hkldata.df["S"].to_numpy()[cidxes]
-            phic = numpy.angle(hkldata.df.FC.to_numpy()[cidxes]) # FIXME use DFc phase
-            expip = numpy.cos(phic) + 1j*numpy.sin(phic)
+            expip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
             Fo = hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
             SigFo = hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
             epsilon = hkldata.df.epsilon.to_numpy()[cidxes]
@@ -1232,7 +1231,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
                 hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
                 hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
-            hkldata.df.loc[cidxes[fill_sel], "FWT"] = (DFc_abs * expip)[fill_sel]
+            hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
 
         Fc = hkldata.df.FC.to_numpy()[idxes] * k_ani[idxes]
         Fo = hkldata.df.FP.to_numpy()[idxes]
