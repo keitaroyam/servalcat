@@ -110,30 +110,19 @@ class LL_Xtal:
     def calc_target(self): # -LL target for MLF or MLI
         ret = 0
         k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        # in MLF, df.k_aniso is used
-            
+        f = sigmaa.mli if self.is_int else sigmaa.mlf
         for i_bin, _ in self.hkldata.binned():
-            Ds = [self.hkldata.binned_df.loc[i_bin, lab] for lab in self.D_labs]
-            if self.is_int:
-                if self.use_in_target == "all":
-                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin] for i in (1,2)])
-                else:
-                    i = 1 if self.use_in_target == "work" else 2
-                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin]])
-                ret += sigmaa.mli(self.hkldata.df,
-                                  self.fc_labs,
-                                  self.hkldata.df.loc[idxes, self.D_labs].to_numpy(),
-                                  self.hkldata.df.loc[idxes, "S"].to_numpy(),
-                                  k_aniso,
-                                  idxes)
+            if self.use_in_target == "all":
+                idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin] for i in (1,2)])
             else:
-                ret += sigmaa.mlf(self.hkldata.df,
-                                  self.fc_labs,
-                                  Ds,
-                                  self.hkldata.binned_df.S[i_bin],
-                                  self.centric_and_selections[i_bin],
-                                  use=self.use_in_target)
-
+                i = 1 if self.use_in_target == "work" else 2
+                idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin]])
+            ret += f(self.hkldata.df,
+                     self.fc_labs,
+                     numpy.vstack([self.hkldata.df[lab].to_numpy()[idxes] for lab in self.D_labs]).T,
+                     self.hkldata.df.S.to_numpy()[idxes],
+                     k_aniso,
+                     idxes)
         return ret * 2 # friedel mates
     # calc_target()
 
@@ -155,23 +144,19 @@ class LL_Xtal:
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         k_ani = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         for i_bin, _ in self.hkldata.binned():
-            bin_d_min = self.hkldata.binned_df.d_min[i_bin]
-            bin_d_max = self.hkldata.binned_df.d_max[i_bin]
-            Ds = [self.hkldata.binned_df[lab][i_bin] for lab in self.D_labs]
-            S = self.hkldata.binned_df.S[i_bin]
             for c, work, test in self.centric_and_selections[i_bin]:
                 if self.use_in_target == "all":
                     cidxes = numpy.concatenate([work, test])
                 else:
                     cidxes = work if self.use_in_target == "work" else test
                 epsilon = self.hkldata.df.epsilon.to_numpy()[cidxes]
-
+                Fcs = numpy.vstack([self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]).T
+                Ds = numpy.vstack([self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.D_labs]).T
+                S = self.hkldata.df["S"].to_numpy()[cidxes]
+                Fc = (Ds * Fcs).sum(axis=1)
+                Fc_abs = numpy.abs(Fc)
+                expip = numpy.exp(1j * numpy.angle(Fc))
                 if self.is_int:
-                    Ds = self.hkldata.df.loc[cidxes, self.D_labs].to_numpy()
-                    S = self.hkldata.df["S"].to_numpy()[cidxes]
-                    Fc = (Ds * self.hkldata.df.loc[cidxes, self.fc_labs].to_numpy()).sum(axis=1)
-                    Fc_abs = numpy.abs(Fc)
-                    expip = numpy.exp(1j * numpy.angle(Fc))
                     Io = self.hkldata.df.I.to_numpy()
                     sigIo = self.hkldata.df.SIGI.to_numpy()
                     to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / epsilon
@@ -185,27 +170,23 @@ class LL_Xtal:
                     #d2ll_dab2[cidxes] = ((2-c) / S / epsilon + ((2-c) * r / k_ani[cidxes] / epsilon / S)**2) * Ds[0]**2
                     d2ll_dab2[cidxes] =  g**2
                 else:
-                    Fcs = [self.hkldata.df[lab].to_numpy()[cidxes] for lab in self.fc_labs]
-                    Fc = sigmaa.calc_DFc(Ds, Fcs) # sum(D * Fc)
-                    Fc_abs = numpy.abs(Fc)
-                    expip = numpy.exp(1j * numpy.angle(Fc))
                     Fo = self.hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
                     SigFo = self.hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
                     if c == 0: # acentric
                         Sigma = 2 * SigFo**2 + epsilon * S
                         X = 2 * Fo * Fc_abs / Sigma
                         m = gemmi.bessel_i1_over_i0(X)
-                        g = 2 * (Fc_abs - m * Fo) / Sigma * Ds[0]  # XXX assuming 0 is atomic structure
+                        g = 2 * (Fc_abs - m * Fo) / Sigma * Ds[:,0]  # XXX assuming 0 is atomic structure
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (2 / Sigma - (1 - m / X - m**2) * (2 * Fo / Sigma)**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (2 / Sigma - (1 - m / X - m**2) * (2 * Fo / Sigma)**2) * Ds[:,0]**2
                     else:
                         Sigma = SigFo**2 + epsilon * S
                         X = Fo * Fc_abs / Sigma
                         #X = X.astype(numpy.float64)
                         m = numpy.tanh(X)
-                        g = (Fc_abs - m * Fo) / Sigma * Ds[0]
+                        g = (Fc_abs - m * Fo) / Sigma * Ds[:,0]
                         dll_dab[cidxes] = g * expip
-                        d2ll_dab2[cidxes] = (1. / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[0]**2
+                        d2ll_dab2[cidxes] = (1. / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[:,0]**2
 
         if self.mott_bethe:
             dll_dab *= self.hkldata.d_spacings()**2 * gemmi.mott_bethe_const()
