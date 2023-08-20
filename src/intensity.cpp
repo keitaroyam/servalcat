@@ -196,23 +196,6 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   return sn / sd;
 }
 
-// ML intensity target; -log(Io; Fc) without constants
-double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) {
-  if (std::isnan(Io) || S <= 0) return NAN;
-  const double k = c == 1 ? 0 : -0.5;
-  const double to = Io / sigIo - sigIo / c / sq(k_ani) / S;
-  const double Ic = sq(Fc);
-  const double tf = k_ani * Fc / std::sqrt(sigIo);
-  const double sig1 = sq(k_ani) * S / sigIo;
-  if (sig1 < 0)
-    printf("ERROR: negative sig1= %f k_ani= %f S= %f sigIo= %f\n", sig1, k_ani, S, sigIo);
-  const double logj = integ_j(k, to, tf, sig1, c, true);
-  if (c == 1) // acentrics
-    return 2 * std::log(k_ani) + std::log(S) + Ic / S - logj;
-  else
-    return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
-}
-
 // d/dDj -log(Io; Fc)
 // note Re(Fcj Fc*) needs to be multiplied
 double ll_int_der1_D(double S, double Fc, int c, double eps, double j_ratio_2) {
@@ -230,153 +213,181 @@ double ll_int_der1_S(double S, double Fc, int c, double eps, double j_ratio_1, d
   else
     return 0.5 / S - 0.5 * sq(Fc) * invepsS2 - (j_ratio_1 / c - (3-c) * Fc * j_ratio_2) * invepsS2;
 }
-template<bool for_DS>
-py::array_t<double>
-ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                      double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
-                      py::array_t<int> c, py::array_t<int> eps) {
-  if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
-  const size_t n_models = Fcs.shape(1);
-  const size_t n_ref = Fcs.shape(0);
-  const size_t n_cols = for_DS ? n_models + 1 : 1;
-  auto Io_ = Io.unchecked<1>();
-  auto sigIo_ = sigIo.unchecked<1>();
-  auto k_ani_ = k_ani.unchecked<1>();
-  auto Fcs_ = Fcs.unchecked<2>();
-  auto c_ = c.unchecked<1>();
-  auto eps_ = eps.unchecked<1>();
 
-  // der1 wrt D1, D2, .., S, or k_ani
-  auto ret = py::array_t<double>({n_ref, n_cols});
-  double* ptr = (double*) ret.request().ptr;
-  auto sum_Fc = [&](int i) {
-                  std::complex<double> s = Fcs_(i, 0) * Ds[0];
-                  for (size_t j = 1; j < n_models; ++j)
-                    s += Fcs_(i, j) * Ds[j];
-                  return s;
-                };
-  for (size_t i = 0; i < n_ref; ++i) {
-    if (S <= 0 || std::isnan(Io_(i))) {
-      for (size_t j = 0; j < n_cols; ++j)
-        ptr[i * n_cols + j] = NAN;
-      continue;
-    }
-    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
-    const double Fc_abs = std::abs(Fc_total_conj);
-    const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-    const double sqrt_sigIo = std::sqrt(sigIo_(i));
-    const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
-    const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+struct IntensityIntegrator {
+  double h = 0.5;
+  int N = 200;
+  double ewmax = 20.;
+  double exp2_threshold = 3.;
+  
+  // ML intensity target; -log(Io; Fc) without constants
+  double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) {
+    if (std::isnan(Io) || S <= 0) return NAN;
+    const double k = c == 1 ? 0 : -0.5;
+    const double to = Io / sigIo - sigIo / c / sq(k_ani) / S;
+    const double Ic = sq(Fc);
+    const double tf = k_ani * Fc / std::sqrt(sigIo);
+    const double sig1 = sq(k_ani) * S / sigIo;
     if (sig1 < 0)
-      printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
-    const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-    const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-    double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i));
-    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo / k_ani_(i);
-    if (for_DS) {
-      j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
-      const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
-      for (size_t j = 0; j < n_models; ++j) {
-        const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
-        ptr[i*n_cols + j] = tmp * r_fcj_fc;
-      }
-      ptr[i*n_cols + n_models] = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
-    }
-    else {
-      // k_aniso * d/dk_aniso -log p(Io; Fc)
-      // note k_aniso is multiplied to the derivative
-      const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
-      const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, tf, sig1, c_(i));// * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
-      ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
-    }
-  }
-  return ret;
-}
-
-// an attemp to fast update of Sigma, but it does look good.
-double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                                               double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
-                                               py::array_t<int> c, py::array_t<int> eps) {
-  if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
-  const size_t n_models = Fcs.shape(1);
-  const size_t n_ref = Fcs.shape(0);
-  auto Io_ = Io.unchecked<1>();
-  auto sigIo_ = sigIo.unchecked<1>();
-  auto k_ani_ = k_ani.unchecked<1>();
-  auto Fcs_ = Fcs.unchecked<2>();
-  auto c_ = c.unchecked<1>();
-  auto eps_ = eps.unchecked<1>();
-
-  auto sum_Fc = [&](int i) {
-                  std::complex<double> s = Fcs_(i, 0) * Ds[0];
-                  for (size_t j = 1; j < n_models; ++j)
-                    s += Fcs_(i, j) * Ds[j];
-                  return s;
-                };
-  int count = 0;
-  double ret = 0;
-  for (size_t i = 0; i < n_ref; ++i) {
-    if (S <= 0 || std::isnan(Io_(i)))
-      continue;
-    const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
-    const double Fc_abs = std::abs(Fc_total_conj);
-    const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-    const double sqrt_sigIo = std::sqrt(sigIo_(i));
-    const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
-    const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
-    if (sig1 < 0)
-      printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
-    const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-    const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-    const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i)) * sigIo_(i) / sq(k_ani_(i));
-    const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i)) * sqrt_sigIo / k_ani_(i);
-    const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
-    if (c_(i) == 1) // acentrics
-      ret += (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
+      printf("ERROR: negative sig1= %f k_ani= %f S= %f sigIo= %f\n", sig1, k_ani, S, sigIo);
+    const double logj = integ_j(k, to, tf, sig1, c, true, exp2_threshold, h, N, ewmax);
+    if (c == 1) // acentrics
+      return 2 * std::log(k_ani) + std::log(S) + Ic / S - logj;
     else
-      ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2)) / eps_(i);
-    ++count;
+      return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
   }
-  if (count == 0) return NAN;
-  return ret / count;
-}
+
+  template<bool for_DS>
+  py::array_t<double>
+  ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
+                        double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
+                        py::array_t<int> c, py::array_t<int> eps) {
+    if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
+    const size_t n_models = Fcs.shape(1);
+    const size_t n_ref = Fcs.shape(0);
+    const size_t n_cols = for_DS ? n_models + 1 : 1;
+    auto Io_ = Io.unchecked<1>();
+    auto sigIo_ = sigIo.unchecked<1>();
+    auto k_ani_ = k_ani.unchecked<1>();
+    auto Fcs_ = Fcs.unchecked<2>();
+    auto c_ = c.unchecked<1>();
+    auto eps_ = eps.unchecked<1>();
+
+    // der1 wrt D1, D2, .., S, or k_ani
+    auto ret = py::array_t<double>({n_ref, n_cols});
+    double* ptr = (double*) ret.request().ptr;
+    auto sum_Fc = [&](int i) {
+      std::complex<double> s = Fcs_(i, 0) * Ds[0];
+      for (size_t j = 1; j < n_models; ++j)
+        s += Fcs_(i, j) * Ds[j];
+      return s;
+    };
+    for (size_t i = 0; i < n_ref; ++i) {
+      if (S <= 0 || std::isnan(Io_(i))) {
+        for (size_t j = 0; j < n_cols; ++j)
+          ptr[i * n_cols + j] = NAN;
+        continue;
+      }
+      const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
+      const double Fc_abs = std::abs(Fc_total_conj);
+      const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+      const double sqrt_sigIo = std::sqrt(sigIo_(i));
+      const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+      const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+      if (sig1 < 0)
+        printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
+      const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+      const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+      double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax);
+      const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
+                                             exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      if (for_DS) {
+        j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
+        const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+        for (size_t j = 0; j < n_models; ++j) {
+          const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
+          ptr[i*n_cols + j] = tmp * r_fcj_fc;
+        }
+        ptr[i*n_cols + n_models] = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+      }
+      else {
+        // k_aniso * d/dk_aniso -log p(Io; Fc)
+        // note k_aniso is multiplied to the derivative
+        const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
+        const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax); // * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
+        ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+      }
+    }
+    return ret;
+  }
+
+  // an attemp to fast update of Sigma, but it does look good.
+  double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
+                                                 double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
+                                                 py::array_t<int> c, py::array_t<int> eps) {
+    if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
+    const size_t n_models = Fcs.shape(1);
+    const size_t n_ref = Fcs.shape(0);
+    auto Io_ = Io.unchecked<1>();
+    auto sigIo_ = sigIo.unchecked<1>();
+    auto k_ani_ = k_ani.unchecked<1>();
+    auto Fcs_ = Fcs.unchecked<2>();
+    auto c_ = c.unchecked<1>();
+    auto eps_ = eps.unchecked<1>();
+
+    auto sum_Fc = [&](int i) {
+      std::complex<double> s = Fcs_(i, 0) * Ds[0];
+      for (size_t j = 1; j < n_models; ++j)
+        s += Fcs_(i, j) * Ds[j];
+      return s;
+    };
+    int count = 0;
+    double ret = 0;
+    for (size_t i = 0; i < n_ref; ++i) {
+      if (S <= 0 || std::isnan(Io_(i)))
+        continue;
+      const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
+      const double Fc_abs = std::abs(Fc_total_conj);
+      const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+      const double sqrt_sigIo = std::sqrt(sigIo_(i));
+      const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+      const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+      if (sig1 < 0)
+        printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
+      const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+      const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+      const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i),
+                                             exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+      const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
+                                             exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+      if (c_(i) == 1) // acentrics
+        ret += (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
+      else
+        ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2)) / eps_(i);
+      ++count;
+    }
+    if (count == 0) return NAN;
+    return ret / count;
+  }
 
 // For French-Wilson
-template<bool for_S>
-py::array_t<double>
-ll_int_fw_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                         double S, py::array_t<int> c, py::array_t<int> eps) {
-  size_t n_ref = Io.shape(0);
-  auto Io_ = Io.unchecked<1>();
-  auto sigIo_ = sigIo.unchecked<1>();
-  auto k_ani_ = k_ani.unchecked<1>();
-  auto c_ = c.unchecked<1>();
-  auto eps_ = eps.unchecked<1>();
+  template<bool for_S>
+  py::array_t<double>
+  ll_int_fw_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
+                           double S, py::array_t<int> c, py::array_t<int> eps) {
+    size_t n_ref = Io.shape(0);
+    auto Io_ = Io.unchecked<1>();
+    auto sigIo_ = sigIo.unchecked<1>();
+    auto k_ani_ = k_ani.unchecked<1>();
+    auto c_ = c.unchecked<1>();
+    auto eps_ = eps.unchecked<1>();
 
-  // der1 wrt S or k_ani
-  auto ret = py::array_t<double>(n_ref);
-  double* ptr = (double*) ret.request().ptr;
-  for (size_t i = 0; i < n_ref; ++i) {
-    if (std::isnan(Io_(i))) {
-      ptr[i] = NAN;
-      continue;
+    // der1 wrt S or k_ani
+    auto ret = py::array_t<double>(n_ref);
+    double* ptr = (double*) ret.request().ptr;
+    for (size_t i = 0; i < n_ref; ++i) {
+      if (std::isnan(Io_(i))) {
+        ptr[i] = NAN;
+        continue;
+      }
+      const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+      const double k_num = c_(i) == 1 ? 1. : 0.5;
+      double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
+      if (for_S) {
+        j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
+        ptr[i] = ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
+      }
+      else {
+        // note k_aniso is multiplied to the derivative
+        const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
+        const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
+        ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+      }
     }
-    const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-    const double k_num = c_(i) == 1 ? 1. : 0.5;
-    double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i));
-    if (for_S) {
-      j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
-      ptr[i] = ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
-    }
-    else {
-      // note k_aniso is multiplied to the derivative
-      const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
-      const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, 0., 1., c_(i));
-      ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
-    }
+    return ret;
   }
-  return ret;
-}
+};
 
 void add_intensity(py::module& m) {
   m.def("integ_J", py::vectorize(integ_j),
@@ -386,13 +397,20 @@ void add_intensity(py::module& m) {
         py::arg("k_num"), py::arg("k_den"), py::arg("l"), py::arg("to"), py::arg("tf"),
         py::arg("sig1"), py::arg("c"),
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
-  m.def("ll_int", py::vectorize(ll_int),
-        py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"));
-  m.def("ll_int_der1_DS", &ll_int_der1_params_py<true>);
-  m.def("ll_int_der1_ani", &ll_int_der1_params_py<false>);
-  m.def("find_ll_int_S_from_current_estimates", &find_ll_int_S_from_current_estimates_py);
-  m.def("ll_int_fw_der1_S", &ll_int_fw_der1_params_py<true>);
-  m.def("ll_int_fw_der1_ani", &ll_int_fw_der1_params_py<false>);
+  py::class_<IntensityIntegrator>(m, "IntensityIntegrator")
+    .def(py::init<>())
+    .def_readwrite("h", &IntensityIntegrator::h)
+    .def_readwrite("N", &IntensityIntegrator::N)
+    .def_readwrite("ewmax", &IntensityIntegrator::ewmax)
+    .def_readwrite("exp2_threshold", &IntensityIntegrator::exp2_threshold)
+    .def("ll_int", py::vectorize(&IntensityIntegrator::ll_int),
+         py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"))
+    .def("ll_int_der1_DS", &IntensityIntegrator::ll_int_der1_params_py<true>)
+    .def("ll_int_der1_ani", &IntensityIntegrator::ll_int_der1_params_py<false>)
+    .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)
+    .def("ll_int_fw_der1_S", &IntensityIntegrator::ll_int_fw_der1_params_py<true>)
+    .def("ll_int_fw_der1_ani", &IntensityIntegrator::ll_int_fw_der1_params_py<false>)
+    ;
   m.def("lambertw", py::vectorize(lambertw::lambertw));
   m.def("find_root", &find_root);
   m.def("f1_orig2", py::vectorize(f1_orig2));

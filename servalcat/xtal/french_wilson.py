@@ -15,7 +15,7 @@ import os
 import scipy.special
 import scipy.optimize
 from servalcat.utils import logger
-from servalcat.xtal.sigmaa import process_input
+from servalcat.xtal import sigmaa
 from servalcat import utils
 from servalcat import ext
 
@@ -23,6 +23,8 @@ from servalcat import ext
 #profile = line_profiler.LineProfiler()
 #import atexit
 #atexit.register(profile.print_stats)
+
+integr = sigmaa.integr
 
 def add_arguments(parser):
     parser.description = 'Convert intensity to amplitude'
@@ -97,16 +99,16 @@ def determine_Sigma_and_aniso(hkldata):
             #logger.writeln("Bin {}".format(i_bin))
             for j in range(10):
                 S = hkldata.binned_df.loc[i_bin, "S"]
-                f0 = numpy.nansum(ext.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                             S * hkldata.df.epsilon.to_numpy()[idxes],
-                                             0, hkldata.df.centric.to_numpy()[idxes]+1))
+                f0 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
+                                                S * hkldata.df.epsilon.to_numpy()[idxes],
+                                                0, hkldata.df.centric.to_numpy()[idxes]+1))
                 shift = numpy.exp(ll_shift_bin_S(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                  S, hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes]))
                 for k in range(3):
                     ss = shift**(1. / 2**k)
-                    f1 = numpy.nansum(ext.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                                 S * ss * hkldata.df.epsilon.to_numpy()[idxes],
-                                                 0, hkldata.df.centric.to_numpy()[idxes]+1))
+                    f1 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
+                                                    S * ss * hkldata.df.epsilon.to_numpy()[idxes],
+                                                    0, hkldata.df.centric.to_numpy()[idxes]+1))
                     #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
                     if f1 < f0:
                         hkldata.binned_df.loc[i_bin, "S"] = S * ss
@@ -141,13 +143,13 @@ def ll_all_B(x, ssqmat, hkldata, adpdirs):
     k_ani = hkldata.debye_waller_factors(b_cart=B)
     ret = 0.
     for i_bin, idxes in hkldata.binned():
-        ret += numpy.nansum(ext.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                       hkldata.binned_df.S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
-                                       0, hkldata.df.centric.to_numpy()[idxes]+1))
+        ret += numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
+                                          hkldata.binned_df.S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
+                                          0, hkldata.df.centric.to_numpy()[idxes]+1))
     return ret
 
 def ll_shift_bin_S(Io, sigIo, k_ani, S, c, eps, exp_trans=True):
-    tmp = ext.ll_int_fw_der1_S(Io, sigIo, k_ani, S, c, eps)
+    tmp = integr.ll_int_fw_der1_S(Io, sigIo, k_ani, S, c, eps)
     g = numpy.nansum(tmp)
     H = numpy.nansum(tmp**2)
     if exp_trans:
@@ -164,9 +166,9 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
     epsilon = hkldata.df.epsilon.to_numpy()
     r = numpy.empty(len(Io)) * numpy.nan
     for i_bin, idxes in hkldata.binned():
-        r[idxes] = ext.ll_int_fw_der1_ani(Io[idxes], sigIo[idxes],
-                                          k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                          c[idxes], epsilon[idxes])
+        r[idxes] = integr.ll_int_fw_der1_ani(Io[idxes], sigIo[idxes],
+                                             k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                             c[idxes], epsilon[idxes])
     g = -numpy.nansum(ssqmat * r, axis=1)
     H = numpy.nansum(numpy.matmul(ssqmat[None,:].T, ssqmat.T[:,None]) * (r**2)[:,None,None], axis=0)
     g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
@@ -187,8 +189,10 @@ def french_wilson(hkldata, B_aniso, labout=None):
         eps = hkldata.df.epsilon.to_numpy()[idxes]
         to = Io / sigo - sigo / c / k_ani[idxes]**2 / S / eps
         k_num = numpy.where(c == 1,  0.5, 0.)
-        F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c)
-        Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c)
+        F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c,
+                                                 integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+        Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c,
+                                       integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
         varF = Fsq - F**2
         hkldata.df.loc[idxes, labout[0]] = F
         hkldata.df.loc[idxes, labout[1]] = numpy.sqrt(varF)
@@ -215,16 +219,16 @@ def main(args):
         labin = args.labin.split(",")
 
     try:
-        hkldata, _, _, _, _ = process_input(hklin=args.hklin,
-                                            labin=labin,
-                                            n_bins=args.nbins,
-                                            free=None,
-                                            xyzins=[],
-                                            source=None,
-                                            d_min=args.d_min,
-                                            n_per_bin=500,
-                                            max_bins=30,
-                                            cif_index=args.hklin_index)
+        hkldata, _, _, _, _ = sigmaa.process_input(hklin=args.hklin,
+                                                   labin=labin,
+                                                   n_bins=args.nbins,
+                                                   free=None,
+                                                   xyzins=[],
+                                                   source=None,
+                                                   d_min=args.d_min,
+                                                   n_per_bin=500,
+                                                   max_bins=30,
+                                                   cif_index=args.hklin_index)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     

@@ -23,6 +23,8 @@ DFc = sum_j D_j F_c,j
 The last Fc,n is bulk solvent contribution.
 """
 
+integr = ext.IntensityIntegrator()
+
 def add_arguments(parser):
     parser.description = 'Sigma-A parameter estimation for crystallographic data'
     parser.add_argument('--hklin', required=True,
@@ -460,17 +462,17 @@ def mlf_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
 def mli(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     DFc = (Ds * Fcs).sum(axis=1)
-    ll = ext.ll_int(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes],
-                    k_ani[idxes], S * df.epsilon.to_numpy()[idxes],
-                    numpy.abs(DFc), df.centric.to_numpy()[idxes]+1)
+    ll = integr.ll_int(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes],
+                       k_ani[idxes], S * df.epsilon.to_numpy()[idxes],
+                       numpy.abs(DFc), df.centric.to_numpy()[idxes]+1)
     return numpy.nansum(ll)
 # mli()
 
 def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
-    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           Fcs, Ds,
-                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+    r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                              Fcs, Ds,
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
     g = numpy.zeros(len(fc_labs)+1)
     g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
     g[-1] = numpy.nansum(r[:,-1]) # S
@@ -479,9 +481,9 @@ def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
 
 def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
-    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           Fcs, Ds,
-                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])[:,:len(fc_labs)]
+    r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                              Fcs, Ds,
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])[:,:len(fc_labs)]
     g = numpy.nansum(r, axis=0)# * trans.D_deriv(x[:len(fc_labs)]) # D
     #tmp = numpy.hstack([r[:,:len(fc_labs)] #* trans.D_deriv(x[:len(fc_labs)]),
     #                    r[:,-1,None] * trans.S_deriv(x[-1])])
@@ -491,9 +493,9 @@ def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
 
 def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
-    r = ext.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
-                           Fcs, Ds,
-                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+    r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
+                              Fcs, Ds,
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -831,10 +833,10 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             S2mat = hkldata.ssq_mat() # ssqmat
             g = numpy.zeros(6)
             for i_bin, idxes in hkldata.binned():
-                r = ext.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
-                                        k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                        hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
-                                        hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
+                                           k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                           hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
+                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
             return numpy.dot(g, adpdirs.T)
@@ -845,10 +847,10 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             g = numpy.zeros(6)
             H = numpy.zeros((6, 6))
             for i_bin, idxes in hkldata.binned():
-                r = ext.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
-                                        k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                        hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
-                                        hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
+                                           k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                           hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
+                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
                 H += numpy.nansum(numpy.matmul(S2[None,:].T, S2.T[:,None]) * (r[:,0]**2)[:,None,None], axis=0)
@@ -925,9 +927,10 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
             tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
             sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
-            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
+            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+            f *= numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
             exp_ip = numpy.exp(numpy.angle(DFc)*1j)
-            m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1)
+            m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
             if c == 0:
                 hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
             else:

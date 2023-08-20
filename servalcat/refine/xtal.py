@@ -16,6 +16,7 @@ from servalcat import utils
 from servalcat import ext
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
+integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
@@ -163,7 +164,9 @@ class LL_Xtal:
                     tf = k_ani[cidxes] * Fc_abs / numpy.sqrt(sigIo[cidxes])
                     sig1 = k_ani[cidxes]**2 * epsilon * S / sigIo[cidxes]
                     k_num = 0.5 if c == 0 else 0. # acentric:0.5, centric: 0.
-                    r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1) * numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
+                    r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1,
+                                          integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+                    r *= numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
                     g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[:,0]
                     dll_dab[cidxes] = g * expip
                     #d2ll_dab2[cidxes] = (2-c)**2 / S / epsilon * Ds[0]**2 # approximation
