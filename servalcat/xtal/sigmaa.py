@@ -899,6 +899,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                                 (bin_centers[1] - bin_centers[0]))
         for i, lab in enumerate(D_labs + ["S"]):
             hkldata.df[lab] = vals[:, i]
+        # Update smoothened average; this affects next refinement.
+        # TODO: update Mn(|Dj*FCj|) as well.
+        #for i_bin, idxes in hkldata.binned():
+        #    for lab in D_labs + ["S"]:
+        #        hkldata.binned_df.loc[i_bin, lab] = numpy.mean(hkldata.df[lab].to_numpy()[idxes])
     else:
         raise RuntimeError("unknown smoothing method: {}".format(smoothing))
 

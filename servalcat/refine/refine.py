@@ -171,7 +171,7 @@ def show_binstats(df, cycle_number):
     forplot = []
     rlabs = [x for x in df if x.startswith("R")]
     cclabs = [x for x in df if x.startswith("CC")]
-    dlabs = [x for x in df if re.search("D[0-9]*", x)]
+    dlabs = [x for x in df if re.search("^D[0-9]*", x)]
     if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
     if rlabs: forplot.append(["R", rlabs])
     if cclabs: forplot.append(["CC", cclabs])
