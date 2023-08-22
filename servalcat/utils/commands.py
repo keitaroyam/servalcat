@@ -829,9 +829,16 @@ def adp_stats(args):
     if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_adp"
     st = fileio.read_structure(args.model)
     model.adp_analysis(st)
+    b_all = [cra.atom.b_iso for cra in st[0].all() if cra.atom.occ > 0]
+    
+    # bin width from Freedman–Diaconis rule
+    qs = numpy.quantile(b_all, [0, 0.25, 0.75, 1])
+    bin_h = 2 * (qs[2] - qs[1]) / len(b_all)**(1/3.)
+    
+    # for plotly
     traces = []
-    traces.append("x: [%s], type: 'histogram', name: 'All'"
-                  % ",".join("%.2f"%cra.atom.b_iso for cra in st[0].all() if cra.atom.occ > 0))
+    traces.append("x: [%s], type: 'histogram', name: 'All', xbins: {size: %f}"
+                  % (",".join("%.2f"%x for x in b_all), bin_h))
     if len(st[0]) > 1:
         b_chain = {}
         for c in st[0]:
@@ -839,7 +846,6 @@ def adp_stats(args):
         for c in b_chain:
             bs = ",".join("%.2f" % x for x in b_chain[c])
             traces.append("x: [%s], type: 'histogram', name: 'Chain %s'" % (bs, c))
-    
     with open(args.output_prefix + "_hist.html", "w") as ofs:
         ofs.write("""\
 <html>
