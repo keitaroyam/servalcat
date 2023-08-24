@@ -36,7 +36,7 @@ def add_arguments(parser):
     parser.add_argument('--model', required=True, nargs="+", action="append",
                         help='Input atomic model file(s)')
     parser.add_argument("-d", '--d_min', type=float)
-    #parser.add_argument('--d_max', type=float)
+    parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int,
                         help="Number of bins (default: auto)")
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], required=True,
@@ -501,7 +501,7 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     return -g / H
 # mli_shift_S()
 
-def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, use="all"):
+def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, use="all", smoothing="gauss"):
     # theorhetical values
     cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
     cc_c = lambda cc: 2/(numpy.pi-2) * (cc**2*numpy.sqrt(1-cc**2) + cc * numpy.arctan(cc/numpy.sqrt(1-cc**2)) + (1-cc**2)**(3/2)-1)
@@ -582,6 +582,7 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     logger.writeln(stats.to_string())
     logger.writeln("\nEstimates:")
     logger.writeln(hkldata.binned_df.to_string())
+    smooth_params(hkldata, D_labs, smoothing)
 # determine_mlf_params_from_cc()
 
 def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use):
@@ -886,6 +887,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
         logger.writeln("Refined B_aniso = {}".format(b_aniso))
         logger.writeln("cycle {} f= {}".format(i_cyc, f1))
 
+    smooth_params(hkldata, D_labs, smoothing)
+    return b_aniso
+# determine_ml_params()
+
+def smooth_params(hkldata, D_labs, smoothing):
     if smoothing is None:
         for i, lab in enumerate(D_labs + ["S"]):
             hkldata.df[lab] = hkldata.binned_data_as_array(lab)
@@ -906,9 +912,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
         #        hkldata.binned_df.loc[i_bin, lab] = numpy.mean(hkldata.df[lab].to_numpy()[idxes])
     else:
         raise RuntimeError("unknown smoothing method: {}".format(smoothing))
-
-    return b_aniso
-# determine_ml_params()
+# smooth_params()
 
 def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
     nmodels = len(fc_labs)
@@ -1287,6 +1291,7 @@ def main(args):
                                                                            free=args.free,
                                                                            xyzins=sum(args.model, []),
                                                                            source=args.source,
+                                                                           d_max=args.d_max,
                                                                            d_min=args.d_min,
                                                                            n_per_bin=n_per_bin,
                                                                            use=args.use,

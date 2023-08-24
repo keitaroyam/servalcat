@@ -23,6 +23,7 @@ def add_arguments(parser):
     parser.description = "EXPERIMENTAL program to refine crystallographic structures"
     parser.add_argument("--hklin", required=True)
     parser.add_argument("-d", '--d_min', type=float)
+    parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int, 
                         help="Number of bins (default: auto)")
     parser.add_argument("--labin", help="F,SIGF,FREE input")
@@ -114,6 +115,7 @@ def main(args):
                                                                                  free=args.free,
                                                                                  xyzins=[args.model],
                                                                                  source=args.source,
+                                                                                 d_max=args.d_max,
                                                                                  d_min=args.d_min,
                                                                                  n_per_bin=n_per_bin,
                                                                                  use=use_in_est,
