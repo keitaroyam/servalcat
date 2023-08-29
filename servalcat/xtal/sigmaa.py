@@ -923,6 +923,10 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     sigIo = hkldata.df.SIGI.to_numpy()
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     eps = hkldata.df.epsilon.to_numpy()
+    Ds = numpy.vstack([hkldata.df[lab].to_numpy() for lab in D_labs]).T
+    Fcs = numpy.vstack([hkldata.df[lab].to_numpy() for lab in fc_labs]).T
+    DFc = (Ds * Fcs).sum(axis=1)
+    hkldata.df["DFC"] = DFc
     for i_bin, idxes in hkldata.binned():
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
@@ -931,20 +935,18 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             else:
                 k_num, k_den = 0., -0.5
             S = hkldata.df["S"].to_numpy()[cidxes]
-            Fcs = [hkldata.df[lab].to_numpy()[cidxes] for lab in fc_labs]
-            DFc = (hkldata.df.loc[cidxes, D_labs].to_numpy() * hkldata.df.loc[cidxes, fc_labs].to_numpy()).sum(axis=1)
             to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
-            tf = k_ani[cidxes] * numpy.abs(DFc) / numpy.sqrt(sigIo[cidxes])
+            tf = k_ani[cidxes] * numpy.abs(DFc[cidxes]) / numpy.sqrt(sigIo[cidxes])
             sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
             f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
             f *= numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
-            exp_ip = numpy.exp(numpy.angle(DFc)*1j)
+            exp_ip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
             m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
             if c == 0:
-                hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc
+                hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
             else:
                 hkldata.df.loc[cidxes, "FWT"] = f * exp_ip
-            hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc
+            hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
             # remove reflections that should be hidden
             if use != "all":
@@ -953,7 +955,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
                 hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
                 hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
-            hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[fill_sel]
+            hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
 # calculate_maps_int()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
@@ -1205,6 +1207,7 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
     Ds = numpy.vstack([hkldata.df[lab].to_numpy() for lab in D_labs]).T
     Fcs = numpy.vstack([hkldata.df[lab].to_numpy() for lab in fc_labs]).T
     DFc = (Ds * Fcs).sum(axis=1)
+    hkldata.df["DFC"] = DFc
     for i_bin, idxes in hkldata.binned():
         bin_d_min = hkldata.binned_df.d_min[i_bin]
         bin_d_max = hkldata.binned_df.d_max[i_bin]
@@ -1338,7 +1341,7 @@ def main(args):
         labs = ["I", "SIGI", "FOM"]
     else:
         labs = ["FP", "SIGFP", "FOM"]
-    labs.extend(["FWT", "DELFWT", "FC"])
+    labs.extend(["FWT", "DELFWT", "FC", "DFC"])
     if not args.no_solvent:
         labs.append("Fbulk")
     if "FREE" in hkldata.df:
