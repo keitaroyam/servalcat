@@ -435,6 +435,8 @@ def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedCh
             mult += 1
             idx = img - cs_count + 1
             todel.append((idx * n_chains + ic, ir, ia))
+            assert st[0][ic][ir].seqid == st[0][todel[-1][0]][ir].seqid
+            assert st[0][ic][ir][ia].name == st[0][todel[-1][0]][ir][ia].name
         # correct occupancy
         st[0][ic][ir][ia].occ *= mult
     for ic, ir, ia in sorted(todel, reverse=True):
