@@ -276,7 +276,7 @@ struct LL{
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
       const gemmi::Element &el = atom.element;
-      const auto coef = Table::get(el);
+      const auto coef = Table::get(el, atom.charge);
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
       const bool has_aniso = atom.aniso.nonzero();
       if (adp_mode == 1 && has_aniso) gemmi::fail("bad adp_mode");
@@ -392,11 +392,11 @@ struct LL{
   template <typename Table>
   double b_sf_max() const {
     double ret = 0.;
-    std::set<gemmi::Element> elems;
+    std::set<std::pair<gemmi::Element, signed char>> elems;
     for (auto atom : atoms)
-      elems.insert(atom->element);
-    for (const auto &el : elems) {
-      const auto &coef = Table::get(el);
+      elems.insert({atom->element, atom->charge});
+    for (const auto &p : elems) {
+      const auto &coef = Table::get(p.first, p.second);
       for (int i = 0; i < Table::Coef::ncoeffs; ++i)
         if (coef.b(i) > ret)
           ret = coef.b(i);
@@ -550,7 +550,7 @@ struct LL{
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
-      const auto coef = Table::get(atom.element);
+      const auto coef = Table::get(atom.element, atom.charge);
       const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
