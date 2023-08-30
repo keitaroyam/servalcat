@@ -200,6 +200,8 @@ def add_arguments(p):
     parser.add_argument('--rate', type=float, default=1.5)
     parser.add_argument('--add_dummy_sigma', action='store_true', help="write dummy SIGF")
     parser.add_argument('--as_intensity', action='store_true', help="if you want |F|^2")
+    parser.add_argument('--keep_charges',  action='store_true',
+                        help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument('-d', '--resolution', type=float, required=True)
     parser.add_argument('-o', '--output_prefix')
 
@@ -951,6 +953,9 @@ def fcalc(args):
     if not args.output_prefix: args.output_prefix = "{}_fcalc_{}".format(fileio.splitext(os.path.basename(args.model))[0], args.source)
 
     st = fileio.read_structure(args.model)
+    if not args.keep_charges:
+        model.remove_charge([st])
+    model.check_atomsf([st], args.source)
     if not args.no_expand_ncs:
         model.expand_ncs(st)    
 

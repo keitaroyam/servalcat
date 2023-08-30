@@ -49,6 +49,8 @@ def add_arguments(parser):
                         help="Omit hydrogen electrons from model in map calculation")
     parser.add_argument('-o','--output_prefix', default="diffmap",
                         help='output file name prefix (default: %(default)s)')
+    parser.add_argument('--keep_charges',  action='store_true',
+                        help="Use scattering factor for charged atoms. Use it with care.")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -392,6 +394,8 @@ def main(args):
         logger.error("Warning: using --halfmaps is strongly recommended!")
 
     st = utils.fileio.read_structure(args.model)
+    if not args.keep_charges:
+        utils.model.remove_charge([st])
     ncs_org = gemmi.NcsOpList(st.ncs)
     utils.model.expand_ncs(st)
 

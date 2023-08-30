@@ -68,6 +68,43 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
+def remove_charge(sts):
+    nonzero = False
+    for st in sts:
+        for cra in st[0].all():
+            if cra.atom.charge != 0: nonzero = True
+            cra.atom.charge = 0
+    if nonzero:
+        logger.writeln("Warning: all atomic charges were set to zero.")
+# remove_charge()
+
+def check_atomsf(sts, source, mott_bethe=True):
+    assert source in ("xray", "electron", "neutron")
+    if source != "electron": mott_bethe = False
+    logger.writeln("Atomic scattering factors for {}".format("electron (Mott-Bethe)" if mott_bethe else source))
+    if source != "xray" and not mott_bethe:
+        logger.writeln("  Note that charges will be ignored")
+    el_charges = {(cra.atom.element, cra.atom.charge) for st in sts for cra in st[0].all()}
+    elems = {x[0] for x in el_charges}
+    if source == "xray" or mott_bethe:
+        shown = set()
+        for el, charge in sorted(el_charges, key=lambda x: (x[0].atomic_number, x[1])):
+            sf = gemmi.IT92_get_exact(el, charge)
+            if not sf:
+                logger.writeln("  Warning: no scattering factor found for {}{:+}".format(el.name, charge))
+                sf = el.it92
+                charge = 0
+            if (el, charge) in shown: continue
+            label = el.name if charge == 0 else "{}{:+}".format(el.name, charge)
+            logger.writeln("  {} {}".format(label, tuple(sf.get_coefs())))
+            shown.add((el, charge))
+    else:
+        for el in sorted(elems, key=lambda x: x.atomic_number):
+            sf = el.c4322 if source == "electron" else el.neutron92
+            logger.writeln("  {} {}".format(el.name, tuple(sf.get_coefs())))
+    logger.writeln("")
+# check_atomsf()
+
 def calc_sum_ab(st):
     sum_ab = dict()
     ret = 0.
