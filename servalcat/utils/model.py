@@ -413,34 +413,9 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     # TODO modify st.connections for atoms at special positions
     if len(st.ncs) == 0: return
-    n_chains = len(st[0]) # number of chains before expansion
-    specs = find_special_positions(st, special_pos_threshold)
-    lookup = {x[0]:None for x in specs}
-    for i, chain in enumerate(st[0]):
-        for j, res in enumerate(chain):
-            for k, atom in enumerate(res):
-                if atom in lookup: lookup[atom] = (i, j, k)
+    find_special_positions(st, special_pos_threshold) # just to show info, a bit waste of cpu time..
     logger.writeln("Expanding symmetry..")
-    st.expand_ncs(howtoname)
-    if not specs: return
-    cs_count = len(st.find_spacegroup().operations())
-    todel = []
-    for atom, images, _, _ in specs:
-        if not lookup[atom]: continue # should not happen
-        ic, ir, ia = lookup[atom]
-        mult = 1
-        for img in images:
-            # ignore crystallographic symmetry
-            if (img - cs_count + 1) % cs_count != 0: continue
-            mult += 1
-            idx = img - cs_count + 1
-            todel.append((idx * n_chains + ic, ir, ia))
-            assert st[0][ic][ir].seqid == st[0][todel[-1][0]][ir].seqid
-            assert st[0][ic][ir][ia].name == st[0][todel[-1][0]][ir][ia].name
-        # correct occupancy
-        st[0][ic][ir][ia].occ *= mult
-    for ic, ir, ia in sorted(todel, reverse=True):
-        del st[0][ic][ir][ia]
+    st.expand_ncs(howtoname, merge_dist=1e-4)
 # expand_ncs()
 
 def prepare_assembly(name, chains, ops, is_helical=False):

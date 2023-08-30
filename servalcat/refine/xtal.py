@@ -59,7 +59,7 @@ class LL_Xtal:
     def update_fc(self):
         if self.st.ncs:
             st = self.st.clone()
-            st.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
+            st.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
         else:
             st = self.st
 
