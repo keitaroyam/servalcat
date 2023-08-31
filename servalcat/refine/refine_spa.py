@@ -159,7 +159,7 @@ def main(args):
         hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                                       mask_in=args.mask, args=args, use_refmac=False,
                                       find_links=args.find_links)
-    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+    h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
     try:
