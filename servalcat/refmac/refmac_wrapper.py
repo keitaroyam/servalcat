@@ -31,7 +31,8 @@ def add_arguments(parser):
     parser.add_argument('--no_adjust_hydrogen_distances', action='store_true', help="By default it adjusts hydrogen distances using ideal values. This option is to disable it.")
     parser.add_argument('--keep_original_output', action='store_true', help="with .org extension")
     parser.add_argument('--prefix', help="output prefix")
-
+    parser.add_argument("-v", "--version", action="version",
+                        version=logger.versions_str())
     # TODO --cell to override unit cell?
 
 # add_arguments()

@@ -81,6 +81,13 @@ def dependency_versions():
                 pandas=pandas.__version__)
 # dependency_versions()
 
+def versions_str():
+    tmpl = "Servalcat {servalcat} with Python {python} ({deps})"
+    return tmpl.format(servalcat=servalcat.__version__,
+                       python=platform.python_version(),
+                       deps=", ".join([x[0]+" "+x[1] for x in dependency_versions().items()]))
+# versions_str()
+
 def write_header(command="servalcat"):
     writeln("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
     writeln("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))

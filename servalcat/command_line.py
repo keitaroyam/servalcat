@@ -67,9 +67,7 @@ def main():
                                      description="A tool for model refinement and map calculation for crystallography and cryo-EM SPA.")
     parser.add_argument("--skip_test", action="store_true", help="Skip installation test")
     parser.add_argument("-v", "--version", action="version",
-                        version="Servalcat {servalcat} with Python {python} ({deps})".format(servalcat=servalcat.__version__,
-                                                                                             python=platform.python_version(),
-                                                                                             deps=", ".join([x[0]+" "+x[1] for x in logger.dependency_versions().items()])))
+                        version=logger.versions_str())
     parser.add_argument("--logfile", default="servalcat.log")
     subparsers = parser.add_subparsers(dest="command")
 
