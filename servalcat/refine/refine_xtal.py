@@ -75,6 +75,8 @@ def add_arguments(parser):
                         help="Do not consider bulk solvent contribution")
     parser.add_argument('--use_work_in_est',  action='store_true',
                         help="Use work reflections in ML parameter estimates")
+    parser.add_argument('--keep_charges',  action='store_true',
+                        help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument('-o','--output_prefix')
 # add_arguments()
 
@@ -119,7 +121,8 @@ def main(args):
                                                                                  d_min=args.d_min,
                                                                                  n_per_bin=n_per_bin,
                                                                                  use=use_in_est,
-                                                                                 max_bins=30)
+                                                                                 max_bins=30,
+                                                                                 keep_charges=args.keep_charges)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -143,7 +146,7 @@ def main(args):
             raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         utils.restraints.find_and_fix_links(st, monlib, add_found=args.find_links)
-        h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+        h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
                     "yes":gemmi.HydrogenChange.NoChange,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
         try:

@@ -167,6 +167,7 @@ def main(args):
 
     if args.model:
         st = utils.fileio.read_structure(args.model)
+        utils.model.remove_charge([st])
         utils.model.expand_ncs(st)
         st.cell = hkldata.cell
         st.spacegroup_hm = hkldata.sg.xhm()

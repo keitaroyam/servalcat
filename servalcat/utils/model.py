@@ -68,6 +68,43 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
+def remove_charge(sts):
+    nonzero = False
+    for st in sts:
+        for cra in st[0].all():
+            if cra.atom.charge != 0: nonzero = True
+            cra.atom.charge = 0
+    if nonzero:
+        logger.writeln("Warning: all atomic charges were set to zero.")
+# remove_charge()
+
+def check_atomsf(sts, source, mott_bethe=True):
+    assert source in ("xray", "electron", "neutron")
+    if source != "electron": mott_bethe = False
+    logger.writeln("Atomic scattering factors for {}".format("electron (Mott-Bethe)" if mott_bethe else source))
+    if source != "xray" and not mott_bethe:
+        logger.writeln("  Note that charges will be ignored")
+    el_charges = {(cra.atom.element, cra.atom.charge) for st in sts for cra in st[0].all()}
+    elems = {x[0] for x in el_charges}
+    if source == "xray" or mott_bethe:
+        shown = set()
+        for el, charge in sorted(el_charges, key=lambda x: (x[0].atomic_number, x[1])):
+            sf = gemmi.IT92_get_exact(el, charge)
+            if not sf:
+                logger.writeln("  Warning: no scattering factor found for {}{:+}".format(el.name, charge))
+                sf = el.it92
+                charge = 0
+            if (el, charge) in shown: continue
+            label = el.name if charge == 0 else "{}{:+}".format(el.name, charge)
+            logger.writeln("  {} {}".format(label, tuple(sf.get_coefs())))
+            shown.add((el, charge))
+    else:
+        for el in sorted(elems, key=lambda x: x.atomic_number):
+            sf = el.c4322 if source == "electron" else el.neutron92
+            logger.writeln("  {} {}".format(el.name, tuple(sf.get_coefs())))
+    logger.writeln("")
+# check_atomsf()
+
 def calc_sum_ab(st):
     sum_ab = dict()
     ret = 0.
@@ -413,34 +450,9 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
 def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
     # TODO modify st.connections for atoms at special positions
     if len(st.ncs) == 0: return
-    n_chains = len(st[0]) # number of chains before expansion
-    specs = find_special_positions(st, special_pos_threshold)
-    lookup = {x[0]:None for x in specs}
-    for i, chain in enumerate(st[0]):
-        for j, res in enumerate(chain):
-            for k, atom in enumerate(res):
-                if atom in lookup: lookup[atom] = (i, j, k)
+    find_special_positions(st, special_pos_threshold) # just to show info, a bit waste of cpu time..
     logger.writeln("Expanding symmetry..")
-    st.expand_ncs(howtoname)
-    if not specs: return
-    cs_count = len(st.find_spacegroup().operations())
-    todel = []
-    for atom, images, _, _ in specs:
-        if not lookup[atom]: continue # should not happen
-        ic, ir, ia = lookup[atom]
-        mult = 1
-        for img in images:
-            # ignore crystallographic symmetry
-            if (img - cs_count + 1) % cs_count != 0: continue
-            mult += 1
-            idx = img - cs_count + 1
-            todel.append((idx * n_chains + ic, ir, ia))
-            assert st[0][ic][ir].seqid == st[0][todel[-1][0]][ir].seqid
-            assert st[0][ic][ir][ia].name == st[0][todel[-1][0]][ir][ia].name
-        # correct occupancy
-        st[0][ic][ir][ia].occ *= mult
-    for ic, ir, ia in sorted(todel, reverse=True):
-        del st[0][ic][ir][ia]
+    st.expand_ncs(howtoname, merge_dist=1e-4)
 # expand_ncs()
 
 def prepare_assembly(name, chains, ops, is_helical=False):

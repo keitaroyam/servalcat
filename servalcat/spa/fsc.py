@@ -51,6 +51,8 @@ def add_arguments(parser):
                         help='')
     parser.add_argument('--csv', action='store_true',
                         help="Write csv file")
+    parser.add_argument('--keep_charges',  action='store_true',
+                        help="Use scattering factor for charged atoms. Use it with care.")
 
 # add_arguments()
 
@@ -275,6 +277,8 @@ def main(args):
         st = utils.fileio.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P1"
+        if not args.keep_charges:
+            utils.model.remove_charge([st])
         utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0])
         st_expanded = st.clone()
         if len(st.ncs) > 0:

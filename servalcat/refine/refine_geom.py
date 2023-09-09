@@ -113,7 +113,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     if st.ncs:
         st2 = st.clone()
         logger.writeln("Take NCS constraints into account.")
-        st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup)
+        st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
         utils.fileio.write_model(st2, file_name="input_expanded.pdb")
 
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,

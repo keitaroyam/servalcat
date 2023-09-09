@@ -49,7 +49,7 @@ class LL_SPA:
     def update_fc(self):
         if self.st.ncs:
             st = self.st.clone()
-            st.expand_ncs(gemmi.HowToNameCopiedChain.Short)
+            st.expand_ncs(gemmi.HowToNameCopiedChain.Short, merge_dist=0)
         else:
             st = self.st
 

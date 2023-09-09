@@ -756,6 +756,7 @@ def main(args):
     else:
         maps = [utils.fileio.read_ccp4_map(args.map, pixel_size=args.pixel_size)]
         
+    utils.model.remove_charge([st])
     shifted_model_prefix = "shifted"
     _, file_info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                                  mask_in=args.mask, args=args,

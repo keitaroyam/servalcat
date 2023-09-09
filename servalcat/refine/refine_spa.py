@@ -106,6 +106,8 @@ def add_arguments(parser):
     group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
     parser.add_argument("--fsc_resolution", type=float,
                         help="High resolution limit for FSC calculation. Default: Nyquist")
+    parser.add_argument('--keep_charges',  action='store_true',
+                        help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument("--keep_entities", action='store_true',
                         help="Do not override entities")
 # add_arguments()
@@ -132,6 +134,9 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
     if not args.keep_entities:
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+    if not args.keep_charges:
+        utils.model.remove_charge([st])
+    utils.model.check_atomsf([st], args.source)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)
@@ -154,7 +159,7 @@ def main(args):
         hkldata, info = process_input(st, maps, resolution=args.resolution - 1e-6, monlib=monlib,
                                       mask_in=args.mask, args=args, use_refmac=False,
                                       find_links=args.find_links)
-    h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
+    h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
     try:
