@@ -724,7 +724,7 @@ def main(args):
     if not args.prepare_only:
         refmac_ver = utils.refmac.check_version(args.exe)
         if not refmac_ver:
-            raise SystemExit("Error: Check Refmac instllation or use --exe to give the location.\n{}".format(e))
+            raise SystemExit("Error: Check Refmac instllation or use --exe to give the location.")
         if not args.no_refmacat and refmac_ver >= (5, 8, 404):
             logger.writeln(" will use gemmi to prepare restraints")
             use_gemmi_prep = True
