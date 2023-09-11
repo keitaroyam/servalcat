@@ -894,7 +894,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
 # determine_ml_params()
 
 def smooth_params(hkldata, D_labs, smoothing):
-    if smoothing is None:
+    if smoothing is None or len(hkldata.binned()) < 2:
         for i, lab in enumerate(D_labs + ["S"]):
             hkldata.df[lab] = hkldata.binned_data_as_array(lab)
 
