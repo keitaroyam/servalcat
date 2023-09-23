@@ -125,7 +125,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                                                             check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-    refmac_keywords.extend(metal_kws)
+    refmac_keywords = metal_kws + refmac_keywords
     geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords)
     refiner = Refine(st, geom)
     stats = refiner.run_cycles(ncycle)

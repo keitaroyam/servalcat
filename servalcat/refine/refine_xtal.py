@@ -154,7 +154,7 @@ def main(args):
                                                                 check_hydrogen=(args.hydrogen=="yes"))
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
-        keywords.extend(metal_kws)
+        keywords = metal_kws + keywords
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
