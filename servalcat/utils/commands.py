@@ -21,7 +21,6 @@ import numpy
 import scipy.spatial
 import pandas
 import json
-import textwrap
 import re
 import argparse
 
@@ -1151,21 +1150,26 @@ def seq(args):
             seqs.extend(fileio.read_sequence_file(sf))
         
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)    
     for chain in st[0]:
         p = chain.get_polymer()
         if not p: continue
-        p_seq = gemmi.one_letter_code(p)
         p_type = p.check_polymer_type()
+        if p_type in (gemmi.PolymerType.SaccharideD, gemmi.PolymerType.SaccharideL): continue
+        p_seq = gemmi.one_letter_code(p)
         results = []
         for name, seq in seqs:
             if p_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD):
                 s = [gemmi.expand_protein_one_letter(x) for x in seq]
+            elif p_type == gemmi.PolymerType.Dna: # what if DnaRnaHybrid?
+                s = ["D" + x for x in seq]
             else:
                 s = [x for x in seq]
             results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type), seq])
 
         if results:
             logger.writeln("Chain: {}".format(chain.name))
+            logger.writeln(" polymer type: {}".format(str(p_type).replace("PolymerType.", "")))
             name, al, s1 = max(results, key=lambda x: x[1].score)
             logger.writeln(" match: {}".format(name))
             logger.writeln(" score: {}".format(al.score))
@@ -1177,14 +1181,13 @@ def seq(args):
                 logger.write(" mismatches: ")
                 logger.writeln(", ".join("{}({}>{})".format(seqnums[idxes[i]], p1[i], p2[i]) for i in mismatches))
             logger.writeln("")
-            for x in zip(textwrap.wrap(p1, wrap_width, drop_whitespace=False),
-                         textwrap.wrap(al.match_string, wrap_width, drop_whitespace=False),
-                         textwrap.wrap(p2, wrap_width, drop_whitespace=False)):
-                logger.writeln(" " + "\n ".join(x)+"\n")
+            for i in range(0, len(p1), wrap_width):
+                logger.writeln(" seq.  {}".format(p1[i:i+wrap_width]))
+                logger.writeln("       {}".format(al.match_string[i:i+wrap_width]))
+                logger.writeln(" model {}\n".format(p2[i:i+wrap_width]))
         else:
             logger.writeln("> Chain: {}".format(chain.name))
-            for x in textwrap.wrap(gemmi.one_letter_code(p), wrap_width):
-                logger.writeln(x)
+            logger.writeln(gemmi.one_letter_code(p))
             logger.writeln("")
 # seq()
 

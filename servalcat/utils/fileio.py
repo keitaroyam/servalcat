@@ -740,5 +740,5 @@ def read_sequence_file(f):
             ret.append([name, ""])
         elif l:
             if not ret: ret.append(["", ""])
-            ret[-1][1] += l.replace("*", "").replace("-", "")
+            ret[-1][1] += l.replace("*", "").replace("-", "").upper()
     return ret
