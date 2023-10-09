@@ -480,6 +480,7 @@ struct Geometry {
   };
   struct Harmonic {
     Harmonic(gemmi::Atom* a) : atom(a) {}
+    void calc(GeomTarget* target) const;
     double sigma;
     gemmi::Atom* atom;
   };
@@ -998,6 +999,8 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
     ret += t.calc(wchir, target_ptr, rep_ptr);
   for (const auto &t : planes)
     ret += t.calc(wplane, target_ptr, rep_ptr);
+  for (const auto &t : harmonics)
+    t.calc(target_ptr);
   for (const auto &t : stackings)
     ret += t.calc(wstack, target_ptr, rep_ptr);
   for (const auto &t : vdws)
@@ -1005,7 +1008,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
-  // TODO intervals, harmonics, specials
+  // TODO intervals, specials
   return ret;
 }
 
@@ -1472,6 +1475,16 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
   if (reporting != nullptr)
     reporting->planes.emplace_back(this, deltas);
   return ret;
+}
+
+inline void Geometry::Harmonic::calc(GeomTarget* target) const {
+  if (target != nullptr) {
+    // Refmac style - only affects second derivatives
+    const double w = 1. / (sigma * sigma);
+    const size_t ipos = (atom->serial-1) * 6;
+    for (size_t i = 0; i < 3; ++i)
+      target->am[ipos+i] += w;
+  }
 }
 
 inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Reporting *reporting) const {
