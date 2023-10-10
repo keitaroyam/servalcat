@@ -33,7 +33,7 @@ class Logger(object):
 
     def write(self, l, end="", flush=True, fs=None, print_fs=sys.stdout):
         if self.stopped: return
-        print(l, end=end, file=print_fs)
+        print(l, end=end, file=print_fs, flush=flush)
         for f in (self.ofs, fs):
             if f is not None:
                 f.write(l)
