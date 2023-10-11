@@ -26,18 +26,23 @@ re_outlier_start = re.compile("\*\*\*\*.*outliers")
 def check_version(exe="refmac5"):
     ver = ()
     try:
-        p = subprocess.Popen([exe], shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        output = ""
+        p = subprocess.Popen([exe], shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              universal_newlines=True)
         p.stdin.write("end\n")
         p.stdin.close()
         for l in iter(p.stdout.readline, ""):
+            output += l
             r_ver = re_version.search(l)
             if r_ver:
                 logger.writeln("Refmac version: {}".format(r_ver.group(1)))
                 ver = tuple(map(int, r_ver.group(1).split(".")))
         p.wait()
+        if not ver and output:
+            logger.writeln("\nError: failed to check the Refmac version. The raw output:\n")
+            logger.writeln(output)
     except OSError as e:
-        logger.writeln("Cannot execute {}".format(exe))
+        logger.writeln("Error: Cannot execute {}".format(exe))
     return ver
 # check_version()
 
