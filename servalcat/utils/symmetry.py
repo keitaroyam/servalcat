@@ -190,6 +190,8 @@ def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1
             min_n = -int((min_z - padding - start_xyz[direc]) / deltaz)
         if max_n is None:
             max_n = int((st.cell.parameters[direc] + start_xyz[direc] - max_z - padding) / deltaz)
+    if min_n > max_n:
+        min_n, max_n = max_n, min_n
     ops = []
     for i in range(min_n, max_n+1):
         deg = deltaphi*i
