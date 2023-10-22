@@ -160,6 +160,10 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--keywords', nargs='+', action="append",
+                        help="refmac keyword(s)")
+    parser.add_argument('--keyword_file', nargs='+', action="append",
+                        help="refmac keyword file(s)")
     parser.add_argument('--sigma', type=float, default=5,
                         help="sigma cutoff to print outliers (default: %(default).1f)")
     parser.add_argument('--per_atom_score_as_b', action='store_true',
@@ -738,6 +742,10 @@ def merge_dicts(args):
 def geometry(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_geom"
+    keywords = []
+    if args.keywords or args.keyword_file:
+        if args.keywords: keywords = sum(args.keywords, [])
+        if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     st = fileio.read_structure(args.model)
     if args.ignore_h:
         st.remove_hydrogens()
@@ -755,7 +763,7 @@ def geometry(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
-    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords)
+    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords + keywords)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.geom.setup_nonbonded()
     ret = geom.show_model_stats()
