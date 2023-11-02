@@ -32,11 +32,11 @@ def download():
     if not os.path.exists(wd):
         os.mkdir(wd)
 
-    url_md5 = (('half1', 'https://ftp.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_1.map.gz', '0bf81c0057d3017972e7cf53e8a8df77'),
-               ('half2', 'https://ftp.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_2.map.gz', '5bba9c32a95d6675fe0387342af5a439'),
-               ('mask', 'https://ftp.wwpdb.org/pub/emdb/structures/EMD-30913/masks/emd_30913_msk_1.map', 'e69403cec5be349b097c8080ce5bb1fd'),
-               ('pdb', 'https://ftp.wwpdb.org/pub/pdb/data/structures/divided/pdb/dy/pdb7dy0.ent.gz', '78351986de7c8a0dacef823dd39f6f8b'),
-               ('mmcif', 'https://ftp.wwpdb.org/pub/pdb/data/structures/divided/mmCIF/dy/7dy0.cif.gz', '107d35d6f214cf330c63c2da0d1a63d8'))
+    url_md5 = (('half1', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_1.map.gz', '0bf81c0057d3017972e7cf53e8a8df77'),
+               ('half2', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_2.map.gz', '5bba9c32a95d6675fe0387342af5a439'),
+               ('mask', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/masks/emd_30913_msk_1.map', 'e69403cec5be349b097c8080ce5bb1fd'),
+               ('pdb', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/pdb/dy/pdb7dy0.ent.gz', '78351986de7c8a0dacef823dd39f6f8b'),
+               ('mmcif', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/mmCIF/dy/7dy0.cif.gz', '107d35d6f214cf330c63c2da0d1a63d8'))
 
     for name, url, md5 in url_md5:
         dst = os.path.join(root, "7dy0", os.path.basename(url))
