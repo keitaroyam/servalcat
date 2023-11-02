@@ -258,7 +258,8 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
-def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True, find_symmetry_related=True):
+def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True, find_symmetry_related=True,
+                       add_only_from=None):
     metalc = MetalCoordination(monlib)
     """
     Identify link ids for st.connections and find new links
@@ -330,7 +331,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     if len(st.connections) == 0:
         logger.writeln(" no links defined in the model")
 
-    logger.writeln("Finding new links (will {} added)".format("be" if add_found else "not be"))
+    logger.writeln("Finding new links (will be added if marked by *)")
     ns = gemmi.NeighborSearch(st[0], st.cell, 5.).populate()
     cs = gemmi.ContactSearch(4.)
     cs.ignore = gemmi.ContactSearch.Ignore.AdjacentResidues # may miss polymer links not contiguous in a chain?
@@ -357,20 +358,24 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             atoms_str += " ({},{},{})".format(*im.pbc_shift)
         if link:
             if r.dist > link.rt.bonds[0].value * bond_margin: continue
-            logger.writeln(" New link found: id= {} {} dist= {:.2f} ideal= {:.2f}".format(link.id,
-                                                                                          atoms_str,
-                                                                                          r.dist,
-                                                                                          link.rt.bonds[0].value))
+            will_be_added = add_found and (not add_only_from or link.id in add_only_from)
+            logger.writeln(" {}New link found: id= {} {} dist= {:.2f} ideal= {:.2f}".format("*" if will_be_added else " ",
+                                                                                            link.id,
+                                                                                            atoms_str,
+                                                                                            r.dist,
+                                                                                            link.rt.bonds[0].value))
         elif find_metal_links:
             # link only metal - O/N/S/B
             if r.partner1.atom.element.is_metal == r.partner2.atom.element.is_metal: continue
             if not cra2.atom.element in onsb: continue
             max_ideal = metalc.find_max_dist(cra1, cra2)
             if r.dist > max_ideal * 1.1: continue # tolerance should be smaller than that for other links
-            logger.writeln(" Metal link found: {} dist= {:.2f} max_ideal= {:.2f}".format(atoms_str,
-                                                                                         r.dist, max_ideal))
+            will_be_added = add_found
+            logger.writeln(" {}Metal link found: {} dist= {:.2f} max_ideal= {:.2f}".format("*" if will_be_added else " ",
+                                                                                           atoms_str,
+                                                                                           r.dist, max_ideal))
         n_found += 1
-        if not add_found: continue
+        if not will_be_added: continue
         con = gemmi.Connection()
         con.name = "added{}".format(n_found)
         if link:
