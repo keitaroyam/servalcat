@@ -72,9 +72,9 @@ def write_mmcif(st, cif_out, cif_ref=None):
     Refmac fails if _entry.id is longer than 80 chars including quotations
     """
     st_new = st.clone()
-    print("Writing mmCIF file:", cif_out)
+    logger.writeln("Writing mmCIF file: {}".format(cif_out))
     if cif_ref:
-        print("  using mmCIF metadata from:", cif_ref)
+        logger.writeln("  using mmCIF metadata from: {}".format(cif_ref))
         groups = gemmi.MmcifOutputGroups(False)
         groups.group_pdb = True
         groups.ncs = True
@@ -83,6 +83,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.scale = True
         groups.assembly = True
         groups.entity = True
+        groups.entity_poly_seq = True
         groups.cis = True
         groups.conn = True
         # FIXME is this all? 
