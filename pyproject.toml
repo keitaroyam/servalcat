@@ -1,7 +1,7 @@
 [build-system]
 requires = ["scikit-build-core==0.5.0", "pybind11>=2.6.2",
             #"gemmi>=0.6.4.dev0",
-            "gemmi @ git+https://github.com/project-gemmi/gemmi.git@d580bc93fa62a2c54ccecbdff669ca77e9fd382a",
+            "gemmi @ git+https://github.com/project-gemmi/gemmi.git@02dd109a88f6e0b453001ff7ea2734682363b6cd",
 ]
 build-backend = "scikit_build_core.build"
 
@@ -18,7 +18,7 @@ authors = [
   { name = "Garib N. Murshudov", email = "" },
 ]
 urls.repository = "https://github.com/keitaroyam/servalcat"
-license = {text = "MPL-2.0"}  # or, at your option, LGPL-3.0
+license = {text = "MPL-2.0"}
 
 [project.scripts]
 servalcat = "servalcat.command_line:main"
