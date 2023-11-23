@@ -304,10 +304,8 @@ struct LL{
         double gb = 0.;
         double gb_aniso[6] = {0,0,0,0,0,0};
         den.template use_points_in_box<true>(fpos, du, dv, dw,
-                                             [&](float& point, const gemmi::Position& delta, int, int, int) {
+                                             [&](float& point, double r2, const gemmi::Position& delta, int, int, int) {
                                                if (point == 0) return;
-                                               const double r2 = delta.length_sq();
-                                               if (r2 > radius * radius) return;
                                                if (!has_aniso) { // isotropic
                                                  double for_x = 0., for_b = 0.;
                                                  for (int j = 0; j < N; ++j) {
@@ -335,7 +333,8 @@ struct LL{
                                                    }
                                                  }
                                                }
-                                             }, false /* fail_on_too_large_radius */);
+                                             }, false /* fail_on_too_large_radius */,
+                                             radius);
         gx *= atom.occ;
         if (adp_mode == 1)
           gb *= atom.occ * 0.25 / gemmi::sq(gemmi::pi());
