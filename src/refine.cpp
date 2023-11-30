@@ -284,7 +284,7 @@ void add_refine(py::module& m) {
           atom3.push_back(restr->atoms[2]);
           atom4.push_back(restr->atoms[3]);
           labels.push_back(val->label);
-          values.push_back(std::get<2>(t) + val->value);
+          values.push_back(std::get<3>(t));
           ideals.push_back(val->value);
           pers.push_back(val->period);
           zs.push_back(z);

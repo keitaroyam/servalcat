@@ -527,7 +527,7 @@ struct Geometry {
   struct Reporting {
     using bond_reporting_t = std::tuple<const Bond*, const Bond::Value*, double>;
     using angle_reporting_t = std::tuple<const Angle*, const Angle::Value*, double>;
-    using torsion_reporting_t = std::tuple<const Torsion*, const Torsion::Value*, double>;
+    using torsion_reporting_t = std::tuple<const Torsion*, const Torsion::Value*, double, double>; // delta, tors
     using chiral_reporting_t = std::tuple<const Chirality*, double, double>; // delta, ideal
     using plane_reporting_t = std::tuple<const Plane*, std::vector<double>>;
     using stacking_reporting_t = std::tuple<const Stacking*, double, double, double>; // delta_angle, delta_dist1, delta_dist2
@@ -1379,7 +1379,7 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
     target->target += ret;
   }
   if (reporting != nullptr)
-    reporting->torsions.emplace_back(this, closest, dtheta);
+    reporting->torsions.emplace_back(this, closest, dtheta, theta);
   return ret;
 }
 
