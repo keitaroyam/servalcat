@@ -46,7 +46,7 @@ def parse_args(arg_list):
 def read_stdin(stdin):
     print("Waiting for input..")
     # these make keywords will be ignored (just passed to refmac): ribo,valu,spec,form,sdmi,segi
-    ret = {"make":{}, "ridge":{}}
+    ret = {"make":{}, "ridge":{}, "refi":{}}
     inputs = []
     for l in refmac_keywords.get_lines(stdin):
         if l.split()[0].lower().startswith("end"):
@@ -235,7 +235,7 @@ def main(args):
     crdout = None
     refmac_fixes = None
     cispeps = []
-    if xyzin is not None:
+    if xyzin is not None and keywords["refi"].get("type") != "unre":
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
         st = utils.fileio.read_structure(xyzin)

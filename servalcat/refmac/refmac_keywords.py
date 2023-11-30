@@ -452,7 +452,7 @@ def parse_line(l, ret):
         while itk < ntok:
             if s[itk].startswith("type"):
                 if itk+1 < ntok and s[itk+1].startswith("unre"):
-                    ret["refi"] = {"type": "unre"}
+                    ret["refi"]["type"] = "unre"
                 itk += 2
             else:
                 itk += 1
@@ -507,7 +507,7 @@ def get_lines(lines):
 # get_lines()
             
 def parse_keywords(inputs):
-    ret = {"make":{}, "ridge":{}}
+    ret = {"make":{}, "ridge":{}, "refi":{}}
     for l in get_lines(inputs):
         if l.split()[0].lower().startswith("end"):
             break
