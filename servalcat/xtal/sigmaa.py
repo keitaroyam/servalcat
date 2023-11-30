@@ -1031,6 +1031,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         sg_st = sts[0].find_spacegroup() # may be None
         sg_use = hkldata.sg
         if hkldata.sg != sg_st:
+            if st.cell.is_crystal() and sg_st and sg_st.laue_str() != hkldata.sg.laue_str():
+                raise RuntimeError("Crystal symmetry mismatch between model and data")
             logger.writeln("Warning: space group mismatch between model and mtz")
             if sg_st and sg_st.laue_str() == hkldata.sg.laue_str():
                 logger.writeln("         using space group from model")

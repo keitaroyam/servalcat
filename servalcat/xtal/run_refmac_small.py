@@ -137,13 +137,14 @@ def main(args):
                 mtz.spacegroup = sg_user
                 logger.writeln(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
             elif mtz.spacegroup != sg_st:
+                if st.cell.is_crystal() and sg_st and sg_st.laue_str() != mtz.spacegroup.laue_str():
+                    raise RuntimeError("Crystal symmetry mismatch between model and data")
                 logger.writeln(" Warning: space group mismatch between model and mtz")
-                if mtz.cell.is_compatible_with_spacegroup(sg_st):
-                    logger.writeln("  Taking space group from model.")
+                if sg_st and sg_st.laue_str() == mtz.spacegroup.laue_str():
+                    logger.writeln("         using space group from model")
                     mtz.spacegroup = sg_st
-                    logger.writeln("  Writing {} as space group {}".format(mtz_in, sg_st.xhm()))
                 else:
-                    logger.writeln("  Model space group is incompatible with mtz unit cell. Ignoring model space group.")
+                    logger.writeln("         using space group from mtz")
 
             if args.hklin_labs:
                 try: mtz = utils.hkl.mtz_selected(mtz, args.hklin_labs)
