@@ -604,6 +604,9 @@ struct Geometry {
   //double dvdw_cut_min_x  = 1.75; // used as twice in fast_hessian_tabulation.f // VDWR VDWC val
   double max_vdw_radius = 2.0;
 
+  // torsion
+  bool use_hydr_tors = true;
+
   // ADP restraints
   float adpr_max_dist = 4.;
   double adpr_d_power = 4;
@@ -665,12 +668,17 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
                }
              };
 
-  auto test_link_r = [&topo](const gemmi::Topo::Rule& rule, const std::string& link_id) {
+  auto test_hydr_tors = [&](const gemmi::Topo::Torsion &t) {
+    return use_hydr_tors && (t.atoms[0]->is_hydrogen() || t.atoms[3]->is_hydrogen());
+  };
+  auto test_link_r = [&topo,&test_hydr_tors](const gemmi::Topo::Rule& rule, const std::string& link_id) {
                        if (rule.rkind != gemmi::Topo::RKind::Torsion)
                          return true;
                        const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
                        if (t.restr->label.find("sp2_sp2") == 0)
                          return true;
+                       if (test_hydr_tors(t))
+                           return true;
                        return ((link_id == "TRANS"   || link_id != "CIS"  ||
                                 link_id == "PTRANS"  || link_id != "PCIS" ||
                                 link_id == "NMTRANS" || link_id != "NMCIS") &&
@@ -691,6 +699,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
         for (const gemmi::Topo::Rule& rule : ri.monomer_rules) {
           if (rule.rkind != gemmi::Topo::RKind::Torsion ||
               topo.torsions[rule.index].restr->label.find("sp2_sp2") == 0 ||
+              test_hydr_tors(topo.torsions[rule.index]) ||
               (ri.orig_chemcomp && ri.orig_chemcomp->group == gemmi::ChemComp::Group::Peptide &&
                topo.torsions[rule.index].restr->label.find("chi") == 0))
             add(rule, true);
