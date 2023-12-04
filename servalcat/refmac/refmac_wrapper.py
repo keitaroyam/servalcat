@@ -172,7 +172,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         # should we check metals and put MetalC?
 
     # fix entity (Refmac seems to make DNA non-polymer; as seen in 1fix)
-    utils.model.setup_entities(st, clear=True, clear_entity_type=True)
+    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True)
     for e in st.entities:
         if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
             rspan = st[0].get_subchain(e.subchains[0])

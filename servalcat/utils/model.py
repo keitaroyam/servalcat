@@ -40,14 +40,8 @@ def shake_structure(st, sigma, copy=True):
     return st2
 # shake_structure()
 
-def setup_entities(st, clear=False, clear_entity_type=False, overwrite_entity_type=False, force_subchain_names=False):
+def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_names=False):
     if clear: st.entities.clear()
-    if clear_entity_type:
-        for m in st:
-            for c in m:
-                for r in c:
-                    r.entity_type = gemmi.EntityType.Unknown
-
     st.add_entity_types(overwrite_entity_type)
     st.assign_subchains(force_subchain_names)
     st.ensure_entities()
