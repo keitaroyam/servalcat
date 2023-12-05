@@ -654,7 +654,8 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
                } else if (rule.rkind == gemmi::Topo::RKind::Chirality) {
                  const gemmi::Topo::Chirality& t = topo.chirs[rule.index];
                  const auto val_sigma = ideal_chiral_abs_volume_sigma(topo, t);
-                 if (val_sigma.second <= 0) return;
+                 if (val_sigma.second <= 0 ||
+                     !std::isfinite(val_sigma.first) || !std::isfinite(val_sigma.second)) return;
                  chirs.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
                  chirs.back().value = val_sigma.first;
                  chirs.back().sigma = val_sigma.second;
@@ -1017,6 +1018,8 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
+  if (std::isnan(ret))
+    gemmi::fail("geom became NaN");
   // TODO intervals, specials
   return ret;
 }
