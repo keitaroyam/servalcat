@@ -670,9 +670,9 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                     S = trans.S(x[-1])
                 elif refpar == "D":
                     Ds = trans.D(x[:len(fc_labs)])
-                    S = hkldata.binned_df.S[i_bin]
+                    S = hkldata.binned_df.loc[i_bin, "S"]
                 else:
-                    Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
+                    Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                     S = trans.S(x[-1])
                 f = mli if use_int else mlf
                 return f(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
@@ -684,10 +684,10 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                     n_par = len(fc_labs)+1
                 elif refpar == "D":
                     Ds = trans.D(x[:len(fc_labs)])
-                    S = hkldata.binned_df.S[i_bin]
+                    S = hkldata.binned_df.loc[i_bin, "S"]
                     n_par = len(fc_labs)
                 else:
-                    Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
+                    Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                     S = trans.S(x[-1])
                     n_par = 1
                 calc_deriv = deriv_mli_wrt_D_S if use_int else deriv_mlf_wrt_D_S
@@ -703,7 +703,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
 
             if 0:
                 refpar = "S"
-                x0 = trans.S_inv(hkldata.binned_df.S[i_bin])
+                x0 = trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])
                 with open("s_line_{}.dat".format(i_bin), "w") as ofs:
                     for sval in numpy.linspace(1, x0*2, 100):
                         ofs.write("{:.4e} {:.10e} {:.10e}\n".format(sval,
@@ -715,12 +715,12 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 vals_last = None
                 for ids in range(10):
                     refpar = "D"
-                    x0 = numpy.array([trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs])
+                    x0 = numpy.array([trans.D_inv(hkldata.binned_df.loc[i_bin, lab]) for lab in D_labs])
                     vals_now = []
                     if 0:
                         f0 = target(x0)
                         nfev_total += 1
-                        shift = mli_shift_D(hkldata.df, fc_labs, trans.D(x0), hkldata.binned_df.S[i_bin], k_ani, idxes)
+                        shift = mli_shift_D(hkldata.df, fc_labs, trans.D(x0), hkldata.binned_df.loc[i_bin, "S"], k_ani, idxes)
                         shift /= trans.D_deriv(x0)
                         #if abs(shift) < 1e-3: break
                         for itry in range(10):
@@ -754,9 +754,9 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                     refpar = "S"
                     if 1:
                         for cyc_s in range(1):
-                            x0 = trans.S_inv(hkldata.binned_df.S[i_bin])
+                            x0 = trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])
                             f0 = target([x0])
-                            Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
+                            Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                             nfev_total += 1
                             calc_shift_S = mli_shift_S if use_int else mlf_shift_S
                             shift = calc_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
@@ -782,7 +782,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                                 break
                     else:
                         # somehow this does not work well.
-                        x0 = [trans.S_inv(hkldata.binned_df.S[i_bin])]
+                        x0 = [trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])]
                         res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                                       bounds=((-3 if S_trans else 5e-2, None),))
                         nfev_total += res.nfev
@@ -796,7 +796,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                         break
                     vals_last = vals_now
             else:
-                x0 = [trans.D_inv(hkldata.binned_df[lab][i_bin]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.S[i_bin])]
+                x0 = [trans.D_inv(hkldata.binned_df.loc[i_bin, lab]) for lab in D_labs] + [trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])]
                 res = scipy.optimize.minimize(fun=target, x0=x0, jac=grad,
                                               bounds=((-5 if D_trans else 1e-5, None), )*len(D_labs) + ((-3 if S_trans else 5e-2, None),))
                 nfev_total += res.nfev
@@ -827,8 +827,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             k_ani = hkldata.debye_waller_factors(b_cart=b)
             ret = 0.
             for i_bin, idxes in hkldata.binned():
-                Ds = [hkldata.binned_df[lab][i_bin] for lab in D_labs]
-                ret += mli(hkldata.df, fc_labs, Ds, hkldata.binned_df.S[i_bin], k_ani, idxes)
+                Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
+                ret += mli(hkldata.df, fc_labs, Ds, hkldata.binned_df.loc[i_bin, "S"], k_ani, idxes)
             return ret
         def grad_ani(x):
             b = gemmi.SMat33d(*numpy.dot(x, adpdirs))
@@ -837,7 +837,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             g = numpy.zeros(6)
             for i_bin, idxes in hkldata.binned():
                 r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
-                                           k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                           k_ani[idxes], hkldata.binned_df.loc[i_bin, "S"],
                                            hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
                                            hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
@@ -851,8 +851,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             H = numpy.zeros((6, 6))
             for i_bin, idxes in hkldata.binned():
                 r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
-                                           k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                           hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
+                                           k_ani[idxes], hkldata.binned_df.loc[i_bin, "S"],
+                                           hkldata.df[fc_labs].to_numpy()[idxes], list(hkldata.binned_df.loc[i_bin, D_labs]),
                                            hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
