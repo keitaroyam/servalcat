@@ -258,6 +258,32 @@ def check_monlib_support_nucleus_distances(monlib, resnames):
     return good
 # check_monlib_support_nucleus_distances()
 
+def remove_duplicated_links(connections):
+    # ignore p.res_id.name?
+    totuple = lambda p: (p.chain_name, p.res_id.seqid.num, p.res_id.seqid.icode, p.atom_name, p.altloc)
+    dic = {}
+    for i, con in enumerate(connections):
+        dic.setdefault(tuple(sorted([totuple(con.partner1), totuple(con.partner2)])), []).append(i)
+    todel = []
+    for k in dic:
+        if len(dic[k]) > 1:
+            ids = set(connections[c].link_id for c in dic[k] if connections[c].link_id.strip())
+            if len(ids) > 1:
+                logger.writeln(" WARNING: duplicated links are found with different link_id")
+            tokeep = dic[k][0]
+            if ids:
+                for c in dic[k]:
+                    if connections[c].link_id.strip():
+                        tokeep = c
+                        break
+            todel.extend(c for c in dic[k] if c != tokeep)
+
+    for i in sorted(todel, reverse=True):
+        del connections[i]
+    if todel:
+        logger.writeln(" {} duplicated links were removed.".format(len(todel)))
+# remove_duplicated_links()
+
 def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True, find_symmetry_related=True,
                        add_only_from=None):
     metalc = MetalCoordination(monlib)
@@ -270,6 +296,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     from servalcat.utils import model
 
     logger.writeln("Checking links defined in the model")
+    remove_duplicated_links(st.connections)
     for con in st.connections:
         if con.type == gemmi.ConnectionType.Hydrog: continue
         if con.link_id == "gap": continue # TODO check residues?
