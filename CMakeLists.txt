@@ -28,7 +28,12 @@ if (NOT CMAKE_BUILD_TYPE AND NOT USING_ENV_CXXFLAGS)
       FORCE)
 endif()
 
-find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
+# CMake >=3.18 has subcomponent Development.Module, scikit-build-core also has it
+if (${CMAKE_VERSION} VERSION_LESS 3.18 AND NOT SKBUILD)
+  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
+else()
+  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module)
+endif()
 
 # use pybind11-config (if available) to determine pybind11_DIR
 execute_process(COMMAND pybind11-config --cmakedir OUTPUT_VARIABLE pybind11_DIR)
