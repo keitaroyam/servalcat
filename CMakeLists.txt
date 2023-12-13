@@ -53,7 +53,7 @@ else()
 endif()
 
 if (DEFINED SKBUILD)
-  find_package(gemmi 0.6.3 CONFIG REQUIRED)
+  find_package(gemmi 0.6.4 CONFIG REQUIRED)
 else()
   set(USE_PYTHON ON CACHE BOOL "" FORCE)
   message(STATUS "")
