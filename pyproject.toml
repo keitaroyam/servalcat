@@ -1,2 +1,38 @@
 [build-system]
-requires=["setuptools", "pybind11"]
+requires = ["scikit-build-core==0.7.0", "pybind11>=2.6.2",
+            "gemmi @ git+https://github.com/project-gemmi/gemmi.git@84b580340165da1e9f07b3fb07b75cde390da79b",
+]
+build-backend = "scikit_build_core.build"
+
+# https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
+[project]
+name = "servalcat"
+dynamic = ["version"]
+requires-python = ">=3.7"
+dependencies = ['numpy>=1.15', 'scipy', 'pandas>=1.1.0',
+                'gemmi @ git+https://github.com/project-gemmi/gemmi.git@84b580340165da1e9f07b3fb07b75cde390da79b']
+description="Structure refinement and validation for crystallography and single particle analysis"
+readme = "README.md"
+authors = [
+  { name = "Keitaro Yamashita", email = "" },
+  { name = "Garib N. Murshudov", email = "" },
+]
+urls.repository = "https://github.com/keitaroyam/servalcat"
+license = {text = "MPL-2.0"}
+
+[project.scripts]
+servalcat = "servalcat.command_line:main"
+refmacat  = "servalcat.refmac.refmac_wrapper:command_line"
+
+[tool.scikit-build]
+#build-dir = "/tmp/gemmi_build2/{wheel_tag}"
+wheel.expand-macos-universal-tags = true  # not sure if this is useful
+cmake.build-type = "Release"
+cmake.verbose = true
+[tool.scikit-build.cmake.define]
+USE_PYTHON = "ON"
+#BUILD_GEMMI_PROGRAM = "OFF"
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "servalcat/__init__.py"

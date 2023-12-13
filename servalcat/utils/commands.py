@@ -1164,15 +1164,14 @@ def seq(args):
         if not p: continue
         p_type = p.check_polymer_type()
         if p_type in (gemmi.PolymerType.SaccharideD, gemmi.PolymerType.SaccharideL): continue
-        p_seq = gemmi.one_letter_code(p)
+        p_seq = gemmi.one_letter_code(p.extract_sequence())
         results = []
         for name, seq in seqs:
-            if p_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD):
-                s = [gemmi.expand_protein_one_letter(x) for x in seq]
-            elif p_type == gemmi.PolymerType.Dna: # what if DnaRnaHybrid?
-                s = ["D" + x for x in seq]
-            else:
-                s = [x for x in seq]
+            # what if DnaRnaHybrid?
+            kind = {gemmi.PolymerType.Dna: gemmi.ResidueKind.DNA,
+                    gemmi.PolymerType.Rna: gemmi.ResidueKind.RNA}.get(p_type, gemmi.ResidueKind.AA)
+            s = [gemmi.expand_one_letter(x, kind) for x in seq]
+            if None in s: continue
             results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type), seq])
 
         if results:
@@ -1195,7 +1194,7 @@ def seq(args):
                 logger.writeln(" model {}\n".format(p2[i:i+wrap_width]))
         else:
             logger.writeln("> Chain: {}".format(chain.name))
-            logger.writeln(gemmi.one_letter_code(p))
+            logger.writeln(gemmi.one_letter_code(p.extract_sequence()))
             logger.writeln("")
 # seq()
 

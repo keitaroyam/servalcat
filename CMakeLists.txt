@@ -8,31 +8,15 @@ string(REGEX REPLACE "__version__ = '(.+)'" "\\1" serval_version_str ${serval_ve
 project(servalcat LANGUAGES C CXX VERSION ${serval_version_str})
 message(STATUS "Servalcat version ${PROJECT_VERSION}")
 
-include(GNUInstallDirs)  # for CMAKE_INSTALL_BINDIR
+include(GNUInstallDirs)
 
-option(INSTALL_EGG_INFO "Install .egg-info via setup.py" ON)
-
-if (NOT CMAKE_CXX_STANDARD)
-  if (CMAKE_CXX20_STANDARD_COMPILE_OPTION)
-    set(CMAKE_CXX_STANDARD 20)
-  elseif (CMAKE_CXX17_STANDARD_COMPILE_OPTION)
-    # Python bindings don't compile as C++17 in VS 2017
-    if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-      set(CMAKE_CXX_STANDARD 14)
-    else()
-      set(CMAKE_CXX_STANDARD 17)
-    endif()
-  elseif (CMAKE_CXX11_STANDARD_COMPILE_OPTION)
-    set(CMAKE_CXX_STANDARD 11)
-  endif()
+if (DEFINED SKBUILD)  # building with scikit-build-core (pip install)
+  set(PYTHON_INSTALL_DIR "${SKBUILD_PLATLIB_DIR}")
+  set(CMAKE_INSTALL_BINDIR "${SKBUILD_SCRIPTS_DIR}")
 endif()
-message(STATUS "Compiling with C++ standard: ${CMAKE_CXX_STANDARD}")
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 set(CMAKE_CXX_EXTENSIONS OFF)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-include(CheckIncludeFile)  # for check_include_file
 
 # Set default build mode to Release, unless we got CXXFLAGS=...
 if (DEFINED ENV{CXXFLAGS})
@@ -44,31 +28,55 @@ if (NOT CMAKE_BUILD_TYPE AND NOT USING_ENV_CXXFLAGS)
       FORCE)
 endif()
 
-find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
+# CMake >=3.18 has subcomponent Development.Module, scikit-build-core also has it
+if (${CMAKE_VERSION} VERSION_LESS 3.18 AND NOT SKBUILD)
+  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
+else()
+  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module)
+endif()
+
+# use pybind11-config (if available) to determine pybind11_DIR
+execute_process(COMMAND pybind11-config --cmakedir OUTPUT_VARIABLE pybind11_DIR)
+string(STRIP "${pybind11_DIR}" pybind11_DIR)
 find_package(pybind11 2.6 CONFIG REQUIRED)
 message(STATUS "Found pybind11 ${pybind11_VERSION}: ${pybind11_INCLUDE_DIRS}")
 
 pybind11_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp)
 
 if (EXISTS "${CMAKE_HOME_DIRECTORY}/eigen/Eigen")
- include_directories("${CMAKE_CURRENT_SOURCE_DIR}/eigen")
- message(STATUS "Using ${CMAKE_HOME_DIRECTORY}/eigen (internal copy).")
+  include_directories("${CMAKE_CURRENT_SOURCE_DIR}/eigen")
+  message(STATUS "Using ${CMAKE_HOME_DIRECTORY}/eigen (internal copy).")
 else()
- find_package (Eigen3 3.4 CONFIG REQUIRED)
- message(STATUS "Found Eigen3 version ${EIGEN3_VERSION_STRING}")
- target_link_libraries(ext PRIVATE Eigen3::Eigen)
+  find_package (Eigen3 3.4 CONFIG REQUIRED)
+  message(STATUS "Found Eigen3 version ${EIGEN3_VERSION_STRING}")
+  target_link_libraries(ext PRIVATE Eigen3::Eigen)
 endif()
 
-if (EXISTS "${CMAKE_HOME_DIRECTORY}/gemmi/include/gemmi")
- include_directories("${CMAKE_CURRENT_SOURCE_DIR}/gemmi/include")
- message(STATUS "Using ${CMAKE_HOME_DIRECTORY}/gemmi (internal copy).")
- add_subdirectory(gemmi EXCLUDE_FROM_ALL)
- target_link_libraries(ext PRIVATE gemmi_cpp)
+if (DEFINED SKBUILD)
+  find_package(gemmi 0.6.4 CONFIG REQUIRED)
 else()
- find_package(gemmi 0.6.1 CONFIG REQUIRED)
- target_link_libraries(ext PRIVATE gemmi::gemmi_cpp)
+  set(USE_PYTHON ON CACHE BOOL "" FORCE)
+  message(STATUS "")
+  message(STATUS "Configuring GEMMI...")
+  if (EXISTS "${CMAKE_HOME_DIRECTORY}/gemmi/include/gemmi")
+    message(STATUS "Using ${CMAKE_HOME_DIRECTORY}/gemmi (internal copy).")
+    add_subdirectory(gemmi EXCLUDE_FROM_ALL)
+  else()
+    include(FetchContent)
+    FetchContent_Declare(
+      gemmi
+      GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
+      GIT_TAG        master
+    )
+    FetchContent_GetProperties(gemmi)
+    if (NOT gemmi_POPULATED)
+      FetchContent_Populate(gemmi)
+      add_subdirectory(${gemmi_SOURCE_DIR} ${gemmi_BINARY_DIR} EXCLUDE_FROM_ALL)
+    endif()
+  endif()
+  add_dependencies(ext gemmi_py)
 endif()
-
+target_link_libraries(ext PRIVATE gemmi::gemmi_cpp)
 
 if (DEFINED PYTHON_INSTALL_DIR)
   message(STATUS "Install directory for Python module: ${PYTHON_INSTALL_DIR}")
@@ -78,23 +86,3 @@ file(TO_CMAKE_PATH "${Python_SITEARCH}" Python_SITEARCH)
 install(DIRECTORY servalcat/ DESTINATION "${Python_SITEARCH}/servalcat"
         FILES_MATCHING PATTERN "*.py")
 install(TARGETS ext DESTINATION "${Python_SITEARCH}/servalcat")
-
-install(CODE
- "execute_process(COMMAND \"${Python_EXECUTABLE}\" setup.py install_scripts --install-dir \"\$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\"
-                  WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
-                  RESULT_VARIABLE script_inst_status)"
-)
-if (script_inst_status AND NOT script_inst_status EQUAL 0)
-  message(FATAL_ERROR "Failed to install scripts.")
-endif()
-
-if (INSTALL_EGG_INFO)
-  install(CODE
-   "execute_process(COMMAND \"${Python_EXECUTABLE}\" setup.py install_egg_info --install-dir \"\$ENV{DESTDIR}${Python_SITEARCH}\"
-                    WORKING_DIRECTORY \"${CMAKE_SOURCE_DIR}\"
-                    RESULT_VARIABLE EGG_STATUS)"
-  )
-  if (EGG_STATUS AND NOT EGG_STATUS EQUAL 0)
-    message(FATAL_ERROR "Failed to install egg-info. Use -D INSTALL_EGG_INFO=OFF to disable.")
-  endif()
-endif()

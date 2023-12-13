@@ -70,7 +70,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
 # rename_cif_modification_if_necessary()
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False,
-                         ignore_monomer_dir=False):
+                         ignore_monomer_dir=False, update_old_atom_names=True):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None and not ignore_monomer_dir:
@@ -142,6 +142,9 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         else:
             logger.writeln("WARNING: ad-hoc restraints will be generated for {}".format(",".join(unknown_cc)))
             logger.writeln("         it is strongly recommended to generate them using AceDRG.")
+
+    if update_old_atom_names:
+        logger.write(monlib.update_old_atom_names(st))
     
     return monlib
 # load_monomer_library()
@@ -366,7 +369,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     onsb = set(gemmi.Element(x) for x in "ONSB")
     n_found = 0
     for r in results:
-        if st.find_connection_by_cra(r.partner1, r.partner2): continue
+        if st.find_connection_by_cra(r.partner1, r.partner2, ignore_segment=True): continue
         link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
                                             r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
                                             (r.dist / 1.4)**2)
