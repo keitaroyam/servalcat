@@ -179,10 +179,14 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     for cinfo in topo.chain_infos:
         toadd = info.setdefault(cinfo.chain_ref.name, {})
         if cinfo.polymer:
+            gaps = []
+            for rinfo in cinfo.res_infos:
+                if rinfo.prev and rinfo.prev[0].link_id == "gap":
+                    gaps.append((rinfo.prev[0].res1, rinfo.prev[0].res2))
             toadd["polymer"] = (str(cinfo.polymer_type).replace("PolymerType.", ""),
                                 cinfo.res_infos[0].res.seqid,
                                 cinfo.res_infos[-1].res.seqid,
-                                len(cinfo.res_infos))
+                                len(cinfo.res_infos), gaps)
         else:
             l = toadd.setdefault("nonpolymer", [])
             for ri in cinfo.res_infos:
@@ -191,7 +195,9 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     for chain in info:
         logger.writeln(" chain {}".format(chain))
         if "polymer" in info[chain]:
-            logger.writeln("  {}: {}..{} ({} residues)".format(*info[chain]["polymer"]))
+            logger.writeln("  {}: {}..{} ({} residues)".format(*info[chain]["polymer"][:-1]))
+            for gap in info[chain]["polymer"][-1]:
+                logger.writeln("    gap between {} and {}".format(*gap))
         if "nonpolymer" in info[chain]:
             n_res = len(info[chain]["nonpolymer"])
             uniq = set(info[chain]["nonpolymer"])
