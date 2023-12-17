@@ -47,6 +47,7 @@ def add_arguments(parser):
                         help="Omit proton from model in map calculation")
     parser.add_argument("--omit_h_electron", action='store_true',
                         help="Omit hydrogen electrons from model in map calculation")
+    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="diffmap",
                         help='output file name prefix (default: %(default)s)')
     parser.add_argument('--keep_charges',  action='store_true',
@@ -239,14 +240,15 @@ def dump_to_mtz(hkldata, map_labs, mtz_out):
 # dump_to_mtz()
 
 def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
-              no_fsc_weights=False, sharpening_b=None, omit_proton=False, omit_h_electron=False):
+              no_fsc_weights=False, sharpening_b=None, omit_proton=False, omit_h_electron=False,
+              source="electron"):
     if no_fsc_weights:
         logger.writeln("WARNING: --no_fsc_weights is requested.")
     if sharpening_b is not None:
         logger.writeln("WARNING: --sharpening_b={} is given".format(sharpening_b))
     
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
-    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source="electron",
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source=source,
                                                miller_array=hkldata.miller_array())
     if mask is not None:
         fc_map = hkldata.fft_map("FC", grid_size=mask.shape)
@@ -262,7 +264,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
 
     if omit_proton or omit_h_electron:
-        hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source="electron",
+        hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source=source,
                                                    omit_proton=omit_proton, omit_h_electron=omit_h_electron,
                                                    miller_array=hkldata.miller_array())
     
@@ -435,7 +437,8 @@ def main(args):
     hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
                                              half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,
                                              sharpening_b=args.sharpening_b, omit_proton=args.omit_proton,
-                                             omit_h_electron=args.omit_h_electron)
+                                             omit_h_electron=args.omit_h_electron,
+                                             source=args.source)
     write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=mask, output_prefix=args.output_prefix,
                 trim_map=args.trim, trim_mtz=args.trim_mtz, omit_h_electron=args.omit_h_electron)

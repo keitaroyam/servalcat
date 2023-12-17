@@ -113,7 +113,7 @@ def calc_sum_ab(st):
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron")
-    if source != "electron": assert not mott_bethe
+    if source != "electron": mott_bethe = False
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
     logger.writeln("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
@@ -210,7 +210,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None):
     assert source in ("xray", "electron")
-    if source != "electron": assert not mott_bethe
+    if source != "electron": mott_bethe = False
 
     miller_array_given = miller_array is not None
     unit_cell = st.cell
