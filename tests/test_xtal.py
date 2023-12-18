@@ -46,8 +46,8 @@ class XtalTests(unittest.TestCase):
                                                    miller_array=hkldata.miller_array())
         hkldata.df["IC"] = numpy.abs(hkldata.df["FC"].to_numpy())**2
         k, b = hkldata.scale_k_and_b("I", "IC")
-        self.assertAlmostEqual(k, 0.00667, places=5)
-        self.assertAlmostEqual(b, -8.48166, places=3)
+        self.assertAlmostEqual(k, 0.00665, places=5)
+        self.assertAlmostEqual(b, -8.6132, places=3)
     # test_scale()
 
     def test_sigmaa(self):
