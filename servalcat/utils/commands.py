@@ -1181,12 +1181,18 @@ def seq(args):
             logger.writeln(" match: {}".format(name))
             logger.writeln(" score: {}".format(al.score))
             p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
+            unkseq = [x.start() for x in re.finditer("\-", p1)]
             mismatches = [x.start() for x in re.finditer("\.", al.match_string)]
-            if mismatches:
+            if mismatches or unkseq:
                 idxes = {x.start(): i for i, x in enumerate(re.finditer("[^-]", p2))}
                 seqnums = [str(x.seqid) for x in p]
-                logger.write(" mismatches: ")
-                logger.writeln(", ".join("{}({}>{})".format(seqnums[idxes[i]], p1[i], p2[i]) for i in mismatches))
+                if mismatches:
+                    logger.write(" mismatches: ")
+                    logger.writeln(", ".join("{}({}>{})".format(seqnums[idxes[i]], p1[i], p2[i]) for i in mismatches))
+                if unkseq:
+                    logger.write(" unknown sequence: ")
+                    logger.writeln(", ".join("{}({})".format(seqnums[idxes[i]], p2[i]) for i in unkseq))
+
             logger.writeln("")
             for i in range(0, len(p1), wrap_width):
                 logger.writeln(" seq.  {}".format(p1[i:i+wrap_width]))
