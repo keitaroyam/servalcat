@@ -3,11 +3,12 @@
 
 name: Wheels2
 
-on: workflow_dispatch
-
-env:
-  #CIBW_TEST_COMMAND: python -m unittest discover -v -s {package}/tests/
-  CIBW_TEST_COMMAND: python {project}/tests/test_for_ci.py
+on:
+  workflow_dispatch:
+    inputs:
+      cibw_build:
+        description: 'CIBW_BUILD'
+        default: 'cp*'
 
 jobs:
   build_wheels:
@@ -31,11 +32,9 @@ jobs:
     - name: Build wheels
       uses: pypa/cibuildwheel@v2.16.2
       env:
-        CIBW_BUILD: 'cp*'
+        CIBW_BUILD: ${{ github.event.inputs.cibw_build }}
         CIBW_SKIP: 'cp36-* *musllinux* *_i686 *-win32'
         CIBW_ARCHS_MACOS: x86_64 arm64
-        # increase pip debugging output
-        CIBW_BUILD_VERBOSITY: 1
         #CIBW_ENVIRONMENT: CLIBD_MON=/host/${{runner.workspace}}/servalcat/monomers
 
 

@@ -53,6 +53,11 @@ else()
 endif()
 
 if (DEFINED SKBUILD)
+  if (WIN32)
+    # Gemmi is installed in an overlay directory in virtualenv.
+    # For now, locate it relatively to pybind11.
+    get_filename_component(gemmi_ROOT "${pybind11_INCLUDE_DIR}/../../../.." ABSOLUTE)
+  endif()
   find_package(gemmi 0.6.4 CONFIG REQUIRED)
 else()
   set(USE_PYTHON ON CACHE BOOL "" FORCE)

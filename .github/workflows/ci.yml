@@ -20,8 +20,6 @@ jobs:
         CIBW_BUILD: 'cp*'
         CIBW_SKIP: 'cp36* *musllinux* *_i686 *-win32'
         CIBW_ARCHS_MACOS: x86_64 arm64
-        # increase pip debugging output
-        CIBW_BUILD_VERBOSITY: 1
 
     - run: ls -lh wheelhouse
       shell: bash
@@ -52,7 +50,7 @@ jobs:
         repository: MRC-LMB-ComputationalStructuralBiology/monomers
         path: monomers
 
-    - uses: actions/download-artifact@master
+    - uses: actions/download-artifact@v3
       with:
         name: wheels2
         path: wheels2
