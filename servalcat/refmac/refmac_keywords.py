@@ -342,90 +342,41 @@ def read_make_params(l, r):
     assert s[0].lower().startswith("make")
     itk = 1
     ntok = len(s)
+    # keyword, key, func, possible, default
+    keys = (("hydr", "hydr", lambda x: x[0].lower(), set("aynf"), "a"),
+            ("hout", "hout", lambda x: x[0].lower() in ("y", "p"), (True, False), True),
+            ("chec", "check", lambda x: "0" if x.lower().startswith(("none", "0"))
+             else ("n" if x.lower().startswith(("liga", "n"))
+                   else ("y" if x.lower().startswith(("all", "y")) else None)),
+             set("0ny"), None), # no default
+            ("newl", "newligand", lambda x: x[0].lower().startswith(("c", "y", "noex")), (True, False), False),
+            ("buil", "build", lambda x: x[0].lower(), set("ny"), "n"),
+            ("pept", "pept", lambda x: x[0].lower(), set("yn"), "y"),
+            ("link", "link", lambda x: x[0].lower(), set("ynd0"), "y"),
+            ("suga", "sugar", lambda x: x[0].lower(), set("ynds"), "y"),
+            #("conn", "conn", lambda x: x[0].lower(), set("nyd0"), "n"), # TODO read conn_tolerance? (make conn tole val)
+            ("symm", "symm", lambda x: x[0].lower(), set("ync"), "y"),
+            ("chai", "chain", lambda x: x[0].lower(), set("yn"), "y"),
+            ("cisp", "cispept", lambda x: x[0].lower(), set("yn"), "y"),
+            ("ss", "ss", lambda x: x[0].lower(), set("ydn"), "y"),
+            ("exit", "exit", lambda x: x[0].lower() == "y", (True, False), True),
+            )
     while itk < ntok:
-        if s[itk].lower().startswith("hydr"): #default a
-            r["hydr"] = s[itk+1][0].lower()
-            if r["hydr"] not in "yanf":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("hout"): # default n
-            tmp = s[itk+1][0].lower()
-            if tmp == "p": tmp = "y"
-            r["hout"] = tmp == "y"
-            itk += 2
-        elif s[itk].lower().startswith("chec"): # default n?
-            tmp = s[itk+1].lower()
-            if tmp.startswith(("none", "0")):
-                r["check"] = "0"
-            elif tmp.startswith(("liga", "n")):
-                r["check"] = "n"
-            elif tmp.startswith(("all", "y")):
-                r["check"] = "y"
-            else:
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("newl"): #default e
-            tmp = s[itk+1].lower()
-            if tmp.startswith("e"): # exit
-                r["newligand"] = False
-            elif tmp.startswith(("c", "y", "noex")): # noexit
-                r["newligand"] = True
-            else:
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("buil"): #default n
-            r["build"] = s[itk+1][0].lower()
-            if r["build"] not in "yn":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("pept"): # default n
-            r["pept"] = s[itk+1][0].lower()
-            if r["pept"] not in "yn":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("link"):
-            r["link"] = s[itk+1][0].lower()
-            if r["link"] not in "ynd0": # what is 0?
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("suga"):
-            r["sugar"] = s[itk+1][0].lower()
-            if r["sugar"] not in "ynds": # what is s?
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("conn"): # TODO read conn_tolerance? (make conn tole val)
-            r["conn"] = s[itk+1][0].lower()
-            if r["conn"] not in "ynd0": # what is 0?
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("symm"):
-            r["symm"] = s[itk+1][0].lower()
-            if r["symm"] not in "ync": # what is 0?
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("chai"):
-            r["chain"] = s[itk+1][0].lower()
-            if r["chain"] not in "yn":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("cisp"):
-            r["cispept"] = s[itk+1][0].lower()
-            if r["cispept"] not in "yn":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("ss"):
-            r["ss"] = s[itk+1][0].lower()
-            if r["ss"] not in "ydn":
-                raise SystemExit("Invalid make instruction: {}".format(l))
-            itk += 2
-        elif s[itk].lower().startswith("exit"):
-            if itk + 1 < len(s):
-                r["exit"] = s[itk+1][0].lower() == "y"
-                itk += 2
-            else:
-                r["exit"] = True
-                itk += 1
-        else:
+        found = False
+        for k, t, f, p, d in keys:
+            if s[itk].lower().startswith(k):
+                if itk + 1 < len(s):
+                    r[t] = f(s[itk+1])
+                    if r[t] not in p:
+                        raise SystemExit("Invalid make instruction: {}".format(l))
+                    itk += 2
+                elif d is not None:
+                    r[t] = d # set default
+                    itk += 1
+                else:
+                    raise SystemExit("Invalid make instruction: {}".format(l))
+                break
+        else: # if no keywords match (can raise an error if all make keywords are implemented)
             itk += 1
     return r
 # read_make_params()
