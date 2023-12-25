@@ -994,7 +994,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
                 labin += [flabs[0]]
             logger.writeln("MTZ columns automatically selected: {}".format(labin))
         if labin[0] not in col_types:
-            raise RuntimeError("MTZ coulumn not found: {}".format(labin[0]))
+            raise RuntimeError("MTZ column not found: {}".format(labin[0]))
         if col_types[labin[0]] == "F":
             logger.writeln("Observation type: amplitude")
             newlabels = ["FP","SIGFP"]

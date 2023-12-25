@@ -301,7 +301,7 @@ struct IntensityIntegrator {
     return ret;
   }
 
-  // an attemp to fast update of Sigma, but it does look good.
+  // an attempt to fast update of Sigma, but it does look good.
   double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
                                                  double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
                                                  py::array_t<int> c, py::array_t<int> eps) {

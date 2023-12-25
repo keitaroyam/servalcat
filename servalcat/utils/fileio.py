@@ -296,7 +296,7 @@ def read_asu_data_from_mtz(mtz_in, cols):
 def read_cif_safe(cif_in):
     ifs = gzip.open(cif_in, "rt") if cif_in.endswith(".gz") else open(cif_in)
     s = ifs.read()
-    if "\0" in s: # Refmac occasionally writes \0 in some fileds..
+    if "\0" in s: # Refmac occasionally writes \0 in some fields..
         logger.writeln(" WARNING: null character detected. Replacing with '.'")
         s = s.replace("\0", ".")
     doc = gemmi.cif.read_string(s)
@@ -701,7 +701,7 @@ def read_small_molecule_files(files):
                 _, info = read_shelx_ins(lines_in=res_str.splitlines())
                 hklf = info["hklf"]
     if st is None:
-        logger.writeln("ERRROR: coordinates not found.")
+        logger.writeln("ERROR: coordinates not found.")
         return None, None
     
     # second pass - find hkl

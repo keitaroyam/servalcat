@@ -103,22 +103,22 @@ def read_tls_file(tlsin):
                 try:
                     groups[-1]["origin"] = gemmi.Position(*(float(x) for x in l.split()[1:]))
                 except:
-                    raise ValueError("Prolem with TLS file: {}".format(l))
+                    raise ValueError("Problem with TLS file: {}".format(l))
             elif l.startswith("T   "):
                 try:
                     groups[-1]["T"] = [float(x) for x in l.split()[1:7]]
                 except:
-                    raise ValueError("Prolem with TLS file: {}".format(l))
+                    raise ValueError("Problem with TLS file: {}".format(l))
             elif l.startswith("L   "):
                 try:
                     groups[-1]["L"] = [float(x) for x in l.split()[1:7]]
                 except:
-                    raise ValueError("Prolem with TLS file: {}".format(l))
+                    raise ValueError("Problem with TLS file: {}".format(l))
             elif l.startswith("S   "):
                 try:
                     groups[-1]["S"] = [float(x) for x in l.split()[1:10]]
                 except:
-                    raise ValueError("Prolem with TLS file: {}".format(l))
+                    raise ValueError("Problem with TLS file: {}".format(l))
 
     return groups
 # read_tls_file()

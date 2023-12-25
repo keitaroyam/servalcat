@@ -19,7 +19,7 @@ gemmi::FPhiGrid<T> hard_sphere_kernel_recgrid(std::tuple<int,int,int> size,
   grid.set_size(std::get<0>(size), std::get<1>(size), std::get<2>(size));
   grid.set_unit_cell(unit_cell);
   grid.spacegroup = gemmi::find_spacegroup_by_number(1); // would not work in other space group
-  // box should be suffiently large.
+  // box should be sufficiently large.
   for (int w = -grid.nw/2; w < grid.nw/2; ++w)
     for (int v = -grid.nv/2; v < grid.nv/2; ++v)
       for (int u = -grid.nu/2; u < grid.nu/2; ++u) {

@@ -287,7 +287,7 @@ def symmodel(args):
                      number=gemmi.HowToNameCopiedChain.AddNumber)[args.howtoname]
 
     if (args.twist, args.rise).count(None) == 1:
-        raise SystemExit("ERROR: give both helical paramters --twist and --rise")
+        raise SystemExit("ERROR: give both helical parameters --twist and --rise")
 
     is_helical = args.twist is not None
     st, cif_ref = fileio.read_structure_from_pdb_and_mmcif(args.model)
@@ -341,7 +341,7 @@ def symmodel(args):
 
 def helical_biomt(args):
     if (args.twist, args.rise).count(None) > 0:
-        raise SystemExit("ERROR: give helical paramters --twist and --rise")
+        raise SystemExit("ERROR: give helical parameters --twist and --rise")
 
     model_format = fileio.check_model_format(args.model)
     howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,

@@ -78,12 +78,12 @@ def hkldata_from_mtz(mtz, labels, newlabels=None, require_types=None):
     assert type(mtz) == gemmi.Mtz
     notfound = set(labels) - set(mtz.column_labels())
     if notfound:
-        raise RuntimeError("MTZ coulumns not found: {}".format(" ".join(notfound)))
+        raise RuntimeError("MTZ columns not found: {}".format(" ".join(notfound)))
     col_types = {x.label:x.type for x in mtz.columns}
     if require_types:
         mismatches = [l for l,r in zip(labels, require_types) if r is not None and r != col_types[l]]
         if mismatches:
-            raise RuntimeError("MTZ coulumn types mismatch: {}".format(" ".join(mismatches)))
+            raise RuntimeError("MTZ column types mismatch: {}".format(" ".join(mismatches)))
 
     df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
     df = df.astype({col: 'int32' for col in col_types if col_types[col] == "H"})
@@ -510,7 +510,7 @@ class HklData:
     # fft_map()
 
     def d_eff(self, label):
-        # Effective resolution definied using FSC
+        # Effective resolution defined using FSC
         fsc = self.binned_df[label]
         a = 0.
         for i_bin, idxes in self.binned():

@@ -501,7 +501,7 @@ class MetalCoordination:
                 logger.write("   {}: ".format(el.name))
                 vals = self.find_ideal_distances(metal, el)
                 if len(vals) == 0:
-                    logger.writeln(" uknown (values from ener_lib will be used)")
+                    logger.writeln(" unknown (values from ener_lib will be used)")
                 else:
                     logger.writeln(" ".join("{:.4f} ({} coord)".format(x["median"], x["coord"]) for x in vals))
                     ideals[el] = [(x["median"], x["mad"]) for x in vals if x["mad"] > 0]

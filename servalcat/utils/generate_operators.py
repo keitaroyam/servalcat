@@ -162,7 +162,7 @@ def Rotation2AxisAngle_cyclic(m_in, eps_l=1.0e-5):
     # This routine gives the smallest angle for this cyclic group. 
     # To find axis of the rotation we use the fact that if we define 
     # A = 1/n sum_i-0^(n-1) (R^i) then this operator is a projector to the axis of rotation
-    # i.e. for Ax will be on hte axis for any x. IT could be equal 0, in this case we select another x
+    # i.e. for Ax will be on the axis for any x. IT could be equal 0, in this case we select another x
     A = m_in
     m1 = m_in
     id_matr = numpy.identity(3)
@@ -200,7 +200,7 @@ def Rotation2AxisAngle_cyclic(m_in, eps_l=1.0e-5):
 
 def Rotation2AxisAngle_general(m_in, eps_l=1.0e-5):
     #
-    #  This routine shuld work for any rotation matrix
+    #  This routine should work for any rotation matrix
     axis = numpy.array([1, 0.0, 0.0])
     angle = numpy.arccos(max(-1.0, numpy.min((numpy.trace(m_in)-1)/2.0)))
     if numpy.sum(numpy.abs(m_in-numpy.transpose(m_in))) < eps_l:

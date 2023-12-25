@@ -40,3 +40,9 @@ build-verbosity = 2
 test-command = "python {project}/tests/test_for_ci.py"
 [tool.cibuildwheel.environment]
 SKBUILD_CMAKE_ARGS = '-DBUILD_SHARED_LIBS=OFF;-DINSTALL_DEV_FILES=ON'
+
+[tool.codespell]
+skip = './eigen,./gemmi,*.pdb,*.crd,*.cif,*.mmcif,*.ent,*.log*,*.dic,tags,*.bak,*build*,*~'
+# codespell apparently requires that the words here are lowercase
+ignore-words-list = 'fo,fom,dum,varn,readd,alph,valu,chec,buil'
+

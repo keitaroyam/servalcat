@@ -685,7 +685,7 @@ def check_args(args):
         args.keyword_file = []
 
     if (args.twist, args.rise).count(None) == 1:
-        raise SystemExit("ERROR: give both helical paramters --twist and --rise")
+        raise SystemExit("ERROR: give both helical parameters --twist and --rise")
     if args.twist is not None:
         logger.writeln("INFO: setting --contacting_only because helical symmetry is given")
         args.contacting_only = True
@@ -724,7 +724,7 @@ def main(args):
     if not args.prepare_only:
         refmac_ver = utils.refmac.check_version(args.exe)
         if not refmac_ver:
-            raise SystemExit("Error: Check Refmac instllation or use --exe to give the location.")
+            raise SystemExit("Error: Check Refmac installation or use --exe to give the location.")
         if not args.no_refmacat and refmac_ver >= (5, 8, 404):
             logger.writeln(" will use gemmi to prepare restraints")
             use_gemmi_prep = True

@@ -206,7 +206,7 @@ def main(args):
     if not keywords["make"].get("exit"):
         refmac_ver = utils.refmac.check_version(args.exe)
         if not refmac_ver:
-            raise SystemExit("Error: Check Refmac instllation or use --exe to give the location.")
+            raise SystemExit("Error: Check Refmac installation or use --exe to give the location.")
         if refmac_ver < (5, 8, 404):
             raise SystemExit("Error: this version of Refmac is not supported. Update to 5.8.404 or newer")
 
