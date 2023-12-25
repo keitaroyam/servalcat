@@ -181,14 +181,18 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
     utils.fileio.write_mmcif(st, cifout, cifout + suffix)
+
+    if st.has_d_fraction:
+        st.store_deuterium_as_fraction(False) # also useful for pdb
+        logger.writeln("will write a H/D expanded mmcif file")
+        cifout2 = cifout[:cifout.rindex(".")] + "_hd_expand" + cifout[cifout.rindex("."):]
+        utils.fileio.write_mmcif(st, cifout2, cifout + suffix)
     
     chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
     seqnums = [res.seqid.num for chain in st[0] for res in chain]
     if chain_id_len_max > 1 or min(seqnums) <= -1000 or max(seqnums) >= 10000:
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
-    if hout:
-        st.store_deuterium_as_fraction(False)
-    else:
+    if not hout:
         st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
         
     os.rename(pdbout, pdbout + suffix)
