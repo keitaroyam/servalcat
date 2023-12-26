@@ -903,25 +903,52 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
   gemmi::NeighborSearch ns(st.first_model(), st.cell, 4);
   ns.populate();
   const float max_vdwr = 2.98f; // max from ener_lib, Cs.
-  const float max_dist = std::max(std::max(ridge_dmax, adpr_max_dist), max_vdwr * 2);
-  gemmi::ContactSearch contacts(max_dist);
-  contacts.ignore = gemmi::ContactSearch::Ignore::Nothing;
-  contacts.for_each_contact(ns, [&](const gemmi::CRA& cra1, const gemmi::CRA& cra2,
-                                    int sym_idx, float) {
-    // XXX Refmac uses intervals for distances as well? vdw_and_contacts.f remove_bonds_and_angles()
-    gemmi::NearestImage im = st.cell.find_nearest_pbc_image(cra1.atom->pos, cra2.atom->pos, sym_idx);
-    int d_1_2 = bondindex.graph_distance(*cra1.atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());
-    if (d_1_2 > 2) {
-      vdws.emplace_back(cra1.atom, cra2.atom);
-      if (!skip_critical_dist) {
-        set_vdw_values(vdws.back(), d_1_2);
-        assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
-        if (im.sym_idx != 0 || !im.same_asu())
-          vdws.back().type += 6;
+  const float max_dist_sq = gemmi::sq(std::max(std::max(ridge_dmax, adpr_max_dist), max_vdwr * 2));
+  // XXX Refmac uses intervals for distances as well? vdw_and_contacts.f remove_bonds_and_angles()
+  // ref: gemmi/contact.hpp ContactSearch::for_each_contact
+  for (int n_ch = 0; n_ch != (int) ns.model->chains.size(); ++n_ch) {
+    gemmi::Chain &chain = ns.model->chains[n_ch];
+    for (int n_res = 0; n_res != (int) chain.residues.size(); ++n_res) {
+      gemmi::Residue &res = chain.residues[n_res];
+      for (int n_atom = 0; n_atom != (int) res.atoms.size(); ++n_atom) {
+        gemmi::Atom &atom = res.atoms[n_atom];
+        ns.for_each_cell(atom.pos,
+                         [&](std::vector<gemmi::NeighborSearch::Mark>& marks, const gemmi::Fractional &fr) {
+                           const gemmi::Position &p = ns.use_pbc ? ns.grid.unit_cell.orthogonalize(fr) : atom.pos;
+                           for (gemmi::NeighborSearch::Mark& m : marks) {
+                             const gemmi::CRA cra2 = m.to_cra(*ns.model);
+                             // avoid reporting connections twice
+                             if (m.chain_idx < n_ch || (m.chain_idx == n_ch &&
+                                                        (m.residue_idx < n_res || (m.residue_idx == n_res &&
+                                                                                   m.atom_idx < n_atom))))
+                               continue;
+                             const double dist_sq = m.pos.dist_sq(p);
+                             if (dist_sq < max_dist_sq) {
+                               // do not include itself; special positions should have been sorted beforehand
+                               if (m.chain_idx == n_ch && m.residue_idx == n_res &&
+                                   m.atom_idx == n_atom && dist_sq < 0.1*0.1)
+                                 continue;
+                               // Refmac way (not dependent on altlocs)
+                               if (atom.occ + cra2.atom->occ < 1.0001)
+                                 continue;
+                               gemmi::NearestImage im = st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, m.image_idx);
+                               int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());
+                               if (d_1_2 > 2) {
+                                 vdws.emplace_back(&atom, cra2.atom);
+                                 if (!skip_critical_dist) {
+                                   set_vdw_values(vdws.back(), d_1_2);
+                                   assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
+                                   if (im.sym_idx != 0 || !im.same_asu())
+                                     vdws.back().type += 6;
+                                 }
+                                 vdws.back().set_image(im);
+                               }
+                             }
+                           }
+                         });
       }
-      vdws.back().set_image(im);
     }
-  });
+  }
 }
 
 inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
