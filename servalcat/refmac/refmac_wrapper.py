@@ -63,7 +63,7 @@ def read_stdin(stdin):
 # read_stdin()
 
 def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
-                no_adjust_hydrogen_distances=False):
+                no_adjust_hydrogen_distances=False, fix_long_resnames=True):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
@@ -99,15 +99,15 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
             con.link_id = ""
 
-    refmac_fixes = None
+    refmac_fixes = utils.refmac.FixForRefmac()
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
     if max_seq_num > 9999:
         logger.writeln("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
         topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
-        refmac_fixes = utils.refmac.FixForRefmac(st, topo, 
-                                                 fix_microheterogeneity=False,
-                                                 fix_resimax=True,
-                                                 fix_nonpolymer=False)
+        refmac_fixes.fix_before_topology(st, topo, 
+                                         fix_microheterogeneity=False,
+                                         fix_resimax=True,
+                                         fix_nonpolymer=False)
 
     if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
     try:
@@ -127,6 +127,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             logger.writeln("adjusting hydrogen position to electron cloud")
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
+    if fix_long_resnames: refmac_fixes.fix_long_resnames(st)
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -283,7 +284,17 @@ def main(args):
     if crdout: p.stdin.write("make cr prepared\n")
     p.stdin.write("".join(inputs))
     p.stdin.close()
+    # prepare conversion for long residue names
+    resn_conv = {}
+    if refmac_fixes:
+        for tn in refmac_fixes.resn_conv_back:
+            n = "{:4s}".format(refmac_fixes.resn_conv_back[tn])
+            if len(n) > 4: n += " "
+            resn_conv[tn] = n
+    # print raw output
     for l in iter(p.stdout.readline, ""):
+        for tn in resn_conv:
+            l = l.replace(tn, resn_conv[tn])
         logger.write(l)
     retcode = p.wait()
     logger.writeln("\nRefmac finished with exit code= {}".format(retcode))

@@ -587,10 +587,11 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         else:
             topo = None # not used
         if not no_refmac_fix:
-            ret["refmac_fixes"] = utils.refmac.FixForRefmac(st, topo, 
-                                                            fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
-                                                            fix_resimax=not args.no_fix_resi9999,
-                                                            fix_nonpolymer=False)
+            ret["refmac_fixes"] = utils.refmac.FixForRefmac()
+            ret["refmac_fixes"].fix_before_topology(st, topo, 
+                                                    fix_microheterogeneity=not args.no_fix_microheterogeneity and not use_gemmi_prep,
+                                                    fix_resimax=not args.no_fix_resi9999,
+                                                    fix_nonpolymer=False)
         chain_id_len_max = max([len(x) for x in utils.model.all_chain_ids(st)])
         if chain_id_len_max > 1 and ret["model_format"] == ".pdb":
             logger.writeln("Long chain ID (length: {}) detected. Will use mmcif format".format(chain_id_len_max))
@@ -857,7 +858,8 @@ def main(args):
             xyzin = refmac_prefix + ".crd"
             prepare_crd(utils.fileio.read_structure(refmac_prefix+model_format),
                         crdout=xyzin, ligand=[refmac_prefix+model_format],
-                        make={"hydr":"n"})
+                        make={"hydr":"n"},
+                        fix_long_resnames=False) # we do not need output file - do we?
         else:
             xyzin = refmac_prefix + model_format
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
@@ -883,7 +885,8 @@ def main(args):
                 xyzin = refmac_prefix_shaken + ".crd"
                 prepare_crd(utils.fileio.read_structure(refmac_prefix_shaken+model_format),
                             crdout=xyzin, ligand=[refmac_prefix+model_format],
-                            make={"hydr":"a"})
+                            make={"hydr":"a"},
+                            fix_long_resnames=False) # we do not need output file - do we?
             else:
                 xyzin = refmac_prefix_shaken + model_format
             refmac_prefix_shaken = refmac_prefix+"_shaken_refined2"

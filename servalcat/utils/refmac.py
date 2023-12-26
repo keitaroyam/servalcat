@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
+import numpy
 import subprocess
 import shlex
 import json
@@ -149,9 +150,12 @@ class FixForRefmac:
     XXX fix external restraints accordingly
     TODO fix _struct_conf, _struct_sheet_range, _pdbx_struct_sheet_hbond
     """
-    def __init__(self, st, topo, fix_microheterogeneity=True, fix_resimax=True, fix_nonpolymer=True, add_gaps=False):
+    def __init__(self):
         self.MAXNUM = 9999
         self.fixes = []
+        self.resn_conv_back = {}
+        
+    def fix_before_topology(self, st, topo, fix_microheterogeneity=True, fix_resimax=True, fix_nonpolymer=True, add_gaps=False):
         self.chainids = set(chain.name for chain in st[0])
         if fix_microheterogeneity:
             self.fix_microheterogeneity(st, topo)
@@ -382,6 +386,37 @@ class FixForRefmac:
             self.fix_metadata(st, dict(changes))
         self.fixes.append(changes)
 
+    def fix_long_resnames(self, st):
+        # this function should be called separately (after preparing topology)
+        self.resn_conv_back = {}
+        resnames = set(st[0].get_all_residue_names())
+        # Refmac max is 3 or 4. 3 in struct_conn, and 4 in priting outliers.
+        long_names = [x for x in resnames if len(x) > 3]
+        if not long_names:
+            return
+        count = 0
+        conv = {}
+        for n in long_names:
+            while count < 10000: # for safety
+                num = numpy.base_repr(count, 36) # up to 1295
+                assert len(num) < 3
+                tn = "\\" + ("0" * (2 - len(num))) + num
+                count += 1
+                if tn not in resnames:
+                    break
+            conv[n] = tn
+            self.resn_conv_back[tn] = n
+
+        for chain in st[0]:
+            for res in chain:
+                if res.name in conv:
+                    res.name = conv[res.name]
+        for con in st.connections:
+            for aa in (con.partner1, con.partner2):
+                if aa.res_id.name in conv:
+                    aa.res_id.name = conv[aa.res_id.name]
+        # should change cispep?
+            
     def fix_model(self, st, changedict):
         chain_newid = set()
         for chain in st[0]:
@@ -403,8 +438,18 @@ class FixForRefmac:
         for fix in reversed(self.fixes):
             reschanges = dict([x[::-1] for x in fix])
             self.fix_model(st, reschanges)
-        
-        
+
+        if self.resn_conv_back:
+            for chain in st[0]:
+                for res in chain:
+                    if res.name in self.resn_conv_back:
+                        res.name = self.resn_conv_back[res.name]
+            for con in st.connections:
+                for aa in (con.partner1, con.partner2):
+                    if aa.res_id.name in self.resn_conv_back:
+                        aa.res_id.name = self.resn_conv_back[aa.res_id.name]
+            
+
 class Refmac:
     def __init__(self, **kwargs):
         self.prefix = "refmac"
