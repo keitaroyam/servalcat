@@ -57,6 +57,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float,
                         help="refinement weight (default: auto)")
+    parser.add_argument('--ncsr', action='store_true', 
+                        help='Use local NCS restraints')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
@@ -166,8 +168,13 @@ def main(args):
         args.weight = numpy.exp(reso * 0.9104 + 0.2162)
         logger.writeln(" Will use weight= {:.2f}".format(args.weight))
         
+    if args.ncsr:
+        ncslist = utils.restraints.prepare_ncs_restraints(st)
+    else:
+        ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, refmac_keywords=keywords,
-                unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"))
+                unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),
+                ncslist=ncslist)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac

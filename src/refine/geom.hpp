@@ -4,6 +4,7 @@
 #ifndef SERVALCAT_REFINE_GEOM_HPP_
 #define SERVALCAT_REFINE_GEOM_HPP_
 
+#include "ncsr.hpp"
 #include <set>
 #include <gemmi/model.hpp>    // for Structure, Atom
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
@@ -52,6 +53,32 @@ gemmi::Mat33 eigen_decomp_inv(const gemmi::SMat33<double> &m, double e, bool for
   else
     return Q.multiply_by_diagonal(l).multiply(Q.transpose());
 }
+
+// https://doi.org/10.48550/arXiv.1701.03077
+struct Barron2019 {
+  Barron2019(double alpha, double y) {
+    if (std::abs(alpha - 2) < 1e-3) { // least square
+      f = 0.5 * y * y;
+      dfdy = y;
+      d2fdy = 1.0;
+    } else if (std::abs(alpha) < 1e-3) { // cauchy or lorentz
+      f = std::log(0.5 * y * y + 1.0);
+      dfdy = y / (0.5 * y * y + 1.0);
+      d2fdy = 1.0 / (0.5 * y * y + 1.0);
+    } else if (alpha < -1000) { // -inf. welch
+      const double expy = std::exp(-0.5 * y * y);
+      f = 1.0 - expy;
+      dfdy = y * expy;
+      d2fdy = expy;
+    } else { // other alpha
+      const double alpha2 = std::abs(alpha - 2.0);
+      f = alpha2 / alpha * (std::pow(y * y / alpha2 + 1, 0.5 * alpha) - 1.0);
+      dfdy = y * std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
+      d2fdy = std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
+    }
+  }
+  double f, dfdy, d2fdy;
+};
 
 struct PlaneDeriv {
   PlaneDeriv(const std::vector<gemmi::Atom*> &atoms)
@@ -229,7 +256,7 @@ struct GeomTarget {
   std::vector<size_t> rest_per_atom;
   std::vector<size_t> rest_pos_per_atom;
   std::vector<std::pair<int,int>> pairs;
-  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, torsion=3, chir=4, plane=5, vdw=6, stack=8)
+  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, torsion=3, chir=4, plane=5, vdw=6, stack=8, ncsr=10)
   int nmpos;
   size_t n_atoms() const { return atoms.size(); }
   MatPos find_restraint(int ia1, int ia2) const {
@@ -524,6 +551,14 @@ struct Geometry {
     std::array<int, 3> pbc_shift = {{0,0,0}};
     std::array<gemmi::Atom*, 2> atoms;
   };
+  struct Ncsr {
+    Ncsr(const Vdw *vdw1, const Vdw *vdw2, int idx) : pairs({vdw1, vdw2}), idx(idx) {}
+    double calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting, double) const;
+    std::array<const Vdw*, 2> pairs;
+    double alpha;
+    double sigma;
+    int idx;
+  };
   struct Reporting {
     using bond_reporting_t = std::tuple<const Bond*, const Bond::Value*, double>;
     using angle_reporting_t = std::tuple<const Angle*, const Angle::Value*, double>;
@@ -533,6 +568,7 @@ struct Geometry {
     using stacking_reporting_t = std::tuple<const Stacking*, double, double, double>; // delta_angle, delta_dist1, delta_dist2
     using vdw_reporting_t = std::tuple<const Vdw*, double>;
     using adp_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
+    using ncsr_reporting_t = std::tuple<const Ncsr*, float, float>; // dist1, dist2
     std::vector<bond_reporting_t> bonds;
     std::vector<angle_reporting_t> angles;
     std::vector<torsion_reporting_t> torsions;
@@ -540,12 +576,14 @@ struct Geometry {
     std::vector<plane_reporting_t> planes;
     std::vector<stacking_reporting_t> stackings;
     std::vector<vdw_reporting_t> vdws;
+    std::vector<ncsr_reporting_t> ncsrs;
     std::vector<adp_reporting_t> adps;
   };
   Geometry(gemmi::Structure& s, const gemmi::EnerLib* ener_lib) : st(s), bondindex(s.first_model()), ener_lib(ener_lib) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
   void setup_nonbonded(bool skip_critical_dist);
+  void setup_ncsr(const NcsList &ncslist);
   static gemmi::Position apply_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift, const gemmi::Position &v) {
     gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform({}) : cell.images[sym_idx-1];
     ft.vec += gemmi::Vec3(pbc_shift);
@@ -564,7 +602,7 @@ struct Geometry {
     std::fill(target.am.begin(), target.am.end(), 0.);
   }
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
-              double wchir, double wplane, double wstack, double wvdw);
+              double wchir, double wplane, double wstack, double wvdw, double wncs);
   double calc_adp_restraint(bool check_only, double wbskal);
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
@@ -578,6 +616,7 @@ struct Geometry {
   std::vector<Special> specials;
   std::vector<Stacking> stackings;
   std::vector<Vdw> vdws;
+  std::vector<Ncsr> ncsrs;
   gemmi::Structure& st;
   gemmi::BondIndex bondindex;
   const gemmi::EnerLib* ener_lib = nullptr;
@@ -621,6 +660,11 @@ struct Geometry {
   double ridge_sigma = 0.02;
   bool ridge_symm = false; // inter-symmetry
   bool ridge_exclude_short_dist = true;
+
+  // NCS local
+  double ncsr_alpha = -2; // alpha in the robust function
+  double ncsr_sigma = 0.05;
+  double ncsr_diff_cutoff = 1.0;
 
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
@@ -951,6 +995,53 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
   }
 }
 
+inline void Geometry::setup_ncsr(const NcsList &ncslist) {
+  ncsrs.clear();
+  // vdws should be sorted.
+  std::sort(vdws.begin(), vdws.end(),
+            [](const Vdw &lhs, const Vdw &rhs) {
+              return lhs.atoms[0] == rhs.atoms[0] ?
+                lhs.atoms[1] < rhs.atoms[1] : lhs.atoms[0] < rhs.atoms[0];
+            });
+  struct CompVdwAndPair {
+    using pair_t = std::pair<const gemmi::Atom*, const gemmi::Atom*>;
+    bool operator()(const Vdw &lhs, const pair_t &rhs) const {
+      return lhs.atoms[0] == rhs.first ? lhs.atoms[1] < rhs.second : lhs.atoms[0] < rhs.first;
+    }
+    bool operator()(const pair_t &lhs, const Vdw &rhs) const {
+      return lhs.first == rhs.atoms[0] ? lhs.second < rhs.atoms[1] : lhs.first < rhs.atoms[0];
+    }
+  };
+  struct CompFirstAtom {
+    using key_t = const gemmi::Atom*;
+    using pair_t = std::pair<key_t, key_t>;
+    bool operator()(const pair_t &lhs, const key_t &rhs) const {
+      return lhs.first < rhs;
+    }
+    bool operator()(const key_t &lhs, const pair_t &rhs) const {
+      return lhs < rhs.first;
+    }
+  };
+  for (const auto &vdw : vdws) {
+    if (vdw.atoms[0]->is_hydrogen() || vdw.atoms[1]->is_hydrogen())
+      continue;
+    for (int i = 0; i < ncslist.all_pairs.size(); ++i) {
+      auto it1 = ncslist.all_pairs[i].find(vdw.atoms[0]);
+      if (it1 == ncslist.all_pairs[i].end()) continue;
+      auto it2 = ncslist.all_pairs[i].find(vdw.atoms[1]);
+      if (it2 == ncslist.all_pairs[i].end()) continue;
+      auto pair = std::make_pair(it1->second, it2->second);
+      if (pair.first > pair.second) std::swap(pair.first, pair.second);
+      auto p = std::equal_range(vdws.begin(), vdws.end(), pair, CompVdwAndPair());
+      if (p.first != p.second) {
+        ncsrs.emplace_back(&vdw, &(*p.first), i);
+        ncsrs.back().alpha = ncsr_alpha;
+        ncsrs.back().sigma = ncsr_sigma;
+      }
+    }
+  }
+}
+
 inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
   std::vector<std::tuple<int,int,int>> tmp;
   for (const auto &t : bonds)
@@ -978,6 +1069,11 @@ inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
 
   for (const auto &t : vdws)
     tmp.emplace_back(t.atoms[0]->serial-1, t.atoms[1]->serial-1, 6);
+
+  for (const auto &t : ncsrs)
+    for (const auto &a1 : t.pairs[0]->atoms)
+      for (const auto &a2 : t.pairs[1]->atoms)
+        tmp.emplace_back(a1->serial-1, a2->serial-1, 10);
 
   for (const auto &t : stackings) {
     for (size_t i = 0; i < 2; ++i)
@@ -1016,7 +1112,7 @@ inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
 inline double Geometry::calc(bool use_nucleus, bool check_only,
                              double wbond, double wangle, double wtors,
                              double wchir, double wplane, double wstack,
-                             double wvdw) {
+                             double wvdw, double wncs) {
   if (check_only)
     reporting = {}; // also deletes adp. is it ok?
   else
@@ -1042,6 +1138,8 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
     ret += t.calc(wstack, target_ptr, rep_ptr);
   for (const auto &t : vdws)
     ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
+  for (const auto &t : ncsrs)
+    ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff);
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
@@ -1241,27 +1339,7 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   const double sigma = (use_nucleus ? closest->sigma_nucleus : closest->sigma);
   const double weight = wdskal / sigma;
   const double y = db * weight;
-  double ret, dfdy, d2fdy;
-
-  if (type < 2 || std::abs(alpha - 2) < 1e-3) { // least square
-    ret = 0.5 * y * y;
-    dfdy = y;
-    d2fdy = 1.0;
-  } else if (std::abs(alpha) < 1e-3) { // cauchy or lorentz
-    ret = std::log(0.5 * y * y + 1.0);
-    dfdy = y / (0.5 * y * y + 1.0);
-    d2fdy = 1.0 / (0.5 * y * y + 1.0);
-  } else if (alpha < -1000) { // -inf. welch
-    const double expy = std::exp(-0.5 * y * y);
-    ret = 1.0 - expy;
-    dfdy = y * expy;
-    d2fdy = expy;
-  } else { // other alpha
-    const double alpha2 = std::abs(alpha - 2.0);
-    ret = alpha2 / alpha * (std::pow(y * y / alpha2 + 1, 0.5 * alpha) - 1.0);
-    dfdy = y * std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
-    d2fdy = std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
-  }
+  Barron2019 robustf(type < 2 ? 2. : alpha, y);
 
   // note that second derivative is not exact in some alpha
   if (target != nullptr) {
@@ -1269,25 +1347,25 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
     const gemmi::Position dydx2 = same_asu() ? -dydx1 : gemmi::Position(tr.mat.transpose().multiply(-dydx1));
     const int ia1 = atom1->serial - 1;
     const int ia2 = atom2->serial - 1;
-    target->incr_vn(ia1 * 3, dfdy, dydx1);
-    target->incr_vn(ia2 * 3, dfdy, dydx2);
-    target->incr_am_diag(ia1 * 6, d2fdy, dydx1);
-    target->incr_am_diag(ia2 * 6, d2fdy, dydx2);
+    target->incr_vn(ia1 * 3, robustf.dfdy, dydx1);
+    target->incr_vn(ia2 * 3, robustf.dfdy, dydx2);
+    target->incr_am_diag(ia1 * 6, robustf.d2fdy, dydx1);
+    target->incr_am_diag(ia2 * 6, robustf.d2fdy, dydx2);
 
     if (ia1 != ia2) {
       auto mp = target->find_restraint(ia1, ia2);
       if (mp.imode == 0)
-        target->incr_am_ndiag(mp.ipos, d2fdy, dydx1, dydx2);
+        target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx1, dydx2);
       else
-        target->incr_am_ndiag(mp.ipos, d2fdy, dydx2, dydx1);
+        target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx2, dydx1);
     } else
-      target->incr_am_diag12(ia1 * 6, d2fdy, dydx1, dydx2);
+      target->incr_am_diag12(ia1 * 6, robustf.d2fdy, dydx1, dydx2);
 
-    target->target += ret;
+    target->target += robustf.f;
   }
   if (reporting != nullptr)
     reporting->bonds.emplace_back(this, closest, db);
-  return ret;
+  return robustf.f;
 }
 
 inline double Geometry::Angle::calc(double waskal, GeomTarget* target, Reporting *reporting) const {
@@ -1691,6 +1769,59 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
   if (reporting != nullptr)
     reporting->vdws.emplace_back(this, db);
   return ret;
+}
+
+inline double
+Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting,
+                     double ncsr_diff_cutoff) const {
+  if (sigma <= 0) return 0.;
+  const Vdw &vdw1 = *pairs[0], &vdw2 = *pairs[1];
+  const bool swapped[2] = {vdw1.sym_idx < 0, vdw2.sym_idx < 0};
+  const gemmi::Atom* atoms[4] = {
+    vdw1.atoms[swapped[0] ? 1 : 0],
+    vdw1.atoms[swapped[0] ? 0 : 1],
+    vdw2.atoms[swapped[1] ? 1 : 0],
+    vdw2.atoms[swapped[1] ? 0 : 1]
+  };
+  const gemmi::Transform tr1 = get_transform(cell, swapped[0] ? -vdw1.sym_idx - 1 : vdw1.sym_idx, vdw1.pbc_shift);
+  const gemmi::Transform tr2 = get_transform(cell, swapped[1] ? -vdw2.sym_idx - 1 : vdw2.sym_idx, vdw2.pbc_shift);
+  const gemmi::Position& x1 = atoms[0]->pos;
+  const gemmi::Position& x2 = vdw1.same_asu() ? atoms[1]->pos : gemmi::Position(tr1.apply(atoms[1]->pos));
+  const gemmi::Position& x3 = atoms[2]->pos;
+  const gemmi::Position& x4 = vdw2.same_asu() ? atoms[3]->pos : gemmi::Position(tr2.apply(atoms[3]->pos));
+  const double b1 = x1.dist(x2);
+  const double b2 = x3.dist(x4);
+  const double db = b1 - b2;
+  if (std::abs(db) > ncsr_diff_cutoff)
+    return 0.;
+  const double weight = wncsr / sigma;
+  const double y = db * weight;
+  Barron2019 robustf(alpha, y);
+
+  // note that second derivative is not exact in some alpha
+  if (target != nullptr) {
+    gemmi::Position dydx[4];
+    dydx[0] = weight * (x1 - x2) / std::max(b1, 0.02);
+    dydx[1] = vdw1.same_asu() ? -dydx[0] : gemmi::Position(tr1.mat.transpose().multiply(-dydx[0]));
+    dydx[2] = -weight * (x3 - x4) / std::max(b2, 0.02);
+    dydx[3] = vdw2.same_asu() ? -dydx[2] : gemmi::Position(tr2.mat.transpose().multiply(-dydx[2]));
+    for (int i = 0; i < 4; ++i) {
+      target->incr_vn((atoms[i]->serial-1) * 3, robustf.dfdy, dydx[i]);
+      target->incr_am_diag((atoms[i]->serial-1) * 6, robustf.d2fdy, dydx[i]);
+      for (int j = 0; j < i; ++j) {
+        auto mp = target->find_restraint(atoms[i]->serial-1, atoms[j]->serial-1);
+        if (mp.imode == 0)
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx[i], dydx[j]);
+        else
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx[j], dydx[i]);
+        // could atoms[i] == atoms[j] happen?
+      }
+    }
+    target->target += robustf.f;
+  }
+  if (reporting != nullptr)
+    reporting->ncsrs.emplace_back(this, b1, b2);
+  return robustf.f;
 }
 
 void Geometry::spec_correction(double alpha, bool use_rr) {

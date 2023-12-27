@@ -35,6 +35,8 @@ def add_arguments(parser):
                         help='Automatically add links')
     parser.add_argument('--randomize', type=float, default=0,
                         help='Shake coordinates with specified rmsd')
+    parser.add_argument('--ncsr', action='store_true', 
+                        help='Use local NCS restraints')
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -107,7 +109,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 # refine_and_update_dictionary()
 
 def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords,
-                find_links=False):
+                find_links=False, use_ncsr=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if st.ncs:
@@ -126,7 +128,11 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     refmac_keywords = metal_kws + refmac_keywords
-    geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords)
+    if use_ncsr:
+        ncslist = utils.restraints.prepare_ncs_restraints(st)
+    else:
+        ncslist = False
+    geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords, ncslist=ncslist)
     refiner = Refine(st, geom)
     stats = refiner.run_cycles(ncycle)
     refiner.st.name = output_prefix
@@ -159,7 +165,8 @@ def main(args):
                     output_prefix=args.output_prefix,
                     randomize=args.randomize,
                     refmac_keywords=keywords,
-                    find_links=args.find_links)
+                    find_links=args.find_links,
+                    use_ncsr=args.ncsr)
     else:
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.update_dictionary)

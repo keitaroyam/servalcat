@@ -87,6 +87,8 @@ def add_arguments(parser):
                         help="refinement weight. default: automatic")
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight in B (default: %(default)f)")
+    parser.add_argument('--ncsr', action='store_true', 
+                        help='Use local NCS restraints')
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
@@ -193,8 +195,13 @@ def main(args):
         args.weight = max(0.2, min(18.0, ws))
         logger.writeln(" Will use weight= {:.2f}".format(args.weight))
 
+    if args.ncsr:
+        ncslist = utils.restraints.prepare_ncs_restraints(st)
+    else:
+        ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight,
-                refmac_keywords=refmac_keywords, unrestrained=args.jellyonly)
+                refmac_keywords=refmac_keywords, unrestrained=args.jellyonly,
+                ncslist=ncslist)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)

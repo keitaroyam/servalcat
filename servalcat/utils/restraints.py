@@ -7,12 +7,14 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat import ext
 import os
 import io
 import gemmi
 import string
 import random
 import numpy
+import pandas
 import json
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
@@ -451,6 +453,47 @@ def make_atom_spec(cra):
         s += " alt {}".format(cra.atom.altloc)
     return s
 # make_atom_spec()        
+
+def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
+    logger.writeln("Finding NCS..")
+    polymers = {}
+    for chain in st[0]:
+        rs = chain.get_polymer()
+        p_type = rs.check_polymer_type()
+        if p_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD,
+                      gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid):
+            polymers.setdefault(p_type, []).append((chain, rs))
+
+    al_res = []
+    ncslist = ext.NcsList()
+    for pt in polymers:
+        #print(pt, [x[0].name for x in polymers[pt]])
+        pols = polymers[pt]
+        for i in range(len(pols)-1):
+            q = [x.name for x in pols[i][1]]
+            for j in range(i+1, len(pols)):
+                al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt)
+                if al.match_count < min_nalign: continue
+                su = gemmi.calculate_superposition(pols[i][1], pols[j][1], pt, gemmi.SupSelect.All)
+                obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1])
+                obj.calculate_local_rms(rms_loc_nlen)
+                if len(obj.local_rms) == 0: continue
+                ave_local_rms = numpy.mean(obj.local_rms)
+                if ave_local_rms > max_rms_loc: continue
+                ncslist.ncss.append(obj)
+                al_res.append({"chain_1": "{} ({}..{})".format(pols[i][0].name, pols[i][1][0].seqid, pols[i][1][-1].seqid),
+                               "chain_2": "{} ({}..{})".format(pols[j][0].name, pols[j][1][0].seqid, pols[j][1][-1].seqid),
+                               "aligned": al.match_count,
+                               "identity": al.calculate_identity(1),
+                               "rms": su.rmsd,
+                               "ave(rmsloc)": ave_local_rms,
+                               })
+    ncslist.set_pairs()
+    df = pandas.DataFrame(al_res)
+    df.index += 1
+    logger.writeln(df.to_string(float_format="%.2f"))
+    return ncslist
+# prepare_ncs_restraints()
 
 class MetalCoordination:
     def __init__(self, monlib, dbfile=None):

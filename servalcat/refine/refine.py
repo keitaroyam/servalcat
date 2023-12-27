@@ -29,7 +29,8 @@ b_to_u = utils.model.b_to_u
 
 class Geom:
     def __init__(self, st, topo, monlib, adpr_w=1, shake_rms=0,
-                 refmac_keywords=None, unrestrained=False, use_nucleus=False):
+                 refmac_keywords=None, unrestrained=False, use_nucleus=False,
+                 ncslist=None):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
@@ -55,13 +56,14 @@ class Geom:
         if refmac_keywords:
             exte.read_external_restraints(refmac_keywords, self.st, self.geom)
             kwds = parse_keywords(refmac_keywords)
-            for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw"):
+            for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
                 if k in kwds:
                     self.calc_kwds[k] = kwds[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
+        self.ncslist = ncslist
     # __init__()
 
     def check_chemtypes(self, enerlib_path, topo):
@@ -88,6 +90,8 @@ class Geom:
     def setup_nonbonded(self, refine_xyz):
         skip_critical_dist = not refine_xyz or self.unrestrained
         self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist)
+        if self.ncslist:
+            self.geom.setup_ncsr(self.ncslist)
     def calc(self, target_only):
         return self.geom.calc(check_only=target_only, **self.calc_kwds)
     def calc_adp_restraint(self, target_only):
@@ -116,6 +120,7 @@ class Geom:
                              staca=self.geom.reporting.get_stacking_angle_outliers,
                              stacd=self.geom.reporting.get_stacking_dist_outliers,
                              vdw=self.geom.reporting.get_vdw_outliers,
+                             #ncs=self.geom.reporting.get_ncsr_outliers, # not useful?
                              )
             labs = dict(bond="Bond distances",
                         angle="Bond angles",
@@ -124,7 +129,8 @@ class Geom:
                         plane="Planar groups",
                         staca="Stacking plane angles",
                         stacd="Stacking plane distances",
-                        vdw="VDW repulsions")
+                        vdw="VDW repulsions",
+                        ncs="Local NCS restraints")
 
             for k in get_table:
                 kwgs = {"min_z": self.outlier_sigmas[k]}
@@ -132,7 +138,7 @@ class Geom:
                 table = get_table[k](**kwgs)
                 if table["z"]:
                     for kk in table:
-                        if kk.startswith(("atom", "plane")):
+                        if kk.startswith(("atom", "plane", "1_atom", "2_atom")):
                             table[kk] = [str(self.lookup[x]) for x in table[kk]]
                     df = pandas.DataFrame(table)
                     df = df.reindex(df.z.abs().sort_values(ascending=False).index)

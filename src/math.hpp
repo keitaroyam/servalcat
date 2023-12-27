@@ -5,6 +5,8 @@
 #define SERVALCAT_MATH_HPP_
 
 #include "lambertw.hpp"
+#include <gemmi/bessel.hpp>    // for log_bessel_i0, bessel_i1_over_i0
+#include <Eigen/Dense>
 
 namespace servalcat {
 
@@ -43,7 +45,7 @@ inline double solve_y_minus_exp_minus_y(double x, double prec) {
 
 template<typename Func, typename Fprime>
 double newton(Func&& func, Fprime&& fprime, double x0,
-	      int maxiter=50, double tol=1.48e-8) {
+              int maxiter=50, double tol=1.48e-8) {
   double x = x0;
   for (int itr = 0; itr < maxiter; ++itr) {
     double fval = func(x0);
@@ -62,7 +64,7 @@ double newton(Func&& func, Fprime&& fprime, double x0,
 
 template<typename Func>
 double secant(Func&& func, double x0,
-	      int maxiter=50, double tol=1.48e-8) {
+              int maxiter=50, double tol=1.48e-8) {
   const double eps = 1e-1;
   double p = x0, p0 = x0;
   double p1 = x0 * (1 + eps);
@@ -76,13 +78,13 @@ double secant(Func&& func, double x0,
   for (int itr = 0; itr < maxiter; ++itr) {
     if (q1 == q0) {
       if (p1 != p0)
-	throw std::runtime_error("secant did not converge: x= " + std::to_string(q1));
+        throw std::runtime_error("secant did not converge: x= " + std::to_string(q1));
       return 0.5 * (p1 + p0);
     } else {
       if (std::abs(q1) > std::abs(q0))
-	p = (-q0 / q1 * p1 + p0) / (1 - q0 / q1);
+        p = (-q0 / q1 * p1 + p0) / (1 - q0 / q1);
       else
-	p = (-q1 / q0 * p0 + p1) / (1 - q1 / q0);
+        p = (-q1 / q0 * p0 + p1) / (1 - q1 / q0);
     }
     if (std::abs(p - p1) < tol)
       return p;
@@ -96,18 +98,18 @@ double secant(Func&& func, double x0,
 
 template<typename Func, typename Fprime>
 double newton_or_secant(Func&& func, Fprime&& fprime, double x0,
-			int maxiter=50, double tol=1.48e-8) {
+                        int maxiter=50, double tol=1.48e-8) {
   try {
     return newton(func, fprime, x0, maxiter, tol);
   } catch (const std::runtime_error& e) {
     return secant(func, x0, maxiter, tol);
-  }  
+  }
 }
 
 
 template<typename Func>
 double bisect(Func&& func, double a, double b,
- 	      int maxiter=100, double tol=1.48e-8) {
+              int maxiter=100, double tol=1.48e-8) {
   if (a > b)
     std::swap(a, b);
   if (func(a) * func(b) >= 0)
@@ -123,6 +125,20 @@ double bisect(Func&& func, double a, double b,
       b = c;
   }
   throw std::runtime_error("bisect did not converge: c= " + std::to_string(0.5*(a+b)));
+}
+
+inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {
+  if (x.rows() != y.rows() || x.cols() != y.cols() || x.cols() != 3)
+    throw std::runtime_error("procrust_dist: dimension mismatch");
+  if (!x.size()) return 0;
+  const Eigen::Vector3d xmean = x.colwise().mean(), ymean = y.colwise().mean();
+  x.rowwise() -= xmean.transpose();
+  y.rowwise() -= ymean.transpose();
+  const Eigen::Matrix3d xty = x.transpose() * y;
+  const Eigen::JacobiSVD<Eigen::MatrixXd> svd(xty);
+  double dist = -2.0 * svd.singularValues().sum() + x.squaredNorm() + y.squaredNorm();
+  dist = std::sqrt(std::max(0., dist) / x.rows());
+  return dist;
 }
 
 } // namespace servalcat

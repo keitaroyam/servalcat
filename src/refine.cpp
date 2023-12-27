@@ -4,6 +4,7 @@
 #include "refine/geom.hpp"    // for Geometry
 #include "refine/ll.hpp"      // for LL
 #include "refine/cgsolve.hpp" // for CgSolve
+#include "refine/ncsr.hpp"    // for
 #include <gemmi/it92.hpp>
 #include <gemmi/neutron92.hpp>
 #include <gemmi/monlib.hpp>
@@ -32,6 +33,7 @@ PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Stacking>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Harmonic>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Special>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Vdw>)
+PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Ncsr>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::bond_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::angle_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::torsion_reporting_t>)
@@ -39,6 +41,7 @@ PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
+PYBIND11_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 
 py::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
                                  py::array_t<int> cols, int N, double cutoff) {
@@ -204,6 +207,21 @@ void add_refine(py::module& m) {
                   i == 4 ? "VDW metal" :
                   i == 5 ? "VDW dummy" :
                   "VDW dummy-dummy") + std::string(p.first > 6 ? ", symmetry" : ""),
+                 p.second, zsq[p.first]);
+        }
+
+      // NCSR
+      delsq.clear(); zsq.clear();
+      for (const auto& v : self.ncsrs) {
+        const auto& restr = std::get<0>(v);
+        const double delta = std::get<1>(v) - std::get<2>(v);
+        const double d2 = gemmi::sq(delta), z2 = gemmi::sq(delta / restr->sigma);
+        delsq[restr->idx].push_back(d2);
+        zsq[restr->idx].push_back(z2);
+      }
+      for (const auto& p : delsq)
+        if (!p.second.empty()) {
+          append("ncsr local: group " + std::to_string(p.first + 1),
                  p.second, zsq[p.first]);
         }
 
@@ -385,6 +403,27 @@ void add_refine(py::module& m) {
       return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "z"_a=zs, "type"_a=types);
     }, py::arg("min_z"))
+    .def("get_ncsr_outliers", [](const Geometry::Reporting& self, double min_z) {
+      std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
+      std::vector<double> dist1, dist2, devs, zs;
+      for (const auto& t : self.ncsrs) {
+        const auto& restr = std::get<0>(t);
+        const double d1 = std::get<1>(t), d2 = std::get<2>(t);
+        const double z = (d1 - d2) / restr->sigma;
+        if (std::abs(z) >= min_z) {
+          atom1.push_back(restr->pairs[0]->atoms[0]);
+          atom2.push_back(restr->pairs[0]->atoms[1]);
+          atom3.push_back(restr->pairs[1]->atoms[0]);
+          atom4.push_back(restr->pairs[1]->atoms[1]);
+          dist1.push_back(d1);
+          dist2.push_back(d2);
+          devs.push_back(d1 - d2);
+          zs.push_back(z);
+        }
+      }
+      return py::dict("1_atom1"_a=atom1, "1_atom2"_a=atom2, "2_atom1"_a=atom3, "2_atom2"_a=atom4,
+                      "dist_1"_a=dist1, "dist_2"_a=dist2, "del_dist"_a=devs, "z"_a=zs);
+    }, py::arg("min_z"))
     .def("per_atom_score", [](const Geometry::Reporting& self, int n_atoms,
                               bool use_nucleus, const std::string& metric) {
       if (metric != "max" && metric != "mean" && metric != "sum")
@@ -464,6 +503,7 @@ void add_refine(py::module& m) {
   py::class_<Geometry::Chirality> chirality(geom, "Chirality");
   py::class_<Geometry::Plane> plane(geom, "Plane");
   py::class_<Geometry::Vdw> vdw(geom, "Vdw");
+  py::class_<Geometry::Ncsr> ncsr(geom, "Ncsr");
   py::class_<Geometry::Bond::Value>(bond, "Value")
     .def(py::init<double,double,double,double>())
     .def_readwrite("value", &Geometry::Bond::Value::value)
@@ -555,6 +595,12 @@ void add_refine(py::module& m) {
     .def_readwrite("pbc_shift", &Geometry::Vdw::pbc_shift)
     .def_readwrite("atoms", &Geometry::Vdw::atoms)
     ;
+  ncsr
+    .def(py::init<const Geometry::Vdw*, const Geometry::Vdw*, int>())
+    .def_readwrite("pairs", &Geometry::Ncsr::pairs)
+    .def_readwrite("alpha", &Geometry::Ncsr::alpha)
+    .def_readwrite("sigma", &Geometry::Ncsr::sigma)
+    ;
 
   py::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>>(geom, "ReportingBonds");
   py::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>>(geom, "ReportingAngles");
@@ -563,6 +609,7 @@ void add_refine(py::module& m) {
   py::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>>(geom, "ReportingPlanes");
   py::bind_vector<std::vector<Geometry::Reporting::stacking_reporting_t>>(geom, "ReportingStackings");
   py::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>>(geom, "ReportingVdws");
+  py::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>>(geom, "ReportingNcsrs");
   py::bind_vector<std::vector<Geometry::Bond>>(geom, "Bonds");
   py::bind_vector<std::vector<Geometry::Angle>>(geom, "Angles");
   py::bind_vector<std::vector<Geometry::Chirality>>(geom, "Chiralitys");
@@ -573,6 +620,7 @@ void add_refine(py::module& m) {
   py::bind_vector<std::vector<Geometry::Harmonic>>(geom, "Harmonics");
   py::bind_vector<std::vector<Geometry::Special>>(geom, "Specials");
   py::bind_vector<std::vector<Geometry::Vdw>>(geom, "Vdws");
+  py::bind_vector<std::vector<Geometry::Ncsr>>(geom, "Ncsrs");
   py::bind_vector<std::vector<Geometry::Bond::Value>>(bond, "Values");
   py::bind_vector<std::vector<Geometry::Angle::Value>>(angle, "Values");
   py::bind_vector<std::vector<Geometry::Torsion::Value>>(torsion, "Values");
@@ -595,6 +643,7 @@ void add_refine(py::module& m) {
     .def_readonly("harmonics", &Geometry::harmonics)
     .def_readonly("specials", &Geometry::specials)
     .def_readonly("vdws", &Geometry::vdws)
+    .def_readonly("ncsrs", &Geometry::ncsrs)
     .def_readonly("target", &Geometry::target)
     .def_readonly("reporting", &Geometry::reporting)
     .def("load_topo", &Geometry::load_topo)
@@ -603,9 +652,11 @@ void add_refine(py::module& m) {
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
          py::arg("skip_critical_dist")=false)
+    .def("setup_ncsr", &Geometry::setup_ncsr)
     .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
-         py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1)
+         py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1,
+         py::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("spec_correction", &Geometry::spec_correction, py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     // vdw parameters
@@ -652,6 +703,10 @@ void add_refine(py::module& m) {
     .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)
     .def_readwrite("ridge_symm", &Geometry::ridge_symm)
     .def_readwrite("ridge_exclude_short_dist", &Geometry::ridge_exclude_short_dist)
+    // NCS restraint parameters
+    .def_readwrite("ncsr_alpha", &Geometry::ncsr_alpha)
+    .def_readwrite("ncsr_sigma", &Geometry::ncsr_sigma)
+    .def_readwrite("ncsr_diff_cutoff", &Geometry::ncsr_diff_cutoff)
   ;
 
   py::class_<TableS3>(m, "TableS3")
@@ -749,4 +804,24 @@ void add_refine(py::module& m) {
     }
     return ret;
   });
+
+
+  py::class_<NcsList> ncslist(m, "NcsList");
+  py::class_<NcsList::Ncs>(ncslist, "Ncs")
+    .def(py::init([](const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable) {
+      return NcsList::Ncs(al, fixed, movable);
+    }))
+    .def("calculate_local_rms", &NcsList::Ncs::calculate_local_rms)
+    .def_readonly("atoms", &NcsList::Ncs::atoms)
+    .def_readonly("seqids", &NcsList::Ncs::seqids)
+    .def_readonly("n_atoms", &NcsList::Ncs::n_atoms)
+    .def_readonly("local_rms", &NcsList::Ncs::local_rms)
+    ;
+  ncslist
+    .def(py::init<>())
+    .def("set_pairs", &NcsList::set_pairs)
+    .def_readonly("ncss", &NcsList::ncss)
+    .def_readonly("all_pairs", &NcsList::all_pairs)
+    ;
+  py::bind_vector<std::vector<NcsList::Ncs>>(ncslist, "Ncs_vector");
 }
