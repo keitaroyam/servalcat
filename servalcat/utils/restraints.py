@@ -176,6 +176,13 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     link_related = set()
     nan_hydr = set()
 
+    def extra_defined(res1, res2): # TODO should check alt
+        for link in topo.extras:
+            res12 = (link.res1, link.res2)
+            if link.link_id and (res12 == (res1, res2) or res12 == (res2, res1)):
+                return True
+        return False
+
     # collect info
     info = {}
     for cinfo in topo.chain_infos:
@@ -183,7 +190,8 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
         if cinfo.polymer:
             gaps = []
             for rinfo in cinfo.res_infos:
-                if rinfo.prev and rinfo.prev[0].link_id == "gap":
+                if (rinfo.prev and rinfo.prev[0].link_id in ("gap", "") and
+                    not extra_defined(rinfo.prev[0].res1, rinfo.prev[0].res2)):
                     gaps.append((rinfo.prev[0].res1, rinfo.prev[0].res2))
             toadd["polymer"] = (str(cinfo.polymer_type).replace("PolymerType.", ""),
                                 cinfo.res_infos[0].res.seqid,
