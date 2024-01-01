@@ -540,7 +540,8 @@ class MetalCoordination:
                 cra1 = st[0].find_cra(con.partner1, ignore_segment=True)
                 cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
                 if None in (cra1.atom, cra2.atom): continue
-                coords.setdefault(cra1.atom.element, {}).setdefault(cra1.atom, []).append((cra2.atom, i))
+                ener_ideal = self.monlib.find_ideal_distance(cra1, cra2)
+                coords.setdefault(cra1.atom.element, {}).setdefault(cra1.atom, []).append((cra2.atom, i, ener_ideal))
         if coords:
             logger.writeln("Metal coordinations detected")
         for metal in coords:
@@ -552,14 +553,16 @@ class MetalCoordination:
                 logger.write("   {}: ".format(el.name))
                 vals = self.find_ideal_distances(metal, el)
                 if len(vals) == 0:
-                    logger.writeln(" unknown (values from ener_lib will be used)")
+                    ener_ideals = {x[2] for m in coords[metal] for x in coords[metal][m] if x[0].element == el}
+                    logger.write(" ".join("{:.2f}".format(x) for x in ener_ideals))
+                    logger.writeln(" (from ener_lib)")
                 else:
                     logger.writeln(" ".join("{:.4f} ({} coord)".format(x["median"], x["coord"]) for x in vals))
                     ideals[el] = [(x["median"], x["mad"]) for x in vals if x["mad"] > 0]
             logger.writeln("")
             for i, am in enumerate(coords[metal]):
                 logger.writeln("  site {}: {}".format(i+1, lookup[am]))
-                for j, (lig, con_idx) in enumerate(coords[metal][am]):
+                for j, (lig, con_idx, _) in enumerate(coords[metal][am]):
                     con = st.connections[con_idx]
                     logger.writeln("    ligand {}: {} dist= {:.2f}".format(j+1, lookup[lig],
                                                                            con.reported_distance))
