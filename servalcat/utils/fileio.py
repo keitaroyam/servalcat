@@ -329,7 +329,9 @@ def read_structure(xyz_in):
                 else:
                     logger.writeln(" WARNING: more than one block having structure found. Will use first one.")
                     break
-            elif block.find_loop("_chem_comp_atom.x"):
+            elif (block.find_loop("_chem_comp_atom.x") or
+                  block.find_loop("_chem_comp_atom.model_Cartn_x") or
+                  block.find_loop("_chem_comp_atom.pdbx_model_Cartn_x_ideal")):
                 if st is None:
                     logger.writeln("Reading chemical component file: {}".format(xyz_in))
                     st = gemmi.make_structure_from_chemcomp_block(block)

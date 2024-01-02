@@ -86,10 +86,16 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 
     # replace xyz
     pos = {cra.atom.name: cra.atom.pos.tolist() for cra in refiner.st[0].all()}
-    for row in block.find("_chem_comp_atom.", ["atom_id", "x", "y", "z"]):
+    for row in block.find("_chem_comp_atom.", ["atom_id", "?x", "?y", "?z",
+                                               "?pdbx_model_Cartn_x_ideal",
+                                               "?pdbx_model_Cartn_y_ideal",
+                                               "?pdbx_model_Cartn_z_ideal"]):
         p = pos[row.str(0)]
         for i in range(3):
-            row[i+1] = "{:.3f}".format(p[i])
+            if row.has(i+1):
+                row[i+1] = "{:.3f}".format(p[i])
+            if row.has(i+4):
+                row[i+4] = "{:.3f}".format(p[i])
     # add description
     loop = block.find_loop("_pdbx_chem_comp_description_generator.comp_id").get_loop()
     if not loop:
