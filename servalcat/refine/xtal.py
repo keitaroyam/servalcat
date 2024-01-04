@@ -137,7 +137,7 @@ class LL_Xtal:
             logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
         return ret
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
+    def calc_grad(self, refine_xyz, adp_mode, refine_occ, refine_h, specs):
         dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
         d2ll_dab2 = numpy.empty(len(self.hkldata.df.index))
         d2ll_dab2[:] = numpy.nan
@@ -201,7 +201,7 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         if self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)

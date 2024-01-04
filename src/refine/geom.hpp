@@ -187,10 +187,11 @@ struct GeomTarget {
     int imode;
   };
 
-  void setup(gemmi::Model &model, bool refine_xyz, int adp_mode) { // call it after setting pairs
+  void setup(gemmi::Model &model, bool refine_xyz, int adp_mode, bool refine_occ) { // call it after setting pairs
     assert(0 <= adp_mode && adp_mode <= 2);
     this->refine_xyz = refine_xyz;
     this->adp_mode = adp_mode;
+    this->refine_occ = refine_occ;
     const size_t n_atoms = count_atom_sites(model);
     atoms.resize(n_atoms);
     for (gemmi::CRA cra : model.all())
@@ -215,6 +216,8 @@ struct GeomTarget {
       qqv += 6 * n_atoms;
       qqm += 21 * n_atoms + 36 * n_pairs;
     }
+    if (refine_occ)
+      qqv += n_atoms; // am shouldn't change
     vn.assign(qqv, 0.);
     am.assign(qqm, 0.);
 
@@ -249,6 +252,7 @@ struct GeomTarget {
   //int n_atoms;
   bool refine_xyz;
   int adp_mode; // 0: no refine, 1: iso, 2: aniso
+  bool refine_occ;
   std::vector<gemmi::Atom*> atoms;
   double target = 0.; // target function value
   std::vector<double> vn; // first derivatives
@@ -596,7 +600,7 @@ struct Geometry {
     return cell.orth.combine(ft).combine(cell.frac);
   }
 
-  void setup_target(bool refine_xyz, int adp_mode);
+  void setup_target(bool refine_xyz, int adp_mode, bool refine_occ);
   void clear_target() {
     target.target = 0.;
     std::fill(target.vn.begin(), target.vn.end(), 0.);
@@ -1047,7 +1051,7 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
   }
 }
 
-inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
+inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_occ) {
   std::vector<std::tuple<int,int,int>> tmp;
   for (const auto &t : bonds)
     tmp.emplace_back(t.atoms[0]->serial-1, t.atoms[1]->serial-1, 1);
@@ -1111,7 +1115,7 @@ inline void Geometry::setup_target(bool refine_xyz, int adp_mode) {
       }
   }
 
-  target.setup(st.first_model(), refine_xyz, adp_mode);
+  target.setup(st.first_model(), refine_xyz, adp_mode, refine_occ);
 }
 
 inline double Geometry::calc(bool use_nucleus, bool check_only,

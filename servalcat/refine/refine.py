@@ -190,7 +190,7 @@ def show_binstats(df, cycle_number):
 # show_binstats()
 
 class Refine:
-    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, unrestrained=False):
+    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, refine_occ=False, unrestrained=False):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?
@@ -200,6 +200,7 @@ class Refine:
         self.gamma = 0
         self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
+        self.refine_occ = refine_occ
         self.unrestrained = unrestrained
         self.refine_h = refine_h
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
@@ -230,19 +231,31 @@ class Refine:
         shift_allow_low  = -1.0
         shift_max_allow_B = 30.0
         shift_min_allow_B = -30.0
+        shift_max_allow_q = 0.5
+        shift_min_allow_q = -0.5
         dx = scale * dx
-        offset_b = 0
+        offset_b = n_atoms * 3 if self.refine_xyz else 0
+        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
         if self.refine_xyz:
-            dxx = dx[:n_atoms*3]
+            dxx = dx[:offset_b]
+            logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
+            logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
+            logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
-            offset_b = n_atoms*3
         if self.adp_mode == 1:
-            dxb = dx[offset_b:]
+            dxb = dx[offset_b:offset_q]
+            logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
+            logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
+            logger.writeln("mean(dB)= {}".format(numpy.mean(dxb)))
             dxb[dxb > shift_max_allow_B] = shift_max_allow_B
             dxb[dxb < shift_min_allow_B] = shift_min_allow_B
         elif self.adp_mode == 2:
-            dxb = dx[offset_b:]
+            dxb = dx[offset_b:offset_q]
+            # TODO this is misleading
+            logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
+            logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
+            logger.writeln("mean(dB)= {}".format(numpy.mean(dxb)))
             for i in range(len(dxb)//6):
                 j = i * 6
                 a = numpy.array([[dxb[j],   dxb[j+3], dxb[j+4]],
@@ -253,7 +266,14 @@ class Refine:
                 v[v < shift_min_allow_B] = shift_min_allow_B
                 a = Q.dot(numpy.diag(v)).dot(Q.T)
                 dxb[j:j+6] = a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2]
-            
+        if self.refine_occ:
+            dxq = dx[offset_q:]
+            logger.writeln("min(dq) = {}".format(numpy.min(dxq)))
+            logger.writeln("max(dq) = {}".format(numpy.max(dxq)))
+            logger.writeln("mean(dq)= {}".format(numpy.mean(dxq)))
+            dxq[dxq > shift_max_allow_q] = shift_max_allow_q
+            dxq[dxq < shift_min_allow_q] = shift_min_allow_q
+
         return dx
 
     def n_params(self):
@@ -264,11 +284,17 @@ class Refine:
             n_params += n_atoms
         elif self.adp_mode == 2:
             n_params += 6 * n_atoms
+        if self.refine_occ:
+            n_params += n_atoms
         return n_params
 
     def set_x(self, x):
         n_atoms = len(self.atoms)
         offset_b = n_atoms * 3 if self.refine_xyz else 0
+        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
+        max_occ = {}
+        if self.refine_occ and self.geom.specs:
+            max_occ = {atom: 1./(len(images)+1) for atom, images, _, _ in self.geom.specs}
         for i in range(len(self.atoms)):
             if self.refine_xyz:
                 self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
@@ -284,6 +310,8 @@ class Refine:
                 self.atoms[i].b_iso = M2.trace() / 3
                 M2 *= b_to_u
                 self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
+            if self.refine_occ:
+                self.atoms[i].occ = min(max_occ.get(self.atoms[i], 1), max(1e-3, x[offset_q + i]))
 
         # Copy B of hydrogen from parent
         if self.h_inherit_parent_adp:
@@ -296,12 +324,13 @@ class Refine:
             self.ll.update_fc()
         
         self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
         n_atoms = len(self.atoms)
         offset_b = n_atoms * 3 if self.refine_xyz else 0
+        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
         x = numpy.zeros(self.n_params())
         for i, a in enumerate(self.atoms):
             if self.refine_xyz:
@@ -311,6 +340,8 @@ class Refine:
             elif self.adp_mode == 2:
                 x[offset_b + 6*i : offset_b + 6*(i+1)] = self.atoms[i].aniso.elements_pdb()
                 x[offset_b + 6*i : offset_b + 6*(i+1)] *= u_to_b
+            if self.refine_occ:
+                x[offset_q + i] = a.occ
 
         return x
     #@profile
@@ -323,7 +354,7 @@ class Refine:
             ll = self.ll.calc_target()
             logger.writeln(" ll= {}".format(ll))
             if not target_only:
-                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_h, self.geom.geom.specials)
+                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_occ, self.refine_h, self.geom.geom.specials)
         else:
             ll = 0
 
@@ -378,19 +409,6 @@ class Refine:
             M = scipy.sparse.diags(rdiag)
             dx, self.gamma = cgsolve.cgsolve_rm(A=am, v=vn, M=M, gamma=self.gamma)
 
-        if self.refine_xyz:
-            dxx = dx[:len(self.atoms)*3]
-            #logger.writeln("dx = {}".format(dxx))
-            logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
-            logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
-            logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
-        if self.adp_mode > 0: # TODO for aniso
-            db = dx[len(self.atoms)*3 if self.refine_xyz else 0:]
-            #logger.writeln("dB = {}".format(db))
-            logger.writeln("min(dB) = {}".format(numpy.min(db)))
-            logger.writeln("max(dB) = {}".format(numpy.max(db)))
-            logger.writeln("mean(dB)= {}".format(numpy.mean(db)))
-            
         if 0: # to check hessian scale
             with open("minimise_line.dat", "w") as ofs:
                 ofs.write("s f\n")
@@ -421,7 +439,7 @@ class Refine:
         self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode)
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         if self.refine_xyz and not self.unrestrained:
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]

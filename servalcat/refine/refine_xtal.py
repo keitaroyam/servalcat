@@ -189,6 +189,7 @@ def main(args):
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+                     #refine_occ=True,
                      refine_h=args.refine_h,
                      unrestrained=args.unrestrained)
 

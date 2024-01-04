@@ -93,7 +93,7 @@ class LL_SPA:
         # XXX in fsc object, _full is misleading - it's not full in cross validation mode
         return {"bin_stats": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_h, specs):
+    def calc_grad(self, refine_xyz, adp_mode, refine_occ, refine_h, specs):
         dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
@@ -114,7 +114,7 @@ class LL_SPA:
         d2ll_dab2 *= self.hkldata.cell.volume
         dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
-        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_h)
+        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         self.ll.calc_grad_it92(dll_dab_den, blur)
 

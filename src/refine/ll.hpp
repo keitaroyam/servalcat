@@ -236,18 +236,20 @@ struct LL{
   bool mott_bethe;
   bool refine_xyz;
   int adp_mode;
+  bool refine_occ;
   bool refine_h;
   // table (distances x b values)
   std::vector<double> table_bs;
   std::vector<std::vector<double>> pp1; // for x-x diagonal
   std::vector<std::vector<double>> bb;  // for B-B diagonal
   std::vector<std::vector<double>> aa; // for B-B diagonal, aniso
+  std::vector<std::vector<double>> qq; // for q-q diagonal
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
-  LL(const gemmi::Structure &st, bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_h)
+  LL(const gemmi::Structure &st, bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_occ, bool refine_h)
     : cell(st.cell), sg(st.find_spacegroup()), mott_bethe(mott_bethe), refine_xyz(refine_xyz),
-      adp_mode(adp_mode), refine_h(refine_h) {
+      adp_mode(adp_mode), refine_occ(refine_occ), refine_h(refine_h) {
     if (adp_mode < 0 || adp_mode > 2) gemmi::fail("bad adp_mode");
     const size_t n_atoms = gemmi::count_atom_sites<gemmi::Model>(st.first_model());
     atoms.resize(n_atoms);
@@ -270,8 +272,10 @@ struct LL{
   template <typename Table>
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = atoms.size();
-    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
+    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6) + (refine_occ ? 1 : 0));
     vn.assign(n_v, 0.);
+    const int offset = (refine_xyz ? n_atoms * 3 : 0); // for adp
+    const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 6 : 0)); // for occ
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
@@ -303,18 +307,22 @@ struct LL{
         gemmi::Position gx;
         double gb = 0.;
         double gb_aniso[6] = {0,0,0,0,0,0};
+        double gq = 0.;
         den.template use_points_in_box<true>(fpos, du, dv, dw,
                                              [&](float& point, double r2, const gemmi::Position& delta, int, int, int) {
                                                if (point == 0) return;
                                                if (!has_aniso) { // isotropic
-                                                 double for_x = 0., for_b = 0.;
+                                                 double for_x = 0., for_b = 0., for_q = 0.;
                                                  for (int j = 0; j < N; ++j) {
-                                                   const double tmp = precal.a[j] * std::exp(precal.b[j] * r2) * precal.b[j];
+                                                   double tmp = precal.a[j] * std::exp(precal.b[j] * r2);
+                                                   if (refine_occ) for_q += tmp;
+                                                   tmp *= precal.b[j];
                                                    for_x += tmp;
                                                    if (adp_mode == 1) for_b += tmp * (1.5 + r2 * precal.b[j]);
                                                  }
                                                  gx += for_x * 2 * delta * point;
                                                  if (adp_mode == 1) gb += for_b * point;
+                                                 if (refine_occ) gq += for_q * point;
                                                } else { // anisotropic
                                                  for (int j = 0; j < N; ++j) {
                                                    const double tmp = precal_aniso.a[j] * std::exp(precal_aniso.b[j].r_u_r(delta));
@@ -331,6 +339,8 @@ struct LL{
                                                      gb_aniso[4] += 2 * tmp3[4] + 2 * tmp2.x * tmp2.z * tmp * point;
                                                      gb_aniso[5] += 2 * tmp3[5] + 2 * tmp2.y * tmp2.z * tmp * point;
                                                    }
+                                                   if (refine_occ)
+                                                     gq += tmp * point;
                                                  }
                                                }
                                              }, false /* fail_on_too_large_radius */,
@@ -348,7 +358,6 @@ struct LL{
           vn[3*i+1] += gx2.y;
           vn[3*i+2] += gx2.z;
         }
-        const int offset = (refine_xyz ? n_atoms * 3 : 0);
         if (adp_mode == 1)
           vn[offset + i] += gb;
         else if (adp_mode == 2) { // added as B (not U)
@@ -358,6 +367,8 @@ struct LL{
                                    gb_aniso[3] * m.u12 + gb_aniso[4] * m.u13 + gb_aniso[5] * m.u23);
           }
         }
+        if (refine_occ)
+          vn[offset2 + i] += gq;
       }
     }
     for (auto &v : vn) // to match scale of hessian
@@ -429,6 +440,7 @@ struct LL{
     pp1.assign(1, std::vector<double>(b_dim));
     bb.assign(1, std::vector<double>(b_dim));
     aa.assign(1, std::vector<double>(b_dim));
+    qq.assign(1, std::vector<double>(b_dim));
 
     table_bs.clear();
     table_bs.reserve(b_dim);
@@ -438,37 +450,44 @@ struct LL{
       const double b = b_min + b_step * ib;
       table_bs.push_back(b);
 
-      std::vector<double> tpp(s_dim+1), tbb(s_dim+1), taa(s_dim+1);
+      std::vector<double> tpp(s_dim+1), tbb(s_dim+1), taa(s_dim+1), tqq(s_dim+1);
       for (int i = 0; i <= s_dim; ++i) {
         const double s = s_min + s_step * i;
+        const double s2 = s * s;
         const double w_c = d2dfw_table.get_value(s); // average of weight
-        const double w_c_ft_c = w_c * std::exp(-b*s*s/4.);
+        const double w_c_ft_c = w_c * std::exp(-b*s2/4.);
         tpp[i] = 16. * gemmi::pi() * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 * 4pi/3
-        tbb[i] = gemmi::pi() / 4 * w_c_ft_c * s * s; // 1/16 * 4pi
-        taa[i] = gemmi::pi() / 20 * w_c_ft_c * s * s; // 1/16 * 4pi/5 (later *1, *1/3, *4/3)
+        tbb[i] = gemmi::pi() / 4 * w_c_ft_c * s2; // 1/16 * 4pi
+        taa[i] = gemmi::pi() / 20 * w_c_ft_c * s2; // 1/16 * 4pi/5 (later *1, *1/3, *4/3)
+        tqq[i] = gemmi::pi() * 4 * w_c_ft_c * s2; // 4pi
         if (!mott_bethe) {
-          tpp[i] *= s*s*s*s;
-          tbb[i] *= s*s*s*s;
-          taa[i] *= s*s*s*s;
+          const double s4 = s2 * s2;
+          tpp[i] *= s4;
+          tbb[i] *= s4;
+          taa[i] *= s4;
+          tqq[i] *= s4;
         }
       }
 
       // Numerical integration by Simpson's rule
-      double sum_tpp1 = 0, sum_tpp2 = 0, sum_tbb1 = 0, sum_tbb2 = 0, sum_taa1 = 0, sum_taa2 = 0;
+      double sum_tpp1 = 0, sum_tpp2 = 0, sum_tbb1 = 0, sum_tbb2 = 0, sum_taa1 = 0, sum_taa2 = 0, sum_tqq1 = 0, sum_tqq2 = 0;
       for (int i = 1; i < s_dim; i+=2) {
         sum_tpp1 += tpp[i];
         sum_tbb1 += tbb[i];
         sum_taa1 += taa[i];
+        sum_tqq1 += tqq[i];
       }
       for (int i = 2; i < s_dim; i+=2) {
         sum_tpp2 += tpp[i];
         sum_tbb2 += tbb[i];
         sum_taa2 += taa[i];
+        sum_tqq2 += tqq[i];
       }
 
       pp1[0][ib] = (tpp[0] + tpp.back() + 4 * sum_tpp1 + 2 * sum_tpp2) * s_step / 3.;
       bb[0][ib] = (tbb[0] + tbb.back() + 4 * sum_tbb1 + 2 * sum_tbb2) * s_step / 3.;
       aa[0][ib] = (taa[0] + taa.back() + 4 * sum_taa1 + 2 * sum_taa2) * s_step / 3.;
+      qq[0][ib] = (tqq[0] + tqq.back() + 4 * sum_tqq1 + 2 * sum_tqq2) * s_step / 3.;
     }
   }
 
@@ -486,6 +505,7 @@ struct LL{
     pp1.assign(1, std::vector<double>(b_dim));
     bb.assign(1, std::vector<double>(b_dim));
     aa.assign(1, std::vector<double>(b_dim));
+    qq.assign(1, std::vector<double>(b_dim));
     table_bs.clear();
     table_bs.reserve(b_dim);
 
@@ -498,25 +518,31 @@ struct LL{
       table_bs.push_back(b);
       for (size_t i = 0; i < svals.size(); ++i) {
         const double s = svals[i], w_c = yvals[i];
-	if (std::isnan(w_c)) continue;
-        const double w_c_ft_c = w_c * std::exp(-b*s*s/4.);
+        if (std::isnan(w_c)) continue;
+        const double s2 = s * s;
+        const double w_c_ft_c = w_c * std::exp(-b*s2/4.);
         double tpp = 4. * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 /3
         double tbb = 1. / 16 * w_c_ft_c; // 1/16
         double taa = 1. / 80 * w_c_ft_c; // 1/16 /5 (later *1, *1/3, *4/3)
+        double tqq = w_c_ft_c; // 1
         if (mott_bethe) {
-          tpp /= s*s;
+          tpp /= s2;
         } else {
-          tpp *= s*s;
-          tbb *= s*s*s*s;
-          taa *= s*s*s*s;
+          const double s4 = s2 * s2;
+          tpp *= s2;
+          tbb *= s4;
+          taa *= s4;
+          tqq *= s4;
         }
         pp1[0][ib] += tpp;
         bb[0][ib] += tbb;
         aa[0][ib] += taa;
+        qq[0][ib] += tqq;
       }
       pp1[0][ib] *= fac;
       bb[0][ib] *= fac;
       aa[0][ib] *= fac;
+      qq[0][ib] *= fac;
     }
   }
 
@@ -543,9 +569,11 @@ struct LL{
   template <typename Table>
   void fisher_diag_from_table() {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21));
+    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21) + (refine_occ ? 1 : 0));
     const int N = Table::Coef::ncoeffs;
     am.assign(n_a, 0.);
+    const int offset = refine_xyz ? n_atoms * 6 : 0; // for adp
+    const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 21 : 0));  // for occ
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
@@ -553,7 +581,7 @@ struct LL{
       const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
-      double fac_x = 0., fac_b = 0., fac_a = 0.;
+      double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0.;
 
       // TODO can be reduced for the same elements
       for (int j = 0; j < N + 1; ++j)
@@ -565,11 +593,11 @@ struct LL{
           fac_x += aj * ak * interp_1d(table_bs, pp1[0], b);
           fac_b += aj * ak * interp_1d(table_bs, bb[0], b);
           fac_a += aj * ak * interp_1d(table_bs, aa[0], b);
+          fac_q += aj * ak * interp_1d(table_bs, qq[0], b);
         }
 
       const int ipos = i*6;
       if (refine_xyz) am[ipos] = am[ipos+1] = am[ipos+2] = w * fac_x;
-      const int offset = refine_xyz ? n_atoms * 6 : 0;
       if (adp_mode == 1)
         am[offset + i] = w * fac_b;
       else if (adp_mode == 2) {
@@ -577,13 +605,14 @@ struct LL{
         for (int j = 3; j < 6; ++j) am[offset + 21*i + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
         am[offset + 21*i + 6] = am[offset + 21*i + 7] = am[offset + 21*i + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
+      if (refine_occ) am[offset2 + i] = fac_q; // w = q^2 not needed
     }
   }
 
   Eigen::SparseMatrix<double> make_spmat() const {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21));
-    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6));
+    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21) + (refine_occ ? 1 : 0));
+    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6) + (refine_occ ? 1 : 0));
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {
@@ -607,6 +636,7 @@ struct LL{
     if (adp_mode == 1) {
       for (size_t j = 0; j < n_atoms; ++j, ++i)
         add_data(offset + j, offset + j, am[i]);
+      offset += n_atoms;
     } else if (adp_mode == 2) {
       for (size_t j = 0; j < n_atoms; ++j) {
         for (size_t k = 0; k < 6; ++k, ++i)
@@ -615,7 +645,12 @@ struct LL{
           for (size_t l = k + 1; l < 6; ++l, ++i)
             add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
       }
+      offset += 21 * n_atoms;
     }
+    if (refine_occ)
+      for (size_t j = 0; j < n_atoms; ++j, ++i)
+        add_data(offset + j, offset + j, am[i]);
+
     if(i != n_a) gemmi::fail("wrong matrix size");
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;

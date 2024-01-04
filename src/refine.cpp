@@ -718,9 +718,9 @@ void add_refine(py::module& m) {
     .def_readwrite("maxbin", &TableS3::maxbin)
     ;
   py::class_<LL>(m, "LL")
-    .def(py::init<const gemmi::Structure &, bool, bool, int, bool>(),
+    .def(py::init<const gemmi::Structure &, bool, bool, int, bool, bool>(),
          py::arg("st"), py::arg("mott_bethe"),
-         py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_h"))
+         py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_occ"), py::arg("refine_h"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)
