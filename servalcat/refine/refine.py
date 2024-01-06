@@ -30,12 +30,17 @@ b_to_u = utils.model.b_to_u
 class Geom:
     def __init__(self, st, topo, monlib, adpr_w=1, shake_rms=0,
                  refmac_keywords=None, unrestrained=False, use_nucleus=False,
-                 ncslist=None):
+                 ncslist=None, atom_pos=None):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
         for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
+        if atom_pos is not None:
+            self.atom_pos = atom_pos
+        else:
+            self.atom_pos = list(range(len(self.atoms)))
+        self.n_refine_atoms = max(self.atom_pos) + 1
         self.lookup = {x.atom: x for x in self.st[0].all()}
-        self.geom = ext.Geometry(self.st, monlib.ener_lib)
+        self.geom = ext.Geometry(self.st, self.atom_pos, monlib.ener_lib)
         self.specs = utils.model.find_special_positions(self.st)
         #cs_count = len(self.st.find_spacegroup().operations())
         for atom, images, matp, mata in self.specs:
@@ -206,6 +211,7 @@ class Refine:
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
+        assert self.n_params() > 0
     # __init__()
     
     def print_weights(self): # TODO unfinished
@@ -223,7 +229,7 @@ class Refine:
                 raise LookupError("unknown adpr_mode")
 
     def scale_shifts(self, dx, scale):
-        n_atoms = len(self.atoms)
+        n_atoms = self.geom.n_refine_atoms
         #ave_shift = numpy.mean(dx)
         #max_shift = numpy.maximum(dx)
         #rms_shift = numpy.std(dx)
@@ -277,7 +283,7 @@ class Refine:
         return dx
 
     def n_params(self):
-        n_atoms = len(self.atoms)
+        n_atoms = self.geom.n_refine_atoms
         n_params = 0
         if self.refine_xyz: n_params += 3 * n_atoms
         if self.adp_mode == 1:
@@ -289,19 +295,20 @@ class Refine:
         return n_params
 
     def set_x(self, x):
-        n_atoms = len(self.atoms)
+        n_atoms = self.geom.n_refine_atoms
         offset_b = n_atoms * 3 if self.refine_xyz else 0
         offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
         max_occ = {}
         if self.refine_occ and self.geom.specs:
             max_occ = {atom: 1./(len(images)+1) for atom, images, _, _ in self.geom.specs}
-        for i in range(len(self.atoms)):
+        for i, j in enumerate(self.geom.atom_pos):
+            if j < 0: continue
             if self.refine_xyz:
-                self.atoms[i].pos.fromlist(x[3*i:3*i+3]) # faster than substituting pos.x,pos.y,pos.z
+                self.atoms[i].pos.fromlist(x[3*j:3*j+3]) # faster than substituting pos.x,pos.y,pos.z
             if self.adp_mode == 1:
-                self.atoms[i].b_iso = max(0.5, x[offset_b + i]) # minimum B = 0.5
+                self.atoms[i].b_iso = max(0.5, x[offset_b + j]) # minimum B = 0.5
             elif self.adp_mode == 2:
-                a = x[offset_b + 6 * i: offset_b + 6 * (i+1)]
+                a = x[offset_b + 6 * j: offset_b + 6 * (j+1)]
                 a = gemmi.SMat33d(*a)
                 M = numpy.array(a.as_mat33())
                 v, Q = numpy.linalg.eigh(M) # eig() may return complex due to numerical precision?
@@ -311,7 +318,7 @@ class Refine:
                 M2 *= b_to_u
                 self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
             if self.refine_occ:
-                self.atoms[i].occ = min(max_occ.get(self.atoms[i], 1), max(1e-3, x[offset_q + i]))
+                self.atoms[i].occ = min(max_occ.get(self.atoms[i], 1), max(1e-3, x[offset_q + j]))
 
         # Copy B of hydrogen from parent
         if self.h_inherit_parent_adp:
@@ -328,20 +335,22 @@ class Refine:
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
-        n_atoms = len(self.atoms)
+        n_atoms = self.geom.n_refine_atoms
         offset_b = n_atoms * 3 if self.refine_xyz else 0
         offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
         x = numpy.zeros(self.n_params())
-        for i, a in enumerate(self.atoms):
+        for i, j in enumerate(self.geom.atom_pos):
+            if j < 0: continue
+            a = self.atoms[i]
             if self.refine_xyz:
-                x[3*i:3*(i+1)] = a.pos.tolist()
+                x[3*j:3*(j+1)] = a.pos.tolist()
             if self.adp_mode == 1:
-                x[offset_b + i] = self.atoms[i].b_iso
+                x[offset_b + j] = self.atoms[i].b_iso
             elif self.adp_mode == 2:
-                x[offset_b + 6*i : offset_b + 6*(i+1)] = self.atoms[i].aniso.elements_pdb()
-                x[offset_b + 6*i : offset_b + 6*(i+1)] *= u_to_b
+                x[offset_b + 6*j : offset_b + 6*(j+1)] = self.atoms[i].aniso.elements_pdb()
+                x[offset_b + 6*j : offset_b + 6*(j+1)] *= u_to_b
             if self.refine_occ:
-                x[offset_q + i] = a.occ
+                x[offset_q + j] = a.occ
 
         return x
     #@profile

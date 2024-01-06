@@ -184,7 +184,7 @@ def main(args):
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
-    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
+    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, geom.atom_pos, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,

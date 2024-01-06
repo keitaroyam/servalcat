@@ -18,7 +18,7 @@ class TestCI(unittest.TestCase):
     def test_ext(self):
         pdbin = os.path.join(root, "biotin", "biotin_talos.pdb")
         st = utils.fileio.read_structure(pdbin)
-        g = ext.Geometry(st)
+        g = ext.Geometry(st, list(range(st[0].count_atom_sites())))
 
         
 if __name__ == '__main__':

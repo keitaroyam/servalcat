@@ -247,15 +247,21 @@ struct LL{
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
-  LL(const gemmi::Structure &st, bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_occ, bool refine_h)
+  LL(const gemmi::Structure &st, const std::vector<int> &atom_pos,
+     bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_occ, bool refine_h)
     : cell(st.cell), sg(st.find_spacegroup()), mott_bethe(mott_bethe), refine_xyz(refine_xyz),
       adp_mode(adp_mode), refine_occ(refine_occ), refine_h(refine_h) {
     if (adp_mode < 0 || adp_mode > 2) gemmi::fail("bad adp_mode");
-    const size_t n_atoms = gemmi::count_atom_sites<gemmi::Model>(st.first_model());
-    atoms.resize(n_atoms);
-    // set atoms
-    for (const auto &cra : st.first_model().all())
-      atoms[cra.atom->serial - 1] = cra.atom;
+    const auto it = std::max_element(atom_pos.begin(), atom_pos.end());
+    if (it != atom_pos.end() && *it >= 0) {
+      atoms.resize((*it) + 1);
+      for (gemmi::const_CRA cra : st.first_model().all()) {
+        const int i = atom_pos.at(cra.atom->serial-1);
+        if (i >= 0) atoms.at(i) = cra.atom;
+      }
+    }
+    if (std::find(atoms.begin(), atoms.end(), nullptr) != atoms.end())
+      gemmi::fail("bad atom_pos in LL");
     set_ncs({});
   }
   void set_ncs(const std::vector<gemmi::Transform> &trs) {
@@ -661,7 +667,10 @@ struct LL{
     const int offset_v = refine_xyz ? 3 * n_atoms : 0;
     const int offset_a = refine_xyz ? 6 * n_atoms : 0;
     for (const auto &spec : specials) {
-      const int idx = spec.atom->serial - 1;
+      // TODO inefficient?
+      const auto it = std::find(atoms.begin(), atoms.end(), spec.atom);
+      if (it == atoms.end()) continue;
+      const int idx = std::distance(atoms.begin(), it);
       if (refine_xyz) {
         // correct gradient
         Eigen::Map<Eigen::Vector3d> v(&vn[idx * 3], 3);

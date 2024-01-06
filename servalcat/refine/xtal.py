@@ -19,7 +19,7 @@ u_to_b = utils.model.u_to_b
 integr = sigmaa.integr
 
 class LL_Xtal:
-    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
+    def __init__(self, hkldata, centric_and_selections, free, st, atom_pos, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all"):
         assert source in ("electron", "xray", "neutron")
         self.source = source
@@ -29,6 +29,7 @@ class LL_Xtal:
         self.centric_and_selections = centric_and_selections
         self.free = free
         self.st = st
+        self.atom_pos = atom_pos
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
         self.fc_labs = ["FC0"]
@@ -201,7 +202,7 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
+        self.ll = ext.LL(self.st, self.atom_pos, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         if self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)

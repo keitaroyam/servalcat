@@ -632,7 +632,8 @@ void add_refine(py::module& m) {
     .def_property_readonly("am_spmat", &GeomTarget::make_spmat)
   ;
   geom
-    .def(py::init<gemmi::Structure&, const gemmi::EnerLib*>(), py::arg("st"), py::arg("ener_lib")=nullptr)
+    .def(py::init<gemmi::Structure&, const std::vector<int> &, const gemmi::EnerLib*>(),
+         py::arg("st"), py::arg("atom_pos"), py::arg("ener_lib")=nullptr)
     .def_readonly("bonds", &Geometry::bonds)
     .def_readonly("angles", &Geometry::angles)
     .def_readonly("chirs", &Geometry::chirs)
@@ -718,8 +719,8 @@ void add_refine(py::module& m) {
     .def_readwrite("maxbin", &TableS3::maxbin)
     ;
   py::class_<LL>(m, "LL")
-    .def(py::init<const gemmi::Structure &, bool, bool, int, bool, bool>(),
-         py::arg("st"), py::arg("mott_bethe"),
+    .def(py::init<const gemmi::Structure &, const std::vector<int> &, bool, bool, int, bool, bool>(),
+         py::arg("st"), py::arg("atom_pos"), py::arg("mott_bethe"),
          py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_occ"), py::arg("refine_h"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)

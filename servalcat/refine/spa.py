@@ -30,13 +30,14 @@ def calc_D_and_S(hkldata, lab_obs): # simplified version of fofc.calc_D_and_S()
 # calc_D_and_S()
 
 class LL_SPA:
-    def __init__(self, hkldata, st, monlib, lab_obs, source="electron", mott_bethe=True):
+    def __init__(self, hkldata, st, atom_pos, monlib, lab_obs, source="electron", mott_bethe=True):
         assert source in ("electron", "xray")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
         self.lab_obs = lab_obs
         self.st = st
+        self.atom_pos = atom_pos
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
         self.ll = None
@@ -114,7 +115,7 @@ class LL_SPA:
         d2ll_dab2 *= self.hkldata.cell.volume
         dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
-        self.ll = ext.LL(self.st, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
+        self.ll = ext.LL(self.st, self.atom_pos, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         self.ll.calc_grad_it92(dll_dab_den, blur)
 

@@ -202,7 +202,7 @@ def main(args):
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight,
                 refmac_keywords=refmac_keywords, unrestrained=args.jellyonly,
                 ncslist=ncslist)
-    ll = spa.LL_SPA(hkldata, st, monlib,
+    ll = spa.LL_SPA(hkldata, st, geom.atom_pos, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
     refiner = Refine(st, geom, ll,
