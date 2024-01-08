@@ -129,18 +129,20 @@ def read_external_restraints(lines, st, geom):
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
                 im = st.cell.find_nearest_image(ex.atoms[0].pos, ex.atoms[1].pos, asu)
                 ex.set_image(im)
-            print("dist=", ex.alpha, ex.type, ex.values[-1].value, ex.values[-1].sigma, ex.sym_idx, ex.pbc_shift, ex.atoms)
+            #print("dist=", ex.alpha, ex.type, ex.values[-1].value, ex.values[-1].sigma, ex.sym_idx, ex.pbc_shift, ex.atoms)
         elif r["rest_type"] == "angl":
-            print("angl=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
+            pass
+            #print("angl=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
         elif r["rest_type"] == "tors":
-            print("tors=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
+            pass
+            #print("tors=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
         elif r["rest_type"] == "chir":
-            print("chir=", ex.value, ex.sigma, ex.atoms)
+            #print("chir=", ex.value, ex.sigma, ex.atoms)
             ex.sign = gemmi.ChiralityType.Positive if ex.value > 0 else gemmi.ChiralityType.Negative
             ex.value = abs(ex.value)
         elif r["rest_type"] == "plan":
             ex.sigma = r["restr"]["sigma_value"] / defs["scale_sigma_{}".format(r["rest_type"])]
-            print("plan=", ex.sigma, ex.atoms)
+            #print("plan=", ex.sigma, ex.atoms)
         elif r["rest_type"] == "inte":
             dmin, dmax = r["restr"].get("dmin"), r["restr"].get("dmax")
             smin, smax = r["restr"].get("smin"), r["restr"].get("smax")
@@ -158,13 +160,13 @@ def read_external_restraints(lines, st, geom):
             ex.dmax = dmax
             ex.smin = smin
             ex.smax = smax
-            print("inte=", ex.dmin, ex.dmax, ex.smin, ex.smax, ex.atoms)
+            #print("inte=", ex.dmin, ex.dmax, ex.smin, ex.smax, ex.atoms)
         elif r["rest_type"] == "stac":
             ex.dist = r["restr"]["dist_id"]
             ex.sd_dist = r["restr"]["dist_sd"]
             ex.angle = r["restr"].get("angle_id", 0.)
             ex.sd_angle = r["restr"]["angle_sd"]
-            print("stac=", ex.dist, ex.sd_dist, ex.angle, ex.sd_angle, ex.planes)
+            #print("stac=", ex.dist, ex.sd_dist, ex.angle, ex.sd_angle, ex.planes)
             
         exlists[r["rest_type"]].append(ex)
 
