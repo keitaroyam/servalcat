@@ -427,7 +427,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
         if link:
             con.link_id = link.id
             con.type = gemmi.ConnectionType.Disulf if link.id == "disulf" else gemmi.ConnectionType.Covale
-        else:
+        if cra1.atom.element.is_metal or cra2.atom.element.is_metal:
             con.type = gemmi.ConnectionType.MetalC
         con.asu = gemmi.Asu.Same if im.same_asu() else gemmi.Asu.Different
         con.partner1 = model.cra_to_atomaddress(cra1)
