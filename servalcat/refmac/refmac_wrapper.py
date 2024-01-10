@@ -69,6 +69,9 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                     y=gemmi.HydrogenChange.NoChange,
                     n=gemmi.HydrogenChange.Remove)[make.get("hydr", "a")]
     utils.model.fix_deuterium_residues(st)
+    for chain in st[0]:
+        if not chain.name:
+            chain.name = "X" # Refmac behavior. Empty chain name will cause a problem
     gemmi.setup_for_crd(st)
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
@@ -128,6 +131,21 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
     if fix_long_resnames: refmac_fixes.fix_long_resnames(st)
+
+    # for safety
+    if "_entry.id" in st.info:
+        st.info["_entry.id"] = st.info["_entry.id"].replace(" ", "")
+    date_key = "_pdbx_database_status.recvd_initial_deposition_date"
+    if date_key in st.info:
+        tmp = st.info[date_key]
+        if len(tmp) > 5 and tmp[4] == "-":
+            if len(tmp) > 8 and tmp[8] != "" and not tmp[5:7].isdigit():
+                tmp = "XX"
+        elif len(tmp) > 6 and tmp[5] == "-":
+            if not tmp[3:5].isdigit():
+                tmp = "XX"
+        st.info[date_key] = tmp
+
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -314,7 +332,7 @@ def command_line():
     args = parse_args(sys.argv[1:])
     if args.prefix:
         logger.set_file(args.prefix + ".log")
-    logger.write_header(command="refmac")
+    logger.write_header(command="refmacat")
     main(args)
 
 if __name__ == "__main__":
