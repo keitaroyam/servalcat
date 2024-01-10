@@ -472,6 +472,12 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
                       gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid):
             polymers.setdefault(p_type, []).append((chain, rs))
 
+    scoring = gemmi.AlignmentScoring()
+    scoring.match = 0
+    scoring.mismatch = -1
+    scoring.gapo = 0
+    scoring.gape = -1
+            
     al_res = []
     ncslist = ext.NcsList()
     for pt in polymers:
@@ -480,7 +486,7 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
         for i in range(len(pols)-1):
             q = [x.name for x in pols[i][1]]
             for j in range(i+1, len(pols)):
-                al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt)
+                al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt, scoring)
                 if al.match_count < min_nalign: continue
                 su = gemmi.calculate_superposition(pols[i][1], pols[j][1], pt, gemmi.SupSelect.All)
                 obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1])

@@ -1792,14 +1792,12 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
   const double b1 = x1.dist(x2);
   const double b2 = x3.dist(x4);
   const double db = b1 - b2;
-  if (std::abs(db) > ncsr_diff_cutoff)
-    return 0.;
-  const double weight = wncsr / sigma;
+  const double weight = std::abs(db) > ncsr_diff_cutoff ? 0 : wncsr / sigma;
   const double y = db * weight;
   Barron2019 robustf(alpha, y);
 
   // note that second derivative is not exact in some alpha
-  if (target != nullptr) {
+  if (target != nullptr && weight > 0) {
     gemmi::Position dydx[4];
     dydx[0] = weight * (x1 - x2) / std::max(b1, 0.02);
     dydx[1] = vdw1.same_asu() ? -dydx[0] : gemmi::Position(tr1.mat.transpose().multiply(-dydx[0]));
