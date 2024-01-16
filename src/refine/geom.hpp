@@ -390,7 +390,8 @@ struct Geometry {
     }
     void swap_atoms() {
       std::reverse(atoms.begin(), atoms.end());
-      sym_idx = -sym_idx - 1;
+      if (!same_asu()) // 0 stays 0, for ease of duplication finding
+        sym_idx = -sym_idx - 1;
     }
     bool same_asu() const {
       return (sym_idx == 0 || sym_idx == -1) && pbc_shift[0]==0 && pbc_shift[1]==0 && pbc_shift[2]==0;
@@ -676,13 +677,17 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
                if (rule.rkind == gemmi::Topo::RKind::Bond) {
                  const gemmi::Topo::Bond& t = topo.bonds[rule.index];
                  if (t.restr->esd <= 0) return;
-                 bonds.emplace_back(t.atoms[0], t.atoms[1]);
+                 if (t.atoms[0]->serial < t.atoms[1]->serial)
+                   bonds.emplace_back(t.atoms[0], t.atoms[1]);
+                 else
+                   bonds.emplace_back(t.atoms[1], t.atoms[0]);
                  bonds.back().values.emplace_back(t.restr->value, t.restr->esd,
                                                   t.restr->value_nucleus, t.restr->esd_nucleus);
                  if (!same_asu) {
-                   gemmi::NearestImage im = st.cell.find_nearest_image(t.atoms[0]->pos, t.atoms[1]->pos,
-                                                                gemmi::Asu::Different);
-                     bonds.back().set_image(im);
+                   gemmi::NearestImage im = st.cell.find_nearest_image(bonds.back().atoms[0]->pos,
+                                                                       bonds.back().atoms[1]->pos,
+                                                                       gemmi::Asu::Different);
+                   bonds.back().set_image(im);
                  }
                } else if (rule.rkind == gemmi::Topo::RKind::Angle) {
                  const gemmi::Topo::Angle& t = topo.angles[rule.index];
