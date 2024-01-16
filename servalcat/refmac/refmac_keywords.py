@@ -349,7 +349,7 @@ def read_make_params(l, r):
              else ("n" if x.lower().startswith(("liga", "n"))
                    else ("y" if x.lower().startswith(("all", "y")) else None)),
              set("0ny"), None), # no default
-            ("newl", "newligand", lambda x: x[0].lower().startswith(("c", "y", "noex")), (True, False), False),
+            ("newl", "newligand", lambda x: x.lower().startswith(("c", "y", "noex")), (True, False), False),
             ("buil", "build", lambda x: x[0].lower(), set("ny"), "n"),
             ("pept", "pept", lambda x: x[0].lower(), set("yn"), "y"),
             ("link", "link", lambda x: x[0].lower(), set("ynd0"), "y"),
