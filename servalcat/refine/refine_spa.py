@@ -202,13 +202,14 @@ def main(args):
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight,
                 refmac_keywords=refmac_keywords, unrestrained=args.jellyonly,
                 ncslist=ncslist)
-    ll = spa.LL_SPA(hkldata, st, geom.atom_pos, monlib,
+    ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
     refiner = Refine(st, geom, ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
-                     refine_h=args.refine_h)
+                     refine_h=args.refine_h,
+                     refmac_keywords=refmac_keywords)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power

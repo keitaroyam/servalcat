@@ -19,7 +19,7 @@ u_to_b = utils.model.u_to_b
 integr = sigmaa.integr
 
 class LL_Xtal:
-    def __init__(self, hkldata, centric_and_selections, free, st, atom_pos, monlib, source="xray", mott_bethe=True,
+    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all"):
         assert source in ("electron", "xray", "neutron")
         self.source = source
@@ -29,7 +29,6 @@ class LL_Xtal:
         self.centric_and_selections = centric_and_selections
         self.free = free
         self.st = st
-        self.atom_pos = atom_pos
         self.monlib = monlib
         self.d_min = hkldata.d_min_max()[0]
         self.fc_labs = ["FC0"]
@@ -138,7 +137,7 @@ class LL_Xtal:
             logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
         return ret
 
-    def calc_grad(self, refine_xyz, adp_mode, refine_occ, refine_h, specs):
+    def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs=None):
         dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
         d2ll_dab2 = numpy.empty(len(self.hkldata.df.index))
         d2ll_dab2[:] = numpy.nan
@@ -202,7 +201,7 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        self.ll = ext.LL(self.st, self.atom_pos, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
+        self.ll = ext.LL(self.st, atom_pos, self.mott_bethe, refine_xyz, adp_mode, refine_occ, refine_h)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         if self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)
@@ -222,5 +221,5 @@ class LL_Xtal:
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
-
-        self.ll.spec_correction(specs)
+        if specs is not None:
+            self.ll.spec_correction(specs)

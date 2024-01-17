@@ -194,8 +194,175 @@ def show_binstats(df, cycle_number):
     logger.writeln(lstr)
 # show_binstats()
 
+class GroupOccupancy:
+    # TODO max may not be one. should check multiplicity
+    def __init__(self, st, params):
+        self.groups = []
+        self.consts = []
+        self.ncycle = 0
+        if not params or params.get("ncycle", 0) < 1 or not params.get("groups"):
+            return
+        logger.writeln("Occupancy groups:")
+        self.atom_pos = [-1 for _ in range(st[0].count_atom_sites())]
+        count = 0
+        for igr in params["groups"]:
+            self.groups.append([[], []]) # list of [indexes, atoms]
+            n_curr = count
+            for sel in params["groups"][igr]:
+                sel_chains = sel.get("chains")
+                sel_from = sel.get("resi_from")
+                sel_to = sel.get("resi_to")
+                sel_seq = sel.get("resi")
+                sel_atom = sel.get("atom")
+                sel_alt = sel.get("alt")
+                for chain in st[0]:
+                    if sel_chains and chain.name not in sel_chains:
+                        continue
+                    flag = False
+                    for res in chain:
+                        if sel_seq and res.seqid != sel_seq:
+                            continue
+                        if sel_from and res.seqid == sel_from:
+                            flag = True
+                        if sel_from and not flag:
+                            continue
+                        for atom in res:
+                            if sel_atom and atom.name != sel_atom:
+                                continue
+                            if sel_alt and atom.altloc != sel_alt:
+                                continue
+                            self.atom_pos[atom.serial-1] = count
+                            self.groups[-1][0].append(count)
+                            self.groups[-1][1].append(atom)
+                            count += 1
+                        if sel_to and res.seqid == sel_to:
+                            flag = False
+            logger.writeln(" id= {} atoms= {}".format(igr, count - n_curr))
+
+        igr_idxes = {igr:i for i, igr in enumerate(params["groups"])}
+        self.consts = [[igr_idxes[g] for g in gids]
+                       for is_comp, gids in params["const"] if is_comp]
+        self.ncycle = params.get("ncycle", 5)
+    # __init__()
+    
+    def constraint(self, x):
+        # x: occupancy parameters
+        return numpy.array([numpy.sum(x[ids])-1 for ids in self.consts])
+        
+    def ensure_constraints(self):
+        vals = []
+        for _, atoms in self.groups:
+            occ = numpy.mean([a.occ for a in atoms])
+            vals.append(occ)
+        for idxes in self.consts:
+            sum_occ = sum(vals[i] for i in idxes)
+            for i in idxes:
+                #logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
+                vals[i] /= sum_occ
+        for occ, (_, atoms) in zip(vals, self.groups):
+            for a in atoms: a.occ = occ
+        
+    def get_x(self):
+        return numpy.array([atoms[0].occ for _, atoms in self.groups])
+
+    def set_x(self, x):
+        for p, (_, atoms) in zip(x, self.groups):
+            for a in atoms:
+                a.occ = p
+
+    def target(self, x, ll, ls, u):
+        self.set_x(x)
+        ll.update_fc()
+        c = self.constraint(x)
+        f = ll.calc_target() - numpy.dot(ls, c) + 0.5 * u * numpy.sum(c**2)
+        return f
+    
+    def grad(self, x, ll, ls, u, refine_h):
+        c = self.constraint(x)
+        ll.calc_grad(self.atom_pos, refine_xyz=False, adp_mode=0, refine_occ=True, refine_h=refine_h, specs=None)
+        #print("grad=", ll.ll.vn)
+        #print("diag=", ll.ll.am)
+        assert len(ll.ll.vn) == len(ll.ll.am)
+        vn = []
+        diag = []
+        for idxes, atoms in self.groups:
+            if not refine_h:
+                idxes = [i for i, a in zip(idxes, atoms) if not a.is_hydrogen()]
+            vn.append(numpy.sum(numpy.array(ll.ll.vn)[idxes]))
+            diag.append(numpy.sum(numpy.array(ll.ll.am)[idxes]))
+        vn, diag = numpy.array(vn), numpy.array(diag)
+        for i, idxes in enumerate(self.consts):
+            dcdx = numpy.zeros(len(self.groups))
+            dcdx[idxes] = 1.
+            vn -= (ls[i] - u * c[i]) * dcdx
+            diag += u * dcdx**2
+
+        return vn, diag
+        
+    def refine(self, ll, refine_h, alpha=1.1):
+        # Refinement of grouped occupancies using augmented Lagrangian
+        # f(x) = LL(x) - sum_j (lambda_j c_j(x)) + u/2 sum_j (c_j(x))^2
+        # with c_j(x) = 0 constraints
+        if not self.groups:
+            return
+        logger.writeln("\n== Group occupancy refinement ==")
+        self.ensure_constraints() # make sure constrained groups have the same occupancies.
+        ls = 0 * numpy.ones(len(self.consts)) # Lagrange multiplier
+        u = 10000. # penalty parameter. in Refmac 1/0.01**2
+        x0 = self.get_x()
+        #logger.writeln("  parameters: {}".format(len(x0)))
+        f0 = self.target(x0, ll, ls, u)
+        ret = []
+        for cyc in range(self.ncycle):
+            ret.append({"Ncyc": cyc+1, "f0": f0})
+            logger.writeln("occ_{}_f0= {:.4e}".format(cyc, f0))
+            vn, diag = self.grad(x0, ll, ls, u, refine_h)
+            diag[diag < 1e-6] = 1.
+            dx = -vn / diag
+            if 0:
+                ofs = open("debug.dat", "w")
+                for scale in (-1, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2):
+                    self.set_x(x0 + scale * dx)
+                    ll.update_fc()
+                    c = self.constraint(x0 + dx)
+                    f = ll.calc_target() + numpy.dot(ls, c) + 0.5 * u * numpy.sum(c**2)
+                    ofs.write("{} {}\n".format(scale, f))
+                ofs.close()
+                import scipy.optimize
+                print(scipy.optimize.line_search(f=lambda x: self.target(x, ll, ls, u),
+                                                 myfprime= lambda x: self.grad(ll, ls, u, refine_h)[0],
+                                                 xk= x0,
+                                                 pk= dx))
+                quit()
+
+            scale = 1
+            for i in range(3):
+                scale = 1/2**i
+                f1 = self.target(x0 + dx * scale, ll, ls, u)
+                logger.writeln("occ_{}_f1, {}= {:.4e}".format(cyc, i, f1))
+                if f1 < f0: break
+            else:
+                logger.writeln("WARNING: function not minimised")
+                #self.set_x(x0) # Refmac accepts it even when function increases
+            c = self.constraint(x0 + dx * scale)
+            ret[-1]["f1"] = f1
+            ret[-1]["shift_scale"] = scale
+            f0 = f1
+            x0 = x0 + dx * scale
+            ls -= u * c
+            u = alpha * u
+            ret[-1]["const_viol"] = list(c)
+            ret[-1]["lambda_new"] = list(ls)
+        self.ensure_constraints()
+        ll.update_fc()
+        f = ll.calc_target()
+        logger.writeln("final -LL= {}".format(f))
+        return ret
+
+
 class Refine:
-    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, refine_occ=False, unrestrained=False):
+    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, refine_occ=False,
+                 unrestrained=False, refmac_keywords=None):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?
@@ -209,9 +376,10 @@ class Refine:
         self.unrestrained = unrestrained
         self.refine_h = refine_h
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
+        self.group_occ = GroupOccupancy(self.st, parse_keywords(refmac_keywords).get("occu"))
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
-        assert self.n_params() > 0
+        assert self.group_occ.groups or self.n_params() > 0
     # __init__()
     
     def print_weights(self): # TODO unfinished
@@ -363,7 +531,8 @@ class Refine:
             ll = self.ll.calc_target()
             logger.writeln(" ll= {}".format(ll))
             if not target_only:
-                self.ll.calc_grad(self.refine_xyz, self.adp_mode, self.refine_occ, self.refine_h, self.geom.geom.specials)
+                self.ll.calc_grad(self.geom.atom_pos, self.refine_xyz, self.adp_mode, self.refine_occ,
+                                  self.refine_h, self.geom.geom.specials)
         else:
             ll = 0
 
@@ -462,11 +631,15 @@ class Refine:
             show_binstats(llstats["bin_stats"], 0)
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
+        occ_refine_flag = self.ll is not None and self.group_occ.groups and self.group_occ.ncycle > 0
 
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
-            is_ok, shift_scale, fval = self.run_cycle(weight=weight)
-            stats.append({"Ncyc": i+1, "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok})
+            if self.refine_xyz or self.adp_mode > 0:
+                is_ok, shift_scale, fval = self.run_cycle(weight=weight)
+                stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok})
+            if occ_refine_flag:
+                stats[-1]["occ_refine"] = self.group_occ.refine(self.ll, self.refine_h)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and not self.unrestrained:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]

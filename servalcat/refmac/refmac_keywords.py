@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat import utils
+import gemmi
 b_to_u = utils.model.b_to_u
 
 def parse_atom_spec(s, itk):
@@ -336,6 +337,56 @@ def read_ridge_params(l, r):
     return r
 # read_ridge_params()
 
+def read_occupancy_params(l, r):
+    s = l.split()
+    if not s[0].lower().startswith("occu"):
+        return r
+    ntok = len(s)
+    r.setdefault("groups", {}) # {igr: [{selection}, {selection}, ..]}
+    r.setdefault("const", []) # [[is_comp, group_ids]]
+    r.setdefault("ncycle", 0) # 0 means no refine
+    if (ntok > 4 and
+        s[1].lower().startswith("grou") and
+        s[2].lower().startswith("id")):
+        igr = s[3]
+        gr = r["groups"].setdefault(igr, [])
+        gr.append({})
+        itk = 4
+        while itk < ntok:
+            if s[itk].lower().startswith(("chai", "segm")):
+                gr[-1]["chains"] = []
+                itk += 1
+                while itk < ntok and not s[itk].lower().startswith(("resi","atom","alt")):
+                    gr[-1]["chains"].append(s[itk])
+                    itk += 1
+            elif s[itk].lower().startswith("resi"):
+                if s[itk+1].lower().startswith("from"):
+                    gr[-1]["resi_from"] = gemmi.SeqId(s[itk+2])
+                    if s[itk+3].lower().startswith("to"):
+                        gr[-1]["resi_to"] = gemmi.SeqId(s[itk+4])
+                    itk += 5
+                else:
+                    gr[-1]["resi"] = gemmi.SeqId(s[itk+1])
+                    itk += 2
+            elif s[itk].lower().startswith("atom"):
+                gr[-1]["atom"] = s[itk+1]
+                itk += 2
+            elif s[itk].lower().startswith("alt"):
+                gr[-1]["alt"] = s[itk+1]
+                itk += 2
+    elif (ntok > 4 and
+          s[1].lower().startswith("grou") and
+          s[2].lower().startswith("alts")):
+        r["const"].append((s[3].lower().startswith("comp"), s[4:]))
+    elif ntok > 1 and s[1].lower().startswith("refi"):
+        if ntok > 3 and s[2].lower().startswith("ncyc"):
+            r["ncycle"] = max(int(s[3]), r["ncycle"])
+        elif r["ncycle"] == 0:
+            r["ncycle"] = 1 # default
+
+    return r
+# read_occupancy_params()
+        
 def read_make_params(l, r):
     # TODO: hout,ribo,valu,spec,form,sdmi,segi
     s = l.split()
@@ -386,7 +437,7 @@ def parse_line(l, ret):
     ntok = len(s)
     if ntok == 0: return
     if s[0].lower().startswith("make"):
-        read_make_params(l, ret["make"])
+        read_make_params(l, ret.setdefault("make", {}))
     elif s[0].lower().startswith(("sour", "scat")):
         k = s[1].lower()
         if k.startswith("em"):
@@ -399,6 +450,7 @@ def parse_line(l, ret):
             ret["source"] = "xr"
         # TODO check mb, lamb
     elif s[0].lower().startswith("refi"): # TODO support this. Note that only valid with hklin
+        ret.setdefault("refi", {})
         itk = 1
         while itk < ntok:
             if s[itk].startswith("type"):
@@ -414,7 +466,9 @@ def parse_line(l, ret):
             pass
         # TODO read sdex, excu, dele, dmxe, dmne
     elif s[0].lower().startswith("ridg"):
-        read_ridge_params(l, ret["ridge"])
+        read_ridge_params(l, ret.setdefault("ridge", {}))
+    elif s[0].lower().startswith("occu"):
+        read_occupancy_params(l, ret.setdefault("occu", {}))
     elif s[0].lower().startswith("angl") and ntok > 1:
         ret["wangle"] = float(s[1])
     elif s[0].lower().startswith("tors") and ntok > 1:
@@ -459,6 +513,8 @@ def get_lines(lines):
             
 def parse_keywords(inputs):
     ret = {"make":{}, "ridge":{}, "refi":{}}
+    if not inputs:
+        return ret
     for l in get_lines(inputs):
         if l.split()[0].lower().startswith("end"):
             break
@@ -466,3 +522,15 @@ def parse_keywords(inputs):
     return ret
 # parse_keywords()
 
+if __name__ == "__main__":
+    import sys
+    import json
+    print("waiting for input")
+    ret = {} #{"make":{}, "ridge":{}, "refi":{}}
+    for l in get_lines(sys.stdin):
+        if l.split()[0].lower().startswith("end"):
+            break
+        parse_line(l, ret)
+    print()
+    print("Parsed:")
+    print(json.dumps(ret, indent=1))
