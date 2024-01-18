@@ -702,8 +702,8 @@ private:
 };
 
 inline void Geometry::load_topo(const gemmi::Topo& topo) {
-  auto add = [&](const gemmi::Topo::Rule& rule, bool same_asu) {
-               if (!same_asu && rule.rkind != gemmi::Topo::RKind::Bond) return; // not supported
+  auto add = [&](const gemmi::Topo::Rule& rule, gemmi::Asu asu = gemmi::Asu::Same) {
+               if (asu != gemmi::Asu::Same && rule.rkind != gemmi::Topo::RKind::Bond) return; // not supported
                if (rule.rkind == gemmi::Topo::RKind::Bond) {
                  const gemmi::Topo::Bond& t = topo.bonds[rule.index];
                  if (t.restr->esd <= 0) return;
@@ -713,10 +713,10 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
                    bonds.emplace_back(t.atoms[1], t.atoms[0]);
                  bonds.back().values.emplace_back(t.restr->value, t.restr->esd,
                                                   t.restr->value_nucleus, t.restr->esd_nucleus);
-                 if (!same_asu) {
+                 if (asu != gemmi::Asu::Same) {
                    gemmi::NearestImage im = st.cell.find_nearest_image(bonds.back().atoms[0]->pos,
                                                                        bonds.back().atoms[1]->pos,
-                                                                       gemmi::Asu::Different);
+                                                                       asu);
                    bonds.back().set_image(im);
                  }
                } else if (rule.rkind == gemmi::Topo::RKind::Angle) {
@@ -772,7 +772,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
         if (!prev.link_rules.empty())
           for (const gemmi::Topo::Rule& rule : prev.link_rules)
             if (test_link_r(rule, prev.link_id))
-              add(rule, true);
+              add(rule);
 
       // 2. monomer related
       if (!ri.monomer_rules.empty())
@@ -782,7 +782,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
               test_hydr_tors(topo.torsions[rule.index]) ||
               (ri.orig_chemcomp && ri.orig_chemcomp->group == gemmi::ChemComp::Group::Peptide &&
                topo.torsions[rule.index].restr->label.find("chi") == 0))
-            add(rule, true);
+            add(rule);
         }
 
       // collect chem_types
@@ -797,7 +797,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
   for (const gemmi::Topo::Link& extra : topo.extras)
     for (const gemmi::Topo::Rule& rule : extra.link_rules)
       if (test_link_r(rule, extra.link_id))
-        add(rule, extra.asu == gemmi::Asu::Same);
+        add(rule, extra.asu);
 }
 
 inline void Geometry::finalize_restraints() {
