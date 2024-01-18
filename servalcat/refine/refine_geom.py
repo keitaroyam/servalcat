@@ -41,7 +41,8 @@ def add_arguments(parser):
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
-    parser.add_argument('-o','--output_prefix')
+    parser.add_argument('-o','--output_prefix',
+                        help="Output prefix")
 
 # add_arguments()
 
@@ -72,7 +73,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     logger.writeln("Running {} cycles with wchir=4 wvdw=2".format(ncycle1))
     geom.calc_kwds["wchir"] = 4
     geom.calc_kwds["wvdw"] = 2
-    refiner.run_cycles(ncycle1)
+    stats1 = refiner.run_cycles(ncycle1)
 
     # re-add hydrogen may help
     topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
@@ -82,7 +83,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     logger.writeln("Running {} cycles with wchir=1 wvdw=2".format(ncycle2))
     geom.calc_kwds["wchir"] = 1
     geom.calc_kwds["wvdw"] = 2
-    refiner.run_cycles(ncycle2)
+    stats2 = refiner.run_cycles(ncycle2)
 
     # replace xyz
     pos = {cra.atom.name: cra.atom.pos.tolist() for cra in refiner.st[0].all()}
@@ -112,6 +113,12 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
         if tag in tags: row[tags.index(tag)] = val
     loop.add_row(gemmi.cif.quote_list(row))
     doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
+    with open(output_prefix + "_stats.json", "w") as ofs:
+        for stats in stats1, stats2:
+            for s in stats:
+                s["geom"] = s["geom"].to_dict()
+        json.dump([stats1, stats2], ofs, indent=2)
+        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_and_update_dictionary()
 
 def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords,
