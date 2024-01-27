@@ -50,7 +50,7 @@ def hkldata_from_asu_data(asu_data, label):
 def mtz_find_data_columns(mtz, require_sigma=True):
     # for now (+)/(-) (types K/M and L/G) are not supported
     col_types = {x.label:x.type for x in mtz.columns}
-    ret = {"J": [], "F": []}
+    ret = {"J": [], "F": [], "K": [], "G": []}
     for col in col_types:
         typ = col_types[col]
         if typ in ("J", "F"):
@@ -60,6 +60,14 @@ def mtz_find_data_columns(mtz, require_sigma=True):
                 ret[typ][-1].append(sig)
             elif require_sigma:
                 ret[typ].pop()
+        elif typ in ("K", "G") and col.endswith("(+)"):
+            # we always need sigma - right?
+            col_minus = col.replace("(+)", "(-)")
+            sig_type = {"K": "M", "G": "L"}[typ]
+            if (col_types.get(col_minus) == typ and
+                col_types.get("SIG"+col) == sig_type and
+                col_types.get("SIG"+col_minus) == sig_type):
+                ret[typ].append([col, "SIG"+col, col_minus, "SIG"+col_minus])
     return ret
 # mtz_find_data_columns()
 
@@ -472,6 +480,13 @@ class HklData:
             self.df = self.df[~is_absent]
     # remove_systematic_absences()
 
+    def merge_anomalous(self, labs, newlabs):
+        assert len(labs) == 4 # i+,sigi+,i-,sigi- for example
+        assert len(newlabs) == 2
+        # skipna=True is default, so missing value is handled nicely.
+        self.df[newlabs[0]] = self.df[[labs[0], labs[2]]].mean(axis=1)
+        self.df[newlabs[1]] = self.df[[labs[1], labs[3]]].pow(2).mean(axis=1).pow(0.5)
+
     def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None
         else: assert data is None
@@ -666,7 +681,7 @@ class HklData:
             if numpy.iscomplexobj(df[lab]):
                 mtz.add_column(lab, "F")
                 if phase_label_decorator is None:
-                    plab = ("PH"+lab).replace("FWT", "WT")
+                    plab = {"FWT": "PHWT", "DELFWT": "PHDELWT", "FAN":"PHAN"}.get(lab, "PH"+lab)
                 else:
                     plab = phase_label_decorator(lab)
                 mtz.add_column(plab, "P")

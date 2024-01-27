@@ -29,7 +29,7 @@ def add_arguments(parser):
     parser.description = 'Sigma-A parameter estimation for crystallographic data'
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
-    parser.add_argument('--labin', required=True,
+    parser.add_argument('--labin',
                         help='MTZ column for F,SIGF,FREE')
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
@@ -916,11 +916,29 @@ def smooth_params(hkldata, D_labs, smoothing):
         raise RuntimeError("unknown smoothing method: {}".format(smoothing))
 # smooth_params()
 
+def expected_F_from_int(Io, sigIo, k_ani, DFc, eps, c, S):
+    if c == 0: # acentric
+        k_num, k_den = 0.5, 0.
+    else:
+        k_num, k_den = 0., -0.5
+    to = Io / sigIo - sigIo / (c+1) / k_ani**2 / S / eps
+    tf = k_ani * numpy.abs(DFc) / numpy.sqrt(sigIo)
+    sig1 = k_ani**2 * S * eps / sigIo
+    f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+    f *= numpy.sqrt(sigIo) / k_ani
+    m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+    return f, m_proxy
+# expected_F_from_int()
+
 def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
     nmodels = len(fc_labs)
     hkldata.df["FWT"] = 0j * numpy.nan
     hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan # FOM proxy, |<F>| / <|F|>
+    has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
+    if has_ano:
+        hkldata.df["FAN"] = 0j * numpy.nan
+        ano_data = hkldata.df[["I(+)", "SIGI(+)", "I(-)", "SIGI(-)"]].to_numpy()
     Io = hkldata.df.I.to_numpy()
     sigIo = hkldata.df.SIGI.to_numpy()
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
@@ -932,24 +950,21 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     for i_bin, idxes in hkldata.binned():
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
-            if c == 0: # acentric
-                k_num, k_den = 0.5, 0.
-            else:
-                k_num, k_den = 0., -0.5
             S = hkldata.df["S"].to_numpy()[cidxes]
-            to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / eps[cidxes]
-            tf = k_ani[cidxes] * numpy.abs(DFc[cidxes]) / numpy.sqrt(sigIo[cidxes])
-            sig1 = k_ani[cidxes]**2 * S * eps[cidxes] / sigIo[cidxes]
-            f = ext.integ_J_ratio(k_num, k_den, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
-            f *= numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
+            f, m_proxy = expected_F_from_int(Io[cidxes], sigIo[cidxes], k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
             exp_ip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
-            m_proxy = ext.integ_J_ratio(k_num, k_num, True, to, tf, sig1, c+1, integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
             if c == 0:
                 hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
             else:
                 hkldata.df.loc[cidxes, "FWT"] = f * exp_ip
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
+            if has_ano:
+                f_p, _ = expected_F_from_int(ano_data[cidxes,0], ano_data[cidxes,1],
+                                             k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
+                f_m, _ = expected_F_from_int(ano_data[cidxes,2], ano_data[cidxes,3],
+                                             k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
+                hkldata.df.loc[cidxes, "FAN"] = (f_p - f_m) * exp_ip / 2j
             # remove reflections that should be hidden
             if use != "all":
                 # usually use == "work"
@@ -972,41 +987,62 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st
 # merge_models()
 
+def decide_mtz_labels(mtz, find_free=True):
+    dlabs = utils.hkl.mtz_find_data_columns(mtz)
+    logger.writeln("Finding possible options from MTZ:")
+    for typ in dlabs:
+        for labs in dlabs[typ]:
+            logger.writeln(" --labin '{}'".format(",".join(labs)))
+    if dlabs["F"]: # F is preferred for now
+        labin = dlabs["F"][0]
+    elif dlabs["J"]:
+        labin = dlabs["J"][0]
+    elif dlabs["G"]:
+        labin = dlabs["G"][0]
+    elif dlabs["K"]:
+        labin = dlabs["K"][0]
+    else:
+        raise RuntimeError("Data not found from mtz")
+    if find_free:
+        flabs = utils.hkl.mtz_find_free_columns(mtz)
+        if flabs:
+            labin += [flabs[0]]
+    logger.writeln("MTZ columns automatically selected: {}".format(labin))
+    return labin
+# decide_mtz_labels()
+
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
                   n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False):
-    if labin: assert 1 < len(labin) < 4
+    if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
-    if utils.fileio.is_mmhkl_file(hklin):
-        mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
-        col_types = {x.label:x.type for x in mtz.columns}
+    if type(hklin) is gemmi.Mtz or utils.fileio.is_mmhkl_file(hklin):
+        if type(hklin) is gemmi.Mtz:
+            mtz = hklin
+        else:
+            mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
         if not labin:
-            dlabs = utils.hkl.mtz_find_data_columns(mtz)
-            if dlabs["F"]: # F is preferred for now
-                labin = dlabs["F"][0]
-            elif dlabs["J"]:
-                labin = dlabs["J"][0]
-            else:
-                raise RuntimeError("Data not found from mtz")
-            flabs = utils.hkl.mtz_find_free_columns(mtz)
-            if flabs:
-                labin += [flabs[0]]
-            logger.writeln("MTZ columns automatically selected: {}".format(labin))
+            labin = decide_mtz_labels(mtz)
+        col_types = {x.label:x.type for x in mtz.columns}
         if labin[0] not in col_types:
             raise RuntimeError("MTZ column not found: {}".format(labin[0]))
-        if col_types[labin[0]] == "F":
-            logger.writeln("Observation type: amplitude")
-            newlabels = ["FP","SIGFP"]
-            require_types = ["F", "Q"]
-        elif col_types[labin[0]] == "J":
-            logger.writeln("Observation type: intensity")
-            newlabels = ["I","SIGI"]
-            require_types = ["J", "Q"]
-        else:
+        labs_and_types = {"F": ("amplitude", ["FP","SIGFP"], ["F", "Q"]),
+                          "J": ("intensity", ["I","SIGI"], ["J", "Q"]),
+                          "G": ("anomalous amplitude", ["F(+)","SIGF(+)", "F(-)", "SIGF(-)"], ["G", "L", "G", "L"]),
+                          "K": ("anomalous intensity", ["I(+)","SIGI(+)", "I(-)", "SIGI(-)"], ["K", "M", "K", "M"])}
+        if col_types[labin[0]] not in labs_and_types:
             raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
-        if len(labin) == 3: newlabels.append("FREE")
+        name, newlabels, require_types = labs_and_types[col_types[labin[0]]]
+        logger.writeln("Observation type: {}".format(name))
+        if len(newlabels) < len(labin): newlabels.append("FREE")
         hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+        if newlabels[0] == "F(+)":
+            hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
+            newlabels = ["FP", "SIGFP"] + newlabels[4:]
+        elif newlabels[0] == "I(+)":
+            hkldata.merge_anomalous(newlabels[:4], ["I", "SIGI"])
+            newlabels = ["I", "SIGI"] + newlabels[4:]
         sts = [utils.fileio.read_structure(f) for f in xyzins]
     else:
         assert len(xyzins) == 1
@@ -1184,11 +1220,11 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     # Apply scales
     if use_int:
         # in intensity case, we try to refine b_aniso with ML. perhaps we should do it in amplitude case also
-        hkldata.df.I /= scaling.k_overall**2
-        hkldata.df.SIGI /= scaling.k_overall**2
+        o_labs = ["I", "SIGI", "I(+)","SIGI(+)", "I(-)", "SIGI(-)"]
+        hkldata.df[hkldata.df.columns.intersection(o_labs)] /= scaling.k_overall**2
     else:
-        hkldata.df.FP /= scaling.k_overall
-        hkldata.df.SIGFP /= scaling.k_overall
+        o_labs = ["FP", "SIGFP", "F(+)","SIGF(+)", "F(-)", "SIGF(-)"]
+        hkldata.df[hkldata.df.columns.intersection(o_labs)] /= scaling.k_overall
     for lab in fc_labs: hkldata.df[lab] *= k_iso
     # total Fc
     hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
@@ -1201,6 +1237,9 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
     hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan
     hkldata.df["X"] = numpy.nan # for FOM
+    has_ano = "F(+)" in hkldata.df and "F(-)" in hkldata.df
+    if has_ano:
+        hkldata.df["FAN"] = 0j * numpy.nan
     stats_data = []
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     Ds = numpy.vstack([hkldata.df[lab].to_numpy() for lab in D_labs]).T
@@ -1236,6 +1275,9 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
             hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc_abs) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
+            if has_ano:
+                Fo_dano = (hkldata.df["F(+)"].to_numpy()[cidxes] - hkldata.df["F(-)"].to_numpy()[cidxes]) / k_ani[cidxes]
+                hkldata.df.loc[cidxes, "FAN"] = m * Fo_dano * expip / 2j
             if nrefs[c] > 0: mean_fom[c] = numpy.nanmean(m)
 
             # remove reflections that should be hidden
@@ -1288,7 +1330,7 @@ def main(args):
     n_per_bin = {"all": 500, "work": 500, "test": 50}[args.use]
     try:
         hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
-                                                                           labin=args.labin.split(","),
+                                                                           labin=args.labin.split(",") if args.labin else None,
                                                                            n_bins=args.nbins,
                                                                            free=args.free,
                                                                            xyzins=sum(args.model, []),
@@ -1342,6 +1384,8 @@ def main(args):
     else:
         labs = ["FP", "SIGFP", "FOM"]
     labs.extend(["FWT", "DELFWT", "FC", "DFC"])
+    if "FAN" in hkldata.df:
+        labs.append("FAN")
     if not args.no_solvent:
         labs.append("Fbulk")
     if "FREE" in hkldata.df:

@@ -14,7 +14,7 @@ import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.xtal.sigmaa import process_input, calculate_maps, calculate_maps_int
+from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
 b_to_u = utils.model.b_to_u
@@ -99,7 +99,15 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
 
-    if len(args.labin.split(",")) == 3: # with test flags
+    hklin = args.hklin
+    labin = args.labin
+    if labin is not None:
+        labin = labin.split(",")
+    elif utils.fileio.is_mmhkl_file(hklin):
+        hklin = utils.fileio.read_mmhkl(hklin)
+        labin = decide_mtz_labels(hklin)
+        
+    if labin and len(labin) == 3: # with test flags
         use_in_target = "work"
         if args.use_work_in_est:
             use_in_est = "work"
@@ -113,8 +121,8 @@ def main(args):
         n_per_bin = 100
 
     try:
-        hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=args.hklin,
-                                                                                 labin=args.labin.split(","),
+        hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=hklin,
+                                                                                 labin=labin,
                                                                                  n_bins=args.nbins,
                                                                                  free=args.free,
                                                                                  xyzins=[args.model],
@@ -216,6 +224,8 @@ def main(args):
     else:
         labs = ["FP", "SIGFP", "FOM"]
     labs.extend(["FWT", "DELFWT", "FC"])
+    if "FAN" in hkldata.df:
+        labs.append("FAN")
     if not args.no_solvent:
         labs.append("FCbulk")
     if "FREE" in hkldata.df:

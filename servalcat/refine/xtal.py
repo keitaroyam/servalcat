@@ -94,11 +94,13 @@ class LL_Xtal:
                                                       1. / self.hkldata.d_spacings().to_numpy()**2)
             self.hkldata.df[self.fc_labs[-1]] = Fmask * solvent_scale
         if self.is_int:
-            self.hkldata.df["I"] /= self.scaling.k_overall**2
-            self.hkldata.df["SIGI"] /= self.scaling.k_overall**2
+            o_labs = self.hkldata.df.columns.intersection(["I", "SIGI",
+                                                           "I(+)","SIGI(+)", "I(-)", "SIGI(-)"])
+            self.hkldata.df[o_labs] /= self.scaling.k_overall**2
         else:
-            self.hkldata.df["FP"] /= self.scaling.k_overall
-            self.hkldata.df["SIGFP"] /= self.scaling.k_overall
+            o_labs = self.hkldata.df.columns.intersection(["FP", "SIGFP",
+                                                           "F(+)","SIGF(+)", "F(-)", "SIGF(-)"])
+            self.hkldata.df[o_labs] /= self.scaling.k_overall
 
         for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
         self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
