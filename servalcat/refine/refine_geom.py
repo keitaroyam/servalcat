@@ -52,6 +52,29 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def add_program_info_to_dictionary(block, comp_id, program_name="servalcat", descriptor="optimization tool"):
+    tab = block.find("_pdbx_chem_comp_description_generator.", ["program_name", "program_version", "descriptor"])
+    # just overwrite version if it's there
+    for row in tab:
+        if row.str(0) == program_name and row.str(2) == descriptor:
+            row[1] = gemmi.cif.quote(servalcat.__version__)
+            return
+    loop = tab.loop
+    if not loop:
+        loop = block.init_loop("_pdbx_chem_comp_description_generator.", ["comp_id",
+                                                                          "program_name",
+                                                                          "program_version",
+                                                                          "descriptor"])
+    tags = [x[x.index(".")+1:] for x in loop.tags]
+    row = ["" for _ in range(len(tags))]
+    for tag, val in (("comp_id", comp_id),
+                     ("program_name", program_name),
+                     ("program_version", servalcat.__version__),
+                     ("descriptor", descriptor)):
+        if tag in tags: row[tags.index(tag)] = val
+    loop.add_row(gemmi.cif.quote_list(row))
+# add_program_info_to_dictionary()
+
 def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0, ncycle1=10, ncycle2=30):
     doc = gemmi.cif.read(cif_in)
     for block in doc: # this block will be reused below
@@ -62,28 +85,25 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir, # monlib is needed for ener_lib
                                                    cif_files=[cif_in],
                                                    stop_for_unknowns=True)
-    try:
-        topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
-                                                    check_hydrogen=False)
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
+    all_stats = []
+    for i_macro in 0, 1:
+        try:
+            topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=[gemmi.HydrogenChange.Remove, gemmi.HydrogenChange.ReAdd][i_macro],
+                                                        check_hydrogen=(i_macro == 1))
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
 
-    geom = Geom(st, topo, monlib, shake_rms=randomize)
-    refiner = Refine(st, geom)
-    logger.writeln("Running {} cycles with wchir=4 wvdw=2".format(ncycle1))
-    geom.calc_kwds["wchir"] = 4
-    geom.calc_kwds["wvdw"] = 2
-    stats1 = refiner.run_cycles(ncycle1)
+        geom = Geom(st, topo, monlib, shake_rms=randomize)
+        refiner = Refine(st, geom)
+        logger.writeln("Running {} cycles with wchir=4 wvdw=2 {} hydrogen".format(ncycle1, ["without","with"][i_macro]))
+        geom.calc_kwds["wchir"] = 4
+        geom.calc_kwds["wvdw"] = 2
+        all_stats.append(refiner.run_cycles(ncycle1))
 
-    # re-add hydrogen may help
-    topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAdd,
-                                  warnings=logger)
-    geom = Geom(st, topo, monlib)
-    refiner = Refine(st, geom)
-    logger.writeln("Running {} cycles with wchir=1 wvdw=2".format(ncycle2))
-    geom.calc_kwds["wchir"] = 1
-    geom.calc_kwds["wvdw"] = 2
-    stats2 = refiner.run_cycles(ncycle2)
+        logger.writeln("Running {} cycles with wchir=1 wvdw=2 {} hydrogen".format(ncycle2, ["without","with"][i_macro]))
+        geom.calc_kwds["wchir"] = 1
+        geom.calc_kwds["wvdw"] = 2
+        all_stats.append(refiner.run_cycles(ncycle2))
 
     # replace xyz
     pos = {cra.atom.name: cra.atom.pos.tolist() for cra in refiner.st[0].all()}
@@ -98,26 +118,14 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
             if row.has(i+4):
                 row[i+4] = "{:.3f}".format(p[i])
     # add description
-    loop = block.find_loop("_pdbx_chem_comp_description_generator.comp_id").get_loop()
-    if not loop:
-        loop = block.init_loop("_pdbx_chem_comp_description_generator.", ["comp_id",
-                                                                          "program_name",
-                                                                          "program_version",
-                                                                          "descriptor"])
-    tags = [x[x.index(".")+1:] for x in loop.tags]
-    row = ["" for _ in range(len(tags))]
-    for tag, val in (("comp_id", st[0][0][0].name),
-                     ("program_name", "servalcat"),
-                     ("program_version", servalcat.__version__),
-                     ("descriptor", "optimization tool")):
-        if tag in tags: row[tags.index(tag)] = val
-    loop.add_row(gemmi.cif.quote_list(row))
+    add_program_info_to_dictionary(block, st[0][0][0].name)
     doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
+    logger.writeln("Updated dictionary saved: {}".format(output_prefix + "_updated.cif"))
     with open(output_prefix + "_stats.json", "w") as ofs:
-        for stats in stats1, stats2:
+        for stats in all_stats:
             for s in stats:
                 s["geom"] = s["geom"].to_dict()
-        json.dump([stats1, stats2], ofs, indent=2)
+        json.dump(all_stats, ofs, indent=2)
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_and_update_dictionary()
 
