@@ -30,6 +30,8 @@ def add_arguments(parser):
     parser.add_argument('--auto_box_with_padding', type=float, help="Determine box size from model with specified padding")
     parser.add_argument('--no_adjust_hydrogen_distances', action='store_true', help="By default it adjusts hydrogen distances using ideal values. This option is to disable it.")
     parser.add_argument('--keep_original_output', action='store_true', help="with .org extension")
+    parser.add_argument("--keep_entities", action='store_true',
+                        help="Do not override entities")
     parser.add_argument('--prefix', help="output prefix")
     parser.add_argument("-v", "--version", action="version",
                         version=logger.versions_str())
@@ -275,6 +277,8 @@ def main(args):
             st.ncs.clear()
             st.setup_cell_images()
             # TODO set st.ncs if ncsc instructions given - but should be done outside of this function?
+        if not args.keep_entities:
+            utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         xyzout_dir = os.path.dirname(get_output_model_names(opts.get("xyzout"))[0])
         crdout = os.path.join(xyzout_dir,
                               "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid()))
