@@ -651,10 +651,10 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     i_sig = l.tags.index("_refln_F_squared_sigma")
     hkls, vals, sigs = [], [], []
     for i in range(l.length()):
-        hkl = [gemmi.cif.as_int(l.val(i, j)) for j in i_hkl]
+        hkl = [gemmi.cif.as_int(l[i, j]) for j in i_hkl]
         hkls.append(hkl)
-        vals.append(gemmi.cif.as_number(l.val(i, i_int)))
-        sigs.append(gemmi.cif.as_number(l.val(i, i_sig)))
+        vals.append(gemmi.cif.as_number(l[i, i_int]))
+        sigs.append(gemmi.cif.as_number(l[i, i_sig]))
     
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
