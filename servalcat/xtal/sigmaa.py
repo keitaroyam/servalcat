@@ -1022,38 +1022,33 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             mtz = hklin
         else:
             mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
-        if not labin:
-            labin = decide_mtz_labels(mtz)
-        col_types = {x.label:x.type for x in mtz.columns}
-        if labin[0] not in col_types:
-            raise RuntimeError("MTZ column not found: {}".format(labin[0]))
-        labs_and_types = {"F": ("amplitude", ["FP","SIGFP"], ["F", "Q"]),
-                          "J": ("intensity", ["I","SIGI"], ["J", "Q"]),
-                          "G": ("anomalous amplitude", ["F(+)","SIGF(+)", "F(-)", "SIGF(-)"], ["G", "L", "G", "L"]),
-                          "K": ("anomalous intensity", ["I(+)","SIGI(+)", "I(-)", "SIGI(-)"], ["K", "M", "K", "M"])}
-        if col_types[labin[0]] not in labs_and_types:
-            raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
-        name, newlabels, require_types = labs_and_types[col_types[labin[0]]]
-        logger.writeln("Observation type: {}".format(name))
-        if len(newlabels) < len(labin): newlabels.append("FREE")
-        hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
-        if newlabels[0].endswith("(+)"): # when anomalous
-            for i in (1, 3): # remove reflections with negative sigmas
-                good_sel = hkldata.df[newlabels[i]] > 0
-                for j in (i, i-1):
-                    hkldata.df[newlabels[j]].where(good_sel, numpy.nan, inplace=True)
-        if newlabels[0] == "F(+)":
-            hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
-            newlabels = ["FP", "SIGFP"] + newlabels[4:]
-        elif newlabels[0] == "I(+)":
-            hkldata.merge_anomalous(newlabels[:4], ["I", "SIGI"])
-            newlabels = ["I", "SIGI"] + newlabels[4:]
         sts = [utils.fileio.read_structure(f) for f in xyzins]
     else:
         assert len(xyzins) == 1
-        st, hkldata = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
+        st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
         sts = [st]
-        newlabels = hkldata.columns()
+
+    if not labin:
+        labin = decide_mtz_labels(mtz)
+    col_types = {x.label:x.type for x in mtz.columns}
+    if labin[0] not in col_types:
+        raise RuntimeError("MTZ column not found: {}".format(labin[0]))
+    labs_and_types = {"F": ("amplitude", ["FP","SIGFP"], ["F", "Q"]),
+                      "J": ("intensity", ["I","SIGI"], ["J", "Q"]),
+                      "G": ("anomalous amplitude", ["F(+)","SIGF(+)", "F(-)", "SIGF(-)"], ["G", "L", "G", "L"]),
+                      "K": ("anomalous intensity", ["I(+)","SIGI(+)", "I(-)", "SIGI(-)"], ["K", "M", "K", "M"])}
+    if col_types[labin[0]] not in labs_and_types:
+        raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
+    name, newlabels, require_types = labs_and_types[col_types[labin[0]]]
+    logger.writeln("Observation type: {}".format(name))
+    if len(newlabels) < len(labin): newlabels.append("FREE")
+    hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+    if newlabels[0] == "F(+)":
+        hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
+        newlabels = ["FP", "SIGFP"] + newlabels[4:]
+    elif newlabels[0] == "I(+)":
+        hkldata.merge_anomalous(newlabels[:4], ["I", "SIGI"])
+        newlabels = ["I", "SIGI"] + newlabels[4:]
 
     if hkldata.df.empty:
         raise RuntimeError("No data in hkl data")

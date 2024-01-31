@@ -1158,13 +1158,13 @@ def map2mtz(args):
 def sm2mm(args):
     if args.output_prefix is None:
         args.output_prefix = fileio.splitext(args.files[0])[0]
-    st, hkldata = fileio.read_small_molecule_files(args.files)
+    st, mtz = fileio.read_small_molecule_files(args.files)
     if st is not None:
         fileio.write_model(st, prefix=args.output_prefix, pdb=True, cif=True)
-    if hkldata is not None:
-        hkldata.write_mtz(args.output_prefix+".mtz",
-                          hkldata.columns(),
-                          types=dict(I="J", SIGI="Q", FP="F", SIGFP="Q"))
+    if mtz is not None:
+        mtz_out = args.output_prefix + ".mtz"
+        logger.writeln("Writing MTZ file: {}".format(mtz_out))
+        mtz.write_to_file(mtz_out)
 # sm2mm()
 
 def seq(args):
