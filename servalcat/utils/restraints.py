@@ -153,6 +153,19 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
                      use_cispeps=False, add_metal_restraints=True):
+    # Check duplicated atoms
+    bad = []
+    for chain in st[0]:
+        bad_res = []
+        for res  in chain:
+            n_uniq = len({(a.name, a.altloc) for a in res})
+            if n_uniq != len(res):
+                bad_res.append(str(res.seqid))
+        if bad_res:
+            bad.append(" chain {}: {}".format(chain.name, " ".join(bad_res)))
+    if bad:
+        raise RuntimeError("Following residues have duplicated atoms. Check your model.\n{}".format("\n".join(bad)))
+
     if add_metal_restraints:
         metalc = MetalCoordination(monlib)
         keywords, todel = metalc.setup_restraints(st)
