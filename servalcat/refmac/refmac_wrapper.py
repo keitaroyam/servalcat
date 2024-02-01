@@ -74,7 +74,9 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     for chain in st[0]:
         if not chain.name:
             chain.name = "X" # Refmac behavior. Empty chain name will cause a problem
-    gemmi.setup_for_crd(st)
+        for res in chain:
+            if res.is_water():
+                res.name = "HOH"
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
@@ -147,7 +149,10 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             if not tmp[3:5].isdigit():
                 tmp = "XX"
         st.info[date_key] = tmp
-
+    # For > 2 letter chain IDs. It invalidates _struct_asym, but Refmac does not need it actually
+    for chain in st[0]:
+        for res in chain:
+            res.subchain = chain.name
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -193,7 +198,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         # should we check metals and put MetalC?
 
     # fix entity (Refmac seems to make DNA non-polymer; as seen in 1fix)
-    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True)
+    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
     for e in st.entities:
         if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
             rspan = st[0].get_subchain(e.subchains[0])
