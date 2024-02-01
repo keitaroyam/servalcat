@@ -220,7 +220,11 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     if not hout:
         st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
-        
+    # Use short name in pdb
+    st.shorten_ccd_codes()
+    if st.shortened_ccd_codes:
+        msg = " ".join("{}->{}".format(o,n) for o,n in st.shortened_ccd_codes)
+        logger.writeln("Using shortened residue names in the output pdb file: " + msg)
     os.rename(pdbout, pdbout + suffix)
     utils.fileio.write_pdb(st, pdbout)
     if not keep_original_output:
@@ -314,10 +318,10 @@ def main(args):
     # prepare conversion for long residue names
     resn_conv = {}
     if refmac_fixes:
-        for tn in refmac_fixes.resn_conv_back:
-            n = "{:4s}".format(refmac_fixes.resn_conv_back[tn])
+        for old, new in refmac_fixes.resn_old_new:
+            n = "{:4s}".format(old)
             if len(n) > 4: n += " "
-            resn_conv[tn] = n
+            resn_conv[new] = n
     # print raw output
     for l in iter(p.stdout.readline, ""):
         for tn in resn_conv:
