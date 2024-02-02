@@ -1037,6 +1037,11 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         logger.writeln("Observation type: {}".format(name))
         if len(newlabels) < len(labin): newlabels.append("FREE")
         hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+        if newlabels[0].endswith("(+)"): # when anomalous
+            for i in (1, 3): # remove reflections with negative sigmas
+                good_sel = hkldata.df[newlabels[i]] > 0
+                for j in (i, i-1):
+                    hkldata.df[newlabels[j]].where(good_sel, numpy.nan, inplace=True)
         if newlabels[0] == "F(+)":
             hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
             newlabels = ["FP", "SIGFP"] + newlabels[4:]
