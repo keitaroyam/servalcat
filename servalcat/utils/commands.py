@@ -170,6 +170,7 @@ def add_arguments(p):
                         help="write model file with per-atom score as B values")
     parser.add_argument("--check_skew", action='store_true', help="(experimental) check bond skew to test magnification")
     parser.add_argument("--ignore_h", action='store_true', help="ignore hydrogen")
+    parser.add_argument("--selection", help="evaluate part of the model")
     parser.add_argument('-o', '--output_prefix', 
                         help="default: taken from input file")
 
@@ -763,7 +764,20 @@ def geometry(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
-    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords + keywords)
+    if args.selection:
+        sel = gemmi.Selection(args.selection)
+        atom_pos = [-1 for _ in range(st[0].count_atom_sites())]
+        n = 0
+        for chain in sel.chains(st[0]):
+            for res in sel.residues(chain):
+                for atom in sel.atoms(res):
+                    atom_pos[atom.serial-1] = n
+                    n += 1
+        logger.writeln("Using selection '{}': {} atoms out of {}".format(args.selection, n, len(atom_pos)))
+    else:
+        atom_pos = None
+
+    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords + keywords, atom_pos=atom_pos)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.geom.setup_nonbonded()
     ret = geom.show_model_stats()

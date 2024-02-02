@@ -699,6 +699,14 @@ struct Geometry {
 
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
+
+  template<typename T>
+  bool has_selected(const T &atoms) const {
+    for (const auto &a : atoms)
+      if (target.atom_pos[a->serial - 1] >= 0)
+        return true;
+    return false;
+  }
 };
 
 inline void Geometry::load_topo(const gemmi::Topo& topo) {
@@ -1158,23 +1166,31 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   double ret = 0.;
 
   for (const auto &t : bonds)
-    ret += t.calc(st.cell, use_nucleus, wbond, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(st.cell, use_nucleus, wbond, target_ptr, rep_ptr);
   for (const auto &t : angles)
-    ret += t.calc(wangle, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(wangle, target_ptr, rep_ptr);
   for (const auto &t : torsions)
-    ret += t.calc(wtors, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(wtors, target_ptr, rep_ptr);
   for (const auto &t : chirs)
-    ret += t.calc(wchir, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(wchir, target_ptr, rep_ptr);
   for (const auto &t : planes)
-    ret += t.calc(wplane, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(wplane, target_ptr, rep_ptr);
   for (const auto &t : harmonics)
     t.calc(target_ptr);
   for (const auto &t : stackings)
-    ret += t.calc(wstack, target_ptr, rep_ptr);
+    if (has_selected(t.planes[0]) || has_selected(t.planes[1]))
+      ret += t.calc(wstack, target_ptr, rep_ptr);
   for (const auto &t : vdws)
-    ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
+    if (has_selected(t.atoms))
+      ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
   for (const auto &t : ncsrs)
-    ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff);
+    if (has_selected(t.pairs[0]->atoms) || has_selected(t.pairs[1]->atoms))
+      ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff);
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
