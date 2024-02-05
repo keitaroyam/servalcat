@@ -30,7 +30,7 @@ jobs:
 #       path: monomers
 
     - name: Build wheels
-      uses: pypa/cibuildwheel@v2.16.2
+      uses: pypa/cibuildwheel@v2.16.5
       env:
         CIBW_BUILD: ${{ github.event.inputs.cibw_build }}
         CIBW_SKIP: 'cp36-* *musllinux* *_i686 *-win32'
@@ -41,7 +41,7 @@ jobs:
     - run: ls -lh wheelhouse
       shell: bash
 
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: wheels2
         path: wheelhouse/*.whl
