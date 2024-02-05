@@ -512,10 +512,11 @@ def map_peaks(args):
     st = fileio.read_structure(args.model)
     gr = read_map_and_oversample(map_in=args.map, mtz_in=args.mtz, mtz_labs=args.mtz_labels,
                                  oversample_pixel=args.oversample_pixel)
+    gr_sigma = numpy.std(gr)
     if args.abs_level is not None:
         cutoff = args.abs_level
     else:
-        cutoff = args.sigma_level * numpy.std(gr) # assuming mean(gr) = 0
+        cutoff = args.sigma_level * gr_sigma # assuming mean(gr) = 0
         
     blobs = gemmi.find_blobs_by_flood_fill(gr, cutoff,
                                            min_volume=args.min_volume, min_score=0)
@@ -577,10 +578,13 @@ def map_peaks(args):
         mpos_str = "({: 7.2f},{: 7.2f},{: 7.2f})".format(mpos.x, mpos.y, mpos.z)
         atom_name = atom.name + ("." + atom.altloc if atom.altloc != "\0" else "")
         atom_str = "{}/{}/{}".format(chain.name, res.seqid, atom_name)
+        if args.abs_level is None:
+            map_val /= gr_sigma
         lab_str = "Peak {:4d} value= {: .2e} volume= {:5.1f} pos= {} closest= {:10s} dist= {:.2f}".format(i+1, map_val, volume, mpos_str, atom_str, dist)
         for_coot.append((lab_str, (mpos.x, mpos.y, mpos.z)))
         for_df.append((map_val, volume, mpos.x, mpos.y, mpos.z, chain.name, str(res.seqid), atom_name, dist))
-    df = pandas.DataFrame(for_df, columns=["map_value", "volume", "x", "y", "z", "chain", "residue", "atom", "dist"])
+    df = pandas.DataFrame(for_df, columns=["map_value" if args.abs_level is not None else "sigma_level",
+                                           "volume", "x", "y", "z", "chain", "residue", "atom", "dist"])
     logger.writeln(df.to_string())
     with open(args.output_prefix + ".json", "w") as ofs:
         df.to_json(ofs, orient="records", indent=2)
