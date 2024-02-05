@@ -1091,7 +1091,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         if not keep_charges:
             utils.model.remove_charge(sts)
         utils.model.check_atomsf(sts, source)
-        
+
+    if newlabels[0] == "FP":
+        hkldata.remove_nonpositive(newlabels[0])
     hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
