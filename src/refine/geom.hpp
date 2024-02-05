@@ -613,7 +613,7 @@ struct Geometry {
     : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(s.first_model(), atom_pos) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
-  void setup_nonbonded(bool skip_critical_dist);
+  void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes);
   void setup_ncsr(const NcsList &ncslist);
   static gemmi::Position apply_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift, const gemmi::Position &v) {
     gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform({}) : cell.images[sym_idx-1];
@@ -970,7 +970,11 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
 }
 
 // sets up nonbonded interactions for vdwr, ADP restraints, and jellybody
-inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
+// group_idxes from occupancy group definition. 0 means not belongig to any group
+inline void Geometry::setup_nonbonded(bool skip_critical_dist,
+                                      const std::vector<int> &group_idxes) {
+  if (!group_idxes.empty())
+    assert(group_idxes.size() == target.all_atoms.size());
   if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
   // set hbtypes for hydrogen
   if (!skip_critical_dist && hbtypes.empty()) {
@@ -1015,8 +1019,16 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist) {
                                if (m.chain_idx == n_ch && m.residue_idx == n_res &&
                                    m.atom_idx == n_atom && dist_sq < 0.1*0.1)
                                  continue;
-                               // Refmac way (not dependent on altlocs)
-                               if (atom.occ + cra2.atom->occ < 1.0001)
+                               // Conditions:
+                               //  consider vdw if within the same residue and the same conformer
+                               //  also consider vdw if belonging to the same occupancy group
+                               //  otherwise, exclude if sum of occupancies <= 1
+                               if (!(&res == cra2.residue &&
+                                     gemmi::is_same_conformer(atom.altloc, cra2.atom->altloc)) &&
+                                   !(!group_idxes.empty() &&
+                                     group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
+                                     group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]) &&
+                                   (atom.occ + cra2.atom->occ < 1.0001))
                                  continue;
                                gemmi::NearestImage im = st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, m.image_idx);
                                int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());

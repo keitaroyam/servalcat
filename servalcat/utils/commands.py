@@ -783,7 +783,7 @@ def geometry(args):
 
     geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords + keywords, atom_pos=atom_pos)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
-    geom.geom.setup_nonbonded()
+    geom.setup_nonbonded(True)
     ret = geom.show_model_stats()
     
     with open(args.output_prefix + "_summary.json", "w") as ofs:

@@ -652,7 +652,8 @@ void add_refine(py::module& m) {
     .def("setup_target", &Geometry::setup_target)
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
-         py::arg("skip_critical_dist")=false)
+         py::arg("skip_critical_dist")=false,
+         py::arg("group_idxes")=std::vector<int>{})
     .def("setup_ncsr", &Geometry::setup_ncsr)
     .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
@@ -660,6 +661,7 @@ void add_refine(py::module& m) {
          py::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("spec_correction", &Geometry::spec_correction, py::arg("alpha")=1e-3, py::arg("use_rr")=true)
+    .def_readonly("bondindex", &Geometry::bondindex)
     // vdw parameters
     .def_readwrite("vdw_sdi_vdw", &Geometry::vdw_sdi_vdw)
     .def_readwrite("vdw_sdi_torsion", &Geometry::vdw_sdi_torsion)

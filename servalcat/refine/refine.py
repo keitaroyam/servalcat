@@ -65,6 +65,9 @@ class Geom:
                 if k in kwds:
                     self.calc_kwds[k] = kwds[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
+            self.group_occ = GroupOccupancy(self.st, kwds.get("occu"))
+        else:
+            self.group_occ = GroupOccupancy(self.st, None)
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
@@ -94,7 +97,7 @@ class Geom:
     # set_h_parents()
     def setup_nonbonded(self, refine_xyz):
         skip_critical_dist = not refine_xyz or self.unrestrained
-        self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist)
+        self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist, group_idxes=self.group_occ.group_idxes)
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
     def calc(self, target_only):
@@ -199,8 +202,9 @@ class GroupOccupancy:
     def __init__(self, st, params):
         self.groups = []
         self.consts = []
+        self.group_idxes = [0 for _ in range(st[0].count_atom_sites())]
         self.ncycle = 0
-        if not params or params.get("ncycle", 0) < 1 or not params.get("groups"):
+        if not params or not params.get("groups"):
             return
         logger.writeln("Occupancy groups:")
         self.atom_pos = [-1 for _ in range(st[0].count_atom_sites())]
@@ -234,6 +238,7 @@ class GroupOccupancy:
                             self.atom_pos[atom.serial-1] = count
                             self.groups[-1][0].append(count)
                             self.groups[-1][1].append(atom)
+                            self.group_idxes[atom.serial-1] = len(self.groups)
                             count += 1
                         if sel_to and res.seqid == sel_to:
                             flag = False
@@ -376,10 +381,9 @@ class Refine:
         self.unrestrained = unrestrained
         self.refine_h = refine_h
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
-        self.group_occ = GroupOccupancy(self.st, parse_keywords(refmac_keywords).get("occu"))
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
-        assert self.group_occ.groups or self.n_params() > 0
+        assert self.geom.group_occ.groups or self.n_params() > 0
     # __init__()
     
     def print_weights(self): # TODO unfinished
@@ -631,7 +635,7 @@ class Refine:
             show_binstats(llstats["bin_stats"], 0)
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
-        occ_refine_flag = self.ll is not None and self.group_occ.groups and self.group_occ.ncycle > 0
+        occ_refine_flag = self.ll is not None and self.geom.group_occ.groups and self.geom.group_occ.ncycle > 0
 
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
@@ -639,7 +643,7 @@ class Refine:
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
                 stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok})
             if occ_refine_flag:
-                stats[-1]["occ_refine"] = self.group_occ.refine(self.ll, self.refine_h)
+                stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll, self.refine_h)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             if self.refine_xyz and not self.unrestrained:
                 stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
