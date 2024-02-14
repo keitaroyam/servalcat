@@ -17,7 +17,7 @@ import sys
 import tempfile
 import hashlib
 from servalcat import utils
-from servalcat import command_line
+from servalcat.__main__ import main
 
 try:
     from urllib.request import urlretrieve
@@ -113,7 +113,7 @@ class TestSPACommands(unittest.TestCase):
     def test_fofc(self):
         sys.argv = ["", "fofc", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"], "-d", "1.9"]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("diffmap.mtz"))
         mtz = gemmi.read_mtz_file("diffmap.mtz")
         self.assertEqual(mtz.nreflections, 208238)
@@ -122,7 +122,7 @@ class TestSPACommands(unittest.TestCase):
     def test_fsc(self):
         sys.argv = ["", "fsc", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"], "--mask", data["mask"]]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("fsc.dat"))
         df = pandas.read_table("fsc.dat", comment="#", sep="\s+")
         
@@ -152,7 +152,7 @@ class TestSPACommands(unittest.TestCase):
         sys.argv = ["", "refine_spa", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"], "--mask_for_fofc", data["mask"],
                     "--trim_fofc_mtz", "--resolution", "1.9", "--ncycle", "5", "--cross_validation"]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))
         self.assertTrue(os.path.isfile("diffmap.mtz"))
@@ -167,7 +167,7 @@ class TestSPACommands(unittest.TestCase):
         self.assertEqual(len(st[0]), 4)
 
         sys.argv = ["", "util", "json2csv", "refined_fsc.json"]
-        command_line.main()
+        main()
         # TODO check result?
     # test_refine()
 
@@ -175,7 +175,7 @@ class TestSPACommands(unittest.TestCase):
         sys.argv = ["", "trim", "--maps", data["half1"], data["half2"],
                     "--model", data["pdb"], "--mask", data["mask"],
                     "--no_shift", "--noncubic", "--noncentered"]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("emd_30913_half_map_1_trimmed.mrc"))
         self.assertTrue(os.path.isfile("emd_30913_half_map_2_trimmed.mrc"))
         self.assertTrue(os.path.isfile("emd_30913_msk_1_trimmed.mrc"))
@@ -193,7 +193,7 @@ class TestSPACommands(unittest.TestCase):
     def test_localcc(self):
         sys.argv = ["", "localcc", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"], "--mask", data["mask"], "--kernel", "5"]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("ccmap_r5px_half.mrc"))
         self.assertTrue(os.path.isfile("ccmap_r5px_model.mrc"))
 
@@ -209,28 +209,28 @@ class TestSPACommands(unittest.TestCase):
     def test_commands(self): # util commands
         sys.argv = ["", "util", "symmodel", "--model", data["pdb"], "--map", data["mask"],
                     "--pg", "D2", "--biomt"]
-        command_line.main()
+        main()
 
         sys.argv = ["", "util", "expand", "--model", "pdb7dy0_asu.pdb"]
-        command_line.main()
+        main()
 
         sys.argv = ["", "util", "h_add", data["pdb"]]
-        command_line.main()
+        main()
 
         # TODO merge_models
 
         sys.argv = ["", "util", "power", "--map", data["mask"], data["half1"], data["half2"]]
-        command_line.main()
+        main()
 
         sys.argv = ["", "util", "fcalc", "--model", data["pdb"], "-d", "1.7", "--auto_box_with_padding=5"]
-        command_line.main()
+        main()
 
         sys.argv = ["", "util", "nemap", "--halfmaps", data["half1"], data["half2"],
                     "--mask", data["mask"], "--trim_mtz", "-d", "1.7"]
-        command_line.main()
+        main()
 
         sys.argv = ["", "util", "blur", "--hklin", "nemap.mtz", "-B", "100"]
-        command_line.main()
+        main()
     # test_commands()
 # class TestSPACommands
 

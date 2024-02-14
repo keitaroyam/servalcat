@@ -17,7 +17,6 @@ import sys
 import tempfile
 import hashlib
 from servalcat import utils
-from servalcat import command_line
 
 root = os.path.abspath(os.path.dirname(__file__))
 

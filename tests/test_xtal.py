@@ -19,7 +19,7 @@ import hashlib
 from servalcat import utils
 from servalcat.xtal import sigmaa
 from servalcat.xtal import french_wilson
-from servalcat import command_line
+from servalcat.__main__ import main
 
 root = os.path.abspath(os.path.dirname(__file__))
 
@@ -110,7 +110,7 @@ class XtalTests(unittest.TestCase):
         pdbin = os.path.join(root, "biotin", "biotin_talos.pdb")
         sys.argv = ["", "refine_cx", "--model", pdbin,
                     "--hklin", mtzin, "--bref", "iso_then_aniso"]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("refined_2_aniso.mtz"))
         r_factor = None
         for l in open("refined_2_aniso.log"):

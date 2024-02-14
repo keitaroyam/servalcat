@@ -21,7 +21,7 @@ urls.repository = "https://github.com/keitaroyam/servalcat"
 license = {text = "MPL-2.0"}
 
 [project.scripts]
-servalcat = "servalcat.command_line:main"
+servalcat = "servalcat.__main__:main"
 refmacat  = "servalcat.refmac.refmac_wrapper:command_line"
 
 [tool.scikit-build]

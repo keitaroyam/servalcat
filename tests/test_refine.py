@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import sys
 import test_spa
-from servalcat import command_line
+from servalcat.__main__ import main
 
 root = os.path.abspath(os.path.dirname(__file__))
 
@@ -32,7 +32,7 @@ class TestRefine(unittest.TestCase):
     def test_refine_geom(self):
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         sys.argv = ["", "refine_geom", "--model", pdbin, "--rand", "0.5"]
-        command_line.main()
+        main()
         stats = json.load(open("5e5z_refined_stats.json"))
         self.assertLess(stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"], 0.01)
         
@@ -41,7 +41,7 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_spa_norefmac", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"],
                     "--resolution", "1.9", "--ncycle", "2",]
-        command_line.main()
+        main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))
         self.assertTrue(os.path.isfile("refined_diffmap.mtz"))
