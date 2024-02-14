@@ -390,7 +390,7 @@ class FixForRefmac:
         # this function should be called separately (after preparing topology)
         self.resn_conv_back = {}
         resnames = set(st[0].get_all_residue_names())
-        # Refmac max is 3 or 4. 3 in struct_conn, and 4 in priting outliers.
+        # Refmac max is 3 or 4. 3 in struct_conn, and 4 in printing outliers.
         long_names = [x for x in resnames if len(x) > 3]
         if not long_names:
             return
