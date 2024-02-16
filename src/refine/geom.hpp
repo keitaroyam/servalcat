@@ -475,6 +475,10 @@ struct Geometry {
       }
       return ret;
     }
+    void normalize_ideal() {
+      for (auto &value : values)
+        value.value = gemmi::angle_abs_diff(value.value, 0.); // limit to [0,180]
+    }
     double calc(double waskal, GeomTarget* target, Reporting *reporting) const;
     int type = 1; // 0 or not
     std::array<gemmi::Atom*, 3> atoms;
@@ -844,9 +848,11 @@ inline void Geometry::finalize_restraints() {
     bonds.erase(bonds.begin() + (*it));
 
   // sort angles
-  for (auto& t : angles)
+  for (auto& t : angles) {
+    t.normalize_ideal();
     if (t.atoms[0]->serial > t.atoms[2]->serial)
       t.swap_atoms();
+  }
   if (angles.size() > 1) {
     std::stable_sort(angles.begin(), angles.end(),
                      [](const Angle& l, const Angle& r) { return l.sort_key() < r.sort_key(); });
