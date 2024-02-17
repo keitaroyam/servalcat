@@ -586,7 +586,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
     return ss, info
 # read_shelx_ins()
 
-def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
+def read_shelx_hkl(cell, sg, hklf, file_in=None, lines_in=None):
     assert (file_in, lines_in).count(None) == 1
     hkls, vals, sigs = [], [], []
     for l in open(file_in) if file_in else lines_in:
@@ -607,15 +607,24 @@ def read_shelx_hkl(cell, sg, file_in=None, lines_in=None):
 
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
-    ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
+    ints.merge_in_place(gemmi.DataType.Anomalous)
+    if not (ints.isign_array < 0).any(): ints.type = gemmi.DataType.Mean
     logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
-    i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
-                                                               numpy.dtype([("value", numpy.float32),
-                                                                            ("sigma", numpy.float32)]))
-    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array, i_sigi)
-    return asudata
+    mtz = ints.prepare_merged_mtz(with_nobs=False)
+    if hklf == 3:
+        conv = {"IMEAN": ("FP", "F"),
+                "SIGIMEAN": ("SIGFP", "Q"),
+                "I(+)": ("F(+)", "G"),
+                "SIGI(+)": ("SIGF(+)", "L"),
+                "I(-)": ("F(-)", "G"),
+                "SIGI(-)": ("SIGF(-)", "L"),
+                }
+        for col in mtz.columns:
+            if col.label in conv:
+                col.label, col.type = conv[col.label]
+    return mtz
 # read_shelx_hkl()
 
 def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
@@ -651,23 +660,20 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     i_sig = l.tags.index("_refln_F_squared_sigma")
     hkls, vals, sigs = [], [], []
     for i in range(l.length()):
-        hkl = [gemmi.cif.as_int(l.val(i, j)) for j in i_hkl]
+        hkl = [gemmi.cif.as_int(l[i, j]) for j in i_hkl]
         hkls.append(hkl)
-        vals.append(gemmi.cif.as_number(l.val(i, i_int)))
-        sigs.append(gemmi.cif.as_number(l.val(i, i_sig)))
+        vals.append(gemmi.cif.as_number(l[i, i_int]))
+        sigs.append(gemmi.cif.as_number(l[i, i_sig]))
     
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, hkls, vals, sigs)
-    ints.merge_in_place(gemmi.DataType.Mean) # TODO may want Anomalous (in case of X-ray)
+    ints.merge_in_place(gemmi.DataType.Anomalous)
+    if not (ints.isign_array < 0).any(): ints.type = gemmi.DataType.Mean
     logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
                                                                      numpy.mean(ints.nobs_array),
                                                                      numpy.min(ints.nobs_array)))
     logger.writeln("")
-    i_sigi = numpy.lib.recfunctions.unstructured_to_structured(numpy.vstack((ints.value_array, ints.sigma_array)).T,
-                                                               numpy.dtype([("value", numpy.float32),
-                                                                            ("sigma", numpy.float32)]))
-    asudata = gemmi.ValueSigmaAsuData(cell, sg, ints.miller_array, i_sigi)
-    return asudata, 4 # 4 for intensity
+    return ints.prepare_merged_mtz(with_nobs=False)
 # read_smcif_hkl()
     
 def read_smcif_shelx(cif_in):
@@ -679,12 +685,12 @@ def read_smcif_shelx(cif_in):
     if not hkl_str: raise RuntimeError("_shelx_hkl_file not found in {}".format(cif_in))
     
     ss, info = read_shelx_ins(lines_in=res_str.splitlines())
-    asudata = read_shelx_hkl(ss.cell, ss.find_spacegroup(), lines_in=hkl_str.splitlines())
-    return asudata, ss, info
+    mtz = read_shelx_hkl(ss.cell, ss.find_spacegroup(), info.get("hklf"), lines_in=hkl_str.splitlines())
+    return mtz, ss, info
 # read_smcif_shelx()
 
 def read_small_molecule_files(files):
-    st, asudata, hklf = None, None, None
+    st, mtz, hklf = None, None, None
     # first pass - find structure
     for filename in files:
         ext = splitext(filename)[1]
@@ -713,24 +719,16 @@ def read_small_molecule_files(files):
             b = gemmi.cif.read(filename).sole_block()
             hkl_str = b.find_value("_shelx_hkl_file")
             if hkl_str:
-                asudata = read_shelx_hkl(st.cell, st.find_spacegroup(), lines_in=hkl_str.splitlines())
+                mtz = read_shelx_hkl(st.cell, st.find_spacegroup(), hklf, lines_in=hkl_str.splitlines())
                 logger.writeln("reflection data read from: {}".format(filename))
             elif b.find_loop("_refln_index_h"):
-                asudata, hklf = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
+                mtz = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
         except ValueError: # not a cif file
             if ext == ".hkl":
-                asudata = read_shelx_hkl(st.cell, st.find_spacegroup(), file_in=filename)
+                mtz = read_shelx_hkl(st.cell, st.find_spacegroup(), hklf, file_in=filename)
                 logger.writeln("reflection data read from: {}".format(filename))
 
-    if asudata is not None:
-        if hklf is None:
-            logger.writeln("No HKLF info found. Assuming 4 (intensity)")
-            hklf = 4
-        hkldata = hkl.hkldata_from_asu_data(asudata, {3: "FP", 4: "I"}[hklf])
-    else:
-        hkldata = None
-
-    return st, hkldata
+    return st, mtz
 
 def read_sequence_file(f):
     # TODO needs improvement

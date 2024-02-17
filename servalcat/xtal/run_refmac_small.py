@@ -68,28 +68,6 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
-def write_mtz(mtz_out, asudata, hklf, blur=None):
-    data = numpy.hstack((asudata.miller_array,
-                         asudata.value_array["value"][:,numpy.newaxis],
-                         asudata.value_array["sigma"][:,numpy.newaxis]))
-    mtz = gemmi.Mtz()
-    mtz.spacegroup = asudata.spacegroup
-    mtz.cell = asudata.unit_cell
-    mtz.add_dataset('HKL_base')
-    for label in ['H', 'K', 'L']: mtz.add_column(label, 'H')
-
-    if hklf == 3:
-        mtz.add_column("F", "F")
-        mtz.add_column("SIGF", "Q")
-    else:
-        mtz.add_column("I", "J")
-        mtz.add_column("SIGI", "Q")
-
-    mtz.set_data(data)
-    if blur is not None: utils.hkl.blur_mtz(mtz, blur)
-    mtz.write_to_file(mtz_out)
-# write_mtz()
-
 def make_invert_tr(sg, cell):
     ops = sg.operations()
     coh = sg.change_of_hand_op()
@@ -98,7 +76,29 @@ def make_invert_tr(sg, cell):
     tr = cell.op_as_transform(coh)
     return new_sg, tr
 # make_invert_tr()
-    
+
+def merge_anomalous(mtz):
+    dlabs = utils.hkl.mtz_find_data_columns(mtz)
+    if dlabs["J"] or dlabs["F"]:
+        return # no need to merge
+    if not dlabs["K"] and not dlabs["G"]:
+        return # nothing can be done
+    data = mtz.array.copy()
+    for typ in ("K", "G"):
+        if dlabs[typ] and len(dlabs[typ][0]) == 4:
+            idxes = [mtz.column_with_label(x).idx for x in dlabs[typ][0]]
+            mean = numpy.nanmean(mtz.array[:,[idxes[0],idxes[2]]], axis=1)
+            sig_mean = numpy.sqrt(numpy.nanmean(mtz.array[:,[idxes[1],idxes[3]]]**2, axis=1))
+            data = numpy.hstack([data, mean.reshape(-1,1), sig_mean.reshape(-1,1)])
+            if typ == "K":
+                mtz.add_column("IMEAN", "J")
+                mtz.add_column("SIGIMEAN", "Q")
+            else:
+                mtz.add_column("FP", "F")
+                mtz.add_column("SIGFP", "Q")
+    mtz.set_data(data)
+# merge_anomalous()
+
 def main(args):
     if not args.cif and not (args.model and args.hklin):
         raise SystemExit("Give [--model and --hklin] or --cif")
@@ -112,56 +112,47 @@ def main(args):
     else:
         sg_user = None
 
-    mtz_in = "input.mtz" # always write this file as an input for Refmac
     if args.cif:
-        asudata, ss, info = utils.fileio.read_smcif_shelx(args.cif)
+        mtz, ss, info = utils.fileio.read_smcif_shelx(args.cif)
         st = utils.model.cx_to_mx(ss)
-        if sg_user:
-            if not asudata.unit_cell.is_compatible_with_spacegroup(sg_user):
-                raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
-                                                                                                                           asudata.unit_cell.parameters))
-            
-            asudata.spacegroup = sg_user
-        write_mtz(mtz_in, asudata, info.get("hklf"), args.blur)
     else:
         st = utils.fileio.read_structure(args.model)
-        sg_st = st.find_spacegroup()
         if utils.fileio.is_mmhkl_file(args.hklin): # TODO may be unmerged mtz
             mtz = utils.fileio.read_mmhkl(args.hklin)
-            if not mtz.cell.approx(st.cell, 1e-3):
-                logger.writeln(" Warning: unit cell mismatch!")
-            if sg_user:
-                if not mtz.cell.is_compatible_with_spacegroup(sg_user):
-                    raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
-                                                                                                                               mtz.cell.parameters))
-                mtz.spacegroup = sg_user
-                logger.writeln(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
-            elif mtz.spacegroup != sg_st:
-                if st.cell.is_crystal() and sg_st and sg_st.laue_str() != mtz.spacegroup.laue_str():
-                    raise RuntimeError("Crystal symmetry mismatch between model and data")
-                logger.writeln(" Warning: space group mismatch between model and mtz")
-                if sg_st and sg_st.laue_str() == mtz.spacegroup.laue_str():
-                    logger.writeln("         using space group from model")
-                    mtz.spacegroup = sg_st
-                else:
-                    logger.writeln("         using space group from mtz")
-
-            if args.hklin_labs:
-                try: mtz = utils.hkl.mtz_selected(mtz, args.hklin_labs)
-                except RuntimeError as e:
-                    raise SystemExit("Error: {}".format(e))
-            if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
-            mtz.write_to_file(mtz_in)
-            st.cell = mtz.cell
-            st.spacegroup_hm = mtz.spacegroup.xhm()
         elif args.hklin.endswith(".hkl"):
-            asudata, hklf = utils.fileio.read_smcif_hkl(args.hklin, st.cell, sg_st)
-            # TODO check consistency with model cell and sg
-            write_mtz(mtz_in, asudata, hklf, args.blur)
-            st.cell = asudata.unit_cell
-            st.spacegroup_hm = asudata.spacegroup.xhm()
+            mtz = utils.fileio.read_smcif_hkl(args.hklin, st.cell, st.find_spacegroup())
         else:
             raise SystemExit("Error: unsupported hkl file: {}".format(args.hklin))
+
+    mtz_in = "input.mtz" # always write this file as an input for Refmac
+    sg_st = st.find_spacegroup()
+    if not mtz.cell.approx(st.cell, 1e-3):
+        logger.writeln(" Warning: unit cell mismatch!")
+    if sg_user:
+        if not mtz.cell.is_compatible_with_spacegroup(sg_user):
+            raise SystemExit("Error: Specified space group {} is incompatible with the unit cell parameters {}".format(sg_user.xhm(),
+                                                                                                                       mtz.cell.parameters))
+        mtz.spacegroup = sg_user
+        logger.writeln(" Writing {} as space group {}".format(mtz_in, sg_user.xhm()))
+    elif mtz.spacegroup != sg_st:
+        if st.cell.is_crystal() and sg_st and sg_st.laue_str() != mtz.spacegroup.laue_str():
+            raise RuntimeError("Crystal symmetry mismatch between model and data")
+        logger.writeln(" Warning: space group mismatch between model and mtz")
+        if sg_st and sg_st.laue_str() == mtz.spacegroup.laue_str():
+            logger.writeln("         using space group from model")
+            mtz.spacegroup = sg_st
+        else:
+            logger.writeln("         using space group from mtz")
+
+    if args.hklin_labs:
+        try: mtz = utils.hkl.mtz_selected(mtz, args.hklin_labs)
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
+    if args.blur is not None: utils.hkl.blur_mtz(mtz, args.blur)
+    merge_anomalous(mtz)
+    mtz.write_to_file(mtz_in)
+    st.cell = mtz.cell
+    st.spacegroup_hm = mtz.spacegroup.xhm()
 
     if args.invert:
         logger.writeln("Inversion of structure is requested.")

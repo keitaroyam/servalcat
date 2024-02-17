@@ -41,10 +41,13 @@ def shake_structure(st, sigma, copy=True):
 # shake_structure()
 
 def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_names=False):
-    if clear: st.entities.clear()
+    if clear:
+        st.entities.clear()
+        st.add_entity_ids(overwrite=True) # clear entity_id so that ensure_entities() will work properly
     st.add_entity_types(overwrite_entity_type)
     st.assign_subchains(force_subchain_names)
     st.ensure_entities()
+    st.add_entity_ids()
     st.deduplicate_entities()
 # setup_entities()
 

@@ -620,12 +620,12 @@ struct Geometry {
   void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes);
   void setup_ncsr(const NcsList &ncslist);
   static gemmi::Position apply_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift, const gemmi::Position &v) {
-    gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform({}) : cell.images[sym_idx-1];
+    gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform() : cell.images[sym_idx-1];
     ft.vec += gemmi::Vec3(pbc_shift);
     return gemmi::Position(cell.orth.combine(ft).combine(cell.frac).apply(v));
   }
   static gemmi::Transform get_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift) {
-    gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform({}) : cell.images[sym_idx-1];
+    gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform() : cell.images[sym_idx-1];
     ft.vec += gemmi::Vec3(pbc_shift);
     return cell.orth.combine(ft).combine(cell.frac);
   }

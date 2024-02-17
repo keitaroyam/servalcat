@@ -74,7 +74,9 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     for chain in st[0]:
         if not chain.name:
             chain.name = "X" # Refmac behavior. Empty chain name will cause a problem
-    gemmi.setup_for_crd(st)
+        for res in chain:
+            if res.is_water():
+                res.name = "HOH"
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
@@ -147,7 +149,10 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             if not tmp[3:5].isdigit():
                 tmp = "XX"
         st.info[date_key] = tmp
-
+    # For > 2 letter chain IDs. It invalidates _struct_asym, but Refmac does not need it actually
+    for chain in st[0]:
+        for res in chain:
+            res.subchain = chain.name
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
@@ -193,7 +198,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         # should we check metals and put MetalC?
 
     # fix entity (Refmac seems to make DNA non-polymer; as seen in 1fix)
-    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True)
+    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
     for e in st.entities:
         if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
             rspan = st[0].get_subchain(e.subchains[0])
@@ -215,7 +220,11 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         logger.writeln("This structure cannot be saved as an official PDB format. Using hybrid-36. Header part may be inaccurate.")
     if not hout:
         st.remove_hydrogens() # remove hydrogen from pdb, while kept in mmcif
-        
+    # Use short name in pdb
+    st.shorten_ccd_codes()
+    if st.shortened_ccd_codes:
+        msg = " ".join("{}->{}".format(o,n) for o,n in st.shortened_ccd_codes)
+        logger.writeln("Using shortened residue names in the output pdb file: " + msg)
     os.rename(pdbout, pdbout + suffix)
     utils.fileio.write_pdb(st, pdbout)
     if not keep_original_output:
@@ -309,10 +318,10 @@ def main(args):
     # prepare conversion for long residue names
     resn_conv = {}
     if refmac_fixes:
-        for tn in refmac_fixes.resn_conv_back:
-            n = "{:4s}".format(refmac_fixes.resn_conv_back[tn])
+        for old, new in refmac_fixes.resn_old_new:
+            n = "{:4s}".format(old)
             if len(n) > 4: n += " "
-            resn_conv[tn] = n
+            resn_conv[new] = n
     # print raw output
     for l in iter(p.stdout.readline, ""):
         for tn in resn_conv:
