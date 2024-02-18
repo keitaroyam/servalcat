@@ -8,7 +8,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-11]
+        os: [ubuntu-22.04, windows-2022, macos-13, macos-14]
 
     steps:
     - uses: actions/checkout@v4
@@ -19,8 +19,7 @@ jobs:
       env:
         CIBW_BUILD: 'cp*'
         CIBW_SKIP: 'cp36* *musllinux* *_i686 *-win32'
-        CIBW_ARCHS_MACOS: x86_64 arm64
-        CIBW_TEST_SKIP: '*-macosx_arm64'
+        CIBW_TEST_SKIP: 'cp38*_arm64'
 
     - run: ls -lh wheelhouse
       shell: bash
@@ -45,8 +44,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-2022, macos-11]
+        os: [ubuntu-22.04, windows-2022, macos-13, macos-14]
         py: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        exclude:
+        # may be supported later https://github.com/actions/setup-python/issues/808
+          - os: macos-14
+            py: '3.7'
+          - os: macos-14
+            py: '3.8'
+          - os: macos-14
+            py: '3.9'
     name: ${{ matrix.os }} py${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     needs: merge
