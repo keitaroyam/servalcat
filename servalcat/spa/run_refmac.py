@@ -823,8 +823,7 @@ def main(args):
 
     # Modify output
     st, cif_ref = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix+model_format)
-    st.entities.clear()
-    st.setup_entities()
+    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
 
     if not args.no_trim:
         st.cell = maps[0][0].unit_cell
@@ -856,7 +855,9 @@ def main(args):
         logger.writeln("In this refinement, hydrogen is removed regardless of --hydrogen option")
         if use_gemmi_prep:
             xyzin = refmac_prefix + ".crd"
-            prepare_crd(utils.fileio.read_structure(refmac_prefix+model_format),
+            st_tmp = utils.fileio.read_structure(refmac_prefix+model_format)
+            utils.model.setup_entities(st_tmp, clear=True, overwrite_entity_type=True, force_subchain_names=True)
+            prepare_crd(st_tmp,
                         crdout=xyzin, ligand=[refmac_prefix+model_format],
                         make={"hydr":"n"},
                         fix_long_resnames=False) # we do not need output file - do we?
@@ -883,7 +884,9 @@ def main(args):
             logger.writeln("Cross validation: 2nd run with hydrogen")
             if use_gemmi_prep:
                 xyzin = refmac_prefix_shaken + ".crd"
-                prepare_crd(utils.fileio.read_structure(refmac_prefix_shaken+model_format),
+                st_tmp = utils.fileio.read_structure(refmac_prefix_shaken+model_format)
+                utils.model.setup_entities(st_tmp, clear=True, overwrite_entity_type=True, force_subchain_names=True)
+                prepare_crd(st_tmp,
                             crdout=xyzin, ligand=[refmac_prefix+model_format],
                             make={"hydr":"a"},
                             fix_long_resnames=False) # we do not need output file - do we?
@@ -901,8 +904,7 @@ def main(args):
         
         # Modify output
         st_sr, cif_ref_sr = utils.fileio.read_structure_from_pdb_and_mmcif(refmac_prefix_shaken+model_format)
-        st_sr.entities.clear()
-        st_sr.setup_entities()
+        utils.model.setup_entities(st_sr, clear=True, overwrite_entity_type=True, force_subchain_names=True)
         if not args.no_trim:
             st_sr.cell = maps[0][0].unit_cell
             st_sr.setup_cell_images()

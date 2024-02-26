@@ -149,10 +149,18 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
             if not tmp[3:5].isdigit():
                 tmp = "XX"
         st.info[date_key] = tmp
-    # For > 2 letter chain IDs. It invalidates _struct_asym, but Refmac does not need it actually
+    # internal chain ID
     for chain in st[0]:
         for res in chain:
-            res.subchain = chain.name
+            if len(chain.name) < 3:
+                # Change Axp (or AAxp) to A_p (or AA_p)
+                res.subchain = res.subchain[:-2] + "_" + res.subchain[-1:]
+            else:
+                # Refmac only expects '_' at 2nd or 3rd position, and can accept up to 4 letters.
+                # Using raw chain ID may change alignment result for local NCS restraints,
+                # but to avoid this we would need chain ID translation, which is too complicated.
+                # This also invalidates _struct_asym, which Refmac does not seem to care
+                res.subchain = chain.name
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
