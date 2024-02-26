@@ -245,22 +245,31 @@ class GroupOccupancy:
             logger.writeln(" id= {} atoms= {}".format(igr, count - n_curr))
 
         igr_idxes = {igr:i for i, igr in enumerate(params["groups"])}
-        self.consts = [[igr_idxes[g] for g in gids]
-                       for is_comp, gids in params["const"] if is_comp]
+        self.consts = [(is_comp, [igr_idxes[g] for g in gids])
+                       for is_comp, gids in params["const"]]
         self.ncycle = params.get("ncycle", 5)
     # __init__()
     
     def constraint(self, x):
         # x: occupancy parameters
-        return numpy.array([numpy.sum(x[ids])-1 for ids in self.consts])
+        ret = []
+        for is_comp, ids in self.consts:
+            x_sum = numpy.sum(x[ids])
+            if is_comp or x_sum > 1:
+                ret.append(x_sum - 1)
+            else:
+                ret.append(0.)
+        return numpy.array(ret)
         
     def ensure_constraints(self):
         vals = []
         for _, atoms in self.groups:
             occ = numpy.mean([a.occ for a in atoms])
             vals.append(occ)
-        for idxes in self.consts:
+        for is_comp, idxes in self.consts:
             sum_occ = sum(vals[i] for i in idxes)
+            if not is_comp and sum_occ < 1:
+                sum_occ = 1. # do nothing
             for i in idxes:
                 #logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
                 vals[i] /= sum_occ
@@ -296,10 +305,11 @@ class GroupOccupancy:
             vn.append(numpy.sum(numpy.array(ll.ll.vn)[idxes]))
             diag.append(numpy.sum(numpy.array(ll.ll.am)[idxes]))
         vn, diag = numpy.array(vn), numpy.array(diag)
-        for i, idxes in enumerate(self.consts):
+        for i, (is_comp, idxes) in enumerate(self.consts):
             dcdx = numpy.zeros(len(self.groups))
             dcdx[idxes] = 1.
-            vn -= (ls[i] - u * c[i]) * dcdx
+            if is_comp or c[i] != 0:
+                vn -= (ls[i] - u * c[i]) * dcdx
             diag += u * dcdx**2
 
         return vn, diag
