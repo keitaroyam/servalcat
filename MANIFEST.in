@@ -1,6 +1,0 @@
-recursive-include src/ *.hpp *.cpp
-graft gemmi/include/
-graft gemmi/third_party/zlib
-include gemmi/LICENSE.txt gemmi/README.md
-graft eigen/Eigen/
-include eigen/README.md eigen/COPYING*
