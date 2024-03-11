@@ -252,7 +252,7 @@ def main(args):
                            soft_edge=args.mask_soft_edge,
                            b_before_mask=args.b_before_mask,
                            no_sharpen_before_mask=args.no_sharpen_before_mask,
-                           make_hydrogen=args.hydrogen,
+                           make_hydrogen="yes", # no change needed in the model
                            monlib=monlib, 
                            blur=args.blur,
                            d_min_fsc=args.fsc_resolution,
