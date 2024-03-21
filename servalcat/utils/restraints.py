@@ -317,7 +317,7 @@ def remove_duplicated_links(connections):
 # remove_duplicated_links()
 
 def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_found=True, find_symmetry_related=True,
-                       add_only_from=None):
+                       metal_margin=1.1, add_only_from=None):
     metalc = MetalCoordination(monlib)
     """
     Identify link ids for st.connections and find new links
@@ -429,7 +429,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             if r.partner1.atom.element.is_metal == r.partner2.atom.element.is_metal: continue
             if not cra2.atom.element in onsb: continue
             max_ideal = metalc.find_max_dist(cra1, cra2)
-            if r.dist > max_ideal * 1.1: continue # tolerance should be smaller than that for other links
+            if r.dist > max_ideal * metal_margin: continue # tolerance should be smaller than that for other links
             will_be_added = add_found
             logger.writeln(" {}Metal link found: {} dist= {:.2f} max_ideal= {:.2f}".format("*" if will_be_added else " ",
                                                                                            atoms_str,
