@@ -13,6 +13,7 @@ import scipy.optimize
 import scipy.signal
 from servalcat.utils import logger
 from servalcat.utils import hkl
+from servalcat import ext
 
 def new_grid_like(gr):
     return type(gr)(gr.array*0, gr.unit_cell, gr.spacegroup)
@@ -34,8 +35,10 @@ def mask_from_model(st, radius, soft_edge=0, grid=None, unit_cell=None, spacegro
         st = st.clone()
         st.remove_hydrogens()
 
-    mask.mask_points_in_constant_radius(st[0], radius, 1.)
-    if soft_edge > 0: mask.add_soft_edge_to_mask(soft_edge)
+    if soft_edge > 0:
+        ext.soft_mask_from_model(mask, st[0], radius, soft_edge)
+    else:
+        mask.mask_points_in_constant_radius(st[0], radius, 1.)
     return mask
 # mask_from_model()
 
