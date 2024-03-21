@@ -184,10 +184,12 @@ class Geom:
 def show_binstats(df, cycle_number):
     forplot = []
     rlabs = [x for x in df if x.startswith("R")]
+    fsclabs = [x for x in df if x.startswith("fsc")]
     cclabs = [x for x in df if x.startswith("CC")]
     dlabs = [x for x in df if re.search("^D[0-9]*", x)]
     if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
     if rlabs: forplot.append(["R", rlabs])
+    if fsclabs: forplot.append(["FSC", fsclabs])
     if cclabs: forplot.append(["CC", cclabs])
     if dlabs: forplot.append(["ML parameters - D", dlabs])
     if "S" in df: forplot.append(["ML parameters - Sigma", ["S"]])

@@ -547,7 +547,7 @@ class HklData:
         return knl
     # hard_sphere_kernel()
 
-    def scale_k_and_b(self, lab_ref, lab_scaled):
+    def scale_k_and_b(self, lab_ref, lab_scaled, debug=False):
         logger.writeln("Determining k, B scales between {} and {}".format(lab_ref, lab_scaled))
         s2 = 1/self.d_spacings().to_numpy()**2
         # determine scales that minimize (|f1|-|f2|*k*e^(-b*s2/4))^2
@@ -600,7 +600,8 @@ class HklData:
                                       method="Newton-CG",
                                       x0=numpy.array([k1, B1]),
                                       )
-        logger.writeln(str(res))
+        if debug:
+            logger.writeln(str(res))
         k2, B2 = res.x
         f2tmp2 = f2 * k2 * numpy.exp(-B2*s2/4)
         r_step2 = r_factor(f1, f2tmp2)

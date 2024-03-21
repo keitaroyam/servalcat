@@ -44,7 +44,6 @@ class LL_SPA:
     def update_ml_params(self):
         # FIXME make sure D > 0
         calc_D_and_S(self.hkldata, self.lab_obs)
-        logger.writeln(self.hkldata.binned_df.to_string(columns=["d_max", "d_min", "D", "S"]))
 
     def update_fc(self):
         if self.st.ncs:
@@ -91,6 +90,8 @@ class LL_SPA:
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         # XXX in fsc object, _full is misleading - it's not full in cross validation mode
+        if "D" in self.hkldata.binned_df and "S" in self.hkldata.binned_df:
+            stats[["D", "S"]] = self.hkldata.binned_df[["D", "S"]]
         return {"bin_stats": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
 
     def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs):
