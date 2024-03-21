@@ -60,9 +60,9 @@ def mtz_find_data_columns(mtz, require_sigma=True):
                 ret[typ][-1].append(sig)
             elif require_sigma:
                 ret[typ].pop()
-        elif typ in ("K", "G") and col.endswith("(+)"):
+        elif typ in ("K", "G") and col.endswith(("(+)", "plus")):
             # we always need sigma - right?
-            col_minus = col.replace("(+)", "(-)")
+            col_minus = col.replace("(+)", "(-)") if col.endswith("(+)") else col.replace("plus", "minus")
             sig_type = {"K": "M", "G": "L"}[typ]
             if (col_types.get(col_minus) == typ and
                 col_types.get("SIG"+col) == sig_type and
