@@ -619,6 +619,10 @@ struct Geometry {
   void finalize_restraints(); // sort_restraints?
   void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes);
   void setup_ncsr(const NcsList &ncslist);
+  bool in_same_plane(const gemmi::Atom *a1, const gemmi::Atom *a2) const {
+    return std::binary_search(plane_pairs.begin(), plane_pairs.end(),
+                              a1 < a2 ? std::make_pair(a1, a2) : std::make_pair(a2, a1));
+  }
   static gemmi::Position apply_transform(const gemmi::UnitCell& cell, int sym_idx, const std::array<int, 3>& pbc_shift, const gemmi::Position &v) {
     gemmi::FTransform ft = sym_idx == 0 ? gemmi::FTransform() : cell.images[sym_idx-1];
     ft.vec += gemmi::Vec3(pbc_shift);
@@ -654,6 +658,7 @@ struct Geometry {
   std::vector<Ncsr> ncsrs;
   gemmi::Structure& st;
   gemmi::BondIndex bondindex;
+  std::vector<std::pair<const gemmi::Atom*, const gemmi::Atom*>> plane_pairs;
   const gemmi::EnerLib* ener_lib = nullptr;
   std::map<int, std::string> chemtypes;
   std::map<int, char> hbtypes; // hydrogen bond types that override ener_lib
@@ -887,6 +892,16 @@ inline void Geometry::finalize_restraints() {
       torsions.erase(torsions.begin() + (*it));
   }
 
+  // make plane_pairs
+  for (const auto &plane : planes)
+    for (int i = 0; i < plane.atoms.size(); ++i)
+      for (int j = i+1; j < plane.atoms.size(); ++j)
+        if (plane.atoms[i] < plane.atoms[j])
+          plane_pairs.emplace_back(plane.atoms[i], plane.atoms[j]);
+        else
+          plane_pairs.emplace_back(plane.atoms[j], plane.atoms[i]);
+  std::sort(plane_pairs.begin(), plane_pairs.end());
+
   // no care needed for others?
 }
 
@@ -1038,6 +1053,8 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                  continue;
                                gemmi::NearestImage im = st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, m.image_idx);
                                int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());
+                               if (d_1_2 == 3 && in_same_plane(&atom, cra2.atom))
+                                 continue;
                                if (d_1_2 > 2) {
                                  vdws.emplace_back(&atom, cra2.atom);
                                  if (!skip_critical_dist) {
