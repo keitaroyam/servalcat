@@ -103,6 +103,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     else:
         add_found = False
     
+    utils.restraints.fix_elements_in_model(monlib, st)
     utils.restraints.find_and_fix_links(st, monlib, add_found=add_found, find_symmetry_related=False, add_only_from=only_from)
     for con in st.connections:
         if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
