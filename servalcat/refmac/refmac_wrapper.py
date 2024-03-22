@@ -77,6 +77,9 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
         for res in chain:
             if res.is_water():
                 res.name = "HOH"
+            for at in res:
+                if at.occ > 1: # XXX should I check special positions?
+                    at.occ = 1.
 
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
