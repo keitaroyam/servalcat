@@ -17,6 +17,7 @@ from servalcat import utils
 from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
+from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
 def add_arguments(parser):
@@ -98,7 +99,8 @@ def main(args):
     if args.keywords or args.keyword_file:
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
-
+    params = refmac_keywords.parse_keywords(keywords)
+    
     hklin = args.hklin
     labin = args.labin
     if labin is not None:
@@ -164,7 +166,7 @@ def main(args):
                                                                 check_hydrogen=(args.hydrogen=="yes"))
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
-        keywords = metal_kws + keywords
+        refmac_keywords.update_params(params, metal_kws)
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
@@ -180,7 +182,7 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, refmac_keywords=keywords,
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),
                 ncslist=ncslist)
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
@@ -200,7 +202,7 @@ def main(args):
                      #refine_occ=True,
                      refine_h=args.refine_h,
                      unrestrained=args.unrestrained,
-                     refmac_keywords=keywords)
+                     params=params)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight)
     refiner.st.name = args.output_prefix

@@ -75,9 +75,8 @@ def parse_from_to(s, itk):
     return ret, itk
 # parse_from_to()
 
-def read_exte_line(l):
+def read_exte(s):
     # using the same variable names as used in read_extra_restraints.f
-    s = l.split()
     ret = dict(defaults={})
     if not s: return ret
     defs = ret["defaults"]
@@ -239,7 +238,7 @@ def read_exte_line(l):
         else:
             logger.writeln("WARNING: cannot parse: {}".format(l))
     return ret
-# read_exte_line()
+# read_exte()
 
 def read_ridge_params(l, r):
     s = l.split()
@@ -436,6 +435,8 @@ def parse_line(l, ret):
     s = l.split()
     ntok = len(s)
     if ntok == 0: return
+    if s[0].lower().startswith("exte"):
+        ret.setdefault("exte", []).append(read_exte(s))
     if s[0].lower().startswith("make"):
         read_make_params(l, ret.setdefault("make", {}))
     elif s[0].lower().startswith(("sour", "scat")):
@@ -511,14 +512,18 @@ def get_lines(lines):
         yield l
 # get_lines()
             
-def parse_keywords(inputs):
-    ret = {"make":{}, "ridge":{}, "refi":{}}
+def update_params(ret, inputs):
     if not inputs:
-        return ret
+        return
     for l in get_lines(inputs):
         if l.split()[0].lower().startswith("end"):
             break
         parse_line(l, ret)
+# update_keywords()
+
+def parse_keywords(inputs):
+    ret = {"make":{}, "ridge":{}, "refi":{}}
+    update_params(ret, inputs)
     return ret
 # parse_keywords()
 

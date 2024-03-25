@@ -16,7 +16,6 @@ import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
-from servalcat.refmac.refmac_keywords import parse_keywords
 from servalcat import ext
 from . import cgsolve
 u_to_b = utils.model.u_to_b
@@ -29,7 +28,7 @@ b_to_u = utils.model.b_to_u
 
 class Geom:
     def __init__(self, st, topo, monlib, adpr_w=1, shake_rms=0,
-                 refmac_keywords=None, unrestrained=False, use_nucleus=False,
+                 params=None, unrestrained=False, use_nucleus=False,
                  ncslist=None, atom_pos=None):
         self.st = st
         self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
@@ -58,14 +57,13 @@ class Geom:
             self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
-        if refmac_keywords:
-            exte.read_external_restraints(refmac_keywords, self.st, self.geom)
-            kwds = parse_keywords(refmac_keywords)
+        if params:
+            exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
             for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
-                if k in kwds:
-                    self.calc_kwds[k] = kwds[k]
-                    logger.writeln("setting geometry weight {}= {}".format(k, kwds[k]))
-            self.group_occ = GroupOccupancy(self.st, kwds.get("occu"))
+                if k in params:
+                    self.calc_kwds[k] = params[k]
+                    logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
+            self.group_occ = GroupOccupancy(self.st, params.get("occu"))
         else:
             self.group_occ = GroupOccupancy(self.st, None)
         self.geom.finalize_restraints()
@@ -379,7 +377,7 @@ class GroupOccupancy:
 
 class Refine:
     def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, refine_occ=False,
-                 unrestrained=False, refmac_keywords=None):
+                 unrestrained=False, params=None):
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?

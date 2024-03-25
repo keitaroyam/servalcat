@@ -9,7 +9,6 @@ from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
 from servalcat.utils import logger
-from servalcat.refmac.refmac_keywords import get_lines, read_exte_line
 from servalcat import ext
 
 """import line_profiler
@@ -17,7 +16,7 @@ profile = line_profiler.LineProfiler()
 import atexit
 atexit.register(profile.print_stats)
 @profile"""
-def read_external_restraints(lines, st, geom):
+def read_external_restraints(params, st, geom):
     # default or current values
     defs = dict(symall_block=False, exclude_self_block=False, type_default=2, alpha_default=1.,
                 ext_verbose=False, scale_sigma_dist=1., scale_sigma_angl=1., scale_sigma_tors=1.,
@@ -44,8 +43,7 @@ def read_external_restraints(lines, st, geom):
                cra.atom.name, cra.atom.altloc) : cra.atom for cra in st[0].all()}
 
     # TODO main chain / side chain filtering, hydrogen, dist_max_external/dist_min_external
-    for l in get_lines(lines):
-        r = read_exte_line(l)
+    for r in params:
         if not r: continue
         defs.update(r["defaults"])
         if "rest_type" not in r: continue

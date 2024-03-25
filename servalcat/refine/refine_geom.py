@@ -15,6 +15,7 @@ import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refine.refine import Geom, Refine
+from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
     group = parser.add_mutually_exclusive_group(required=True)
@@ -129,7 +130,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_and_update_dictionary()
 
-def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmac_keywords,
+def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, params,
                 find_links=False, use_ncsr=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
@@ -148,12 +149,12 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                                                             check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-    refmac_keywords = metal_kws + refmac_keywords
+    refmac_keywords.update_params(params, metal_kws)
     if use_ncsr:
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=randomize, refmac_keywords=refmac_keywords, ncslist=ncslist)
+    geom = Geom(st, topo, monlib, shake_rms=randomize, params=params, ncslist=ncslist)
     refiner = Refine(st, geom)
     stats = refiner.run_cycles(ncycle)
     refiner.st.name = output_prefix
@@ -170,6 +171,7 @@ def main(args):
     if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     decide_prefix = lambda f: utils.fileio.splitext(os.path.basename(f))[0] + "_refined"
     if args.model:
+        params = refmac_keywords.parse_keywords(keywords)
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.model)
         if args.ligand:
@@ -185,7 +187,7 @@ def main(args):
                     ncycle=args.ncycle,
                     output_prefix=args.output_prefix,
                     randomize=args.randomize,
-                    refmac_keywords=keywords,
+                    params=params,
                     find_links=args.find_links,
                     use_ncsr=args.ncsr)
     else:

@@ -16,6 +16,7 @@ from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_f
 from servalcat.spa import fofc
 from servalcat.refine import spa
 from servalcat.refine.refine import Geom, Refine
+from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
 def add_arguments(parser):
@@ -125,8 +126,8 @@ def main(args):
     args.invert_mask = False
     args.trim_fofc_mtz = args.mask_for_fofc is not None
     args.cross_validation_method = "throughout"
-    check_args(args)    
-    refmac_keywords = args.keywords + [l for f in args.keyword_file for l in open(f)]
+    check_args(args)
+    params = refmac_keywords.parse_keywords(args.keywords + [l for f in args.keyword_file for l in open(f)])
 
     st = utils.fileio.read_structure(args.model)
     try:
@@ -169,7 +170,7 @@ def main(args):
                                                             check_hydrogen=(args.hydrogen=="yes"))
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-    refmac_keywords = metal_kws + refmac_keywords
+    refmac_keywords.update_params(params, metal_kws)
     # initialize ADP
     if args.adp != "fix":
         utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
@@ -200,7 +201,7 @@ def main(args):
     else:
         ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight,
-                refmac_keywords=refmac_keywords, unrestrained=args.jellyonly,
+                params=params, unrestrained=args.jellyonly,
                 ncslist=ncslist)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
@@ -209,7 +210,7 @@ def main(args):
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                      refine_h=args.refine_h,
-                     refmac_keywords=refmac_keywords)
+                     params=params)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power

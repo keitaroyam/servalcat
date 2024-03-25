@@ -13,6 +13,7 @@ from servalcat.utils import model
 from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
+from servalcat.refmac import refmac_keywords
 from servalcat.refine.refine import Geom
 from servalcat import ext
 import os
@@ -751,6 +752,7 @@ def geometry(args):
     if args.keywords or args.keyword_file:
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
+    params = refmac_keywords.parse_keywords(keywords)
     st = fileio.read_structure(args.model)
     if args.ignore_h:
         st.remove_hydrogens()
@@ -767,6 +769,7 @@ def geometry(args):
                                                            check_hydrogen=True)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+    refmac_keywords.update_params(params, metal_keywords)
     
     if args.selection:
         sel = gemmi.Selection(args.selection)
@@ -781,7 +784,7 @@ def geometry(args):
     else:
         atom_pos = None
 
-    geom = Geom(st, topo, monlib, refmac_keywords=metal_keywords + keywords, atom_pos=atom_pos)
+    geom = Geom(st, topo, monlib, params=params, atom_pos=atom_pos)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.setup_nonbonded(True)
     ret = geom.show_model_stats()
