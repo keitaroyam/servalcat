@@ -715,12 +715,20 @@ class Refine:
         lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
                                        float_format="{:.4f}".format)
         logger.writeln(lstr)
-        self.update_meta()
+        self.update_meta(stats[-1])
         return stats
 
-    def update_meta(self):
+    def update_meta(self, stats):
         # TODO write stats. probably geom.reporting.get_summary_table should return with _refine_ls_restr.type names
-        self.st.raw_remarks = []
+        # should remove st.mod_residues?
+        self.st.helices.clear()
+        self.st.sheets.clear()
+        raw_remarks = [f'REMARK   3',
+                       f'REMARK   3 REFINEMENT.',
+                       f'REMARK   3   PROGRAM     : SERVALCAT {servalcat.__version__}',
+                       f'REMARK   3   AUTHORS     : YAMASHITA,MURSHUDOV',
+                       f'REMARK   3',
+                       ]
         si = gemmi.SoftwareItem()
         si.classification = gemmi.SoftwareItem.Classification.Refinement
         si.name = "Servalcat"
@@ -728,10 +736,21 @@ class Refine:
         si.date = servalcat.__date__
         self.st.meta.software = [si]
 
-        self.st.meta.refinement = []
-        #ri = gemmi.RefinementInfo()
-        #rr = gemmi.RefinementInfo.Restr("")
-        #ri.restr_stats.append(rr)
-        #st.meta.refinement = [ri]
-        
+        ri = gemmi.RefinementInfo()
+        if "geom" in stats:
+            restr_stats = []
+            raw_remarks.append("REMARK   3  RMS DEVIATIONS FROM IDEAL VALUES        COUNT    RMS    WEIGHT")
+            for k, n, l, pl in (("r.m.s.d.", "Bond distances, non H", "s_bond_nonh_d", "BOND LENGTHS REFINED ATOMS        (A)"),
+                                ("r.m.s.d.", "Bond angles, non H", "s_angle_nonh_d", "BOND ANGLES REFINED ATOMS   (DEGREES)")):
+                if k in stats["geom"] and n in stats["geom"][k]:
+                    rr = gemmi.RefinementInfo.Restr(l)
+                    rr.dev_ideal = stats["geom"][k].get(n)
+                    rr.count = stats["geom"]["N restraints"].get(n)
+                    # rr.weight = # mean sigma
+                    restr_stats.append(rr)
+                    raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
+            ri.restr_stats = restr_stats
+            raw_remarks.append("REMARK   3")
+        self.st.meta.refinement = [ri]
+        self.st.raw_remarks = raw_remarks
 # class Refine
