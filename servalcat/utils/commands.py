@@ -765,11 +765,10 @@ def geometry(args):
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib)
     try:
-        topo, metal_keywords = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
-                                                           check_hydrogen=True)
+        topo, _ = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                              check_hydrogen=True, params=params)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-    refmac_keywords.update_params(params, metal_keywords)
     
     if args.selection:
         sel = gemmi.Selection(args.selection)

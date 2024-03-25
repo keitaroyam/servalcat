@@ -146,11 +146,12 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                                                    params=params)
     utils.restraints.find_and_fix_links(st, monlib, add_found=find_links) # should remove unknown id here?
     try:
-        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
-                                                            check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange))
+        topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
+                                                    check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
+                                                    params=params)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
-    refmac_keywords.update_params(params, metal_kws)
+
     if use_ncsr:
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:

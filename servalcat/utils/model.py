@@ -6,9 +6,6 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
-from servalcat.utils import logger
-from servalcat.utils import restraints
-from servalcat.utils import maps
 import gemmi
 import numpy
 import pandas
@@ -23,6 +20,10 @@ gemmi.Element("X").it92.set_coefs(gemmi.Element("O").it92.get_coefs()) # treat X
 
 u_to_b = 8 * numpy.pi**2
 b_to_u = 1. / u_to_b
+
+from servalcat.utils import logger
+from servalcat.utils import restraints
+from servalcat.utils import maps
 
 def shake_structure(st, sigma, copy=True):
     print("Randomizing structure with rmsd of {}".format(sigma))

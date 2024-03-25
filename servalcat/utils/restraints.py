@@ -7,6 +7,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
+from servalcat.refmac import refmac_keywords
 from servalcat import ext
 import os
 import io
@@ -318,7 +319,7 @@ def select_restrained_torsions(monlib, include_rules, exclude_rules):
 # select_restrained_torsions()
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
-                     use_cispeps=False, add_metal_restraints=True):
+                     use_cispeps=False, add_metal_restraints=True, params=None):
     # Check duplicated atoms
     bad = []
     for chain in st[0]:
@@ -343,6 +344,10 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
             # flag non-hydrogen
             cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
             cra2.atom.calc_flag = gemmi.CalcFlag.NoHydrogen
+        if params:
+            parsed = refmac_keywords.parse_keywords(keywords).get("exte")
+            if parsed:
+                params["exte"] = params.get("exte", []) + parsed
     else:
         keywords = []
     # these checks can be done after sorting links

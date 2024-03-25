@@ -7,9 +7,9 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
-from servalcat import utils
+from servalcat.utils import model as model_util
 import gemmi
-b_to_u = utils.model.b_to_u
+b_to_u = model_util.b_to_u
 
 def parse_atom_spec(s, itk):
     # s: list of keywords
