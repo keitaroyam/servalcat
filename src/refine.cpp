@@ -678,6 +678,8 @@ void add_refine(py::module& m) {
     .def_readwrite("max_vdw_radius", &Geometry::max_vdw_radius)
     // torsion parameters
     .def_readwrite("use_hydr_tors", &Geometry::use_hydr_tors)
+    .def_readwrite("link_tors_names", &Geometry::link_tors_names)
+    .def_readwrite("mon_tors_names", &Geometry::mon_tors_names)
     // ADP restraint parameters
     .def_readwrite("adpr_max_dist", &Geometry::adpr_max_dist)
     .def_readwrite("adpr_d_power", &Geometry::adpr_d_power)

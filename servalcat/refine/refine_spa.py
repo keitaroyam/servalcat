@@ -132,7 +132,7 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     try:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                       stop_for_unknowns=True)
+                                                       stop_for_unknowns=True, params=params)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     if not args.keep_entities:

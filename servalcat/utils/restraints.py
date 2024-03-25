@@ -16,6 +16,7 @@ import random
 import numpy
 import pandas
 import json
+import fnmatch
 
 default_proton_scale = 1.13 # scale of X-proton distance to X-H(e) distance
 
@@ -72,7 +73,8 @@ def rename_cif_modification_if_necessary(doc, known_ids):
 # rename_cif_modification_if_necessary()
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False,
-                         ignore_monomer_dir=False, update_old_atom_names=True):
+                         ignore_monomer_dir=False, update_old_atom_names=True,
+                         params=None):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None and not ignore_monomer_dir:
@@ -147,6 +149,9 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
     if update_old_atom_names:
         logger.write(monlib.update_old_atom_names(st))
+
+    if params:
+        update_torsions(monlib, params.get("restr", {}).get("torsion_include", {}))
     
     return monlib
 # load_monomer_library()
@@ -163,6 +168,154 @@ def fix_elements_in_model(monlib, st):
                     logger.writeln(f"WARNING: correcting element of {st[0].get_cra(at)} to {el.name}")
                     at.element = el
 # correct_elements_in_model()
+
+def read_group(s): # can use gemmi.ChemComp.read_group when gemmi 0.6.6 is out
+    s = s.lower()
+    d = {"non-": gemmi.ChemComp.Group.NonPolymer,
+         ("pept", "l-pe"): gemmi.ChemComp.Group.Peptide,
+         "p-pe": gemmi.ChemComp.Group.PPeptide,
+         "m-pe": gemmi.ChemComp.Group.MPeptide,
+         "dna/": gemmi.ChemComp.Group.DnaRna,
+         "dna": gemmi.ChemComp.Group.Dna,
+         "rna": gemmi.ChemComp.Group.Rna,
+         "pyra": gemmi.ChemComp.Group.Pyranose,
+         "keto": gemmi.ChemComp.Group.Ketopyranose,
+         "fura": gemmi.ChemComp.Group.Furanose,
+         }
+    for x in d:
+        if s.startswith(x):
+            return d[x]
+    return gemmi.ChemComp.Group.Null
+# read_group()
+
+def update_torsions(monlib, params):
+    # take subset
+    params = [p for p in params
+              if any(x in p for x in ("tors_value", "tors_sigma", "tors_period"))]
+    if not params:
+        return
+    logger.writeln("Updating torsion targets in dictionaries")
+    for p in params:
+        if "residue" in p:
+            tors = [cc.rt.torsions for cc in monlib.monomers.values()
+                    if fnmatch.fnmatch(cc.name, p["residue"])]
+        elif "group" in p:
+            g = read_group(p["group"])
+            # should warn if g is Null
+            tors = [cc.rt.torsions for cc in monlib.monomers.values()
+                    if cc.group == g]
+        elif "link" in p:
+            tors = [ln.rt.torsions for ln in monlib.links.values()
+                    if fnmatch.fnmatch(ln.id, p["link"])]
+        else:
+            tors = []
+        if not tors:
+            continue
+        logger.writeln(f" rule = {p}")
+        for tt in tors:
+            for t in tt:
+                if fnmatch.fnmatch(t.label, p["tors_name"]):
+                    if "tors_value" in p:
+                        t.value = p["tors_value"]
+                    if "tors_sigma" in p:
+                        t.esd = p["tors_sigma"]
+                    if "tors_period" in p:
+                        t.period = p["tors_period"]
+# update_torsions()
+
+def make_torsion_rules(restr_params):
+    # Defaults
+    include_rules = [{"group": "peptide", "tors_name": "chi*"},
+                     {"link": "*", "tors_name": "omega"},
+                     {"residue": "*", "tors_name": "sp2_sp2*"},
+                     {"link": "*", "tors_name": "sp2_sp2*"},
+                     ]
+    exclude_rules = []
+
+    # Override include/exclude rules
+    for i, name in enumerate(("torsion_include", "torsion_exclude")):
+        rules = (include_rules, exclude_rules)[i]
+        for p in restr_params.get(name, []):
+            r = {}
+            if p["flag"]:
+                for k in "residue", "group", "link":
+                    if k in p:
+                        r[k] = p[k]
+                if r and "tors_name" in p:
+                    r["tors_name"] = p["tors_name"]
+                    rules.append(r)
+            else:
+                rules.clear()
+
+    # How to tell about hydrogen?
+    logger.writeln("Torsion angle rules:")
+    for l, rr in (("include", include_rules), ("exclude", exclude_rules)):
+        logger.writeln(f" {l}:")
+        if not rr:
+            logger.writeln(f"  none")
+        for r in rr:
+            logger.writeln(f"  {r}")
+
+    return include_rules, exclude_rules
+# make_torsion_rules())
+
+def select_restrained_torsions(monlib, include_rules, exclude_rules):
+    ret = {"monomer": {}, "link": {}}
+    
+    # Collect monomer/link related torsions
+    all_tors = {"mon": {}, "link": {}}
+    groups = {}
+    for mon_id in monlib.monomers:
+        mon = monlib.monomers[mon_id]
+        groups.setdefault(mon.group, []).append(mon_id)
+        all_tors["mon"][mon_id] = [x.label for x in mon.rt.torsions]
+    for mod_id in monlib.modifications:
+        mod = monlib.modifications[mod_id]
+        tors = [x.label for x in mod.rt.torsions if chr(x.id1.comp) in ("a", "c")] # don't need delete
+        if not tors: continue
+        gr = read_group(mod.group_id)
+        if mod.comp_id and mod.comp_id in all_tors["mon"]:
+            all_tors["mon"][mod.comp_id].extend(tors)
+        elif not mod.comp_id and gr in groups:
+            for mon_id in groups[gr]:
+                all_tors["mon"][mon_id].extend(tors)
+    for lnk_id in monlib.links:
+        lnk = monlib.links[lnk_id]
+        if lnk.rt.torsions:
+            all_tors["link"][lnk_id] = [x.label for x in lnk.rt.torsions]
+    for k in all_tors:
+        for kk in all_tors[k]:
+            all_tors[k][kk] = set(all_tors[k][kk])
+            
+    # Apply include/exclude rule
+    for mon in all_tors["mon"]:
+        match_f = lambda r: ("tors_name" in r and
+                             ("residue" in r and fnmatch.fnmatch(mon, r["residue"]) or
+                              mon in groups.get(read_group(r.get("group", "")), [])))
+        use_tors = []
+        for r in include_rules:
+            if match_f(r):
+                use_tors.extend(x for x in all_tors["mon"][mon] if fnmatch.fnmatch(x, r["tors_name"]))
+        for r in exclude_rules:
+            if match_f(r):
+                use_tors = [x for x in use_tors if not fnmatch.fnmatch(x, r["tors_name"])]
+        if use_tors:
+            ret["monomer"][mon] = sorted(use_tors)
+    for lnk in all_tors["link"]:
+        match_f = lambda r: ("tors_name" in r and
+                             "link" in r and fnmatch.fnmatch(lnk, r["link"]))
+        use_tors = []
+        for r in include_rules:
+            if match_f(r):
+                use_tors.extend(x for x in all_tors["link"][lnk] if fnmatch.fnmatch(x, r["tors_name"]))
+        for r in exclude_rules:
+            if match_f(r):
+                use_tors = [x for x in use_tors if not fnmatch.fnmatch(x, r["tors_name"])]
+        if use_tors:
+            ret["link"][lnk] = sorted(use_tors)
+
+    return ret
+# select_restrained_torsions()
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
                      use_cispeps=False, add_metal_restraints=True):

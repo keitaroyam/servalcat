@@ -153,7 +153,7 @@ def main(args):
     else:
         try:
             monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                           stop_for_unknowns=True)
+                                                           stop_for_unknowns=True, params=params)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)

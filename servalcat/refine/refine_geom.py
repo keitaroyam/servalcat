@@ -142,7 +142,8 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
 
     monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,
                                                    cif_files=cif_files,
-                                                   stop_for_unknowns=True)
+                                                   stop_for_unknowns=True,
+                                                   params=params)
     utils.restraints.find_and_fix_links(st, monlib, add_found=find_links) # should remove unknown id here?
     try:
         topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change,

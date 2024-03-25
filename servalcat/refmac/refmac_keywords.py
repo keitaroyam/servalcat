@@ -385,7 +385,87 @@ def read_occupancy_params(l, r):
 
     return r
 # read_occupancy_params()
-        
+
+def read_restr_params(l, r):
+    s = l.split()
+
+    def read_tors_params(itk):
+        ret = {"flag": True}
+        if s[itk].lower().startswith("none"): # remove all
+            ret["flag"] = False
+            itk += 1
+        elif s[itk].lower().startswith("resi"):
+            ret["residue"] = s[itk+1]
+            itk += 2
+        elif s[itk].lower().startswith("grou"):
+            ret["group"] = s[itk+1] # group_name_tors_restr_o
+            itk += 2
+        elif s[itk].lower().startswith("link"):
+            ret["link"] = s[itk+1] #link_name_tors_restr_o
+            itk += 2
+        else:
+            pass # raise error?
+        while itk < len(s):
+            if s[itk].lower().startswith("name"):
+                itk += 1
+                ret["tors_name"] = s[itk] # RES_NAME_TORS_NAME_O
+            elif s[itk].lower().startswith("valu"):
+                itk += 1
+                ret["tors_value"] = float(s[itk]) # RES_NAME_TORS_VALUE_O
+            elif s[itk].lower().startswith("sigm"):
+                itk += 1
+                ret["tors_sigma"] = float(s[itk]) # RES_NAME_TORS_SIGMA_O
+            elif s[itk].lower().startswith("peri"):
+                itk += 1
+                ret["tors_period"] = int(s[itk]) # RES_NAME_TORS_PERIOD_O
+            itk += 1
+        return ret, itk
+    # read_tors_params()
+    
+    if not s[0].lower().startswith("rest"):
+        return r
+    if s[1].lower().startswith("excl"):
+        # restr_params.f90 subroutine exclude_restraints
+        #r["exclude"] = True
+        pass
+    elif s[1].lower().startswith("conf"): # not implemented in Refmac
+        pass
+    elif s[1].lower().startswith(("bp", "pair", "base")):
+        if s[2].lower().startswith("dist"):
+            r["plane_dist"] = True
+        else:
+            r["basepair"] = True
+            # TODO read dnarna_params.txt
+    elif s[1].lower().startswith("tors") and len(s) > 2:
+        itk = 2
+        if s[itk].lower().startswith("hydr"):
+            itk += 1
+            if s[itk].lower().startswith("incl"):
+                itk += 1
+                r["htors_restraint"] = True
+                if s[itk].lower().startswith("all"): # this is servalcat default for now
+                    r["htors_restraint_type"] = "all"
+                elif s[itk].lower().startswith("sele"):
+                    r["htors_restraint_type"] = "sele"
+                    r["htors_restraint_list"] = s[itk+1:]
+            else:
+                itk += 1
+                r["htors_restraint"] = False
+        elif s[itk].lower().startswith("fbas"):
+            pass # set user_basepair_file
+        elif s[itk].lower().startswith("incl"):
+            tmp, itk = read_tors_params(itk+1)
+            r.setdefault("torsion_include", []).append(tmp)
+        elif s[itk].lower().startswith("excl"):
+            # Should warn if value/sigma/period given?
+            tmp, itk = read_tors_params(itk+1)
+            r.setdefault("torsion_exclude", []).append(tmp)
+    elif s[1].lower().startswith("resi"):
+        pass
+    elif s[1].lower().startswith("chir"):
+        pass
+# read_restr_params()
+
 def read_make_params(l, r):
     # TODO: hout,ribo,valu,spec,form,sdmi,segi
     s = l.split()
@@ -437,7 +517,7 @@ def parse_line(l, ret):
     if ntok == 0: return
     if s[0].lower().startswith("exte"):
         ret.setdefault("exte", []).append(read_exte(s))
-    if s[0].lower().startswith("make"):
+    elif s[0].lower().startswith("make"):
         read_make_params(l, ret.setdefault("make", {}))
     elif s[0].lower().startswith(("sour", "scat")):
         k = s[1].lower()
@@ -470,6 +550,8 @@ def parse_line(l, ret):
         read_ridge_params(l, ret.setdefault("ridge", {}))
     elif s[0].lower().startswith("occu"):
         read_occupancy_params(l, ret.setdefault("occu", {}))
+    elif s[0].lower().startswith("rest"):
+        read_restr_params(l, ret.setdefault("restr", {}))
     elif s[0].lower().startswith("angl") and ntok > 1:
         ret["wangle"] = float(s[1])
     elif s[0].lower().startswith("tors") and ntok > 1:

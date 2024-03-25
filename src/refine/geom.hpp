@@ -685,6 +685,8 @@ struct Geometry {
 
   // torsion
   bool use_hydr_tors = true;
+  std::map<std::string, std::vector<std::string>> link_tors_names;
+  std::map<std::string, std::vector<std::string>> mon_tors_names;
 
   // ADP restraints
   float adpr_max_dist = 4.;
@@ -768,18 +770,17 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
   auto test_hydr_tors = [&](const gemmi::Topo::Torsion &t) {
     return use_hydr_tors && (t.atoms[0]->is_hydrogen() || t.atoms[3]->is_hydrogen());
   };
-  auto test_link_r = [&topo,&test_hydr_tors](const gemmi::Topo::Rule& rule, const std::string& link_id) {
+  auto test_r = [&topo,&test_hydr_tors](const gemmi::Topo::Rule& rule, const std::string& id,
+                                         const std::map<std::string, std::vector<std::string>> &tors_names) {
                        if (rule.rkind != gemmi::Topo::RKind::Torsion)
                          return true;
                        const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
-                       if (t.restr->label.find("sp2_sp2") == 0)
-                         return true;
                        if (test_hydr_tors(t))
                            return true;
-                       return ((link_id == "TRANS"   || link_id != "CIS"  ||
-                                link_id == "PTRANS"  || link_id != "PCIS" ||
-                                link_id == "NMTRANS" || link_id != "NMCIS") &&
-                               t.restr->label == "omega");
+                       const auto it = tors_names.find(id);
+                       if (it == tors_names.end())
+                         return false;
+                       return std::find(it->second.begin(), it->second.end(), t.restr->label) != it->second.end();
                      };
 
   for (const gemmi::Topo::ChainInfo& chain_info : topo.chain_infos)
@@ -788,17 +789,13 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
       for (const gemmi::Topo::Link& prev : ri.prev)
         if (!prev.link_rules.empty())
           for (const gemmi::Topo::Rule& rule : prev.link_rules)
-            if (test_link_r(rule, prev.link_id))
+            if (test_r(rule, prev.link_id, link_tors_names))
               add(rule);
 
       // 2. monomer related
       if (!ri.monomer_rules.empty())
         for (const gemmi::Topo::Rule& rule : ri.monomer_rules) {
-          if (rule.rkind != gemmi::Topo::RKind::Torsion ||
-              topo.torsions[rule.index].restr->label.find("sp2_sp2") == 0 ||
-              test_hydr_tors(topo.torsions[rule.index]) ||
-              (ri.orig_chemcomp && ri.orig_chemcomp->group == gemmi::ChemComp::Group::Peptide &&
-               topo.torsions[rule.index].restr->label.find("chi") == 0))
+          if (test_r(rule, ri.orig_chemcomp->name, mon_tors_names))
             add(rule);
         }
 
@@ -813,7 +810,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
 
   for (const gemmi::Topo::Link& extra : topo.extras)
     for (const gemmi::Topo::Rule& rule : extra.link_rules)
-      if (test_link_r(rule, extra.link_id))
+      if (test_r(rule, extra.link_id, link_tors_names))
         add(rule, extra.asu);
 }
 

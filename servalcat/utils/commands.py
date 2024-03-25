@@ -758,7 +758,7 @@ def geometry(args):
         st.remove_hydrogens()
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                 stop_for_unknowns=True)
+                                                 stop_for_unknowns=True, params=params)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 

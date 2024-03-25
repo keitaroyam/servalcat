@@ -52,9 +52,6 @@ class Geom:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
             utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
-        if not self.unrestrained:
-            self.geom.load_topo(topo)
-            self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if params:
@@ -63,9 +60,16 @@ class Geom:
                 if k in params:
                     self.calc_kwds[k] = params[k]
                     logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
+            inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
+            rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
+            self.geom.mon_tors_names = rtors["monomer"]
+            self.geom.link_tors_names = rtors["link"]
             self.group_occ = GroupOccupancy(self.st, params.get("occu"))
         else:
             self.group_occ = GroupOccupancy(self.st, None)
+        if not self.unrestrained:
+            self.geom.load_topo(topo)
+            self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
