@@ -59,6 +59,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float,
                         help="refinement weight (default: auto)")
+    parser.add_argument('--no_weight_adjust', action='store_true', 
+                        help='Do not adjust weight during refinement')
     parser.add_argument('--ncsr', action='store_true', 
                         help='Use local NCS restraints')
     parser.add_argument('--adpr_weight', type=float, default=1.,
@@ -206,7 +208,8 @@ def main(args):
                      unrestrained=args.unrestrained,
                      params=params)
 
-    stats = refiner.run_cycles(args.ncycle, weight=args.weight)
+    stats = refiner.run_cycles(args.ncycle, weight=args.weight,
+                               weight_adjust=not args.no_weight_adjust)
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     with open(args.output_prefix + "_stats.json", "w") as ofs:

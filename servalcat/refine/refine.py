@@ -631,7 +631,7 @@ class Refine:
 
         return ret, shift_scale, f1
 
-    def run_cycles(self, ncycles, weight=1, debug=False):
+    def run_cycles(self, ncycles, weight=1, weight_adjust=False, debug=False):
         self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
@@ -653,9 +653,11 @@ class Refine:
 
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
+            logger.writeln(f" weight = {weight:.4e}")
             if self.refine_xyz or self.adp_mode > 0:
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
-                stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok})
+                stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok,
+                              "weight": weight})
             if occ_refine_flag:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll, self.refine_h)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
@@ -674,6 +676,17 @@ class Refine:
                 show_binstats(llstats["bin_stats"], i+1)
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
+            if (weight_adjust and self.refine_xyz and not self.unrestrained and self.ll is not None and
+                len(stats) > 2):
+                rmsz = stats[-1]["geom"]["r.m.s.Z"]["Bond distances, non H"]
+                rmsz0 = stats[-2]["geom"]["r.m.s.Z"]["Bond distances, non H"]
+                if rmsz > 1 and rmsz > rmsz0:
+                    weight /= 1.1
+                elif rmsz < 0.5 and rmsz0 < 0.5 and rmsz < rmsz0:
+                    weight *= 1.3
+                elif rmsz > 1.5 * rmsz0:
+                    weight /= 1.1
+                
             logger.writeln("")
 
         # Make table

@@ -87,6 +87,8 @@ def add_arguments(parser):
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float,
                         help="refinement weight. default: automatic")
+    parser.add_argument('--no_weight_adjust', action='store_true', 
+                        help='Do not adjust weight during refinement')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight in B (default: %(default)f)")
     parser.add_argument('--ncsr', action='store_true', 
@@ -226,7 +228,8 @@ def main(args):
     #for cra in st[0].all():
     #    cra.atom.pos += gemmi.Position(0.3,0,0)
 
-    stats = refiner.run_cycles(args.ncycle, weight=args.weight)
+    stats = refiner.run_cycles(args.ncycle, weight=args.weight,
+                               weight_adjust=not args.no_weight_adjust)
     if not args.hklin and not args.no_trim:
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()
