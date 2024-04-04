@@ -57,6 +57,7 @@ def add_arguments(parser):
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
+    parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
     parser.add_argument('--jellybody', action='store_true',
                         help="Use jelly body restraints")
     parser.add_argument('--jellybody_params', nargs=2, type=float,
@@ -231,7 +232,7 @@ def main(args):
         refiner.st.setup_cell_images()
 
     refiner.st.name = args.output_prefix
-    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True)
+    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
         for s in stats:
             if "geom" in s: s["geom"] = s["geom"].to_dict()
@@ -245,7 +246,7 @@ def main(args):
     st_expanded = refiner.st.clone()
     if not all(op.given for op in st.ncs):
         utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True)
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True, hout=args.hout)
 
     # Calc FSC
     mask = utils.fileio.read_ccp4_map(args.mask)[0] if args.mask else None

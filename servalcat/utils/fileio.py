@@ -126,7 +126,10 @@ def write_pdb(st, pdb_out):
     st.write_pdb(pdb_out, use_linkr=True)
 # write_pdb()
 
-def write_model(st, prefix=None, file_name=None, pdb=False, cif=False, cif_ref=None):
+def write_model(st, prefix=None, file_name=None, pdb=False, cif=False, cif_ref=None, hout=True):
+    if not hout and st[0].has_hydrogen():
+        st = st.clone()
+        st.remove_hydrogens()
     if file_name:
         if file_name.endswith("cif"):
             write_mmcif(st, file_name, cif_ref)
