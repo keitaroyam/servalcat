@@ -746,7 +746,7 @@ class Refine:
                     rr = gemmi.RefinementInfo.Restr(l)
                     rr.dev_ideal = stats["geom"][k].get(n)
                     rr.count = stats["geom"]["N restraints"].get(n)
-                    # rr.weight = # mean sigma
+                    rr.weight = stats["geom"]["Mn(sigma)"].get(n)
                     restr_stats.append(rr)
                     raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
             ri.restr_stats = restr_stats

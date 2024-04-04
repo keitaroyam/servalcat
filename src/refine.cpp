@@ -96,16 +96,17 @@ void add_refine(py::module& m) {
     .def("get_summary_table", [](const Geometry::Reporting& self, bool use_nucleus) {
       std::vector<std::string> keys;
       std::vector<int> nrest;
-      std::vector<double> rmsd, rmsz;
+      std::vector<double> rmsd, rmsz, msigma;
       auto append = [&](const std::string& k, const std::vector<double>& delsq,
-                        const std::vector<double>& zsq) {
+                        const std::vector<double>& zsq, const std::vector<double> &sigmas) {
         keys.emplace_back(k);
         nrest.push_back(delsq.size());
         rmsd.push_back(std::sqrt(std::accumulate(delsq.begin(), delsq.end(), 0.) / nrest.back()));
         rmsz.push_back(std::sqrt(std::accumulate(zsq.begin(), zsq.end(), 0.) / nrest.back()));
+        msigma.push_back(std::accumulate(sigmas.begin(), sigmas.end(), 0.) / nrest.back());
       };
       // Bond
-      std::map<int, std::vector<double>> delsq, zsq;
+      std::map<int, std::vector<double>> delsq, zsq, sigmas;
       for (const auto& b : self.bonds) {
         const auto& restr = std::get<0>(b);
         const auto& val = std::get<1>(b);
@@ -115,15 +116,16 @@ void add_refine(py::module& m) {
                        (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen()) ? 1 : 0);
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
+        sigmas[k].push_back(sigma);
       }
       for (const auto& p : delsq)
         if (!p.second.empty())
           append(p.first == 2 ? "External distances" :
                  p.first == 1 ? "Bond distances, H" :
-                 "Bond distances, non H", p.second, zsq[p.first]);
+                 "Bond distances, non H", p.second, zsq[p.first], sigmas[p.first]);
 
       // Angle
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& a : self.angles) {
         const auto& restr = std::get<0>(a);
         const auto& val = std::get<1>(a);
@@ -131,50 +133,55 @@ void add_refine(py::module& m) {
         const int k = (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen() || restr->atoms[2]->is_hydrogen()) ? 1 : 0;
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
+        sigmas[k].push_back(val->sigma);
       }
       for (const auto& p : delsq)
         if (!p.second.empty())
-          append(p.first == 1 ? "Bond angles, H" : "Bond angles, non H", p.second, zsq[p.first]);
+          append(p.first == 1 ? "Bond angles, H" : "Bond angles, non H",
+                 p.second, zsq[p.first], sigmas[p.first]);
 
       // Torsion
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& t : self.torsions) {
         const auto& val = std::get<1>(t);
         const double d2 = gemmi::sq(std::get<2>(t)), z2 = gemmi::sq(std::get<2>(t) / val->sigma);
         const int period = std::max(1, val->period);
         delsq[period].push_back(d2);
         zsq[period].push_back(z2);
+        sigmas[period].push_back(val->sigma);
       }
       for (const auto& p : delsq)
         if (!p.second.empty())
-          append("Torsion angles, period " + std::to_string(p.first), p.second, zsq[p.first]);
+          append("Torsion angles, period " + std::to_string(p.first), p.second, zsq[p.first], sigmas[p.first]);
 
       // Chiral
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& c : self.chirs) {
         const auto& val = std::get<0>(c);
         const double d2 = gemmi::sq(std::get<1>(c)), z2 = gemmi::sq(std::get<1>(c) / val->sigma);
         delsq[0].push_back(d2);
         zsq[0].push_back(z2);
+        sigmas[0].push_back(val->sigma);
       }
       if (!delsq[0].empty())
-        append("Chiral centres", delsq[0], zsq[0]);
+        append("Chiral centres", delsq[0], zsq[0], sigmas[0]);
 
       // Plane
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& p : self.planes) {
         const auto& val = std::get<0>(p);
         for (double d : std::get<1>(p)) {
           const double d2 = gemmi::sq(d), z2 = gemmi::sq(d / val->sigma);
           delsq[0].push_back(d2);
           zsq[0].push_back(z2);
+          sigmas[0].push_back(val->sigma);
         }
       }
       if (!delsq[0].empty())
-        append("Planar groups", delsq[0], zsq[0]);
+        append("Planar groups", delsq[0], zsq[0], sigmas[0]);
 
       // Stack
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& s : self.stackings) {
         const auto& restr = std::get<0>(s);
         const double da2 = gemmi::sq(std::get<1>(s)), za2 = gemmi::sq(std::get<1>(s) / restr->sd_angle);
@@ -182,21 +189,24 @@ void add_refine(py::module& m) {
         const double zd2 = dd2 / gemmi::sq(restr->sd_dist);
         delsq[0].push_back(da2);
         zsq[0].push_back(za2);
+        sigmas[0].push_back(restr->sd_angle);
         delsq[1].push_back(dd2);
         zsq[1].push_back(zd2);
+        sigmas[1].push_back(restr->sd_dist);
       }
       if (!delsq[0].empty())
-        append("Stacking angles", delsq[0], zsq[0]);
+        append("Stacking angles", delsq[0], zsq[0], sigmas[0]);
       if (!delsq[1].empty())
-        append("Stacking distances", delsq[1], zsq[1]);
+        append("Stacking distances", delsq[1], zsq[1], sigmas[1]);
 
       // VDW
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& v : self.vdws) {
         const auto& restr = std::get<0>(v);
         const double d2 = gemmi::sq(std::get<1>(v)), z2 = gemmi::sq(std::get<1>(v) / restr->sigma);
         delsq[restr->type].push_back(d2);
         zsq[restr->type].push_back(z2);
+        sigmas[restr->type].push_back(restr->sigma);
       }
       for (const auto& p : delsq)
         if (!p.second.empty()) {
@@ -207,26 +217,27 @@ void add_refine(py::module& m) {
                   i == 4 ? "VDW metal" :
                   i == 5 ? "VDW dummy" :
                   "VDW dummy-dummy") + std::string(p.first > 6 ? ", symmetry" : ""),
-                 p.second, zsq[p.first]);
+                 p.second, zsq[p.first], sigmas[p.first]);
         }
 
       // NCSR
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& v : self.ncsrs) {
         const auto& restr = std::get<0>(v);
         const double delta = std::get<1>(v) - std::get<2>(v);
         const double d2 = gemmi::sq(delta), z2 = gemmi::sq(delta / restr->sigma);
         delsq[restr->idx].push_back(d2);
         zsq[restr->idx].push_back(z2);
+        sigmas[restr->idx].push_back(restr->sigma);
       }
       for (const auto& p : delsq)
         if (!p.second.empty()) {
           append("ncsr local: group " + std::to_string(p.first + 1),
-                 p.second, zsq[p.first]);
+                 p.second, zsq[p.first], sigmas[p.first]);
         }
 
       // ADP
-      delsq.clear(); zsq.clear();
+      delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& a : self.adps) {
         const int rkind = std::get<2>(a);
         const float delta_b = std::get<5>(a);
@@ -235,15 +246,16 @@ void add_refine(py::module& m) {
         const int k = std::min(rkind, 3);
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
-      }
+        sigmas[k].push_back(sigma);
+     }
       for (const auto& p : delsq)
         if (!p.second.empty())
           append(p.first == 1 ? "B values (bond)" :
                  p.first == 2 ? "B values (angle)" :
-                 "B values (others)", p.second, zsq[p.first]);
+                 "B values (others)", p.second, zsq[p.first], sigmas[p.first]);
 
       return py::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
-                      "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz);
+                      "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz, "Mn(sigma)"_a=msigma);
     })
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
