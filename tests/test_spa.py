@@ -35,8 +35,8 @@ def download():
     url_md5 = (('half1', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_1.map.gz', '0bf81c0057d3017972e7cf53e8a8df77'),
                ('half2', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/other/emd_30913_half_map_2.map.gz', '5bba9c32a95d6675fe0387342af5a439'),
                ('mask', 'https://files.wwpdb.org/pub/emdb/structures/EMD-30913/masks/emd_30913_msk_1.map', 'e69403cec5be349b097c8080ce5bb1fd'),
-               ('pdb', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/pdb/dy/pdb7dy0.ent.gz', '78351986de7c8a0dacef823dd39f6f8b'),
-               ('mmcif', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/mmCIF/dy/7dy0.cif.gz', '107d35d6f214cf330c63c2da0d1a63d8'))
+               ('pdb', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/pdb/dy/pdb7dy0.ent.gz', '7ddca7f90c2ebc4b73f2c14136cbda0c'),
+               ('mmcif', 'https://files.wwpdb.org/pub/pdb/data/structures/divided/mmCIF/dy/7dy0.cif.gz', 'a0221f46f5e21bb6f53d5f8751d22444'))
 
     for name, url, md5 in url_md5:
         dst = os.path.join(root, "7dy0", os.path.basename(url))
