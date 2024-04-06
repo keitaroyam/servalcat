@@ -201,7 +201,12 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     st = utils.fileio.read_structure(cifout)
     st.cispeps = cispeps
     if os.path.exists(pdbout):
-        st.raw_remarks = gemmi.read_pdb(pdbout).raw_remarks
+        st_pdb = gemmi.read_pdb(pdbout)
+        st.raw_remarks = st_pdb.raw_remarks
+        # Refmac only writes NCS matrices to pdb
+        st.ncs = st_pdb.ncs
+        if "_struct_ncs_oper.id" in st_pdb.info: # to write identity operator
+            st.info["_struct_ncs_oper.id"] = st_pdb.info["_struct_ncs_oper.id"]
     if fixes is not None:
         fixes.modify_back(st)
     for con in st.connections:
@@ -292,12 +297,6 @@ def main(args):
                 logger.writeln("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
             else:
                 raise SystemExit("Error: unit cell is not defined in the model.")
-        if any(not op.given for op in st.ncs):
-            logger.writeln("WARNING: Refmac ignores MTRIX (_struct_ncs_oper) records. Add following instructions if you need:")
-            logger.writeln("\n".join(utils.symmetry.ncs_ops_for_refmac(st.ncs))+"\n")
-            st.ncs.clear()
-            st.setup_cell_images()
-            # TODO set st.ncs if ncsc instructions given - but should be done outside of this function?
         if not args.keep_entities:
             utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         xyzout_dir = os.path.dirname(get_output_model_names(opts.get("xyzout"))[0])

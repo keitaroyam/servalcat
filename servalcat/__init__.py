@@ -6,5 +6,5 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 
-__version__ = '0.4.63'
-__date__ = '2024-04-04'
+__version__ = '0.4.64'
+__date__ = '2024-04-06'
