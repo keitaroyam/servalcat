@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core~=0.8.0", "pybind11>=2.6.2",
+requires = ["scikit-build-core~=0.8.0", "pybind11==2.11.1",
             "gemmi @ git+https://github.com/project-gemmi/gemmi.git@v0.6.5",
 ]
 build-backend = "scikit_build_core.build"
