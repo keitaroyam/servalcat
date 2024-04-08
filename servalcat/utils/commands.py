@@ -100,6 +100,14 @@ def add_arguments(p):
     parser.add_argument('-o','--output')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
+    # add_op3
+    parser = subparsers.add_parser("add_op3", description = "Add OP3 atoms to 5' ends")
+    parser.add_argument('model')
+    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('-o','--output')
+
     # map_peaks
     parser = subparsers.add_parser("map_peaks", description = 'List density peaks and write a coot script')
     parser.add_argument('--model', required=True, help="Model")
@@ -476,6 +484,51 @@ def h_add(args):
 
     fileio.write_model(st, file_name=args.output)
 # h_add()
+
+def add_op3(args):
+    st = fileio.read_structure(args.model)
+    model_format = fileio.check_model_format(args.model)
+    
+    if not args.output:
+        tmp = fileio.splitext(os.path.basename(args.model))[0]
+        args.output = tmp + "_op3" + model_format
+    logger.writeln("Output file: {}".format(args.output))
+    
+    args.ligand = sum(args.ligand, []) if args.ligand else []
+    monlib = restraints.load_monomer_library(st,
+                                             monomer_dir=args.monlib,
+                                             cif_files=args.ligand)
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+
+    for chain in st[0]:
+        p = chain.get_polymer()
+        if not p: continue
+        p_type = p.check_polymer_type()
+        if p_type not in (gemmi.PolymerType.Dna, gemmi.PolymerType.Rna): continue
+        r0 = p[0]
+        # TODO: alias
+        # TODO: altlocs
+        alt = "*"
+        if r0.find_atom("OP3", alt): continue
+        a_op1 = r0.find_atom("OP1", alt)
+        a_op2 = r0.find_atom("OP2", alt)
+        a_o5p = r0.find_atom("O5'", alt)
+        a_p = r0.find_atom("P", alt)
+        if None in (a_op1, a_op2, a_o5p, a_p):
+            logger.writeln(f"Error: atoms not found. skipping {chain.name}/{r0}")
+            continue
+        logger.writeln(f"Adding OP3 to {chain.name}/{r0}")
+        a_op3 = r0.add_atom(a_p) # inherit ADP and occupancy
+        a_op3.name = "OP3"
+        a_op3.element = gemmi.Element("O")
+        v1 = a_p.pos - a_op1.pos
+        v2 = a_p.pos - a_op2.pos
+        v3 = a_p.pos - a_o5p.pos
+        v = v1 + v2 + v3
+        a_op3.pos = a_p.pos + v / v.length() * 1.517
+    
+    fileio.write_model(st, file_name=args.output)
+# add_op3()
 
 def read_map_and_oversample(map_in=None, mtz_in=None, mtz_labs=None, oversample_pixel=None):
     if mtz_in is not None:
@@ -1248,6 +1301,7 @@ def main(args):
                  helical_biomt=helical_biomt,
                  expand=symexpand,
                  h_add=h_add,
+                 add_op3=add_op3,
                  map_peaks=map_peaks,
                  h_density=h_density_analysis,
                  fix_link=fix_link,
