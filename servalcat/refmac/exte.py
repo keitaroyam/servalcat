@@ -70,10 +70,10 @@ def read_external_restraints(params, st, geom):
                     atom = lookup.get(key)
                     if atom is None:
                         if defs["ignore_undefined"]:
-                            logger.writeln("Warning: atom not found: {}\n=>{}".format(key, l))
+                            logger.writeln("Warning: atom not found: {}".format(key))
                             skip = True
                             continue
-                        raise RuntimeError("Atom not found: {}\n=>{}".format(key, l))
+                        raise RuntimeError("Atom not found: {}".format(key))
                     if r["rest_type"] == "stac":
                         atoms[i].append(atom)
                     else:
