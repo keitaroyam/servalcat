@@ -89,6 +89,8 @@ def add_arguments(parser):
                         help="refinement weight. default: automatic")
     parser.add_argument('--no_weight_adjust', action='store_true', 
                         help='Do not adjust weight during refinement')
+    parser.add_argument('--target_bond_rmsz_range', nargs=2, type=float, default=[0., 1.],
+                        help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight in B (default: %(default)f)")
     parser.add_argument('--ncsr', action='store_true', 
@@ -229,7 +231,8 @@ def main(args):
     #    cra.atom.pos += gemmi.Position(0.3,0,0)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
-                               weight_adjust=not args.no_weight_adjust)
+                               weight_adjust=not args.no_weight_adjust,
+                               weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range)
     if not args.hklin and not args.no_trim:
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()

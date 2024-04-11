@@ -631,7 +631,8 @@ class Refine:
 
         return ret, shift_scale, f1
 
-    def run_cycles(self, ncycles, weight=1, weight_adjust=False, debug=False):
+    def run_cycles(self, ncycles, weight=1, weight_adjust=False, debug=False,
+                   weight_adjust_bond_rmsz_range=(0.5, 1.)):
         self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
@@ -680,9 +681,9 @@ class Refine:
                 len(stats) > 2):
                 rmsz = stats[-1]["geom"]["r.m.s.Z"]["Bond distances, non H"]
                 rmsz0 = stats[-2]["geom"]["r.m.s.Z"]["Bond distances, non H"]
-                if rmsz > 1 and rmsz > rmsz0:
+                if rmsz > weight_adjust_bond_rmsz_range[1] and rmsz > rmsz0:
                     weight /= 1.1
-                elif rmsz < 0.5 and rmsz0 < 0.5 and rmsz < rmsz0:
+                elif rmsz < weight_adjust_bond_rmsz_range[0] and rmsz0 < weight_adjust_bond_rmsz_range[0] and rmsz < rmsz0:
                     weight *= 1.3
                 elif rmsz > 1.5 * rmsz0:
                     weight /= 1.1
