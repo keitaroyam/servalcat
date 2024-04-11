@@ -385,6 +385,7 @@ class Refine:
         assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?
+        self.st_traj = None
         self.atoms = geom.atoms # not a copy
         self.geom = geom
         self.ll = ll
@@ -397,6 +398,9 @@ class Refine:
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
+        if params and params.get("write_trajectory"):
+            self.st_traj = self.st.clone()
+            self.st_traj[-1].name = "0"
         assert self.geom.group_occ.groups or self.n_params() > 0
     # __init__()
     
@@ -687,7 +691,10 @@ class Refine:
                     weight *= 1.3
                 elif rmsz > 1.5 * rmsz0:
                     weight /= 1.1
-                
+            if self.st_traj is not None:
+                self.st_traj.add_model(self.st[0])
+                self.st_traj[-1].name = str(i+1)
+
             logger.writeln("")
 
         # Make table

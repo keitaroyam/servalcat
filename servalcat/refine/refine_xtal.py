@@ -84,6 +84,8 @@ def add_arguments(parser):
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument('-o','--output_prefix')
+    parser.add_argument("--write_trajectory", action='store_true',
+                        help="Write all output from cycles")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -103,6 +105,7 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     params = refmac_keywords.parse_keywords(keywords)
+    params["write_trajectory"] = args.write_trajectory
     
     hklin = args.hklin
     labin = args.labin
@@ -212,6 +215,8 @@ def main(args):
                                weight_adjust=not args.no_weight_adjust)
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
+    if params["write_trajectory"]:
+        utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
     with open(args.output_prefix + "_stats.json", "w") as ofs:
         for s in stats:
             if "geom" in s: s["geom"] = s["geom"].to_dict()
