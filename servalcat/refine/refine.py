@@ -682,7 +682,7 @@ class Refine:
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             if (weight_adjust and self.refine_xyz and not self.unrestrained and self.ll is not None and
-                len(stats) > 2):
+                len(stats) > 2 and "Bond distances, non H" in stats[-1]["geom"].index):
                 rmsz = stats[-1]["geom"]["r.m.s.Z"]["Bond distances, non H"]
                 rmsz0 = stats[-2]["geom"]["r.m.s.Z"]["Bond distances, non H"]
                 if rmsz > weight_adjust_bond_rmsz_range[1] and rmsz > rmsz0:
