@@ -8,7 +8,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
-import json
 import os
 import shutil
 import argparse
@@ -212,16 +211,12 @@ def main(args):
                      params=params)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
-                               weight_adjust=not args.no_weight_adjust)
+                               weight_adjust=not args.no_weight_adjust,
+                               stats_json_out=args.output_prefix + "_stats.json")
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
-    with open(args.output_prefix + "_stats.json", "w") as ofs:
-        for s in stats:
-            if "geom" in s: s["geom"] = s["geom"].to_dict()
-        json.dump(stats, ofs, indent=2)
-        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 
     if is_int:
         calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,

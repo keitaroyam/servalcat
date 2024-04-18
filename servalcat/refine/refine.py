@@ -10,6 +10,7 @@ import os
 import re
 import gemmi
 import numpy
+import json
 import pandas
 import scipy.sparse
 import servalcat # for version
@@ -200,6 +201,22 @@ def show_binstats(df, cycle_number):
                                    float_format="{:.4f}".format)
     logger.writeln(lstr)
 # show_binstats()
+
+def write_stats_json_safe(stats, json_out):
+    tmp = []
+    for s in stats: # stats must be a list of dict
+        tmp.append({})
+        for k in s:
+            if k == "geom":
+                tmp[-1]["geom"] = s["geom"].to_dict()
+            else:
+                tmp[-1][k] = s[k]
+    out_tmp = json_out + ".part"
+    with open(out_tmp, "w") as ofs:
+        json.dump(tmp, ofs, indent=2)
+    os.replace(out_tmp, json_out)
+    logger.writeln(f"Refinement statistics saved: {json_out}")
+# write_stats_json_safe()
 
 class GroupOccupancy:
     # TODO max may not be one. should check multiplicity
@@ -636,7 +653,7 @@ class Refine:
         return ret, shift_scale, f1
 
     def run_cycles(self, ncycles, weight=1, weight_adjust=False, debug=False,
-                   weight_adjust_bond_rmsz_range=(0.5, 1.)):
+                   weight_adjust_bond_rmsz_range=(0.5, 1.), stats_json_out=None):
         self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
@@ -694,6 +711,8 @@ class Refine:
             if self.st_traj is not None:
                 self.st_traj.add_model(self.st[0])
                 self.st_traj[-1].name = str(i+1)
+            if stats_json_out:
+                write_stats_json_safe(stats, stats_json_out)
 
             logger.writeln("")
 
@@ -774,4 +793,5 @@ class Refine:
             raw_remarks.append("REMARK   3")
         self.st.meta.refinement = [ri]
         self.st.raw_remarks = raw_remarks
+
 # class Refine

@@ -158,13 +158,10 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=randomize, params=params, ncslist=ncslist)
     refiner = Refine(st, geom)
-    stats = refiner.run_cycles(ncycle)
+    stats = refiner.run_cycles(ncycle,
+                               stats_json_out=output_prefix + "_stats.json")
     refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
-    with open(output_prefix + "_stats.json", "w") as ofs:
-        for s in stats: s["geom"] = s["geom"].to_dict()
-        json.dump(stats, ofs, indent=2)
-        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_geom()
 
 def main(args):

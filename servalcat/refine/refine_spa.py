@@ -8,7 +8,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import argparse
-import json
 import numpy
 from servalcat.utils import logger
 from servalcat import utils
@@ -235,7 +234,8 @@ def main(args):
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
                                weight_adjust=not args.no_weight_adjust,
-                               weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range)
+                               weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range,
+                               stats_json_out=args.output_prefix + "_stats.json")
     if not args.hklin and not args.no_trim:
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()
@@ -244,12 +244,6 @@ def main(args):
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
-    with open(args.output_prefix + "_stats.json", "w") as ofs:
-        for s in stats:
-            if "geom" in s: s["geom"] = s["geom"].to_dict()
-        json.dump(stats, ofs, indent=2)
-        logger.writeln("Refinement statistics saved: {}".format(ofs.name))
-    
     if args.hklin:
         return
         
