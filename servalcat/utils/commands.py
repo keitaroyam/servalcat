@@ -281,6 +281,15 @@ def add_arguments(p):
     parser.add_argument("--model", required=True)
     parser.add_argument('--seq', nargs="*", action="append", help="Sequence file(s)")
 
+    # dnarna
+    parser = subparsers.add_parser("dnarna", description = 'DNA to RNA or RNA to DNA model conversion')
+    parser.add_argument("model")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--to_dna', action='store_true', help="To DNA")
+    group.add_argument('--to_rna', action='store_true', help="To RNA")
+    parser.add_argument('--chains', nargs="*", action="append", help="Select chains to convert")
+    parser.add_argument('-o', '--output')
+
 # add_arguments()
 
 def parse_args(arg_list):
@@ -1279,6 +1288,57 @@ def seq(args):
             logger.writeln("")
 # seq()
 
+def dnarna(args):
+    import scipy.spatial.transform
+    rna_res = {"A":"DA", "G":"DG", "C":"DC", "U":"DT"}
+    dna_res = {"DA":"A", "DG":"G", "DC":"C", "DT":"U"}
+    if args.chains: args.chains = sum(args.chains, [])
+    model_format = fileio.check_model_format(args.model)
+    if not args.output:
+        args.output = fileio.splitext(os.path.basename(args.model))[0] + "_conv" + model_format
+    st = fileio.read_structure(args.model)
+    if st[0].has_hydrogen():
+        logger.writeln("Hydrogen atoms are detected. I cannot take care of them, so I will remove them.")
+        st.remove_hydrogens()
+    for chain in st[0]:
+        if args.chains and chain.name not in args.chains:
+            continue
+        for res in chain:
+            alt = "*" # XXX
+            if res.name in rna_res and args.to_dna:
+                logger.writeln(f"Changing {chain.name}/{res.seqid} {res.name} to DNA")
+                res.name = rna_res[res.name]
+                res.remove_atom("O2'", alt)
+                if res.name == "DT":
+                    C4 = res.find_atom("C4", alt)
+                    C5 = res.find_atom("C5", alt)
+                    C6 = res.find_atom("C6", alt)
+                    v1 = C5.pos - C4.pos
+                    v2 = C5.pos - C6.pos
+                    v = v1 + v2
+                    res.add_atom(C5)
+                    res[-1].name = "C7"
+                    res[-1].pos = C5.pos + v / v.length() * 1.5
+            elif res.name in dna_res and args.to_rna:
+                logger.writeln(f"Changing {chain.name}/{res.seqid} {res.name} to RNA")
+                res.name = dna_res[res.name]
+                C1p = numpy.array(res.find_atom("C1'", alt).pos.tolist())
+                C2p = numpy.array(res.find_atom("C2'", alt).pos.tolist())
+                C3p = numpy.array(res.find_atom("C3'", alt).pos.tolist())
+                rotvec = C2p - C3p
+                rotvec /= numpy.linalg.norm(rotvec)
+                r = scipy.spatial.transform.Rotation.from_rotvec(-rotvec * 120,
+                                                                 degrees=True)
+                rotated = r.apply(C1p - C2p)
+                rotated *= 1.411 / numpy.linalg.norm(rotated)
+                res.add_atom(res.find_atom("O3'", alt))
+                res[-1].name = "O2'"
+                res[-1].pos.fromlist(C2p + rotated)
+                if res.name == "U":
+                    res.remove_atom("C7", alt)
+    fileio.write_model(st, file_name=args.output)
+# dnarna()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -1319,7 +1379,8 @@ def main(args):
                  applymask=applymask,
                  map2mtz=map2mtz,
                  sm2mm=sm2mm,
-                 seq=seq)
+                 seq=seq,
+                 dnarna=dnarna)
     
     com = args.subcommand
     f = comms.get(com)
