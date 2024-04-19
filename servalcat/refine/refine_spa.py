@@ -88,7 +88,7 @@ def add_arguments(parser):
                         help="refinement weight. default: automatic")
     parser.add_argument('--no_weight_adjust', action='store_true', 
                         help='Do not adjust weight during refinement')
-    parser.add_argument('--target_bond_rmsz_range', nargs=2, type=float, default=[0., 1.],
+    parser.add_argument('--target_bond_rmsz_range', nargs=2, type=float, default=[0.5, 1.],
                         help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight in B (default: %(default)f)")
