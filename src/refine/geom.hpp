@@ -203,11 +203,13 @@ struct GeomTarget {
       gemmi::fail("bad atom_pos in GeomTarget");
   }
 
-  void setup(bool refine_xyz, int adp_mode, bool refine_occ) { // call it after setting pairs
+  void setup(bool refine_xyz, int adp_mode,
+             bool refine_occ, bool use_occr) { // call it after setting pairs
     assert(0 <= adp_mode && adp_mode <= 2);
     this->refine_xyz = refine_xyz;
     this->adp_mode = adp_mode;
     this->refine_occ = refine_occ;
+    this->use_occr = use_occr;
     const size_t n_atoms = atoms.size(); // atoms to be refined
     target = 0.;
     vn.clear();
@@ -228,8 +230,11 @@ struct GeomTarget {
       qqv += 6 * n_atoms;
       qqm += 21 * n_atoms + 36 * n_pairs;
     }
-    if (refine_occ)
-      qqv += n_atoms; // am shouldn't change
+    if (refine_occ) {
+      qqv += n_atoms;
+      if (use_occr)
+        qqm += n_atoms + n_pairs;
+    }
     vn.assign(qqv, 0.);
     am.assign(qqm, 0.);
 
@@ -265,6 +270,7 @@ struct GeomTarget {
   bool refine_xyz;
   int adp_mode; // 0: no refine, 1: iso, 2: aniso
   bool refine_occ;
+  bool use_occr; // occupancy restraint
   std::vector<gemmi::Atom*> atoms, all_atoms; // all_atoms include fixed atoms
   double target = 0.; // target function value
   std::vector<double> vn; // first derivatives
@@ -277,6 +283,27 @@ struct GeomTarget {
   std::vector<int> atom_pos; // atom index in vn. -1 if fixed
   int nmpos;
   size_t n_atoms() const { return atoms.size(); }
+  std::pair<int, int> get_offsets(int kind) const {
+    std::pair<int, int> ret = {0, 0}; // first and second derivatives
+    if (kind == 0) // xyz
+      return ret;
+    if (refine_xyz) {
+      ret.first += n_atoms() * 3;
+      ret.second += n_atoms() * 6 + pairs.size() * 9;
+    };
+    if (kind == 1) // adp
+      return ret;
+    if (adp_mode == 1) {
+      ret.first += n_atoms();
+      ret.second += n_atoms() + pairs.size();
+    } else if (adp_mode == 2) {
+      ret.first += n_atoms() * 6;
+      ret.second += n_atoms() * 21 + pairs.size() * 36;
+    }
+    if (kind == 2) // occ
+      return ret;
+    throw std::runtime_error("get_offsets(): bad kind");
+  }
   MatPos find_restraint(int ia1, int ia2, int kind=0) const {
     // kind 0: xyz, 1: adp (iso or aniso depending on adp_mode)
     MatPos matpos;
@@ -297,14 +324,16 @@ struct GeomTarget {
       }
     }
     if (idist < 0) gemmi::fail("cannot find atom pair");
+    matpos.ipos = get_offsets(kind).second;
     if (kind == 0) // xyz
-      matpos.ipos = nmpos + 9 * idist;
+      matpos.ipos += nmpos + 9 * idist;
     else if (kind == 1) { // adp
-      const int offset_a = refine_xyz ? n_atoms() * 6 + pairs.size() * 9 : 0;
       if (adp_mode == 1)
-        matpos.ipos = offset_a + n_atoms() + idist;
+        matpos.ipos += n_atoms() + idist;
       else if (adp_mode == 2)
-        matpos.ipos = offset_a + 21 * n_atoms() + 36 * idist;
+        matpos.ipos += 21 * n_atoms() + 36 * idist;
+    } else if (kind == 2) { // occ
+      matpos.ipos += n_atoms() + idist;
     } else {
       gemmi::fail("bad kind in find_restraint");
     }
@@ -378,6 +407,7 @@ struct GeomTarget {
       }
       for (size_t j = 0; j < pairs.size(); ++j, ++i)
         add_data(offset + pairs[j].second, offset + pairs[j].first, am[i]);
+      offset += n_atoms();
     } else if (adp_mode == 2) {
       for (size_t j = 0; j < n_atoms(); ++j) {
         for (size_t k = 0; k < 6; ++k, ++i)
@@ -391,6 +421,14 @@ struct GeomTarget {
           for (size_t l = 0; l < 6; ++l, ++i)
             add_data(offset + 6 * pairs[j].second + l, offset + 6 * pairs[j].first + k, am[i]);
       }
+      offset += 6 * n_atoms();
+    }
+    if (refine_occ && use_occr) {
+      for (size_t j = 0; j < n_atoms(); ++j, ++i) {
+        add_data(offset + j, offset + j, am[i]);
+      }
+      for (size_t j = 0; j < pairs.size(); ++j, ++i)
+        add_data(offset + pairs[j].second, offset + pairs[j].first, am[i]);
     }
     assert(i == am.size());
     spmat.setFromTriplets(data.begin(), data.end());
@@ -602,6 +640,7 @@ struct Geometry {
     using stacking_reporting_t = std::tuple<const Stacking*, double, double, double>; // delta_angle, delta_dist1, delta_dist2
     using vdw_reporting_t = std::tuple<const Vdw*, double>;
     using adp_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
+    using occ_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
     using ncsr_reporting_t = std::tuple<const Ncsr*, float, float>; // dist1, dist2
     std::vector<bond_reporting_t> bonds;
     std::vector<angle_reporting_t> angles;
@@ -612,6 +651,7 @@ struct Geometry {
     std::vector<vdw_reporting_t> vdws;
     std::vector<ncsr_reporting_t> ncsrs;
     std::vector<adp_reporting_t> adps;
+    std::vector<occ_reporting_t> occs;
   };
   Geometry(gemmi::Structure& s, const std::vector<int> &atom_pos, const gemmi::EnerLib* ener_lib)
     : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(s.first_model(), atom_pos) {}
@@ -634,7 +674,7 @@ struct Geometry {
     return cell.orth.combine(ft).combine(cell.frac);
   }
 
-  void setup_target(bool refine_xyz, int adp_mode, bool refine_occ);
+  void setup_target(bool refine_xyz, int adp_mode, bool refine_occ, bool use_occr);
   void clear_target() {
     target.target = 0.;
     std::fill(target.vn.begin(), target.vn.end(), 0.);
@@ -643,6 +683,7 @@ struct Geometry {
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
               double wchir, double wplane, double wstack, double wvdw, double wncs);
   double calc_adp_restraint(bool check_only, double wbskal);
+  double calc_occ_restraint(bool check_only, double wocc);
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
   std::vector<Bond> bonds;
@@ -696,6 +737,11 @@ struct Geometry {
   std::array<float, 8> adpr_kl_sigs = {0.1f, 0.15f, 0.3f, 0.5f, 0.7f, 0.7f, 0.7f, 1.0f};
   std::array<float, 8> adpr_diff_sigs = {5.f, 7.5f, 15.f, 25.f, 35.f, 35.f, 35.f, 50.f};
   int adpr_mode = 0; // 0: diff, 1: KLdiv
+
+  // Occupancy restraints
+  double occr_max_dist = 4.;
+  bool occr_long_range = true;
+  std::array<float, 8> occr_sigs = {0.1f, 0.15f, 0.3f, 0.5f, 0.7f, 0.7f, 0.7f, 1.0f};
 
   // Jelly body
   float ridge_dmax = 0;
@@ -1117,7 +1163,8 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
   }
 }
 
-inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_occ) {
+inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_occ,
+                                   bool use_occr) {
   target.pairs.clear();
   target.all_pairs.clear();
   auto add = [&](gemmi::Atom *a1, gemmi::Atom *a2, int n) {
@@ -1181,7 +1228,7 @@ inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_oc
   // sort_and_compress_distances
   std::sort(target.pairs.begin(), target.pairs.end());
   target.pairs.erase(std::unique(target.pairs.begin(), target.pairs.end()), target.pairs.end());
-  target.setup(refine_xyz, adp_mode, refine_occ);
+  target.setup(refine_xyz, adp_mode, refine_occ, use_occr);
 }
 
 inline double Geometry::calc(bool use_nucleus, bool check_only,
@@ -1378,6 +1425,60 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
           reporting.adps.emplace_back(atom1, atom2, pair_kind, std::sqrt(dsq),
                                       report_sigma, a_diff.norm());
         }
+      }
+    }
+  }
+  return ret;
+}
+
+inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
+  if (wocc <= 0) return 0.;
+  if (!check_only)
+    assert(target.refine_occ && target.use_occr);
+  reporting.occs.clear();
+
+  const auto offsets = target.get_offsets(2);
+  double ret = 0.;
+  for (const auto &p : target.all_pairs) {
+    const int ia1 = target.atom_pos[p.first.first];
+    const int ia2 = target.atom_pos[p.first.second];
+    const int pair_kind = p.second;
+    if (ia1 < 0 && ia2 < 0) continue; // both atoms fixed
+    if (!occr_long_range && pair_kind > 4) continue;
+    const gemmi::Atom* atom1 = target.all_atoms[p.first.first];
+    const gemmi::Atom* atom2 = target.all_atoms[p.first.second];
+    // calculate minimum distance - expensive?
+    const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
+    const double dsq = im.dist_sq;
+    if (dsq > gemmi::sq(occr_max_dist)) continue;
+    const float sig = occr_sigs.at(pair_kind-1);
+    const bool bonded = pair_kind < 3; // bond and angle related
+    const double w = gemmi::sq(wocc / sig) / (std::max(4., dsq) / 4.);
+    const double delta = atom1->occ - atom2->occ;
+    const double f = 0.5 * w * gemmi::sq(delta);
+    ret += f;
+    if (!check_only) {
+      target.target += f;
+      // gradient and diagonal
+      if (ia1 >= 0) {
+        target.vn[offsets.first  + ia1] += w * delta;
+        target.am[offsets.second + ia1] += w;
+      }
+      if (ia2 >= 0) {
+        target.vn[offsets.first  + ia2] += -w * delta;
+        target.am[offsets.second + ia2] += w;
+      }
+      // non-diagonal
+      if (ia1 >= 0 && ia2 >= 0) {
+        auto mp = target.find_restraint(ia1, ia2, 2);
+        target.am[mp.ipos] += -w;
+      }
+    } else {
+      if (!atom1->is_hydrogen() && !atom2->is_hydrogen()) {
+        const double report_sigma = wocc / std::sqrt(w);
+        // atom1, atom2, type, dist, sigma, delta
+        reporting.occs.emplace_back(atom1, atom2, pair_kind, std::sqrt(dsq),
+                                    report_sigma, delta);
       }
     }
   }

@@ -98,6 +98,7 @@ def add_arguments(parser):
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
     parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
+    parser.add_argument('--refine_all_occ', action="store_true")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
     parser.add_argument('--adp_restraint_power', type=float)
     parser.add_argument('--adp_restraint_exp_fac', type=float)
@@ -180,8 +181,7 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     # initialize ADP
-    if args.adp != "fix":
-        utils.model.reset_adp(st[0], args.bfactor, args.adp == "aniso")
+    utils.model.reset_adp(st[0], args.bfactor, args.adp)
 
     # auto weight
     if args.weight is None:
@@ -218,7 +218,8 @@ def main(args):
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                      refine_h=args.refine_h,
-                     params=params)
+                     params=params,
+                     refine_occ=args.refine_all_occ)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
@@ -281,7 +282,7 @@ def main(args):
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
 
-    if "geom" in stats[-1]:
+    if "geom" in stats[-1] and "Bond distances, non H" in stats[-1]["geom"].index:
         rmsbond = stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"]
         rmsangle = stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"]
     else:

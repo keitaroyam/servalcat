@@ -48,6 +48,7 @@ class Geom:
             n_sym = len(images) + 1
             self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
         self.adpr_w = adpr_w
+        self.occr_w = 1.
         self.unrestrained = unrestrained
         if shake_rms > 0:
             numpy.random.seed(0)
@@ -107,20 +108,28 @@ class Geom:
         return self.geom.calc(check_only=target_only, **self.calc_kwds)
     def calc_adp_restraint(self, target_only):
         return self.geom.calc_adp_restraint(target_only, self.adpr_w)
-    def calc_target(self, target_only, refine_xyz, adp_mode):
+    def calc_occ_restraint(self, target_only):
+        return self.geom.calc_occ_restraint(target_only, self.occr_w)
+    def calc_target(self, target_only, refine_xyz, adp_mode, use_occr):
         self.geom.clear_target()
         geom_x = self.calc(target_only) if refine_xyz else 0
         geom_a = self.calc_adp_restraint(target_only) if adp_mode > 0 else 0
+        geom_q = self.calc_occ_restraint(target_only) if use_occr > 0 else 0
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
-        geom = geom_x + geom_a
+        logger.writeln(" geom_q = {}".format(geom_q))
+        geom = geom_x + geom_a + geom_q
         if not target_only:
             self.geom.spec_correction()
         return geom
         
-    def show_model_stats(self, show_outliers=True):
-        f0_x = self.calc(True)
-        f0_a = self.calc_adp_restraint(True)
+    def show_model_stats(self, refine_xyz=True, adp_mode=1, use_occr=False, show_outliers=True):
+        if refine_xyz:
+            self.calc(True)
+        if adp_mode > 0:
+            self.calc_adp_restraint(True)
+        if use_occr:
+            self.calc_occ_restraint(True)
         ret = {"outliers": {}}
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
@@ -410,6 +419,7 @@ class Refine:
         self.adp_mode = 0 if self.ll is None else adp_mode
         self.refine_xyz = refine_xyz
         self.refine_occ = refine_occ
+        self.use_occr = self.refine_occ # for now?
         self.unrestrained = unrestrained
         self.refine_h = refine_h
         self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
@@ -538,7 +548,7 @@ class Refine:
             self.ll.update_fc()
         
         self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ)
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
 
     def get_x(self):
@@ -565,7 +575,7 @@ class Refine:
         N = self.n_params()
         geom = self.geom.calc_target(target_only,
                                      not self.unrestrained and self.refine_xyz,
-                                     self.adp_mode)
+                                     self.adp_mode, self.use_occr)
         if self.ll is not None:
             ll = self.ll.calc_target()
             logger.writeln(" ll= {}".format(ll))
@@ -657,10 +667,12 @@ class Refine:
         self.print_weights()
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded(self.refine_xyz)
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ)
+        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
-        if self.refine_xyz and not self.unrestrained:
-            stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)["summary"]
+        stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
+                                                       adp_mode=self.adp_mode,
+                                                       use_occr=self.refine_occ,
+                                                       show_outliers=True)["summary"]
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -676,15 +688,17 @@ class Refine:
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             logger.writeln(f" weight = {weight:.4e}")
-            if self.refine_xyz or self.adp_mode > 0:
+            if self.refine_xyz or self.adp_mode > 0 or self.refine_occ:
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
                 stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok,
                               "weight": weight})
             if occ_refine_flag:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll, self.refine_h)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
-            if self.refine_xyz and not self.unrestrained:
-                stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))["summary"]
+            stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
+                                                           adp_mode=self.adp_mode,
+                                                           use_occr=self.refine_occ,
+                                                           show_outliers=(i==ncycles-1))["summary"]
             if self.ll is not None:
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()

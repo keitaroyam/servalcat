@@ -93,6 +93,7 @@ void add_refine(py::module& m) {
     .def_readonly("stackings", &Geometry::Reporting::stackings)
     .def_readonly("vdws", &Geometry::Reporting::vdws)
     .def_readonly("adps", &Geometry::Reporting::adps)
+    .def_readonly("occs", &Geometry::Reporting::occs)
     .def("get_summary_table", [](const Geometry::Reporting& self, bool use_nucleus) {
       std::vector<std::string> keys;
       std::vector<int> nrest;
@@ -247,12 +248,30 @@ void add_refine(py::module& m) {
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
         sigmas[k].push_back(sigma);
-     }
+      }
       for (const auto& p : delsq)
         if (!p.second.empty())
           append(p.first == 1 ? "B values (bond)" :
                  p.first == 2 ? "B values (angle)" :
                  "B values (others)", p.second, zsq[p.first], sigmas[p.first]);
+
+      // Occupancies
+      delsq.clear(); zsq.clear(); sigmas.clear();
+      for (const auto& a : self.occs) {
+        const int rkind = std::get<2>(a);
+        const float delta_b = std::get<5>(a);
+        const float sigma = std::get<4>(a);
+        const double d2 = gemmi::sq(delta_b), z2 = gemmi::sq(delta_b / sigma);
+        const int k = std::min(rkind, 3);
+        delsq[k].push_back(d2);
+        zsq[k].push_back(z2);
+        sigmas[k].push_back(sigma);
+      }
+      for (const auto& p : delsq)
+        if (!p.second.empty())
+          append(p.first == 1 ? "Occupancies (bond)" :
+                 p.first == 2 ? "Occupancies (angle)" :
+                 "Occupancies (others)", p.second, zsq[p.first], sigmas[p.first]);
 
       return py::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
                       "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz, "Mn(sigma)"_a=msigma);
@@ -672,6 +691,7 @@ void add_refine(py::module& m) {
          py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1,
          py::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
+    .def("calc_occ_restraint", &Geometry::calc_occ_restraint)
     .def("spec_correction", &Geometry::spec_correction, py::arg("alpha")=1e-3, py::arg("use_rr")=true)
     .def_readonly("bondindex", &Geometry::bondindex)
     // vdw parameters
@@ -715,6 +735,10 @@ void add_refine(py::module& m) {
                     else
                       throw std::runtime_error("unknown adpr mode");
                   })
+    // Occupancy restraint parameters
+    .def_readwrite("occr_max_dist", &Geometry::occr_max_dist)
+    .def_readwrite("occr_long_range", &Geometry::occr_long_range)
+    .def_readwrite("occr_sigs", &Geometry::occr_sigs)
     // jelly body parameters
     .def_readwrite("ridge_dmax", &Geometry::ridge_dmax)
     .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)

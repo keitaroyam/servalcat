@@ -539,13 +539,13 @@ def adp_stats_per_chain(model, ignore_zero_occ=True):
     return ret
 # adp_stats_per_chain()
 
-def reset_adp(model, bfactor=None, is_aniso=False):
+def reset_adp(model, bfactor=None, adp_mode="iso"):
     for cra in model.all():
         if bfactor is not None:
             cra.atom.b_iso = bfactor
-        if not is_aniso:
+        if adp_mode == "iso" or (adp_mode == "fix" and bfactor is not None):
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
-        else:
+        elif adp_mode == "aniso":
             if not cra.atom.aniso.nonzero() or bfactor is not None:
                 u = cra.atom.b_iso * b_to_u
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
