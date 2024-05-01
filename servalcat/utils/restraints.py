@@ -164,6 +164,8 @@ def fix_elements_in_model(monlib, st):
             d = monlib_els.get(res.name)
             if not d: continue # should not happen
             for at in res:
+                if at.name not in d: # for example atom names of element D may be different, which will be sorted later
+                    continue
                 el = d[at.name]
                 if at.element != el:
                     logger.writeln(f"WARNING: correcting element of {st[0].get_cra(at)} to {el.name}")
