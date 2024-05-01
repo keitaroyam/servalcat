@@ -179,6 +179,7 @@ def add_arguments(p):
     parser.add_argument('--per_atom_score_as_b', action='store_true',
                         help="write model file with per-atom score as B values")
     parser.add_argument("--check_skew", action='store_true', help="(experimental) check bond skew to test magnification")
+    parser.add_argument('-n', '--nucleus', action="store_true", help="Use nucleus distances (for neutron)")
     parser.add_argument("--ignore_h", action='store_true', help="ignore hydrogen")
     parser.add_argument("--selection", help="evaluate part of the model")
     parser.add_argument('-o', '--output_prefix', 
@@ -847,7 +848,7 @@ def geometry(args):
     else:
         atom_pos = None
 
-    geom = Geom(st, topo, monlib, params=params, atom_pos=atom_pos)
+    geom = Geom(st, topo, monlib, params=params, atom_pos=atom_pos, use_nucleus=args.nucleus)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.setup_nonbonded(True)
     ret = geom.show_model_stats()
