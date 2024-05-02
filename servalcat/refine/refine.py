@@ -56,19 +56,18 @@ class Geom:
             utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
-        if params:
-            exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
-            for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
-                if k in params:
-                    self.calc_kwds[k] = params[k]
-                    logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
-            inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
-            rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
-            self.geom.mon_tors_names = rtors["monomer"]
-            self.geom.link_tors_names = rtors["link"]
-            self.group_occ = GroupOccupancy(self.st, params.get("occu"))
-        else:
-            self.group_occ = GroupOccupancy(self.st, None)
+        if params is None:
+            params = {}
+        exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
+        for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
+            if k in params:
+                self.calc_kwds[k] = params[k]
+                logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
+        inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
+        rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
+        self.geom.mon_tors_names = rtors["monomer"]
+        self.geom.link_tors_names = rtors["link"]
+        self.group_occ = GroupOccupancy(self.st, params.get("occu"))
         if not self.unrestrained:
             self.geom.load_topo(topo)
             self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
