@@ -435,7 +435,7 @@ struct LL{
     double b_min, b_max;
     std::tie(b_min, b_max) = b_min_max();
     b_max = 2 * (b_max + b_sf_max<Table>());
-    printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
+    //printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
 
     const double b_step = 5;
     const double s_min = d2dfw_table.s_min, s_max = d2dfw_table.s_max;
@@ -503,7 +503,7 @@ struct LL{
     double b_min, b_max;
     std::tie(b_min, b_max) = b_min_max();
     b_max = 2 * (b_max + b_sf_max<Table>());
-    printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
+    //printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
 
     const double b_step = 5;
     int b_dim = static_cast<int>((b_max - b_min) / b_step) + 2;
