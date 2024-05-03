@@ -465,13 +465,15 @@ struct LL{
         tpp[i] = 16. * gemmi::pi() * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 * 4pi/3
         tbb[i] = gemmi::pi() / 4 * w_c_ft_c * s2; // 1/16 * 4pi
         taa[i] = gemmi::pi() / 20 * w_c_ft_c * s2; // 1/16 * 4pi/5 (later *1, *1/3, *4/3)
-        tqq[i] = gemmi::pi() * 4 * w_c_ft_c * s2; // 4pi
-        if (!mott_bethe) {
+        tqq[i] = gemmi::pi() * 4 * w_c_ft_c; // 4pi
+        if (mott_bethe) {
+          tqq[i] /= s2;
+        } else {
           const double s4 = s2 * s2;
           tpp[i] *= s4;
           tbb[i] *= s4;
           taa[i] *= s4;
-          tqq[i] *= s4;
+          tqq[i] *= s2;
         }
       }
 
@@ -525,7 +527,8 @@ struct LL{
       for (size_t i = 0; i < svals.size(); ++i) {
         const double s = svals[i], w_c = yvals[i];
         if (std::isnan(w_c)) continue;
-        const double s2 = s * s;
+        const double s2 = s * s; 
+        const double s4 = s2 * s2;
         const double w_c_ft_c = w_c * std::exp(-b*s2/4.);
         double tpp = 4. * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 /3
         double tbb = 1. / 16 * w_c_ft_c; // 1/16
@@ -533,12 +536,11 @@ struct LL{
         double tqq = w_c_ft_c; // 1
         if (mott_bethe) {
           tpp /= s2;
+          tqq /= s4;
         } else {
-          const double s4 = s2 * s2;
           tpp *= s2;
           tbb *= s4;
           taa *= s4;
-          tqq *= s4;
         }
         pp1[0][ib] += tpp;
         bb[0][ib] += tbb;
