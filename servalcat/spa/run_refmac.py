@@ -611,7 +611,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
         logger.writeln("crd file written: {}".format(crdout))
 
-    hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None)
+    hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None, with_000=False)
     hkldata.setup_relion_binning()
     if len(maps) == 2:
         map_labs = ["Fmap1", "Fmap2", "Fout"]

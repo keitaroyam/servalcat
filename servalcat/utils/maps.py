@@ -148,7 +148,7 @@ $$""")
     return new_maps
 # sharpen_mask_unsharpen()
 
-def mask_and_fft_maps(maps, d_min, mask=None):
+def mask_and_fft_maps(maps, d_min, mask=None, with_000=True):
     assert len(maps) <= 2
     hkldata = None
     for i, m in enumerate(maps):
@@ -161,7 +161,7 @@ def mask_and_fft_maps(maps, d_min, mask=None):
             g.array[:] *= mask
         f_grid = gemmi.transform_map_to_f_phi(g)
         if hkldata is None:
-            asudata = f_grid.prepare_asu_data(dmin=d_min, with_000=True)
+            asudata = f_grid.prepare_asu_data(dmin=d_min, with_000=with_000)
             hkldata = hkl.hkldata_from_asu_data(asudata, lab)
         else:
             hkldata.df[lab] = f_grid.get_value_by_hkl(hkldata.miller_array())
