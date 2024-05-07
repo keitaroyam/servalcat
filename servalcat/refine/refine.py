@@ -53,7 +53,7 @@ class Geom:
         if shake_rms > 0:
             numpy.random.seed(0)
             utils.model.shake_structure(self.st, shake_rms, copy=False)
-            utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
+            #utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if params is None:
