@@ -682,6 +682,8 @@ class Refine:
             show_binstats(llstats["bin_stats"], 0)
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
+        if stats_json_out:
+            write_stats_json_safe(stats, stats_json_out)
         occ_refine_flag = self.ll is not None and self.geom.group_occ.groups and self.geom.group_occ.ncycle > 0
 
         for i in range(ncycles):
