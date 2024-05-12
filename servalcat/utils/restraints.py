@@ -89,8 +89,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
         
     if monomer_dir and not ignore_monomer_dir:
         if not os.path.isdir(monomer_dir):
-            logger.error("ERROR: not a directory: {}".format(monomer_dir))
-            return
+            raise RuntimeError("not a directory: {}".format(monomer_dir))
 
         logger.writeln("Reading monomers from {}".format(monomer_dir))
         monlib = gemmi.read_monomer_lib(monomer_dir, resnames, ignore_missing=True)
