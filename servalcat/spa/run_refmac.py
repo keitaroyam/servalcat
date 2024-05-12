@@ -477,7 +477,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         st.ncs.clear()
     utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_contacting=args.contacting_only)
     st_expanded = st.clone()
-    if len(st.ncs) > 0:
+    if not all(op.given for op in st.ncs):
         if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
             raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
                              "It is very likely you gave symmetry-expanded model along with symmetry operators.")
