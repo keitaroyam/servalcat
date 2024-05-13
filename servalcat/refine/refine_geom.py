@@ -54,24 +54,32 @@ def parse_args(arg_list):
 # parse_args()
 
 def add_program_info_to_dictionary(block, comp_id, program_name="servalcat", descriptor="optimization tool"):
-    tab = block.find("_pdbx_chem_comp_description_generator.", ["program_name", "program_version", "descriptor"])
-    # just overwrite version if it's there
-    for row in tab:
-        if row.str(0) == program_name and row.str(2) == descriptor:
-            row[1] = gemmi.cif.quote(servalcat.__version__)
-            return
-    loop = tab.loop
-    if not loop:
-        loop = block.init_loop("_pdbx_chem_comp_description_generator.", ["comp_id",
-                                                                          "program_name",
-                                                                          "program_version",
-                                                                          "descriptor"])
+    # old acedrg used _pdbx_chem_comp_description_generator. and descriptor
+    # new acedrg (>280?) uses _acedrg_chem_comp_descriptor. and type
+    for tag, name in (("_acedrg_chem_comp_descriptor.", "type"),
+                      ("_pdbx_chem_comp_description_generator.", "descriptor")):
+        tab = block.find(tag, ["program_name", "program_version", name])
+        if tab:
+            loop = tab.loop
+            # just overwrite version if it's there
+            for row in tab:
+                if row.str(0) == program_name and row.str(2) == descriptor:
+                    row[1] = gemmi.cif.quote(servalcat.__version__)
+                    return
+            break
+    else:
+        # it may be strange to say _acedrg in this case..
+        name = "type"
+        loop = block.init_loop("_acedrg_chem_comp_descriptor.", ["comp_id",
+                                                                 "program_name",
+                                                                 "program_version",
+                                                                 name])
     tags = [x[x.index(".")+1:] for x in loop.tags]
     row = ["" for _ in range(len(tags))]
     for tag, val in (("comp_id", comp_id),
                      ("program_name", program_name),
                      ("program_version", servalcat.__version__),
-                     ("descriptor", descriptor)):
+                     (name, descriptor)):
         if tag in tags: row[tags.index(tag)] = val
     loop.add_row(gemmi.cif.quote_list(row))
 # add_program_info_to_dictionary()
