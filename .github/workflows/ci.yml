@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-11, macos-12, macos-13, macos-14, windows-2022]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-12, macos-13, macos-14, windows-2022]
         py: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
         exclude:
         # may be supported later https://github.com/actions/setup-python/issues/808
