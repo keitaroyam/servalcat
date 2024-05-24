@@ -71,7 +71,7 @@ else()
     FetchContent_Declare(
       gemmi
       GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
-      GIT_TAG        v0.6.5
+      GIT_TAG        1658ac329a02d8ef5e3ea503068a63b04a265518 #v0.6.5
     )
     FetchContent_GetProperties(gemmi)
     if (NOT gemmi_POPULATED)
