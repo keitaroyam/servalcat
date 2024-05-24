@@ -156,7 +156,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     dc.blur = blur
     dc.cutoff = cutoff
     dc.rate = rate
-    dc.set_grid_cell_and_spacegroup(st)
+    dc.grid.setup_from(st)
 
     t_start = time.time()
     if mott_bethe:
@@ -291,7 +291,7 @@ def get_em_expected_hydrogen(st, d_min, monlib, weights=None, blur=None, cutoff=
     logger.writeln("box_size= {:.2f}".format(box_size))
     mode_all = False #True
     if mode_all:
-        dc.set_grid_cell_and_spacegroup(st)
+        dc.grid.setup_from(st)
     else:
         dc.grid.unit_cell = gemmi.UnitCell(box_size, box_size, box_size, 90, 90, 90)
         dc.grid.spacegroup = gemmi.SpaceGroup("P1")
