@@ -306,7 +306,7 @@ def read_cif_safe(cif_in):
     return doc
 # read_cif_safe()
 
-def read_structure(xyz_in):
+def read_structure(xyz_in, assign_het_flags=True):
     spext = splitext(xyz_in)
     st = None
     if spext[1].lower() in (".pdb", ".ent"):
@@ -352,6 +352,8 @@ def read_structure(xyz_in):
             n_given = sum(1 for x in st.ncs if x.given)
             logger.writeln(" No. strict NCS: {} ({} already applied)".format(len(st.ncs), n_given))
         logger.writeln("")
+    if assign_het_flags:
+        st.assign_het_flags()
     return st
 # read_structure()
 
