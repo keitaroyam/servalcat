@@ -65,7 +65,8 @@ def read_stdin(stdin):
 # read_stdin()
 
 def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
-                no_adjust_hydrogen_distances=False, fix_long_resnames=True):
+                no_adjust_hydrogen_distances=False, fix_long_resnames=True,
+                keep_entities=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
@@ -81,6 +82,8 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 if at.occ > 1: # XXX should I check special positions?
                     at.occ = 1.
 
+    if not keep_entities:
+        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
     try:
         monlib = utils.restraints.load_monomer_library(st,
@@ -158,7 +161,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
         for res in chain:
             if len(chain.name) < 3:
                 # Change Axp (or AAxp) to A_p (or AA_p)
-                res.subchain = res.subchain[:-2] + "_" + res.subchain[-1:]
+                res.subchain = chain.name + "_" + res.subchain[len(chain.name)+1:]
             else:
                 # Refmac only expects '_' at 2nd or 3rd position, and can accept up to 4 letters.
                 # Using raw chain ID may change alignment result for local NCS restraints,
@@ -297,14 +300,13 @@ def main(args):
                 logger.writeln("Box size from the model with padding of {}: {}".format(args.auto_box_with_padding, st.cell.parameters))
             else:
                 raise SystemExit("Error: unit cell is not defined in the model.")
-        if not args.keep_entities:
-            utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         xyzout_dir = os.path.dirname(get_output_model_names(opts.get("xyzout"))[0])
         crdout = os.path.join(xyzout_dir,
                               "gemmi_{}_{}.crd".format(utils.fileio.splitext(os.path.basename(xyzin))[0], os.getpid()))
         refmac_fixes, metal_kws = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                               h_pos="nucl" if keywords.get("source")=="ne" else "elec",
-                                              no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances)
+                                              no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances,
+                                              keep_entities=args.keep_entities)
         inputs = metal_kws + inputs # add metal exte first; otherwise it may be affected by user-defined inputs
         opts["xyzin"] = crdout
         cispeps = st.cispeps
