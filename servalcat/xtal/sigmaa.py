@@ -1185,9 +1185,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 def calc_Fmask(st, d_min, miller_array):
     logger.writeln("Calculating solvent contribution..")
     grid = gemmi.FloatGrid()
-    spacing = min(1 / (2 * x / d_min + 1) / xr for x, xr in zip(st.cell.parameters[:3],
-                                                                st.cell.reciprocal().parameters[:3]))
-    grid.setup_from(st, spacing=min(0.4, spacing))
+    grid.setup_from(st, spacing=min(0.6, d_min / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
     masker.put_mask_on_float_grid(grid, st[0])
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
