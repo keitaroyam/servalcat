@@ -171,25 +171,6 @@ def fix_elements_in_model(monlib, st):
                     at.element = el
 # correct_elements_in_model()
 
-def read_group(s): # can use gemmi.ChemComp.read_group when gemmi 0.6.6 is out
-    s = s.lower()
-    d = {"non-": gemmi.ChemComp.Group.NonPolymer,
-         ("pept", "l-pe"): gemmi.ChemComp.Group.Peptide,
-         "p-pe": gemmi.ChemComp.Group.PPeptide,
-         "m-pe": gemmi.ChemComp.Group.MPeptide,
-         "dna/": gemmi.ChemComp.Group.DnaRna,
-         "dna": gemmi.ChemComp.Group.Dna,
-         "rna": gemmi.ChemComp.Group.Rna,
-         "pyra": gemmi.ChemComp.Group.Pyranose,
-         "keto": gemmi.ChemComp.Group.Ketopyranose,
-         "fura": gemmi.ChemComp.Group.Furanose,
-         }
-    for x in d:
-        if s.startswith(x):
-            return d[x]
-    return gemmi.ChemComp.Group.Null
-# read_group()
-
 def update_torsions(monlib, params):
     # take subset
     params = [p for p in params
@@ -202,7 +183,7 @@ def update_torsions(monlib, params):
             tors = [cc.rt.torsions for cc in monlib.monomers.values()
                     if fnmatch.fnmatch(cc.name, p["residue"])]
         elif "group" in p:
-            g = read_group(p["group"])
+            g = gemmi.ChemComp.read_group(p["group"])
             # should warn if g is Null
             tors = [cc.rt.torsions for cc in monlib.monomers.values()
                     if cc.group == g]
@@ -275,7 +256,7 @@ def select_restrained_torsions(monlib, include_rules, exclude_rules):
         mod = monlib.modifications[mod_id]
         tors = [x.label for x in mod.rt.torsions if chr(x.id1.comp) in ("a", "c")] # don't need delete
         if not tors: continue
-        gr = read_group(mod.group_id)
+        gr = gemmi.ChemComp.read_group(mod.group_id)
         if mod.comp_id and mod.comp_id in all_tors["mon"]:
             all_tors["mon"][mod.comp_id].extend(tors)
         elif not mod.comp_id and gr in groups:
@@ -293,7 +274,7 @@ def select_restrained_torsions(monlib, include_rules, exclude_rules):
     for mon in all_tors["mon"]:
         match_f = lambda r: ("tors_name" in r and
                              ("residue" in r and fnmatch.fnmatch(mon, r["residue"]) or
-                              mon in groups.get(read_group(r.get("group", "")), [])))
+                              mon in groups.get(gemmi.ChemComp.read_group(r.get("group", "")), [])))
         use_tors = []
         for r in include_rules:
             if match_f(r):
