@@ -507,14 +507,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         elif ins == "LATT":
             latt = int(sp[1])
         elif ins == "SYMM":
-            trp = re.sub("0*\.50*", "1/2", "".join(sp[1:]))
-            trp = re.sub("0*\.250*", "1/4", trp)
-            trp = re.sub("0*\.750*", "3/4", trp)
-            trp = re.sub("0*\.33*", "1/3", trp)
-            trp = re.sub("0*\.6[67]*", "2/3", trp)
-            trp = re.sub("0*\.16[67]*", "1/6", trp) # never seen?
-            trp = re.sub("0*\.833*", "5/6", trp) # never seen?
-            symms.append(gemmi.Op(trp).wrap())
+            symms.append(gemmi.Op("".join(sp[1:])).wrap())
         elif ins == "SFAC": # TODO check numbers?
             if len(sp) < 2: continue
             sfacs.append(gemmi.Element(sp[1]))
