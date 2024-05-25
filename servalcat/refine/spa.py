@@ -60,7 +60,7 @@ class LL_SPA:
 
     def overall_scale(self, min_b=0.5):
         k, b = self.hkldata.scale_k_and_b(lab_ref=self.lab_obs, lab_scaled="FC")
-        min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
+        min_b_iso = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too
         tmp = min_b_iso + b
         if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
             logger.writeln("Adjusting overall B to avoid too small value")

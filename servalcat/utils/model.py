@@ -52,15 +52,8 @@ def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_
     st.deduplicate_entities()
 # setup_entities()
 
-def minimum_b(m):
-    b_min = min((cra.atom.b_iso for cra in m.all()))
-    eig_mins = [min(cra.atom.aniso.calculate_eigenvalues()) for cra in m.all() if cra.atom.aniso.nonzero()]
-    if len(eig_mins) > 0: b_min = min(b_min, min(eig_mins) * u_to_b)
-    return b_min
-# minimum_b()
-
 def determine_blur_for_dencalc(st, grid):
-    b_min = minimum_b(st[0])
+    b_min = st[0].calculate_b_aniso_range()[0]
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
     return b_add
