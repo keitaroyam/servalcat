@@ -1017,14 +1017,21 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
+    if len(xyzins) > 0 and type(xyzins[0]) is gemmi.Structure:
+        sts = xyzins
+    else:
+        sts = []
+    
     if type(hklin) is gemmi.Mtz or utils.fileio.is_mmhkl_file(hklin):
         if type(hklin) is gemmi.Mtz:
             mtz = hklin
         else:
             mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
-        sts = [utils.fileio.read_structure(f) for f in xyzins]
+        if not sts:
+            sts = [utils.fileio.read_structure(f) for f in xyzins]
     else:
         assert len(xyzins) == 1
+        assert not sts
         st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
         sts = [st]
 
@@ -1195,7 +1202,7 @@ def calc_Fmask(st, d_min, miller_array):
     return Fmask
 # calc_Fmask()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None):
+def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh"):
     fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
     if use_solvent:
         if mask is None:
@@ -1205,7 +1212,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
             Fmask = fmask_gr.get_value_by_hkl(hkldata.miller_array())
         fc_list.append(Fmask)
 
-    scaling = LsqScale()
+    scaling = LsqScale(func_type=func_type)
     scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0)
     scaling.scale()
     b_iso = scaling.b_iso
