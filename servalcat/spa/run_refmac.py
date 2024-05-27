@@ -478,12 +478,13 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
     utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0], filter_contacting=args.contacting_only)
     st_expanded = st.clone()
     if not all(op.given for op in st.ncs):
+        # symmetry is not exact in helical reconstructions
+        cc_cutoff = 0.9 if args.twist is None else 0.7
         if not args.no_check_ncs_overlaps and utils.model.check_symmetry_related_model_duplication(st):
-            raise SystemExit("\nError: Too many symmetery-related contacts detected.\n"
-                             "It is very likely you gave symmetry-expanded model along with symmetry operators.")
-        if not args.no_check_ncs_map and utils.maps.check_symmetry_related_map_values(st, maps[0][0]):
-            raise SystemExit("\nError: Too small map correlation.\n"
-                             "It is very likely your map does not follow symmetry of the model.")
+            raise SystemExit("\nError: Too many symmetry-related contacts detected.\n"
+                             "Please provide an asymmetric unit model along with symmetry operators.")
+        if not args.no_check_ncs_map and utils.maps.check_symmetry_related_map_values(st, maps[0][0], cc_cutoff=cc_cutoff):
+            raise SystemExit("\nError: Map correlation is too small. Please ensure your map follows the model's symmetry")
         args.keywords.extend(utils.symmetry.ncs_ops_for_refmac(st.ncs))
         utils.model.expand_ncs(st_expanded)
         logger.writeln(" Saving expanded model: input_model_expanded.*")
