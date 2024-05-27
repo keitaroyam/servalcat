@@ -51,8 +51,6 @@ def read_stdin(stdin):
     ret = {"make":{}, "ridge":{}, "refi":{}}
     inputs = []
     for l in refmac_keywords.get_lines(stdin):
-        if l.split()[0].lower().startswith("end"):
-            break
         refmac_keywords.parse_line(l, ret)
         inputs.append(l + "\n")
     

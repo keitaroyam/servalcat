@@ -591,6 +591,8 @@ def get_lines(lines):
         if cont:
             l = cont + l
             cont = ""
+        if l.split()[0].lower().startswith("end"):
+            break
         yield l
 # get_lines()
             
@@ -598,8 +600,6 @@ def update_params(ret, inputs):
     if not inputs:
         return
     for l in get_lines(inputs):
-        if l.split()[0].lower().startswith("end"):
-            break
         parse_line(l, ret)
 # update_keywords()
 
@@ -615,8 +615,6 @@ if __name__ == "__main__":
     print("waiting for input")
     ret = {} #{"make":{}, "ridge":{}, "refi":{}}
     for l in get_lines(sys.stdin):
-        if l.split()[0].lower().startswith("end"):
-            break
         parse_line(l, ret)
     print()
     print("Parsed:")
