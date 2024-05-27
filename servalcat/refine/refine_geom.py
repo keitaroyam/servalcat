@@ -142,7 +142,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                 find_links=False, use_ncsr=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-    if st.ncs:
+    if not all(op.given for op in st.ncs):
         st2 = st.clone()
         logger.writeln("Take NCS constraints into account.")
         st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
