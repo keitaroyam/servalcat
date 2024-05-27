@@ -210,15 +210,22 @@ def show_binstats(df, cycle_number):
     logger.writeln(lstr)
 # show_binstats()
 
-def write_stats_json_safe(stats, json_out):
+def convert_stats_to_dicts(stats):
     tmp = []
     for s in stats: # stats must be a list of dict
         tmp.append({})
         for k in s:
             if k == "geom":
-                tmp[-1]["geom"] = s["geom"].to_dict()
+                tmp[-1]["geom"] = {"summary": s["geom"]["summary"].to_dict()}
+                for kk in s["geom"]["outliers"]:
+                    tmp[-1]["geom"].setdefault("outliers", {})[kk] = s["geom"]["outliers"][kk].to_dict(orient="records")
             else:
                 tmp[-1][k] = s[k]
+    return tmp
+# convert_stats_to_dicts()
+
+def write_stats_json_safe(stats, json_out):
+    tmp = convert_stats_to_dicts(stats)
     out_tmp = json_out + ".part"
     with open(out_tmp, "w") as ofs:
         json.dump(tmp, ofs, indent=2)
@@ -671,7 +678,7 @@ class Refine:
         stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
                                                        adp_mode=self.adp_mode,
                                                        use_occr=self.refine_occ,
-                                                       show_outliers=True)["summary"]
+                                                       show_outliers=True)
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -701,7 +708,7 @@ class Refine:
             stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
                                                            adp_mode=self.adp_mode,
                                                            use_occr=self.refine_occ,
-                                                           show_outliers=(i==ncycles-1))["summary"]
+                                                           show_outliers=(i==ncycles-1))
             if self.ll is not None:
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()
@@ -716,9 +723,9 @@ class Refine:
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)
             if (weight_adjust and self.refine_xyz and not self.unrestrained and self.ll is not None and
-                len(stats) > 2 and "Bond distances, non H" in stats[-1]["geom"].index):
-                rmsz = stats[-1]["geom"]["r.m.s.Z"]["Bond distances, non H"]
-                rmsz0 = stats[-2]["geom"]["r.m.s.Z"]["Bond distances, non H"]
+                len(stats) > 2 and "Bond distances, non H" in stats[-1]["geom"]["summary"].index):
+                rmsz = stats[-1]["geom"]["summary"]["r.m.s.Z"]["Bond distances, non H"]
+                rmsz0 = stats[-2]["geom"]["summary"]["r.m.s.Z"]["Bond distances, non H"]
                 if rmsz > weight_adjust_bond_rmsz_range[1] and rmsz > rmsz0:
                     weight /= 1.1
                 elif rmsz < weight_adjust_bond_rmsz_range[0] and rmsz0 < weight_adjust_bond_rmsz_range[0] and rmsz < rmsz0:
@@ -746,8 +753,8 @@ class Refine:
                                 ("r.m.s.Z", "Bond distances, non H", "zBOND"),
                                 ("r.m.s.d.", "Bond angles, non H", "rmsANGL"),
                                 ("r.m.s.Z", "Bond angles, non H", "zANGL")):
-                    if k in d["geom"] and n in d["geom"][k]:
-                        x[l] = d["geom"][k].get(n)
+                    if k in d["geom"]["summary"] and n in d["geom"]["summary"][k]:
+                        x[l] = d["geom"]["summary"][k].get(n)
                         geom_keys.add(l)
             tmp.append(x)
         df = pandas.DataFrame(tmp)
@@ -799,11 +806,11 @@ class Refine:
             raw_remarks.append("REMARK   3  RMS DEVIATIONS FROM IDEAL VALUES        COUNT    RMS    WEIGHT")
             for k, n, l, pl in (("r.m.s.d.", "Bond distances, non H", "s_bond_nonh_d", "BOND LENGTHS REFINED ATOMS        (A)"),
                                 ("r.m.s.d.", "Bond angles, non H", "s_angle_nonh_d", "BOND ANGLES REFINED ATOMS   (DEGREES)")):
-                if k in stats["geom"] and n in stats["geom"][k]:
+                if k in stats["geom"]["summary"] and n in stats["geom"]["summary"][k]:
                     rr = gemmi.RefinementInfo.Restr(l)
-                    rr.dev_ideal = stats["geom"][k].get(n)
-                    rr.count = stats["geom"]["N restraints"].get(n)
-                    rr.weight = stats["geom"]["Mn(sigma)"].get(n)
+                    rr.dev_ideal = stats["geom"]["summary"][k].get(n)
+                    rr.count = stats["geom"]["summary"]["N restraints"].get(n)
+                    rr.weight = stats["geom"]["summary"]["Mn(sigma)"].get(n)
                     restr_stats.append(rr)
                     raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
             ri.restr_stats = restr_stats

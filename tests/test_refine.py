@@ -34,7 +34,7 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_geom", "--model", pdbin, "--rand", "0.5"]
         main()
         stats = json.load(open("5e5z_refined_stats.json"))
-        self.assertLess(stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"], 0.01)
+        self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond distances, non H"], 0.01)
         
     def test_refine_spa(self):
         data = test_spa.data

@@ -282,9 +282,9 @@ def main(args):
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
 
-    if "geom" in stats[-1] and "Bond distances, non H" in stats[-1]["geom"].index:
-        rmsbond = stats[-1]["geom"]["r.m.s.d."]["Bond distances, non H"]
-        rmsangle = stats[-1]["geom"]["r.m.s.d."]["Bond angles, non H"]
+    if "geom" in stats[-1] and "Bond distances, non H" in stats[-1]["geom"]["summary"].index:
+        rmsbond = stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond distances, non H"]
+        rmsangle = stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond angles, non H"]
     else:
         rmsbond, rmsangle = numpy.nan, numpy.nan
     if args.mask_for_fofc:

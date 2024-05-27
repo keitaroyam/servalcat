@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Geom, Refine
+from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -131,10 +131,8 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
     logger.writeln("Updated dictionary saved: {}".format(output_prefix + "_updated.cif"))
     with open(output_prefix + "_stats.json", "w") as ofs:
-        for stats in all_stats:
-            for s in stats:
-                s["geom"] = s["geom"].to_dict()
-        json.dump(all_stats, ofs, indent=2)
+        json.dump([convert_stats_to_dicts(x) for x in all_stats],
+                  ofs, indent=2)
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_and_update_dictionary()
 
