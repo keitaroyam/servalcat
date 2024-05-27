@@ -124,7 +124,7 @@ class TestSPACommands(unittest.TestCase):
                     "--model", data["pdb"], "--mask", data["mask"]]
         main()
         self.assertTrue(os.path.isfile("fsc.dat"))
-        df = pandas.read_table("fsc.dat", comment="#", sep="\s+")
+        df = pandas.read_table("fsc.dat", comment="#", sep=r"\s+")
         
         numpy.testing.assert_allclose(df.fsc_FC_full,
                                       [0.999132, 0.981112, 0.960192, 0.937756, 0.945335, 0.935267,
