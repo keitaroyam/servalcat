@@ -573,7 +573,7 @@ def parse_line(l, ret):
         # TODO read maxr, over, sigm, incr, chan, vdwc, excl
 # parse_line()
 
-def get_lines(lines):
+def get_lines(lines, depth=0):
     ret = []
     cont = ""
     for l in lines:
@@ -583,7 +583,10 @@ def get_lines(lines):
         if not l: continue
         if l[0] == "@":
             f = l[1:]
-            yield from get_lines(open(f).readlines())
+            try:
+                yield from get_lines(open(f).readlines(), depth+1)
+            except RuntimeError:
+                return
             continue
         if l.split()[-1] == "-":
             cont += l[:l.rfind("-")] + " "
@@ -592,6 +595,10 @@ def get_lines(lines):
             l = cont + l
             cont = ""
         if l.split()[0].lower().startswith("end"):
+            # refmac stops reading keywords when "exit" is seen in stdin or a file
+            # but won't do this from nested files
+            if depth == 1:
+                raise RuntimeError
             break
         yield l
 # get_lines()
