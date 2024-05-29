@@ -156,6 +156,7 @@ class LsqScale:
         self.k_overall = None
         self.b_iso = None
         self.b_aniso = None
+        self.stats = {}
 
     def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None):
         assert 0 < len(fc_list) < 3
@@ -396,11 +397,15 @@ class LsqScale:
                 if 0 < (f0 - f1) / f0 < 1e-6:
                     break
             res_x = x
+            self.stats["fun"] = f1
+            self.stats["x"] = x
         else:
             res = scipy.optimize.minimize(fun=self.target, x0=x0, jac=self.grad, bounds=bounds)
             #logger.writeln(str(res))
             logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
             res_x = res.x
+            self.stats["fun"] = res.fun
+            self.stats["x"] = res.x
         logger.writeln(" time: {:.3f} sec".format(time.time() - t0))
         self.k_overall = self.k_trans(res_x[0])
         nadp = self.adpdirs.shape[0]
@@ -414,9 +419,11 @@ class LsqScale:
             self.b_sol = res_x[-1]
             logger.writeln(" k_sol= {:.2e} B_sol= {:.2e}".format(self.k_sol, self.b_sol))
         calc = numpy.abs(self.scaled_fc(res_x))
-        if self.use_int: calc *= calc            
-        logger.writeln(" CC{} = {:.4f}".format(self.labcut, utils.hkl.correlation(self.obs, calc)))
-        logger.writeln(" R{}  = {:.4f}".format(self.labcut, utils.hkl.r_factor(self.obs, calc)))
+        if self.use_int: calc *= calc
+        self.stats["cc"] = utils.hkl.correlation(self.obs, calc)
+        self.stats["r"] = utils.hkl.r_factor(self.obs, calc)
+        logger.writeln(" CC{} = {:.4f}".format(self.labcut, self.stats["cc"]))
+        logger.writeln(" R{}  = {:.4f}".format(self.labcut, self.stats["r"]))
 # class LsqScale
 
 def calc_abs_DFc(Ds, Fcs):
