@@ -25,7 +25,7 @@ pip install servalcat
 ```
 will install the stable version.
 
-The required GEMMI version is now [v0.6.5](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.5). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
+The required GEMMI version is now [v0.6.6](https://github.com/project-gemmi/gemmi/releases/tag/v0.6.6). It may not work with the latest gemmi code from the github. The policy is in the main branch I only push the code that works with the latest package of GEMMI.
 
 To use the Refmac5 related commands, you also need to install [CCP4](https://www.ccp4.ac.uk/). For "No Refmac5" commands, you may just need [the monomer library](https://github.com/MonomerLibrary/monomers) if CCP4 is not installed.
 

@@ -58,7 +58,7 @@ if (DEFINED SKBUILD)
     # For now, locate it relatively to pybind11.
     get_filename_component(gemmi_ROOT "${pybind11_INCLUDE_DIR}/../../../.." ABSOLUTE)
   endif()
-  find_package(gemmi 0.6.5 CONFIG REQUIRED)
+  find_package(gemmi 0.6.6 CONFIG REQUIRED)
 else()
   set(USE_PYTHON ON CACHE BOOL "" FORCE)
   message(STATUS "")
@@ -71,7 +71,7 @@ else()
     FetchContent_Declare(
       gemmi
       GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
-      GIT_TAG        1658ac329a02d8ef5e3ea503068a63b04a265518 #v0.6.5
+      GIT_TAG        v0.6.6
     )
     FetchContent_GetProperties(gemmi)
     if (NOT gemmi_POPULATED)
