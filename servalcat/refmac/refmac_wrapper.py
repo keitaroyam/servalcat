@@ -166,6 +166,11 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 # but to avoid this we would need chain ID translation, which is too complicated.
                 # This also invalidates _struct_asym, which Refmac does not seem to care
                 res.subchain = chain.name
+    # change st.name if needed
+    block_names = utils.restraints.dictionary_block_names(monlib, topo)
+    for i in range(1000):
+        if st.name.lower() in block_names:
+            st.name = st.name + str(i)
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
     doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))

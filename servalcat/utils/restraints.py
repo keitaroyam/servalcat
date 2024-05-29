@@ -629,6 +629,20 @@ def make_atom_spec(cra):
     return s
 # make_atom_spec()        
 
+def dictionary_block_names(monlib, topo):
+    used = {x.lower() for x in monlib.monomers}
+    for chain_info in topo.chain_infos:
+        for res_info in chain_info.res_infos:
+            for link in res_info.prev:
+                # won't be included if the name starts with "auto-", but don't do such checks here
+                used.add("link_" + link.link_id.lower())
+        for mod in res_info.mods:
+            used.add("mod_" + mod.id.lower())
+    for extra in topo.extras:
+        used.add("link_" + extra.link_id.lower())
+    return used
+# dictionary_block_names()
+
 def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
     logger.writeln("Finding NCS..")
     polymers = {}
