@@ -17,7 +17,7 @@ double f1_orig2(double x, double z, double to, double tf, double sig1, int c) {
   const double ret = 0.5 * x2 * x2 - to * x2 - z * std::log(x);
   if (tf == 0.) return ret;
   const double X = x * tf / sig1;
-  const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : log_cosh(X);
+  const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);
   return ret - log_ic0;
 }
 double f1_orig2_der1(double x, double z, double to, double tf, double sig1, int c) {
@@ -43,7 +43,7 @@ double f1_exp2(double y, double z, double to, double tf, double sig1, int c) {
   const double ret = 0.5 * exp2*exp2 - to * exp2 - z * (y - e_y) - std::log(1 + e_y);
   if (tf == 0.) return ret;
   const double X = std::exp(y - e_y) * tf / sig1;
-  const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : log_cosh(X);
+  const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);
   return ret - log_ic0;
 }
 double f1_exp2_der1(double y, double z, double to, double tf, double sig1, int c) {

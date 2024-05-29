@@ -12,14 +12,8 @@ namespace servalcat {
 
 constexpr double sq(double x) {return x * x;}
 
-inline double log_cosh(double x) {
-  // from gemmi/python/gemmi.cpp
-  x = std::abs(x);
-  return x + std::log1p(std::exp(-2 * x)) - std::log(2.);
-}
-
 inline double log_i0_or_cosh(double X, int c) {
-  return c == 1 ? gemmi::log_bessel_i0(2*X) : log_cosh(X);
+  return c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);
 }
 
 inline double fom(double X, int c) {

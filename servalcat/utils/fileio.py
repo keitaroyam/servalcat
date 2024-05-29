@@ -306,7 +306,7 @@ def read_cif_safe(cif_in):
     return doc
 # read_cif_safe()
 
-def read_structure(xyz_in):
+def read_structure(xyz_in, assign_het_flags=True):
     spext = splitext(xyz_in)
     st = None
     if spext[1].lower() in (".pdb", ".ent"):
@@ -352,6 +352,8 @@ def read_structure(xyz_in):
             n_given = sum(1 for x in st.ncs if x.given)
             logger.writeln(" No. strict NCS: {} ({} already applied)".format(len(st.ncs), n_given))
         logger.writeln("")
+    if assign_het_flags:
+        st.assign_het_flags()
     return st
 # read_structure()
 
@@ -505,14 +507,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         elif ins == "LATT":
             latt = int(sp[1])
         elif ins == "SYMM":
-            trp = re.sub("0*\.50*", "1/2", "".join(sp[1:]))
-            trp = re.sub("0*\.250*", "1/4", trp)
-            trp = re.sub("0*\.750*", "3/4", trp)
-            trp = re.sub("0*\.33*", "1/3", trp)
-            trp = re.sub("0*\.6[67]*", "2/3", trp)
-            trp = re.sub("0*\.16[67]*", "1/6", trp) # never seen?
-            trp = re.sub("0*\.833*", "5/6", trp) # never seen?
-            symms.append(gemmi.Op(trp).wrap())
+            symms.append(gemmi.Op("".join(sp[1:])).wrap())
         elif ins == "SFAC": # TODO check numbers?
             if len(sp) < 2: continue
             sfacs.append(gemmi.Element(sp[1]))
@@ -572,20 +567,11 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
     if latt > 0:
         symms.extend([x*gemmi.Op("-x,-y,-z") for x in symms])
 
-    symms = list(set(symms))
-    sg = gemmi.find_spacegroup_by_ops(gemmi.GroupOps(symms))
+    ss.symops = [op.triplet() for op in set(symms)]
+    ss.set_spacegroup("s")
     # in case of non-regular setting, gemmi.SpaceGroup cannot be constructed anyway.
-    if sg is None:
-        logger.error("Cannot construct space group from symbols: {}".format([x.triplet() for x in symms]))
-    else:
-        ss.spacegroup_hm = sg.xhm()
-
-    if sg is not None: # debug
-        sgops = set(gemmi.SpaceGroup(ss.spacegroup_hm).operations())
-        opdiffs = sgops.symmetric_difference(symms)
-        if opdiffs:
-            logger.writeln("ops= {}".format(" ".join([x.triplet() for x in symms])))
-
+    if ss.spacegroup is None:
+        raise RuntimeError("Cannot construct space group from symbols: {}".format(ss.symops))
     return ss, info
 # read_shelx_ins()
 
@@ -688,7 +674,7 @@ def read_smcif_shelx(cif_in):
     if not hkl_str: raise RuntimeError("_shelx_hkl_file not found in {}".format(cif_in))
     
     ss, info = read_shelx_ins(lines_in=res_str.splitlines())
-    mtz = read_shelx_hkl(ss.cell, ss.find_spacegroup(), info.get("hklf"), lines_in=hkl_str.splitlines())
+    mtz = read_shelx_hkl(ss.cell, ss.spacegroup, info.get("hklf"), lines_in=hkl_str.splitlines())
     return mtz, ss, info
 # read_smcif_shelx()
 

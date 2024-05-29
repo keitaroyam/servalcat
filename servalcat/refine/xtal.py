@@ -80,7 +80,7 @@ class LL_Xtal:
         self.scaling.scale()
         self.b_aniso = self.scaling.b_aniso
         b = self.scaling.b_iso
-        min_b_iso = utils.model.minimum_b(self.st[0]) # actually min of aniso too
+        min_b_iso = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too
         tmp = min_b_iso + b
         if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
             logger.writeln(" Adjusting overall B to avoid too small value")
