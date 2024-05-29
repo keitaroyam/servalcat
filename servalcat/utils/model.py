@@ -16,6 +16,7 @@ import itertools
 import string
 
 gemmi.IT92_normalize()
+gemmi.IT92_set_ignore_charge(False)
 gemmi.Element("X").it92.set_coefs(gemmi.Element("O").it92.get_coefs()) # treat X (unknown) as O
 
 u_to_b = 8 * numpy.pi**2
