@@ -377,6 +377,16 @@ def write_coot_script(py_out, model_file, mtz_file, contour_fo=1.2, contour_fofc
                 ofs.write("add_molecular_symmetry(imol, {})\n".format(",".join(str(x) for x in v)))
 # write_coot_script()
 
+def write_chimerax_script(cxc_out, model_file, fo_mrc_file, fofc_mrc_file):
+    with open(cxc_out, "w") as ofs:
+        ofs.write('open {}\n'.format(model_file))
+        ofs.write('open {}\n'.format(fo_mrc_file))
+        ofs.write('open {}\n'.format(fofc_mrc_file))
+        ofs.write('isolde start\n')
+        ofs.write('clipper associate #2 toModel #1\n')
+        ofs.write('clipper associate #3 toModel #1\n')
+# write_chimerax_script()
+
 def main(args):
     if not args.halfmaps and not args.map:
         raise SystemExit("Error: give --halfmaps or --map")

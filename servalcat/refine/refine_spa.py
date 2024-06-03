@@ -316,6 +316,9 @@ Weight used: {final_weight:.3e}
 Open refined model and {diffmap_prefix}.mtz with COOT:
 coot --script {prefix}_coot.py
 
+Open refined model, map and difference map with ChimeraX/ISOLDE:
+chimerax {prefix}_chimerax.cxc
+
 {map_peaks_msg}
 =============================================================================
 """.format(rmsbond=rmsbond,
