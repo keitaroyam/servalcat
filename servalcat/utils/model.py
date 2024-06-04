@@ -727,7 +727,7 @@ def invert_model(st):
 
 def cx_to_mx(ss): #SmallStructure to Structure
     st = gemmi.Structure()
-    st.spacegroup_hm = ss.spacegroup_hm
+    st.spacegroup_hm = ss.spacegroup.xhm()
     st.cell = ss.cell
     st.add_model(gemmi.Model("1"))
     st[-1].add_chain(gemmi.Chain("A"))

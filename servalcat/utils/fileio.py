@@ -712,7 +712,7 @@ def read_small_molecule_files(files):
                 logger.writeln("reflection data read from: {}".format(filename))
             elif b.find_loop("_refln_index_h"):
                 mtz = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
-        except ValueError: # not a cif file
+        except RuntimeError: # not a cif file
             if ext == ".hkl":
                 mtz = read_shelx_hkl(st.cell, st.find_spacegroup(), hklf, file_in=filename)
                 logger.writeln("reflection data read from: {}".format(filename))
