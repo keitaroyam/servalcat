@@ -102,15 +102,24 @@ def read_exte(s):
             itk = 2
             while itk < len(s): # FIXME check out-of-bounds in s[]
                 if s[itk].lower().startswith("scal"):
+                    itk += 1
+                    if itk >= len(s): break
                     try:
-                        defs["scale_sigma_dist"] = float(s[itk+1]) # scale_sigma_loc
-                        itk += 2
+                        defs["scale_sigma_dist"] = float(s[itk]) # scale_sigma_loc
+                        itk += 1
+                        continue
                     except ValueError:
                         pass
                     for k in ("angl", "tors", "chir", "plan", "dist", "inte"):
-                        if s[itk+1].lower().startswith(k):
-                            defs["scale_sigma_{}".format(k)]  = float(s[itk+2])
-                            itk += 3
+                        if s[itk].lower().startswith(k):
+                            itk += 1
+                            if itk >= len(s): break
+                            try:
+                                defs["scale_sigma_{}".format(k)] = float(s[itk])
+                                itk += 1
+                                break
+                            except ValueError:
+                                pass
                 elif s[itk].lower().startswith("sgmn"):
                     defs["sigma_min_loc"] = float(s[itk+1])
                     itk += 2
@@ -118,7 +127,7 @@ def read_exte(s):
                     defs["sigma_max_loc"] = float(s[itk+1])
                     itk += 2
                 else:
-                    raise RuntimeError("Error==> EXTE keyword interpretation: {}".format(l))
+                    raise RuntimeError("Error==> EXTE keyword interpretation: {}".format(" ".join(s)))
         elif s[1].lower().startswith(("miss", "unde")): # undefined
             defs["ignore_undefined"] = s[2].lower().startswith("igno")
         elif s[1].lower().startswith("hydr"): # hydrogen
