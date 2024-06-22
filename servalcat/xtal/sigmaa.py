@@ -983,15 +983,15 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
 # calculate_maps_int()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
-    st = sts[0].clone()
-    del st[:]
+    st2 = sts[0].clone()
+    del st2[:]
     model = gemmi.Model("1")
     for st in sts:
         for m in st:
             for c in m:
                 model.add_chain(c)
-    st.add_model(model)
-    return st
+    st2.add_model(model)
+    return st2
 # merge_models()
 
 def decide_mtz_labels(mtz, find_free=True):
