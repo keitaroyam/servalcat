@@ -11,27 +11,27 @@ We need the pdb (or mmcif) file, half maps and mask:
     wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-32377/masks/emd_32377_msk_1.map
 
 .. note::
-    Half maps must be unsharpened and unweighted. In this case ones from Refine3D job of RELION are used. Mask file is only used for map calculation after the refinement (thus it does not affect the refinement).
+    Half maps should be unsharpened and unweighted. In this example, the half maps are from a RELION Refine3D job. The mask file is only used for map calculation after the refinement and does not affect the refinement itself.
 
 
-**In this example please use Refmac5 from CCP4 8.0.007 (Refmac5.8.0403 or newer) and Servalcat from CCP-EM 1.7 (Servalcat 0.3.0 or newer).**
+**In this example please use at least CCP4 9.0 and Servalcat from it (Servalcat 0.4.72 or newer).**
 
 Run refinement from command-line
 --------------------------------
-Servalcat Refmac pipeline is available via refine_spa subcommand. Run following command in *a new directory* as this command creates files with fixed names.
+Servalcat's refinement pipeline is available through the refine_spa_norefmac subcommand. It is important to run this command in a new directory, as it creates a lot of files with fixed names by default.
 
 .. code-block:: console
 
-    $ servalcat refine_spa \
+    $ servalcat refine_spa_norefmac \
       --model ../7w9w.pdb \
       --halfmaps ../emd_32377_half_map_1.map.gz ../emd_32377_half_map_2.map.gz \
-      --mask_for_fofc  ../emd_32377_msk_1.map \
-      --pg C3 --resolution 1.95 --cross_validation 
+      --mask_for_fofc ../emd_32377_msk_1.map \
+      --pg C3 --resolution 1.95 [--cross_validation]
 
-* ``--halfmaps`` should be unsharpened and unweighted half maps.
-* ``--mask_for_fofc`` is only used in map calculation after the refinement. It does not affect the refinement.
-* ``--cross_validation`` is to run cross-validation using half maps as described in `Brown et al. 2015 <https://doi.org/10.1107/S1399004714021683>`_.
-* ``--pg C3`` is specified because the map is symmetrised with *C*\ 3 symmetry. In this case ``--model`` must be an asymmetric unit. The orientation of group and origin follow `RELION's convention <https://relion.readthedocs.io/en/latest/Reference/Conventions.html#symmetry>`_: 3-fold is along z-axis through the centre of the box.
+* ``--halfmaps`` Provide unsharpened and unweighted half maps.
+* ``--mask_for_fofc`` This mask is only used for map calculations after refinement and does not affect the refinement itself.
+* ``--cross_validation`` Use this option to run cross-validation with half maps. Half map 1 will be used for refinement, and map 2 for validation. Combine this option with ``--randomize 0.3`` to follow the method described in `Brown et al. 2015 <https://doi.org/10.1107/S1399004714021683>`_.
+* ``--pg C3`` This option specifies *C*\ 3 symmetry for the map. When using this option, the ``--model`` argument must be an asymmetric unit. The axis orientation and origin follow `RELION's convention <https://relion.readthedocs.io/en/latest/Reference/Conventions.html#symmetry>`_: 3-fold is along z-axis through the centre of the box.
 * ``--resolution`` is the resolution used in refinement and map calculation. It is always good to specify a bit higher value than the global one (as determined by the FSC=0.143 criterion), because local resolution can be higher. Here the global resolution was 2.02 Å so I put 1.95 Å.
 
 .. note::
@@ -41,29 +41,20 @@ In case you want to know what Servalcat does in the pipeline:
 
 #. Expand model with *C*\ 3 symmetry (written as input_model_expanded.pdb).
 #. Create a mask (mask_from_model.ccp4) around the model with 3 Å radius. A radius can be changed using ``--mask_radius``.
-#. Trim half maps using the mask and shift the model to the new origin (shifted.pdb).
-#. FFT maps after sharpen-mask-unsharpen procedure and writes Fourier coefficients to mtz file (masked_fs_obs.mtz).
-#. Let Refmac5 refine shifted.pdb against masked_fs_obs.mtz, and write shifted_refined.pdb. Refmac instructions are:
+#. Trim half maps using the mask and do Fourier transform of the maps after sharpen-mask-unsharpen procedure
+#. Perform refinement of coordinates and ADPs in the reciprocal space, with the following features:
+    * hydrogen atoms are internally generated at riding positions; can be changed using ``--hydrogen``
+    * hydrogen atoms are not written to the output model; specify ``--hout`` if you want them
+    * atomic scattering factors are calculated using Mott-Bethe formula from those for X-ray
+    * The number of cycles is 10 by default; can be changed using ``--ncycle``
+    * The weight is automatically determined by Servalcat using mask volume ratio and effective resolution; use ``--weight`` to change
+    * Output prefix can be changed by ``-o`` (default: refined)
 
-    * ``make hydr all`` to generate hydrogen atoms; can be changed using ``--hydrogen``
-    * ``make hout no`` not to write hydrogen atoms in the output; specify ``--hout`` if you want to have hydrogen in the output model
-    * ``solvent no`` not to consider bulk solvent effect
-    * ``scale lssc isot`` to only do isotropic overall scaling (no anisotropic scaling)
-    * ``source em mb`` to calculate atomic scattering factor using Mott-Bethe formula
-    * ``ncycle 10`` to run 10 conjugate gradient cycles; can be changed using ``--ncycle``
-    * ``weight auto 8.31e-01`` the weight is automatically determined by Servalcat using mask volume ratio and effective resolution
-    * ``ncsr local`` to use local NCS restraints if multiple chains with similar sequences exist
-    * ``@ncsc_shifted.txt`` to tell symmetry operators of point group symmetry specified by ``--pg``.
-
-#. Run cross validation
-
-    #. Shake the model with rms of 0.3 Å; can be changed using ``--shake_radius``
-    #. Refine the model (shifted_refined.pdb) against half map 1, and write shifted_refined_shaken_refined.pdb.
-
-#. Shift back the models to the original position
 #. Expand the final model with symmetry (refined_expanded.pdb)
-#. Calculate map-model FSC
-#. Calculate sharpened and weighted Fo and Fo-Fc maps (diffmap.mtz, diffmap_normalized_fo.mrc, diffmap_normalized_fofc.mrc)
+#. Calculate map-model FSC (half map 1/2 separately, when ``--cross_validation`` is requested)
+#. Calculate sharpened and weighted Fo and Fo-Fc maps (refined_diffmap.mtz, refined_diffmap_normalized_fo.mrc, refined_diffmap_normalized_fofc.mrc)
+    * With ``--cross_validation``, only half map 1 is used for these maps. Half map 2 is only used to derive the weights.
+    
 #. Show final summary
 
 Final summary is like this:
@@ -74,35 +65,32 @@ Final summary is like this:
     * Final Summary *
 
     Rmsd from ideal
-      bond lengths: 0.0062 A
-      bond  angles: 1.315 deg
+      bond lengths: 0.0101 A
+      bond  angles: 1.871 deg
 
     Map-model FSCaverages (at 1.95 A):
-     FSCaverage(full) =  0.8399
-    Cross-validated map-model FSCaverages:
-     FSCaverage(half1)=  0.7856
-     FSCaverage(half2)=  0.7614
+     FSCaverage(full) =  0.8522
      Run loggraph refined_fsc.log to see plots
 
     ADP statistics
-     Chain A (2400 atoms) min= 20.9 median= 48.1 max=189.7 A^2
+     Chain A (4708 atoms) min= 23.5 median= 57.8 max=146.9 A^2
 
-    Weight used: 0.830999970
+    Weight used: 7.430e-01
                  If you want to change the weight, give larger (looser restraints)
-                 or smaller (tighter) value to --weight_auto_scale=.
-
-    Open refined model and diffmap.mtz with COOT:
+                 or smaller (tighter) value to --weight=.
+             
+    Open refined model and refined_diffmap.mtz with COOT:
     coot --script refined_coot.py
 
     List Fo-Fc map peaks in the ASU:
-    servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model refined.pdb --abs_level 4.0
+    servalcat util map_peaks --map refined_diffmap_normalized_fofc.mrc --model refined.pdb --abs_level 4.0
     =============================================================================
 
 .. _chrmine-check-fsc:
 
 Check FSC
 ~~~~~~~~~
-You can use loggraph command from CCP4 to see map-model FSC vs resolution.
+Use the loggraph command from CCP4 to see the map-model FSC vs resolution curve.
 
 .. code-block:: console
 
@@ -114,12 +102,12 @@ You can use loggraph command from CCP4 to see map-model FSC vs resolution.
 
 Note
 
-* In loggraph, x-axis scale is 1/d^2, while in SPA usually 1/d scale is used.
-* Sharpened-masked-unsharpened half maps are used for half map FSC (FSC_half) with the mask used in the refinement. Currently phase randomisation is not performed.
-* FSC_full_sqrt is the estimated correlation between full map and true map: :math:`\sqrt{2{\rm FSC_{half}}/(1+{\rm FSC_{half}})}`. If FSC(full,model) is higher than this, it may indicate overfitting (see `Nicholls et al. 2018 <https://doi.org/10.1107/S2059798318007313>`_).
-* FSC curves are calculated up to Nyquist resolution
+* Loggraph uses a 1/d^2 scale on the x-axis, while SPA typically uses 1/d.
+* Half map FSC (FSC_half) calculations employ sharpened-masked-unsharpened half maps and the mask used during refinement. Phase randomization is currently not performed.
+* FSC_full_sqrt estimates correlation between full map and true map: :math:`\sqrt{2{\rm FSC_{half}}/(1+{\rm FSC_{half}})}`. A map-model FSC exceeding this value might indicate overfitting (see `Nicholls et al. 2018 <https://doi.org/10.1107/S2059798318007313>`_).
+* FSC curves are calculated up to the Nyquist resolution
 
-refined_fsc.json contains the same data. If you want to use external programs to plot FSC (such as R or MS Excel), you can convert it to csv file:
+The refined_fsc.json file contains the same data as the plot. To use external programs like R or MS Excel for plotting, you can convert it to a CSV file:
 
 .. code-block:: console
 
@@ -127,46 +115,33 @@ refined_fsc.json contains the same data. If you want to use external programs to
 
 Check maps and model
 ~~~~~~~~~~~~~~~~~~~~
-Let us open the refined model and maps with COOT:
+Use the following command to open the refined model and maps in COOT with a script:
 
 .. code-block:: console
 
     $ coot --script refined_coot.py
 
-Do not look at contour levels in "rmsd" (so-called sigma). In SPA, the sigma-level is useless, because box size is arbitrary and volumes outside the mask are all zero that leads to underestimate of sigma value.
-In this example we gave a mask file (with ``--mask_for_fofc``) so these maps are normalised within the mask. So raw map values can be considered "sigma level" in usual (crystallographic) sense. In COOT raw map values are shown with e/A^3 or V unit (these units are not right). Again, do not see values with rmsd unit in case of SPA!
+Ignore "rmsd" (sigma) contour levels. In SPA, the sigma level displayed as "rmsd" is not meaningful. The arbitrary box size and zero volumes outside the mask lead to underestimation of sigma.
+Since a mask file was provided (``--mask_for_fofc``), these maps are normalised within the mask. Therefore, raw map values can be considered as "sigma levels" in the usual crystallographic sense. However, COOT displays these values with incorrect units (e/A^3 or V). Avoid interpreting sigma based on the "rmsd" unit in SPA.
 
-You may find something interesting from the Fo-Fc map. Below is putative hydrogen densities (shown at 3 sigma level). Note that the map is calculated without hydrogen contribution (thus hydrogen omit Fo-Fc map) unless ``--hout`` is specified.
+The Fo-Fc map might reveal interesting features. The image below shows putative hydrogen densities displayed at a 3 sigma level. Note that the map includes hydrogen contributions by default. Use ``--hydrogen no`` to generate a hydrogen-omit Fo-Fc map, or run the fofc command after refinement.
 
 .. image:: chrmine_figs/coot_113-fs8.png
     :align: center
     :scale: 40%
 
-In other graphics programs such as Chimera or PyMOL, open diffmap_normalized_fo.mrc and diffmap_normalized_fofc.mrc for Fo and Fo-Fc maps, respectively. PyMOL by default scales maps by their "sigma", so you should run ``set normalize_ccp4_maps, off`` before opening mrc files.
+For other graphics programs like Chimera or PyMOL, open refined_diffmap_normalized_fo.mrc and refined_diffmap_normalized_fofc.mrc for Fo and Fo-Fc maps, respectively. PyMOL by default scales maps by their "sigma”. Before opening MRC files, run ``set normalize_ccp4_maps, off`` to disable this behaviour.
 
 Run Molprobity
 ~~~~~~~~~~~~~~
-If you want to check Ramachandran plots, rotamer outliers, clash scores etc for the table of paper, you can run
+To generate a report for your paper with Ramachandran plots, rotamer outliers, and clash scores, run the following command:
 
 .. code-block:: console
 
     $ molprobity.molprobity refined_expanded.pdb nqh=false
 
-It writes molprobity_coot.py which can be opened with COOT (from Calculate - Run Script...) to see "ToDo list". Note that the outliers are not always wrong - you should check them with density.
+This will create molprobity_coot.py. Open it with COOT (from Calculate -> Run Script...) to view a "ToDo list". Remember, outliers may not always be errors; verify them with the density map.
 
 .. code-block:: console
 
     $ coot --script refined_coot.py --script molprobity_coot.py
-
-Run refinement from GUI
------------------------
-#. Start ``ccpem`` and push "Refmac Servalcat" button or run ``ccpem-refmac`` command.
-#. Fill Input model, Resolution, Half map 1 & 2, and Mask for Fo-Fc map. For others see:
-
-    .. image:: chrmine_figs/ccpem_input-fs8.png
-        :align: center
-        :scale: 40%
-
-#. Push Run button
-#. Full Refmac5 log is shown
-#. You can see plots in Results panel and open files with external programs in Launcher panel.
