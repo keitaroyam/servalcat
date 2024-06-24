@@ -315,8 +315,8 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
     # Create ChimeraX script
     spa.fofc.write_chimerax_script(cxc_out="{}_chimerax.cxc".format(args.output_prefix),
                                    model_file="{}.mmcif".format(args.output_prefix), # ChimeraX handles mmcif just fine
-                                   fo_mrc_file="diffmap_normalized_fo.mrc",
-                                   fofc_mrc_file="diffmap_normalized_fofc.mrc")
+                                   fo_mrc_file="{}_normalized_fo.mrc".format(diffmap_prefix),
+                                   fofc_mrc_file="{}_normalized_fofc.mrc".format(diffmap_prefix))
 # calc_fofc()
 
 def write_final_summary(st, refmac_summary, fscavg_text, output_prefix, is_mask_given):
