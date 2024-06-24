@@ -521,7 +521,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
                                                 cra2.residue, cra2.atom.name, cra2.atom.altloc)
             if link:
                 con.link_id = link.id
-            elif find_metal_links and con.type == gemmi.ConnectionType.MetalC:
+            elif con.type == gemmi.ConnectionType.MetalC:
                 logger.writeln(" Metal link will be added: {} dist= {:.2f}".format(atoms_str, dist))
                 if cra2.atom.element.is_metal:
                     inv = True # make metal first
@@ -587,6 +587,8 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
             logger.writeln(" {}Metal link found: {} dist= {:.2f} max_ideal= {:.2f}".format("*" if will_be_added else " ",
                                                                                            atoms_str,
                                                                                            r.dist, max_ideal))
+        else:
+            continue
         n_found += 1
         if not will_be_added: continue
         con = gemmi.Connection()

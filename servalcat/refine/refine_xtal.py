@@ -163,7 +163,8 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-        utils.restraints.find_and_fix_links(st, monlib, add_found=args.find_links)
+        utils.restraints.find_and_fix_links(st, monlib, find_metal_links=args.find_links,
+                                            add_found=args.find_links)
         h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
                     "yes":gemmi.HydrogenChange.NoChange,
                     "no":gemmi.HydrogenChange.Remove}[args.hydrogen]

@@ -150,7 +150,8 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
                                                    cif_files=cif_files,
                                                    stop_for_unknowns=True,
                                                    params=params)
-    utils.restraints.find_and_fix_links(st, monlib, add_found=find_links) # should remove unknown id here?
+    utils.restraints.find_and_fix_links(st, monlib, find_metal_links=find_links,
+                                        add_found=find_links) # should remove unknown id here?
     try:
         topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                     check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),

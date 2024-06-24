@@ -161,7 +161,8 @@ def main(args):
         st.spacegroup_hm = hkldata.sg.xhm()
         st.setup_cell_images()
         info = {}
-        utils.restraints.find_and_fix_links(st, monlib, add_found=args.find_links)
+        utils.restraints.find_and_fix_links(st, monlib, find_metal_links=args.find_links,
+                                            add_found=args.find_links)
     else:
         if args.halfmaps:
             maps = utils.fileio.read_halfmaps(args.halfmaps, pixel_size=args.pixel_size)
