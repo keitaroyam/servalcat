@@ -37,6 +37,7 @@ def parse_atom_spec(s, itk):
             itk += 2
         elif s[itk].lower().startswith("symm"):
             ret["symm"] = s[itk+1][0].lower() == "y"
+            itk += 2
         else:
             break
 
