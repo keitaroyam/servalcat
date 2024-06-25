@@ -174,52 +174,55 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
     g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))
     return -numpy.dot(g, numpy.linalg.pinv(H))
 
+def expected_F_from_int(Io, sigo, k_ani, eps, c, S):
+    to = Io / sigo - sigo / c / k_ani**2 / S / eps
+    k_num = numpy.where(c == 1,  0.5, 0.)
+    F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c,
+                                             integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+    Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c,
+                                   integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+    varF = Fsq - F**2
+    return F, numpy.sqrt(varF)
+
 def french_wilson(hkldata, B_aniso, labout=None):
     if labout is None: labout = ["F", "SIGF"]
-    hkldata.df[labout[0]] = numpy.nan
-    hkldata.df[labout[1]] = numpy.nan
-    hkldata.df["to1"] = numpy.nan
     k_ani = hkldata.debye_waller_factors(b_cart=B_aniso)
-    
+    has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
+    if has_ano:
+        ano_data = hkldata.df[["I(+)", "SIGI(+)", "I(-)", "SIGI(-)"]].to_numpy()
+        if len(labout) == 2:
+            labout += [f"{labout[0]}(+)", f"{labout[1]}(+)", f"{labout[0]}(-)", f"{labout[1]}(-)"]
+    hkldata.df[labout] = numpy.nan
     for i_bin, idxes in hkldata.binned():
         S = hkldata.binned_df.S[i_bin]
         c = hkldata.df.centric.to_numpy()[idxes] + 1 # 1 for acentric, 2 for centric
         Io = hkldata.df.I.to_numpy()[idxes]
         sigo = hkldata.df.SIGI.to_numpy()[idxes]
         eps = hkldata.df.epsilon.to_numpy()[idxes]
-        to = Io / sigo - sigo / c / k_ani[idxes]**2 / S / eps
-        k_num = numpy.where(c == 1,  0.5, 0.)
-        F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c,
-                                                 integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
-        Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c,
-                                       integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
-        varF = Fsq - F**2
+        F, sigF = expected_F_from_int(Io, sigo, k_ani[idxes], eps, c, S)
         hkldata.df.loc[idxes, labout[0]] = F
-        hkldata.df.loc[idxes, labout[1]] = numpy.sqrt(varF)
-        hkldata.df.loc[idxes, "to1"] = to
+        hkldata.df.loc[idxes, labout[1]] = sigF
+        if has_ano:
+            Fp, sigFp = expected_F_from_int(ano_data[idxes,0], ano_data[idxes,1], k_ani[idxes], eps, c, S)
+            Fm, sigFm = expected_F_from_int(ano_data[idxes,2], ano_data[idxes,3], k_ani[idxes], eps, c, S)
+            hkldata.df.loc[idxes, labout[2]] = Fp
+            hkldata.df.loc[idxes, labout[3]] = sigFp
+            hkldata.df.loc[idxes, labout[4]] = Fm
+            hkldata.df.loc[idxes, labout[5]] = sigFm
 
 def main(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
+    try:
+        mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
     if not args.labin:
-        try:
-            mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
-        except RuntimeError as e:
-            raise SystemExit("Error: {}".format(e))
-        dlabs = utils.hkl.mtz_find_data_columns(mtz)
-        if dlabs["J"]:
-            labin = dlabs["J"][0]
-        else:
-            raise SystemExit("Intensity not found from mtz")
-        flabs = utils.hkl.mtz_find_free_columns(mtz)
-        if flabs:
-            labin += [flabs[0]]
-        logger.writeln("MTZ columns automatically selected: {}".format(labin))
+        labin = sigmaa.decide_mtz_labels(mtz, require=("K", "J"))
     else:
         labin = args.labin.split(",")
-
     try:
-        hkldata, _, _, _, _ = sigmaa.process_input(hklin=args.hklin,
+        hkldata, _, _, _, _ = sigmaa.process_input(hklin=mtz,
                                                    labin=labin,
                                                    n_bins=args.nbins,
                                                    free=None,
@@ -237,6 +240,9 @@ def main(args):
     mtz_out = args.output_prefix+".mtz"
     lab_out = ["F", "SIGF", "I", "SIGI"]
     labo_types = {"F":"F", "SIGF":"Q", "I":"J", "SIGI":"Q"}
+    if "I(+)" in hkldata.df and "I(-)" in hkldata.df:
+        lab_out += ["F(+)", "SIGF(+)", "F(-)", "SIGF(-)"]
+        labo_types.update({"F(+)":"G", "SIGF(+)":"L", "F(-)":"G", "SIGF(-)":"L"})
     if len(labin) == 3:
         lab_out.append("FREE")
         labo_types[lab_out[-1]] = "I"

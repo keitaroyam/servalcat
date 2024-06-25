@@ -994,20 +994,22 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st2
 # merge_models()
 
-def decide_mtz_labels(mtz, find_free=True):
+def decide_mtz_labels(mtz, find_free=True, require=None):
+    # F is preferred for now by default
+    obs_types = ("F", "J", "G", "K")
+    if require:
+        assert set(require).issubset(obs_types)
+    else:
+        require = obs_types
     dlabs = utils.hkl.mtz_find_data_columns(mtz)
     logger.writeln("Finding possible options from MTZ:")
     for typ in dlabs:
         for labs in dlabs[typ]:
             logger.writeln(" --labin '{}'".format(",".join(labs)))
-    if dlabs["F"]: # F is preferred for now
-        labin = dlabs["F"][0]
-    elif dlabs["J"]:
-        labin = dlabs["J"][0]
-    elif dlabs["G"]:
-        labin = dlabs["G"][0]
-    elif dlabs["K"]:
-        labin = dlabs["K"][0]
+    for typ in require:
+        if dlabs[typ]:
+            labin = dlabs[typ][0]
+            break
     else:
         raise RuntimeError("Data not found from mtz")
     if find_free:
