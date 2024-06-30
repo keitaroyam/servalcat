@@ -8,6 +8,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import pandas
 import os
 import shutil
 import argparse
@@ -17,6 +18,7 @@ from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_ma
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
 from servalcat.refmac import refmac_keywords
+from servalcat import ext
 b_to_u = utils.model.b_to_u
 
 def add_arguments(parser):
@@ -78,6 +80,7 @@ def add_arguments(parser):
     parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="kldiv")
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
+    parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
@@ -149,6 +152,29 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     is_int = "I" in hkldata.df
+    if args.twin:
+        logger.writeln("Finding possible twin operators")
+        tw = ext.TwinData()
+        ops = gemmi.find_twin_laws(hkldata.cell, hkldata.sg, 5, False)
+        tw.setup(hkldata.miller_array().to_numpy(), hkldata.sg, ops)
+        tmp = []
+        for i, op in enumerate(ops):
+            idxes = numpy.array(tw.pairs(i))
+            ii = hkldata.df.I.to_numpy()[idxes]
+            sel = numpy.all(numpy.isfinite(ii), axis=1)
+            cc = numpy.corrcoef(ii[sel].T)[0,1]
+            alpha = 0.5-0.5*numpy.sqrt((1-cc)/(1+cc))
+            tmp.append({"operator": op.triplet(),
+                        "CC_twin": cc,
+                        "R_twin": numpy.sum(numpy.abs(ii[sel, 0] - ii[sel, 1])) / numpy.sum(ii[sel]),
+                        "Alpha_from_CC": alpha,
+            })
+        if ops:
+            df = pandas.DataFrame(tmp)
+            logger.writeln(df.to_string(float_format="%.4f"))
+        else:
+            logger.writen(" No operators found")        
+        quit()
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
     if args.unrestrained:
