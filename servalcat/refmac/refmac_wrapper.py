@@ -232,7 +232,13 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
             rspan = st[0].get_subchain(e.subchains[0])
             e.full_sequence = [r.name for r in rspan]
-    
+
+    # fix label_seq_id
+    for chain in st[0]:
+        for res in chain:
+            res.label_seq = None
+    st.assign_label_seq_id()
+
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
     utils.fileio.write_mmcif(st, cifout, cifout + suffix)
