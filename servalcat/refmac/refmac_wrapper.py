@@ -143,6 +143,10 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
 
     if fix_long_resnames: refmac_fixes.fix_long_resnames(st)
 
+    # remove "given" ncs matrices
+    # TODO write them back to the output files
+    st.ncs = gemmi.NcsOpList(x for x in st.ncs if not x.given)
+
     # for safety
     if "_entry.id" in st.info:
         st.info["_entry.id"] = st.info["_entry.id"].replace(" ", "")
