@@ -389,6 +389,19 @@ def cra_to_atomaddress(cra):
     return aa
 # cra_to_atomaddress()
 
+def check_occupancies(st, raise_error=False):
+    bad = []
+    for cra in st[0].all():
+        if not 0 <= cra.atom.occ <= 1 + 1e-6:
+            bad.append(cra)
+    if bad:
+        logger.writeln("Bad occupancies:")
+        for cra in bad:
+            logger.writeln(f" {cra} occ= {cra.atom.occ:.4f}")
+        if raise_error:
+            raise RuntimeError("Please check your model and fix bad occupancies")
+# check_occupancies()
+
 def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=True, fix_adp=True):
     ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
     cs = gemmi.ContactSearch(special_pos_threshold * 2)

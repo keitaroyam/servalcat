@@ -1021,7 +1021,8 @@ def decide_mtz_labels(mtz, find_free=True, require=None):
 # decide_mtz_labels()
 
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
-                  n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False):
+                  n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False,
+                  allow_unusual_occupancies=False):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
@@ -1044,6 +1045,9 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
         sts = [st]
 
+    for st in sts:
+        utils.model.check_occupancies(st, raise_error=not allow_unusual_occupancies)
+        
     if not labin:
         labin = decide_mtz_labels(mtz)
     col_types = {x.label:x.type for x in mtz.columns}

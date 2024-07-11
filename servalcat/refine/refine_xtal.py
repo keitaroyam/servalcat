@@ -83,6 +83,7 @@ def add_arguments(parser):
                         help="Use work reflections in ML parameter estimates")
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
+    parser.add_argument('--allow_unusual_occupancies', action="store_true", help="Allow negative or more than one occupancies")
     parser.add_argument('-o','--output_prefix')
     parser.add_argument("--write_trajectory", action='store_true',
                         help="Write all output from cycles")
@@ -140,7 +141,8 @@ def main(args):
                                                                                  n_per_bin=n_per_bin,
                                                                                  use=use_in_est,
                                                                                  max_bins=30,
-                                                                                 keep_charges=args.keep_charges)
+                                                                                 keep_charges=args.keep_charges,
+                                                                                 allow_unusual_occupancies=args.allow_unusual_occupancies)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
