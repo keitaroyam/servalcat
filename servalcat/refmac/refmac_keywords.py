@@ -168,7 +168,7 @@ def read_exte(s):
                     except ValueError:
                         ret["restr"]["itype_in"] = dict(o=0, f=2).get(s[itk+1][0].lower(), 1)
                     if not (0 <= ret["restr"]["itype_in"] <= 2):
-                        logger.writeln("WARNING: wrong type is given. setting to 2.\n=> {}".format(l))
+                        logger.writeln("WARNING: wrong type is given. setting to 2.\n=> {}".format(" ".join(s)))
                         ret["restr"]["itype_in"] = 2
                     itk += 2
                 elif s[itk].lower().startswith("symm"): # only for distance
@@ -182,7 +182,8 @@ def read_exte(s):
                         ret["restr"][d[k]] = float(s[itk+1])
                         itk += 2
                     else:
-                        logger.writeln("unrecognised key: {}\n=> {}".format(s[itk], l))
+                        logger.writeln("unrecognised key: {}\n=> {}".format(s[itk], " ".join(s)))
+                        break
         elif s[1].lower().startswith("stac"):
             ret["rest_type"] = "stac"
             ret["restr"] = {}
@@ -195,7 +196,7 @@ def read_exte(s):
                     ip = int(s[itk+1])
                     itk += 2
                     if ip not in (1, 2):
-                        raise RuntimeError("Problem with stacking instructions. Plane number can be 1 or 2.\n=> {}".format(l))
+                        raise RuntimeError("Problem with stacking instructions. Plane number can be 1 or 2.\n=> {}".format(" ".join(s)))
                 elif s[itk].lower().startswith(("firs", "next")):
                     atoms, itk = parse_atom_spec(s, itk+1)
                     ret["restr"]["specs"][ip-1] = atoms
@@ -204,7 +205,7 @@ def read_exte(s):
                     ret["restr"][k] = float(s[itk+1]) if k != "type_r" else int(s[itk+1])
                     itk += 2
                 else:
-                    logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], l))
+                    logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], " ".join(s)))
                     itk += 1
         elif s[1].lower().startswith(("harm", "spec")):
             ret["rest_type"] = s[1][:4].lower() # in Refmac, irest_type = 1 if harm else 2
@@ -242,11 +243,11 @@ def read_exte(s):
                     ret["restr"]["sigma_u"] = float(s[itk+1]) * b_to_u
                     itk += 2
                 else:
-                    logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], l))
+                    logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[itk], " ".join(s)))
                     itk += 1
 
         else:
-            logger.writeln("WARNING: cannot parse: {}".format(l))
+            logger.writeln("WARNING: cannot parse: {}".format(" ".join(s)))
     return ret
 # read_exte()
 
