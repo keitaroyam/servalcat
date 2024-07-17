@@ -15,6 +15,7 @@ import tempfile
 import subprocess
 import argparse
 from collections import OrderedDict
+import servalcat # for version
 from servalcat.utils import logger
 from servalcat.refmac import refmac_keywords
 from servalcat import utils
@@ -239,6 +240,10 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
             res.label_seq = None
     st.assign_label_seq_id()
 
+    # add servalcat version
+    if len(st.meta.software) > 0 and st.meta.software[-1].name == "refmac":
+        st.meta.software[-1].version += f" (refmacat {servalcat.__version__})"
+    
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
     utils.fileio.write_mmcif(st, cifout, cifout + suffix)
