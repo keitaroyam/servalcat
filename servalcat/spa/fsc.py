@@ -36,6 +36,8 @@ def add_arguments(parser):
     parser.add_argument('--mask_soft_edge',
                         type=float, default=0,
                         help='Add soft edge to model mask.')
+    parser.add_argument('--mask_model', action='store_true',
+                        help='Apply mask to model density')
     parser.add_argument("--b_before_mask", type=float,
                         help="when model-based mask is used: sharpening B value for sharpen-mask-unsharpen procedure. By default it is determined automatically.")
     parser.add_argument('--no_sharpen_before_mask', action='store_true',
@@ -340,7 +342,7 @@ def main(args):
         labs_fc.append("FC")
         hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st_expanded, args.resolution - 1e-6, source="electron",
                                                           miller_array=hkldata.miller_array())
-        if mask is not None:
+        if args.mask_model and mask is not None:
             if args.b_before_mask is None:
                 normalizer = 1.
             else:
