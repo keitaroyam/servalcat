@@ -17,6 +17,7 @@ import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
+from servalcat.xtal.twin import find_twin_domains
 
 """
 DFc = sum_j D_j F_c,j
@@ -51,6 +52,7 @@ def add_arguments(parser):
                         help="Use CC(|F1|,|F2|) to CC(F1,F2) conversion to derive D and S")
     parser.add_argument('--use', choices=["all", "work", "test"], default="all",
                         help="Which reflections to be used for the parameter estimate.")
+    parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument('--mask',
                         help="A solvent mask (by default calculated from the coordinates)")
     parser.add_argument('--keep_charges',  action='store_true',
@@ -161,46 +163,63 @@ class LsqScale:
         self.b_aniso = None
         self.stats = {}
 
-    def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None):
+    def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None, twin_data=None):
         assert 0 < len(fc_list) < 3
         self.use_int = use_int
         if sigma_cutoff is not None:
             if use_int:
-                sel = hkldata.df.I / hkldata.df.SIGI > sigma_cutoff
+                self.sel = hkldata.df.I / hkldata.df.SIGI > sigma_cutoff
                 self.labcut = "(I/SIGI>{})".format(sigma_cutoff)
             else:
-                sel = hkldata.df.FP / hkldata.df.SIGFP > sigma_cutoff
+                self.sel = hkldata.df.FP / hkldata.df.SIGFP > sigma_cutoff
                 self.labcut = "(F/SIGF>{})".format(sigma_cutoff)
         else:
-            sel = hkldata.df.index
+            self.sel = hkldata.df.index
             self.labcut = ""
-        self.obs = hkldata.df["I" if use_int else "FP"].to_numpy()[sel]
-        self.calc = [x[sel] for x in fc_list]
-        self.s2mat = hkldata.ssq_mat()[:,sel]
-        self.s2 = 1. / hkldata.d_spacings().to_numpy()[sel]**2
+        self.obs = hkldata.df["I" if use_int else "FP"].to_numpy(copy=True)
+        self.obs[~self.sel] = numpy.nan
+        self.calc = [x for x in fc_list]
+        self.s2mat = hkldata.ssq_mat()
+        self.s2 = 1. / hkldata.d_spacings().to_numpy()**2
         self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=False)
+        self.twin_data = twin_data
         if use_int:
             self.sqrt_obs = numpy.sqrt(self.obs)
         
     def get_solvent_scale(self, k_sol, b_sol, s2=None):
         if s2 is None: s2 = self.s2
         return k_sol * numpy.exp(-b_sol * s2 / 4)
-    
-    def scaled_fc(self, x):
+
+    def fc_and_mask_grad(self, x):
         fc0 = self.calc[0]
         if len(self.calc) == 2:
-            fmask = self.calc[1]
-            fbulk = self.get_solvent_scale(x[-2], x[-1]) * fmask
-            fc = fc0 + fbulk
+            if self.twin_data:
+                r = self.twin_data.scaling_fc_and_mask_grad(self.calc[1], x[-2], x[-1])
+                return r[:,0], r[:,1], r[:,2]
+            else:
+                fmask = self.calc[1]
+                temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
+                fbulk = x[-2] * temp_sol * fmask
+                fc = fc0 + fbulk
+                re_fmask_fcconj = (fmask * fc.conj()).real
+                fc_abs = numpy.abs(fc)
+                tmp = temp_sol / fc_abs * re_fmask_fcconj
+                return fc_abs, tmp, -tmp * x[-2] * self.s2 / 4
         else:
-            fc = fc0
+            if self.twin_data:
+                return numpy.sqrt(self.twin_data.i_calc_twin()), None, None
+            else:
+                return numpy.abs(fc0), None, None
+
+    def scaled_fc(self, x):
+        fc = self.fc_and_mask_grad(x)[0]
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
         return self.k_trans(x[0]) * kani * fc
 
     def target(self, x):
-        y = numpy.abs(self.scaled_fc(x))
+        y = self.scaled_fc(x)
         if self.use_int:
             diff = self.sqrt_obs - y
             #y2 = y**2
@@ -217,18 +236,10 @@ class LsqScale:
         
     def grad(self, x):
         g = numpy.zeros_like(x)
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
-            fbulk = x[-2] * temp_sol * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
+        fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
-        fc_abs = numpy.abs(fc)
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
         if self.use_int:
@@ -250,10 +261,8 @@ class LsqScale:
         g[0] = numpy.nansum(kani * fc_abs * dfdy * self.k_trans_der(x[0]))
         g[1:nadp+1] = numpy.dot(dfdb, self.adpdirs.T)
         if len(self.calc) == 2:
-            re_fmask_fcconj = (fmask * fc.conj()).real
-            tmp = k * kani * temp_sol / fc_abs * re_fmask_fcconj
-            g[-2] = numpy.nansum(tmp * dfdy)
-            g[-1] = numpy.nansum(-tmp * dfdy * x[-2] * self.s2 / 4)
+            g[-2] = numpy.nansum(k * kani * der_ksol * dfdy)
+            g[-1] = numpy.nansum(k * kani * der_bsol * dfdy)
 
         return g
 
@@ -261,19 +270,10 @@ class LsqScale:
         # TODO: sort out code duplication, if we use this.
         g = numpy.zeros((len(self.calc[0]), len(x)))
         H = numpy.zeros((len(x), len(x)))
-        
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
-            fbulk = x[-2] * temp_sol * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
+        fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
-        fc_abs = numpy.abs(fc)
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
         if self.use_int:
@@ -300,27 +300,20 @@ class LsqScale:
         g[:,0] = kani * fc_abs * self.k_trans_der(x[0])
         g[:,1:nadp+1] = numpy.dot(dfdb.T, self.adpdirs.T)
         if len(self.calc) == 2:
-            re_fmask_fcconj = (fmask * fc.conj()).real
-            tmp = k * kani * temp_sol / fc_abs * re_fmask_fcconj
-            g[:,-2] = tmp
-            g[:,-1] = -tmp * x[-2] * self.s2 / 4
+            g[:,-2] = k * kani * der_ksol
+            g[:,-1] = k * kani * der_bsol
 
-        # XXX won't work with NaNs.
+        # no numpy.nandot..
+        g, dfdy, dfdy2 = g[self.sel, :], dfdy[self.sel], dfdy2[self.sel]
         H = numpy.dot(g.T, g * dfdy2[:,None])
         g = numpy.sum(dfdy[:,None] * g, axis=0)
         dx = -numpy.dot(g, numpy.linalg.pinv(H))
         return dx
 
     def initial_kb(self):
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            fbulk = self.get_solvent_scale(self.k_sol, self.b_sol) * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
-        sel = self.obs > 0
-        f1p, f2p, s2p = self.obs[sel], numpy.abs(fc)[sel], self.s2[sel]
+        fc_abs = self.fc_and_mask_grad([self.k_sol, self.b_sol])[0]
+        sel = self.obs > 0 # exclude nan as well
+        f1p, f2p, s2p = self.obs[sel], fc_abs[sel], self.s2[sel]
         if self.use_int: f2p *= f2p
         tmp = numpy.log(f2p) - numpy.log(f1p)
         # g = [dT/dk, dT/db]
@@ -421,7 +414,7 @@ class LsqScale:
             self.k_sol = res_x[-2] 
             self.b_sol = res_x[-1]
             logger.writeln(" k_sol= {:.2e} B_sol= {:.2e}".format(self.k_sol, self.b_sol))
-        calc = numpy.abs(self.scaled_fc(res_x))
+        calc = self.scaled_fc(res_x)
         if self.use_int: calc *= calc
         self.stats["cc"] = utils.hkl.correlation(self.obs, calc)
         self.stats["r"] = utils.hkl.r_factor(self.obs, calc)
@@ -940,13 +933,14 @@ def expected_F_from_int(Io, sigIo, k_ani, DFc, eps, c, S):
     return f, m_proxy
 # expected_F_from_int()
 
-def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all"):
+def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use="all",
+                       twin_data=None):
     nmodels = len(fc_labs)
     hkldata.df["FWT"] = 0j * numpy.nan
     hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan # FOM proxy, |<F>| / <|F|>
     has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
-    if has_ano:
+    if has_ano and not twin_data:
         hkldata.df["FAN"] = 0j * numpy.nan
         ano_data = hkldata.df[["I(+)", "SIGI(+)", "I(-)", "SIGI(-)"]].to_numpy()
     Io = hkldata.df.I.to_numpy()
@@ -957,19 +951,34 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     Fcs = numpy.vstack([hkldata.df[lab].to_numpy() for lab in fc_labs]).T
     DFc = (Ds * Fcs).sum(axis=1)
     hkldata.df["DFC"] = DFc
+    if twin_data:
+        asu_idxes = twin_data.idx_of_asu(hkldata.miller_array(), inv=True)
+        print(numpy.array(twin_data.asu)[asu_idxes < 0])
+        m_twin = twin_data.calc_fom(Io/k_ani**2, sigIo/k_ani**2,
+                                    hkldata.df["S"].to_numpy(), DFc[asu_idxes])
+        asu_idxes2 = twin_data.idx_of_asu(hkldata.miller_array(), inv=False)
+        m_twin = numpy.asarray(m_twin)[asu_idxes2]
+        F_det = numpy.asarray(twin_data.f_true_max)[asu_idxes2]
+        F_det[numpy.isnan(Io)] = numpy.nan
+        hkldata.df["F_true_est"] = F_det
+        
     for i_bin, idxes in hkldata.binned():
         for c, work, test in centric_and_selections[i_bin]:
             cidxes = numpy.concatenate([work, test])
             S = hkldata.df["S"].to_numpy()[cidxes]
-            f, m_proxy = expected_F_from_int(Io[cidxes], sigIo[cidxes], k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
             exp_ip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
+            if twin_data:
+                f, m_proxy = F_det[cidxes], m_twin[cidxes]
+                f = f * m_proxy
+            else:
+                f, m_proxy = expected_F_from_int(Io[cidxes], sigIo[cidxes], k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
             if c == 0:
                 hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
             else:
                 hkldata.df.loc[cidxes, "FWT"] = f * exp_ip
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
-            if has_ano:
+            if has_ano and not twin_data:
                 f_p, _ = expected_F_from_int(ano_data[cidxes,0], ano_data[cidxes,1],
                                              k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
                 f_m, _ = expected_F_from_int(ano_data[cidxes,2], ano_data[cidxes,3],
@@ -1204,10 +1213,33 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     return hkldata, sts, fc_labs, centric_and_selections, free
 # process_input()
 
+def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None):
+    assert (hkldata, twin_data).count(None) == 1
+    for i, st in enumerate(st_list):
+        if st.ncs:
+            st = st.clone()
+            st.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
+        if twin_data:
+            hkl = twin_data.asu
+        else:
+            hkl = hkldata.miller_array()
+        fc = utils.model.calc_fc_fft(st, d_min - 1e-6,
+                                     monlib=monlib,
+                                     source=source,
+                                     mott_bethe=mott_bethe,
+                                     miller_array=hkl)
+        if twin_data:
+            twin_data.f_calc[:,i] = fc
+        else:
+            hkldata.df[fc_labs[i]] = fc
+    if not twin_data:
+        hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
+# update_fc()
+
 def calc_Fmask(st, d_min, miller_array):
     logger.writeln("Calculating solvent contribution..")
     grid = gemmi.FloatGrid()
-    grid.setup_from(st, spacing=min(0.6, d_min / 2 - 1e-9))
+    grid.setup_from(st, spacing=min(0.6, (d_min-1e-6) / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
     masker.put_mask_on_float_grid(grid, st[0])
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
@@ -1215,18 +1247,30 @@ def calc_Fmask(st, d_min, miller_array):
     return Fmask
 # calc_Fmask()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh"):
-    fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
+def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh", twin_data=None):
+    # fc_labs must have solvent part at the end
+    miller_array = twin_data.asu if twin_data else hkldata.miller_array()
+    d_min = twin_data.d_min(sts[0].cell) if twin_data else hkldata.d_min_max()[0]
     if use_solvent:
         if mask is None:
-            Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
+            Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
+            print("mask", Fmask.shape)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
-            Fmask = fmask_gr.get_value_by_hkl(hkldata.miller_array())
-        fc_list.append(Fmask)
+            Fmask = fmask_gr.get_value_by_hkl(miller_array)
+        if twin_data:
+            fc_sum = twin_data.f_calc[:,:-1].sum(axis=1)
+        else:
+            fc_sum = hkldata.df[fc_labs[:-1]].sum(axis=1).to_numpy()
+        fc_list = [fc_sum, Fmask]
+    else:
+        if twin_data:
+            fc_list = [twin_data.f_calc.sum(axis=1)]
+        else:
+            fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
 
     scaling = LsqScale(func_type=func_type)
-    scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0)
+    scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0, twin_data=twin_data)
     scaling.scale()
     b_iso = scaling.b_iso
     k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
@@ -1234,7 +1278,6 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
     
     if use_solvent:
-        fc_labs.append("Fbulk")
         solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol,
                                                   1. / hkldata.d_spacings().to_numpy()**2)
         hkldata.df[fc_labs[-1]] = Fmask * solvent_scale
@@ -1375,6 +1418,8 @@ def main(args):
     
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
+    if not args.no_solvent:
+        fc_labs.append("Fbulk")
     lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
                                       use_int=is_int, mask=mask)
     b_aniso = lsq.b_aniso
@@ -1385,6 +1430,22 @@ def main(args):
     if is_int:
         logger.writeln("R1 is calculated for reflections with I/sigma>2.")
 
+    if args.twin:
+        twin_data = find_twin_domains(hkldata, fc_labs)
+        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
+        # Need to redo scaling
+        update_fc(sts, fc_labs,
+                  d_min=twin_data.d_min(sts[0].cell),
+                  monlib=None,
+                  source=args.source,
+                  mott_bethe=(args.source=="electron"),
+                  twin_data=twin_data)
+        lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+                                          use_int=is_int, mask=mask, twin_data=twin_data)
+        b_aniso = lsq.b_aniso
+    else:
+        twin_data = None
+        
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
@@ -1396,7 +1457,8 @@ def main(args):
         b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use)
     if is_int:
         calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections,
-                           use={"all": "all", "work": "work", "test": "work"}[args.use])
+                           use={"all": "all", "work": "work", "test": "work"}[args.use],
+                           twin_data=twin_data)
     else:
         log_out = "{}.log".format(args.output_prefix)
         calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, log_out,
@@ -1414,9 +1476,11 @@ def main(args):
         labs.append("Fbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    if "F_true_est" in hkldata.df:
+        labs.append("F_true_est")
     labs += D_labs + ["S"]
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "F_true_est": "F"})
     return hkldata
 # main()
 if __name__ == "__main__":

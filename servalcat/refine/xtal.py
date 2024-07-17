@@ -12,6 +12,7 @@ import json
 import scipy.sparse
 from servalcat.utils import logger
 from servalcat.xtal import sigmaa
+from servalcat.xtal.twin import find_twin_domains
 from servalcat import utils
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -20,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=False, use_in_est="all", use_in_target="all"):
+                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -44,6 +45,8 @@ class LL_Xtal:
         self.use_in_target = use_in_target
         self.ll = None
         self.scaling = sigmaa.LsqScale()
+        self.twin = twin
+        self.twin_data = None # ext.TwinData object
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -54,8 +57,6 @@ class LL_Xtal:
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs,
         #                             self.centric_and_selections)
-
-
     def update_fc(self):
         if self.st.ncs:
             st = self.st.clone()
@@ -73,7 +74,7 @@ class LL_Xtal:
     def overall_scale(self, min_b=0.1):
         fc_list = [self.hkldata.df[self.fc_labs[0]].to_numpy()]
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min - 1e-6, self.hkldata.miller_array())
+            Fmask = sigmaa.calc_Fmask(self.st, self.d_min, self.hkldata.miller_array())
             fc_list.append(Fmask)
 
         self.scaling.set_data(self.hkldata, fc_list, self.is_int, sigma_cutoff=0)
@@ -108,6 +109,9 @@ class LL_Xtal:
         # for next cycle
         self.scaling.k_overall = 1.
         self.scaling.b_iso = 0.
+        if self.twin:
+            self.twin_data = find_twin_domains(self.hkldata, self.fc_labs)
+
     # overall_scale()
 
     def calc_target(self): # -LL target for MLF or MLI

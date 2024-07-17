@@ -152,29 +152,6 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     is_int = "I" in hkldata.df
-    if args.twin:
-        logger.writeln("Finding possible twin operators")
-        tw = ext.TwinData()
-        ops = gemmi.find_twin_laws(hkldata.cell, hkldata.sg, 5, False)
-        tw.setup(hkldata.miller_array().to_numpy(), hkldata.sg, ops)
-        tmp = []
-        for i, op in enumerate(ops):
-            idxes = numpy.array(tw.pairs(i))
-            ii = hkldata.df.I.to_numpy()[idxes]
-            sel = numpy.all(numpy.isfinite(ii), axis=1)
-            cc = numpy.corrcoef(ii[sel].T)[0,1]
-            alpha = 0.5-0.5*numpy.sqrt((1-cc)/(1+cc))
-            tmp.append({"operator": op.triplet(),
-                        "CC_twin": cc,
-                        "R_twin": numpy.sum(numpy.abs(ii[sel, 0] - ii[sel, 1])) / numpy.sum(ii[sel]),
-                        "Alpha_from_CC": alpha,
-            })
-        if ops:
-            df = pandas.DataFrame(tmp)
-            logger.writeln(df.to_string(float_format="%.4f"))
-        else:
-            logger.writen(" No operators found")        
-        quit()
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
     if args.unrestrained:
@@ -233,7 +210,8 @@ def main(args):
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
     ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
-                 use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target)
+                 use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
+                 twin=args.twin)
     refiner = Refine(st, geom, ll=ll,
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],

@@ -6,7 +6,10 @@
 #include <pybind11/stl_bind.h>
 #include <pybind11/complex.h>
 #include <pybind11/eigen.h>
+#include <cmath> // for NAN
 #include <gemmi/symmetry.hpp>
+#include <gemmi/unitcell.hpp>
+#include <complex>
 #include <vector>
 #include <map>
 #include <iostream>
@@ -19,8 +22,20 @@ struct TwinData {
   std::vector<int> centric;
   std::vector<double> epsilon;
   std::vector<double> alphas;
-  Eigen::MatrixXd fc_array;
+  std::vector<double> f_true_max;
+  std::vector<double> s2_array;
+  std::vector<std::complex<double>> f_calc_;
+  std::complex<double> &f_calc(size_t idx, size_t i_model) {
+    return f_calc_[idx * n_models + i_model];
+  }
+  const std::complex<double> &f_calc(size_t idx, size_t i_model) const {
+    return const_cast<TwinData*>(this)->f_calc(idx, i_model);
+  }
   std::vector<int> bin;
+  std::vector<gemmi::Op> ops;
+  size_t n_models = 0; // number of models (including solvent)
+  //gemmi::UnitCell cell;
+  //const gemmi::SpaceGroup *sg;
 
   // References
   // this may be slow. should we use 1d array and access via function?
@@ -31,19 +46,31 @@ struct TwinData {
   std::vector<int> rbin; // [i_block] -> bin
 
   void clear() {
-    asu.clear();
-    alphas.clear();
-    rb2o.clear();
-    rb2a.clear();
-    rbo2a.clear();
-    rbo2c.clear();
+    *this = TwinData(); // ok?
+    // asu.clear();
+    // centric.clear();
+    // epsilon.clear();
+    // alphas.clear();
+    // rb2o.clear();
+    // rb2a.clear();
+    // rbo2a.clear();
+    // rbo2c.clear();
+    // n_models = 0;
+  }
+
+  double d_min(const gemmi::UnitCell &cell) const {
+    double s2max = 0;
+    for (const auto &h : asu)
+      s2max = std::max(s2max, cell.calculate_1_d2(h));
+    return 1. / std::sqrt(s2max);
   }
 
   int idx_of_asu(const gemmi::Op::Miller &h) const {
     auto it = std::lower_bound(asu.begin(), asu.end(), h);
     if (it != asu.end() && *it == h)
       return std::distance(asu.begin(), it);
-    throw std::runtime_error("hkl not found in asu");
+    //throw std::runtime_error("hkl not found in asu");
+    return -1; // may happen due to non/pseudo-merohedral and systematic absence
   }
   size_t n_obs() const {
     size_t ret = 0;
@@ -55,11 +82,18 @@ struct TwinData {
     return rbo2a.front().front().size();
   }
 
+  void setup_f_calc(size_t n) {
+    n_models = n;
+    f_calc_.assign(n_models * asu.size(), 0);
+  }
+
   void setup(const std::vector<gemmi::Op::Miller> &hkls,
              const std::vector<int> &bins,
              const gemmi::SpaceGroup &sg,
+             const gemmi::UnitCell &cell,
              const std::vector<gemmi::Op> &operators) {
     clear();
+    ops = operators;
     const gemmi::GroupOps gops = sg.operations();
     const gemmi::ReciprocalAsu rasu(&sg);
     auto apply_and_asu = [&rasu, &gops](const gemmi::Op &op, const gemmi::Op::Miller &h) {
@@ -71,22 +105,29 @@ struct TwinData {
     for (int i = 0; i < hkls.size(); ++i) {
       const auto h = hkls[i];
       // assuming hkl is in ASU - but may not be complete?
-      asu.push_back(h);
-      bin_map.emplace(h, bins[i]);
+      if (!gops.is_systematically_absent(h)) {
+        asu.push_back(h);
+        bin_map.emplace(h, bins[i]);
+      }
       for (const auto &op : operators) {
         const auto hr = apply_and_asu(op, h);
-        asu.push_back(hr);
-        bin_map.emplace(hr, bins[i]); // this isn't always correct, if pseudo-merohedral
+        if (!gops.is_systematically_absent(hr)) {
+          asu.push_back(hr);
+          bin_map.emplace(hr, bins[i]); // this isn't always correct, if pseudo-merohedral
+        }
       }
     }
     std::sort(asu.begin(), asu.end());
     asu.erase(std::unique(asu.begin(), asu.end()), asu.end());
     epsilon.reserve(asu.size());
+    s2_array.reserve(asu.size());
     centric.reserve(asu.size());
     bin.reserve(asu.size());
+    f_true_max.assign(asu.size(), NAN);
     for (const auto &h : asu) {
       epsilon.push_back(gops.epsilon_factor_without_centering(h));
       centric.push_back(gops.is_reflection_centric(h));
+      s2_array.push_back(cell.calculate_1_d2(h));
       bin.push_back(bin_map[h]);
     }
     // Permutation sort
@@ -96,6 +137,11 @@ struct TwinData {
               [&](int lhs, int rhs) {return hkls[lhs] < hkls[rhs];});
     // Loop over hkls
     std::vector<bool> done(hkls.size());
+    const auto append_if_good = [](std::vector<size_t> &vec, int i) {
+      if (i < 0) return false;
+      vec.push_back(i);
+      return true;
+    };
     for (int i = 0; i < perm.size(); ++i) {
       const auto &h = hkls[perm[i]];
       if (done[perm[i]]) continue;
@@ -103,7 +149,8 @@ struct TwinData {
       rbo2a.emplace_back();
       rbo2c.emplace_back();
       rb2o.emplace_back();
-      rb2a.emplace_back(1, idx_of_asu(h));
+      rb2a.emplace_back();
+      append_if_good(rb2a.back(), idx_of_asu(h));
       // loop over same hkls (would not happen if unique set was given)
       for (int j = i; j < perm.size() && hkls[perm[j]] == h; ++j) {
         rb2o.back().push_back(perm[j]);
@@ -120,7 +167,7 @@ struct TwinData {
           rb2o.back().push_back(perm[j]);
           done[perm[j]] = true;
         }
-        rb2a.back().push_back(idx_of_asu(hr));
+        append_if_good(rb2a.back(), idx_of_asu(hr));
       }
       std::sort(rb2a.back().begin(), rb2a.back().end());
       rb2a.back().erase(std::unique(rb2a.back().begin(), rb2a.back().end()), rb2a.back().end());
@@ -132,12 +179,20 @@ struct TwinData {
       };
       for (auto j : rb2o.back()) {
         const auto &h2 = hkls[j];
-        rbo2a.back().emplace_back(1, idx_of_rb2a(idx_of_asu(h2)));
-        rbo2c.back().emplace_back(1, 0);
+        rbo2a.back().emplace_back();
+        rbo2c.back().emplace_back();
+        const int ia  = idx_of_asu(h2);
+        if (ia >= 0) {
+          rbo2a.back().back().push_back(idx_of_rb2a(ia));
+          rbo2c.back().back().push_back(0);
+        }
         for (int k = 0; k < operators.size(); ++k) {
           const auto h2r = apply_and_asu(operators[k], h2);
-          rbo2a.back().back().push_back(idx_of_rb2a(idx_of_asu(h2r)));
-          rbo2c.back().back().push_back(k + 1);
+          const int iar  = idx_of_asu(h2r);
+          if (iar >= 0) {
+            rbo2a.back().back().push_back(idx_of_rb2a(iar));
+            rbo2c.back().back().push_back(k + 1);
+          }
         }
       }
     }
@@ -238,7 +293,7 @@ struct TwinData {
 
 
   // Note that f_calc refers to asu, while iobs/sigo refer to observation list
-  double ll_block(int ib, double *iobs, double *sigo, std::complex<double> *f_calc, double S) const {
+  void est_f_true(int ib, double *iobs, double *sigo, std::complex<double> *f_calc, double S) {
     if (ib < 0 || ib > rb2o.size())
       throw std::out_of_range("twin_ll: bad ib");
     // skip if no observation at all
@@ -247,7 +302,7 @@ struct TwinData {
       if (!std::isnan(iobs[rb2o[ib][io]]))
         has_obs = true;
     if (!has_obs)
-      return 0;
+      return;
 
     // Initial estimate
     std::vector<std::complex<double>> f_est(rb2a[ib].size());
@@ -397,15 +452,9 @@ struct TwinData {
               << ders.first.format(Fmt) << std::endl;// << f_true.format(Fmt) <<
     //return f0 + 0.5 * std::log(det); // Laplace approximation. omitted (2pi)**N/2
 
-    // calculate Rice distribution using Ftrue as Fobs
-    double ret = 0;
-    for (int i = 0; i < rb2a[ib].size(); ++i) {
-      const int ia = rb2a[ib][i];
-      const int c = centric[ia] + 1;
-      const double log_ic0 = log_i0_or_cosh(f_true(i) * std::abs(f_calc[ia]) / S, c);
-      ret += std::log(S) / c + (sq(f_true(i)) + std::norm(f_calc[ia])) / (S * c) - log_ic0;
-    }
-    return ret;
+    for (int i = 0; i < rb2a[ib].size(); ++i)
+      f_true_max[rb2a[ib][i]] = f_true(i);
+
     //throw std::runtime_error("did not converge. ib = " + std::to_string(ib));
   }
 };
@@ -422,6 +471,24 @@ void add_twin(py::module& m) {
     .def_readonly("centric", &TwinData::centric)
     .def_readonly("epsilon", &TwinData::epsilon)
     .def_readonly("bin", &TwinData::bin)
+    .def_readonly("f_true_max", &TwinData::f_true_max)
+    .def_property_readonly("f_calc", [](TwinData &self) {
+      const size_t size = sizeof(decltype(self.f_calc_)::value_type);
+      // auto v = new std::vector<decltype(self.f_calc)::value_type>(std::move(self.f_calc));
+      // pybind11::capsule cap(v, [](void* p) { delete (std::vector<decltype(self.f_calc)::value_type>*) p; });
+      return py::array_t<decltype(self.f_calc_)::value_type>({self.asu.size(), self.n_models},
+                                                             {size * self.n_models, size},
+                                                             self.f_calc_.data(),
+                                                             py::none());
+      // return py::array(py::buffer_info(self.f_calc.data(),
+      //                             size,
+      //                             py::format_descriptor<decltype(self.f_calc)::value_type>::format(),
+      //                             2,
+      //                             {self.asu.size(), self.n_models}, // dimensions
+      //                             {size * self.n_models, size} // strides
+      //                                       ));
+    })
+    .def_readonly("ops", &TwinData::ops)
     .def_readwrite("alphas", &TwinData::alphas)
     .def("idx_of_asu", [](const TwinData &self, py::array_t<int> hkl, bool inv){
       auto h = hkl.unchecked<2>();
@@ -446,8 +513,11 @@ void add_twin(py::module& m) {
       }
       return ret;
     }, py::arg("hkl"), py::arg("inv")=false)
+    .def("setup_f_calc", &TwinData::setup_f_calc)
+    .def("d_min", &TwinData::d_min)
     .def("setup", [](TwinData &self, py::array_t<int> hkl, const std::vector<int> &bin,
-                     const gemmi::SpaceGroup &sg, const std::vector<gemmi::Op> &operators) {
+                     const gemmi::SpaceGroup &sg, const gemmi::UnitCell &cell,
+                     const std::vector<gemmi::Op> &operators) {
       auto h = hkl.unchecked<2>();
       if (h.shape(1) < 3)
         throw std::domain_error("error: the size of the second dimension < 3");
@@ -455,7 +525,7 @@ void add_twin(py::module& m) {
       hkls.reserve(h.shape(0));
       for (py::ssize_t i = 0; i < h.shape(0); ++i)
         hkls.push_back({h(i, 0), h(i, 1), h(i, 2)});
-      self.setup(hkls, bin, sg, operators);
+      self.setup(hkls, bin, sg, cell, operators);
     })
     .def("pairs", [](const TwinData &self, int i_op, int i_bin) {
       if (i_op < 0 || i_op >= self.alphas.size())
@@ -509,26 +579,113 @@ void add_twin(py::module& m) {
       }
       return ret;
     })
-    .def("ll_block", [](const TwinData &self, int ib, py::array_t<double> Io, py::array_t<double> sigIo,
-                        double S, py::array_t<std::complex<double>> DFc) {
+    .def("est_f_true", [](TwinData &self, int ib, py::array_t<double> Io, py::array_t<double> sigIo,
+                          double S, py::array_t<std::complex<double>> DFc) {
 
-      return self.ll_block(ib,
-                           (double*) Io.request().ptr,
-                           (double*) sigIo.request().ptr,
-                           (std::complex<double>*) DFc.request().ptr, S);
+      self.est_f_true(ib,
+                      (double*) Io.request().ptr,
+                      (double*) sigIo.request().ptr,
+                      (std::complex<double>*) DFc.request().ptr, S);
     })
-    .def("ll", [](const TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo,
+    .def("ll", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo,
                   py::array_t<double> S, py::array_t<std::complex<double>> DFc) {
       auto S_ = S.unchecked<1>();
       double ret = 0;
+      std::complex<double> *f_calc = (std::complex<double>*) DFc.request().ptr;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int bin = self.rbin[ib];
-        ret += self.ll_block(ib,
-                             (double*) Io.request().ptr,
-                             (double*) sigIo.request().ptr,
-                             (std::complex<double>*) DFc.request().ptr, S_(bin));
+        self.est_f_true(ib,
+                        (double*) Io.request().ptr,
+                        (double*) sigIo.request().ptr,
+                        f_calc, S_(bin));
+        // calculate Rice distribution using Ftrue as Fobs
+        for (int i = 0; i < self.rb2a[ib].size(); ++i) {
+          const int ia = self.rb2a[ib][i];
+          const int c = self.centric[ia] + 1;
+          const double log_ic0 = log_i0_or_cosh(self.f_true_max[ia] * std::abs(f_calc[ia]) / S_(bin), c);
+          ret += std::log(S_(bin)) / c + (sq(self.f_true_max[ia]) + std::norm(f_calc[ia])) / (S_(bin) * c) - log_ic0;
+        }
       }
       return ret;
     })
+    // also calculate F_true
+    .def("calc_fom", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo,
+                        py::array_t<double> S, py::array_t<std::complex<double>> DFc) {
+      auto S_ = S.unchecked<1>();
+      auto ret = py::array_t<double>(self.asu.size());
+      double* ptr = (double*) ret.request().ptr;
+      std::complex<double> *f_calc = (std::complex<double>*) DFc.request().ptr;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        const int bin = self.rbin[ib];
+        self.est_f_true(ib,
+                        (double*) Io.request().ptr,
+                        (double*) sigIo.request().ptr,
+                        f_calc, S_(bin));
+        // calculate Rice distribution using Ftrue as Fobs
+        for (int i = 0; i < self.rb2a[ib].size(); ++i) {
+          const int ia = self.rb2a[ib][i];
+          const int c = self.centric[ia] + 1;
+          ptr[ia] = fom(self.f_true_max[ia] * std::abs(f_calc[ia]) / S_(bin), c);
+        }
+      }
+      return ret;
+    })
+    // helper function for least-square scaling
+    // n_models should include mask, but last f_falc is ignored
+    // 0: F_calc = sqrt(sum(alpha * |Fc,0 + Fc,1 * k_sol * exp(-B_sol s^2/4) |^2))
+    // 1: dF/dk_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * exp(...)).conj)
+    // 2: dF/dB_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * k_sol * exp(...) * (-s^2/4)).conj)
+    .def("scaling_fc_and_mask_grad", [](const TwinData &self,
+                                        py::array_t<std::complex<double>> f_mask,
+                                        double k_sol, double b_sol) {
+      auto f_mask_ = f_mask.unchecked<1>();
+      if (f_mask.shape(0) != self.asu.size())
+        throw std::runtime_error("bad f_mask size");
+      auto ret = py::array_t<double>({self.n_obs(), (size_t)3});
+      double* ptr = (double*) ret.request().ptr;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
+        for (int io = 0; io < self.rb2o[ib].size(); ++io) {
+          double i_calc_twin = 0, der1 = 0, der2 = 0;
+          for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic) {
+            const size_t ia = self.rb2a[ib][self.rbo2a[ib][io][ic]];
+            std::complex<double> fc = 0;
+            const double temp_fac = std::exp(-b_sol * self.s2_array[ia] / 4.);
+            for (int j = 0; j < self.n_models; ++j)
+              if (j == self.n_models - 1)
+                fc += k_sol * temp_fac * f_mask_(ia);
+              else
+                fc += self.f_calc(ia, j);
+            const double alpha = self.alphas[self.rbo2c[ib][io][ic]];
+            const double tmp = alpha * (fc * std::conj(f_mask_(ia)) * temp_fac).real();
+            der1 += tmp;
+            der2 += -tmp * k_sol * self.s2_array[ia] / 4.;
+            i_calc_twin += alpha * std::norm(fc);
+          }
+          const double f_calc_twin = std::sqrt(i_calc_twin);
+          ptr[3*self.rb2o[ib][io]] = f_calc_twin;
+          ptr[3*self.rb2o[ib][io]+1] = der1 / f_calc_twin;
+          ptr[3*self.rb2o[ib][io]+2] = der2 / f_calc_twin;
+        }
+      return ret;
+    })
+    // for stats calculation
+    .def("i_calc_twin", [](const TwinData &self) {
+      auto ret = py::array_t<double>(self.n_obs());
+      double* ptr = (double*) ret.request().ptr;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
+        for (int io = 0; io < self.rb2o[ib].size(); ++io) {
+          double i_calc_twin = 0;
+          for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic) {
+            const size_t ia = self.rb2a[ib][self.rbo2a[ib][io][ic]];
+            std::complex<double> fc = 0;
+            for (int j = 0; j < self.n_models; ++j)
+              fc += self.f_calc(ia, j);
+            i_calc_twin += self.alphas[self.rbo2c[ib][io][ic]] * std::norm(fc);
+          }
+          ptr[self.rb2o[ib][io]] = i_calc_twin;
+        }
+      return ret;
+    })
+
     ;
 }
