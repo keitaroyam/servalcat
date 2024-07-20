@@ -545,8 +545,8 @@ def parse_line(l, ret):
         ret.setdefault("refi", {})
         itk = 1
         while itk < ntok:
-            if s[itk].startswith("type"):
-                if itk+1 < ntok and s[itk+1].startswith("unre"):
+            if s[itk].lower().startswith("type"):
+                if itk+1 < ntok and s[itk+1].lower().startswith("unre"):
                     ret["refi"]["type"] = "unre"
                 itk += 2
             else:

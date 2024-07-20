@@ -65,7 +65,7 @@ def read_stdin(stdin):
 
 def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 no_adjust_hydrogen_distances=False, fix_long_resnames=True,
-                keep_entities=False):
+                keep_entities=False, unre=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
@@ -83,36 +83,41 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
 
     if not keep_entities:
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-    # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
-    try:
-        monlib = utils.restraints.load_monomer_library(st,
-                                                       monomer_dir=monlib_path,
-                                                       cif_files=ligand,
-                                                       stop_for_unknowns=not make.get("newligand"))
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
 
-    use_cispeps = make.get("cispept", "y") != "y"
-    make_link = make.get("link", "n")
-    make_ss = make.get("ss", "y")
-    only_from = set()
-    if make_link == "y":
-        # add all links
-        add_found = True
-    elif make_ss == "y":
-        add_found = True
-        only_from.add("disulf")
+    if unre:
+        logger.writeln("Monomer library will not be loaded due to unrestrained refinement request")
+        monlib = gemmi.MonLib()
     else:
-        add_found = False
-    
-    utils.restraints.fix_elements_in_model(monlib, st)
-    utils.restraints.find_and_fix_links(st, monlib, add_found=add_found,
-                                        find_metal_links=(make_link == "y"),
-                                        find_symmetry_related=False, add_only_from=only_from)
-    for con in st.connections:
-        if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
-            logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
-            con.link_id = ""
+        # TODO read dictionary from xyzin (priority: user cif -> monlib -> xyzin
+        try:
+            monlib = utils.restraints.load_monomer_library(st,
+                                                           monomer_dir=monlib_path,
+                                                           cif_files=ligand,
+                                                           stop_for_unknowns=not make.get("newligand"))
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
+
+        use_cispeps = make.get("cispept", "y") != "y"
+        make_link = make.get("link", "n")
+        make_ss = make.get("ss", "y")
+        only_from = set()
+        if make_link == "y":
+            # add all links
+            add_found = True
+        elif make_ss == "y":
+            add_found = True
+            only_from.add("disulf")
+        else:
+            add_found = False
+
+        utils.restraints.fix_elements_in_model(monlib, st)
+        utils.restraints.find_and_fix_links(st, monlib, add_found=add_found,
+                                            find_metal_links=(make_link == "y"),
+                                            find_symmetry_related=False, add_only_from=only_from)
+        for con in st.connections:
+            if con.link_id not in ("?", "", "gap") and con.link_id not in monlib.links:
+                logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
+                con.link_id = ""
 
     refmac_fixes = utils.refmac.FixForRefmac()
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
@@ -124,23 +129,28 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                                          fix_resimax=True,
                                          fix_nonpolymer=False)
 
-    if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
-    try:
-        topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
-                                                            check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
-                                                            use_cispeps=use_cispeps)
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
+    if unre:
+        # Refmac5 does not seem to do anything to hydrogen when unre regardless of "make hydr"
+        topo = gemmi.prepare_topology(st, monlib, ignore_unknown_links=True)
+        metal_kws = []
+    else:
+        if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")
+        try:
+            topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, ignore_unknown_links=False,
+                                                                check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
+                                                                use_cispeps=use_cispeps)
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
 
-    if make.get("hydr") != "n" and st[0].has_hydrogen():
-        if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
-            resnames = st[0].get_all_residue_names()
-            utils.restraints.check_monlib_support_nucleus_distances(monlib, resnames)
-            logger.writeln("adjusting hydrogen position to nucleus")
-            topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=1.1)
-        elif h_pos == "elec" and make.get("hydr") == "y" and not no_adjust_hydrogen_distances:
-            logger.writeln("adjusting hydrogen position to electron cloud")
-            topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
+        if make.get("hydr") != "n" and st[0].has_hydrogen():
+            if h_pos == "nucl" and (make.get("hydr") == "a" or not no_adjust_hydrogen_distances):
+                resnames = st[0].get_all_residue_names()
+                utils.restraints.check_monlib_support_nucleus_distances(monlib, resnames)
+                logger.writeln("adjusting hydrogen position to nucleus")
+                topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus, default_scale=1.1)
+            elif h_pos == "elec" and make.get("hydr") == "y" and not no_adjust_hydrogen_distances:
+                logger.writeln("adjusting hydrogen position to electron cloud")
+                topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
     if fix_long_resnames: refmac_fixes.fix_long_resnames(st)
 
@@ -309,11 +319,12 @@ def main(args):
     crdout = None
     refmac_fixes = None
     cispeps = []
-    if xyzin is not None and keywords["refi"].get("type") != "unre":
+    unre = keywords["refi"].get("type") == "unre"
+    if xyzin is not None:
         #tmpfd, crdout = tempfile.mkstemp(prefix="gemmi_", suffix=".crd") # TODO use dir=CCP4_SCR
         #os.close(tmpfd)
         st = utils.fileio.read_structure(xyzin)
-        if not st.cell.is_crystal():
+        if not st.cell.is_crystal() and not unre:
             if args.auto_box_with_padding is not None:
                 st.cell = utils.model.box_from_model(st[0], args.auto_box_with_padding)
                 st.spacegroup_hm = "P 1"
@@ -326,7 +337,8 @@ def main(args):
         refmac_fixes, metal_kws = prepare_crd(st, crdout, args.ligand, make=keywords["make"], monlib_path=args.monlib,
                                               h_pos="nucl" if keywords.get("source")=="ne" else "elec",
                                               no_adjust_hydrogen_distances=args.no_adjust_hydrogen_distances,
-                                              keep_entities=args.keep_entities)
+                                              keep_entities=args.keep_entities,
+                                              unre=unre)
         inputs = metal_kws + inputs # add metal exte first; otherwise it may be affected by user-defined inputs
         opts["xyzin"] = crdout
         cispeps = st.cispeps
