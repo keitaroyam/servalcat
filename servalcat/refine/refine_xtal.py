@@ -35,6 +35,8 @@ def add_arguments(parser):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--ligand', nargs="*", action="append",
                         help="restraint dictionary cif file(s)")
+    parser.add_argument('--newligand_continue', action='store_true',
+                        help="Make ad-hoc restraints for unknown ligands (not recommended)")
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
@@ -161,7 +163,8 @@ def main(args):
     else:
         try:
             monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                           stop_for_unknowns=True, params=params)
+                                                           stop_for_unknowns=not args.newligand_continue,
+                                                           params=params)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
