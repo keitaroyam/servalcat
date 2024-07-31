@@ -114,6 +114,12 @@ def hkldata_from_mtz(mtz, labels, newlabels=None, require_types=None):
     return HklData(mtz.cell, mtz.spacegroup, df)
 # hkldata_from_mtz()
 
+def df_from_twin_data(twin_data, fc_labs):
+    df = pandas.DataFrame(data=twin_data.asu,
+                          columns=["H","K","L"])
+    df[fc_labs] = twin_data.f_calc
+    return df
+
 def blur_mtz(mtz, B):
     # modify given mtz object
     
