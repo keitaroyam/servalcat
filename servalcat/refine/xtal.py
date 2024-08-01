@@ -137,6 +137,8 @@ class LL_Xtal:
             ret["bin_stats"] = stats
         for lab in "R", "CC":
             logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
+        if self.is_int:
+            logger.writeln("R1 is calculated for reflections with I/sigma>2.")
         return ret
 
     def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs=None):

@@ -78,15 +78,18 @@ def calc_r_and_cc(hkldata, centric_and_selections):
     stats["n_obs"] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
-    rlab = "R2" if has_int else "R"
+    rlab = "R1" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
     Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
     if has_int:
         obs = hkldata.df.I
+        obs_sqrt = numpy.sqrt(numpy.maximum(0, hkldata.df.I))
+        obs_sqrt[hkldata.df.I/hkldata.df.SIGI < 2] = numpy.nan # SHELX equivalent
         calc = Fc**2
+        calc_sqrt = Fc
     else:
-        obs = hkldata.df.FP
-        calc = Fc
+        obs = obs_sqrt = hkldata.df.FP
+        calc = calc_sqrt = Fc
     if has_free:
         for lab in (cclab, rlab):
             for suf in ("work", "free"):
@@ -102,10 +105,10 @@ def calc_r_and_cc(hkldata, centric_and_selections):
                 idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
                 stats.loc[i_bin, "n_"+suf] = numpy.sum(numpy.isfinite(obs[idxes2]))
                 stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
-                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs[idxes2], calc[idxes2])
+                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes2], calc_sqrt[idxes2])
         else:
             stats.loc[i_bin, cclab] = utils.hkl.correlation(obs[idxes], calc[idxes])
-            stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs[idxes], calc[idxes])
+            stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
 
     # Overall
     ret = {}
@@ -114,7 +117,7 @@ def calc_r_and_cc(hkldata, centric_and_selections):
             ret[cclab+suf+"avg"] = nanaverage(stats[cclab+suf], stats["n_"+suf])
         for j, suf in ((1, "work"), (2, "free")):
             idxes = numpy.concatenate([sel[j] for i_bin, _ in hkldata.binned() for sel in centric_and_selections[i_bin]])
-            ret[rlab+suf] = utils.hkl.r_factor(obs[idxes], calc[idxes])
+            ret[rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
     else:
         ret[cclab+"avg"] = nanaverage(stats[cclab], stats["n_obs"])
         ret[rlab] = utils.hkl.r_factor(obs, calc)
@@ -1379,6 +1382,8 @@ def main(args):
     stats, overall = calc_r_and_cc(hkldata, centric_and_selections)
     for lab in "R", "CC":
         logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
+    if is_int:
+        logger.writeln("R1 is calculated for reflections with I/sigma>2.")
 
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
