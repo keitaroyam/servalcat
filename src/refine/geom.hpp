@@ -1295,6 +1295,7 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
     const int pair_kind = p.second;
     if (ia1 < 0 && ia2 < 0) continue; // both atoms fixed
     if (!adpr_long_range && pair_kind > 4) continue;
+    if (pair_kind > 9) continue; // don't use adpr for ncsr
     const gemmi::Atom* atom1 = target.all_atoms[p.first.first];
     const gemmi::Atom* atom2 = target.all_atoms[p.first.second];
     // calculate minimum distance - expensive?
@@ -1445,6 +1446,7 @@ inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
     const int pair_kind = p.second;
     if (ia1 < 0 && ia2 < 0) continue; // both atoms fixed
     if (!occr_long_range && pair_kind > 4) continue;
+    if (pair_kind > 9) continue; // don't use occr for ncsr
     const gemmi::Atom* atom1 = target.all_atoms[p.first.first];
     const gemmi::Atom* atom2 = target.all_atoms[p.first.second];
     // calculate minimum distance - expensive?
