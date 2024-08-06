@@ -12,7 +12,6 @@ import json
 import scipy.sparse
 from servalcat.utils import logger
 from servalcat.xtal import sigmaa
-from servalcat.xtal.twin import find_twin_domains
 from servalcat import utils
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -109,8 +108,6 @@ class LL_Xtal:
         # for next cycle
         self.scaling.k_overall = 1.
         self.scaling.b_iso = 0.
-        if self.twin:
-            self.twin_data = find_twin_domains(self.hkldata, self.fc_labs)
 
     # overall_scale()
 

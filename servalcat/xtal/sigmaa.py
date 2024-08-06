@@ -17,7 +17,7 @@ import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
-from servalcat.xtal.twin import find_twin_domains
+from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model
 
 """
 DFc = sum_j D_j F_c,j
@@ -73,7 +73,7 @@ def nanaverage(cc, w):
         return numpy.nan
     return numpy.average(cc[sel], weights=w[sel]) 
 
-def calc_r_and_cc(hkldata, centric_and_selections): # TODO fix for twin_data
+def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df.copy()
@@ -82,7 +82,10 @@ def calc_r_and_cc(hkldata, centric_and_selections): # TODO fix for twin_data
         stats[["n_work", "n_free"]] = 0
     rlab = "R1" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
-    Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
+    if twin_data:
+        Fc = numpy.sqrt(twin_data.i_calc_twin())
+    else:
+        Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
     if has_int:
         obs = hkldata.df.I
         obs_sqrt = numpy.sqrt(numpy.maximum(0, hkldata.df.I))
@@ -1325,7 +1328,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 # process_input()
 
 def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None):
-    assert (hkldata, twin_data).count(None) == 1
+    #assert (hkldata, twin_data).count(None) == 1
+    # hkldata not updated when twin_data is given
     for i, st in enumerate(st_list):
         if st.ncs:
             st = st.clone()
@@ -1365,7 +1369,6 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     if use_solvent:
         if mask is None:
             Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
-            print("mask", Fmask.shape)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
             Fmask = fmask_gr.get_value_by_hkl(miller_array)
@@ -1529,9 +1532,15 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    if args.twin:
+        twin_data = find_twin_domains_from_data(hkldata)
+        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
+    else:
+        twin_data = None
+
     update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
               source=args.source, mott_bethe=(args.source=="electron"),
-              hkldata=hkldata)
+              hkldata=hkldata, twin_data=twin_data)
     is_int = "I" in hkldata.df
 
     if args.mask:
@@ -1544,33 +1553,27 @@ def main(args):
     if not args.no_solvent:
         fc_labs.append("Fbulk")
     lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
-                                      use_int=is_int, mask=mask)
+                                      use_int=is_int, mask=mask, twin_data=twin_data)
     b_aniso = lsq.b_aniso
     # stats
-    stats, overall = calc_r_and_cc(hkldata, centric_and_selections)
+    stats, overall = calc_r_and_cc(hkldata, centric_and_selections, twin_data)
     for lab in "R", "CC":
         logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
     if is_int:
         logger.writeln("R1 is calculated for reflections with I/sigma>2.")
 
-    if args.twin:
-        twin_data = find_twin_domains(hkldata, fc_labs)
-        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
+    if twin_data:
+        estimate_twin_fractions_from_model(twin_data, hkldata)
         #del hkldata.df["FC"]
         #del hkldata.df["Fbulk"]
-        # Need to redo scaling
-        update_fc(sts, fc_labs,
-                  d_min=twin_data.d_min(sts[0].cell),
-                  monlib=None,
-                  source=args.source,
-                  mott_bethe=(args.source=="electron"),
-                  twin_data=twin_data)
+        # Need to redo scaling?
         lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
                                           use_int=is_int, mask=mask, twin_data=twin_data)
         b_aniso = lsq.b_aniso
-    else:
-        twin_data = None
-        
+        stats, overall = calc_r_and_cc(hkldata, centric_and_selections, twin_data)
+        for lab in "R", "CC":
+            logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
+
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 

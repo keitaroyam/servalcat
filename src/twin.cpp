@@ -98,7 +98,7 @@ struct TwinData {
     return ret;
   }
   size_t n_ops() const { // include identity
-    return rbo2a.front().front().size();
+    return ops.size() + 1;
   }
 
   void setup_f_calc(size_t n) {
@@ -641,7 +641,7 @@ void add_twin(py::module& m) {
       return ret;
     })
     .def("twin_related", [](const TwinData &self,
-                            const gemmi::SpaceGroup &sg, const std::vector<gemmi::Op> &operators) {
+                            const gemmi::SpaceGroup &sg) {
       const size_t n_asu = self.asu.size();
       //if (data.shape(0) != n_asu)
       //  throw std::runtime_error("data and asu shapes mismatch");
@@ -650,7 +650,7 @@ void add_twin(py::module& m) {
       auto apply_and_asu = [&rasu, &gops](const gemmi::Op &op, const gemmi::Op::Miller &h) {
         return rasu.to_asu(op.apply_to_hkl(h), gops).first;
       };
-      const size_t n_ops = operators.size() + 1;
+      const size_t n_ops = self.n_ops();
       auto ret = py::array_t<int>({n_asu, n_ops});
       int* ptr = (int*) ret.request().ptr;
       //auto data_ = data.unchecked<1>();
@@ -658,7 +658,7 @@ void add_twin(py::module& m) {
         const auto h = self.asu[i];
         ptr[i * n_ops] = i; //data_(i);
         for (int j = 1; j < n_ops; ++j) {
-          const auto hr = apply_and_asu(operators[j-1], h);
+          const auto hr = apply_and_asu(self.ops[j-1], h);
           ptr[i * n_ops + j] = self.idx_of_asu(hr);
         }
       }
