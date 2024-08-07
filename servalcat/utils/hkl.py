@@ -196,6 +196,17 @@ def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
     return n_bins
 # decide_n_bins()
 
+def fft_map(cell, sg, miller_array, data, grid_size=None, sample_rate=3):
+    if data is not None:
+        data = data.astype(numpy.complex64) # we may want to keep complex128?
+    asu = gemmi.ComplexAsuData(cell, sg, miller_array, data)
+    if grid_size is None:
+        ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
+    else:
+        ma = gemmi.transform_f_phi_grid_to_map(asu.get_f_phi_on_grid(grid_size)) # half_l=False
+    return ma
+# fft_map()
+
 class HklData:
     def __init__(self, cell, sg, df=None, binned_df=None):
         self.cell = cell
@@ -520,14 +531,9 @@ class HklData:
     # as_asu_data()
 
     def fft_map(self, label=None, data=None, grid_size=None, sample_rate=3):
-        if data is not None: data = data.astype(numpy.complex64) # we may want to keep complex128?
-        asu = self.as_asu_data(label=label, data=data)
-        if grid_size is None:
-            ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
-        else:
-            ma = gemmi.transform_f_phi_grid_to_map(asu.get_f_phi_on_grid(grid_size)) # half_l=False
-            
-        return ma
+        if data is None:
+            data = self.df[label]
+        return fft_map(self.cell, self.sg, self.miller_array(), data, grid_size, sample_rate)
     # fft_map()
 
     def d_eff(self, label):

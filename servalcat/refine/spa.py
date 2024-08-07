@@ -58,6 +58,9 @@ class LL_SPA:
                                                         mott_bethe=self.mott_bethe,
                                                         miller_array=self.hkldata.miller_array())
 
+    def prepare_target(self):
+        pass
+
     def overall_scale(self, min_b=0.5):
         k, b = self.hkldata.scale_k_and_b(lab_ref=self.lab_obs, lab_scaled="FC")
         min_b_iso = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too

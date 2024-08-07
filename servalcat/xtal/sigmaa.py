@@ -271,7 +271,7 @@ class LsqScale:
 
     def calc_shift(self, x):
         # TODO: sort out code duplication, if we use this.
-        g = numpy.zeros((len(self.calc[0]), len(x)))
+        g = numpy.zeros((len(self.obs), len(x)))
         H = numpy.zeros((len(x), len(x)))
         fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
@@ -509,27 +509,27 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     return -g / H
 # mli_shift_S()
 
-def mltwin_helper(df, k_ani, idxes):
+def mltwin_est_ftrue(twin_data, df, k_ani, idxes):
     kani2_inv = 1 / k_ani**2
     i_sigi = numpy.empty((2, len(df.index)))
     i_sigi[:] = numpy.nan
     i_sigi[0, idxes] = (df.I.to_numpy() * kani2_inv)[idxes]
     i_sigi[1, idxes] = (df.SIGI.to_numpy() * kani2_inv)[idxes]
-    return i_sigi[0,:], i_sigi[1,:]
-# mltwin_helper
+    twin_data.est_f_true(i_sigi[0,:], i_sigi[1,:])
+# mltwin_est_ftrue()
 
 def mltwin(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    i, sigi = mltwin_helper(df, k_ani, idxes)
-    return twin_data.ll(i, sigi)
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    return twin_data.ll()
 # mltwin()
     
 def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    i, sigi = mltwin_helper(df, k_ani, idxes)
-    r = twin_data.ll_der(i, sigi)
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S()
     g = numpy.zeros(r.shape[1])
     g[:-1] = numpy.nansum(r[:,:-1], axis=0) # D
     g[-1] = numpy.nansum(r[:,-1]) # S
@@ -539,8 +539,8 @@ def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
 def mltwin_shift_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    i, sigi = mltwin_helper(df, k_ani, idxes)
-    r = twin_data.ll_der(i, sigi)
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S()
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -691,7 +691,6 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
     logger.writeln("Estimating sigma-A parameters using {}..".format(("intensities" if use_int else "amplitudes") + " (twin)" if twin_data else ""))
     trans = VarTrans(D_trans, S_trans)
     lab_obs = "I" if use_int else "FP"
-    logger.writeln(f"debug df=\n{hkldata.df}")
     def get_idxes(i_bin):
         if use == "all":
             return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
@@ -1410,7 +1409,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
         o_labs = ["FP", "SIGFP", "F(+)","SIGF(+)", "F(-)", "SIGF(-)"]
         hkldata.df[hkldata.df.columns.intersection(o_labs)] /= scaling.k_overall
     if twin_data:
-        twin_data.f_calc[:] *= numpy.exp(-b_iso * numpy.asarray(twin_data.s2_array) / 4)[:,None]
+        twin_data.f_calc[:] *= twin_data.debye_waller_factors(b_iso=b_iso)[:,None]
     else:
         k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
         for lab in fc_labs: hkldata.df[lab] *= k_iso

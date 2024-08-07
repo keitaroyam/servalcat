@@ -344,7 +344,10 @@ struct TwinData {
       const double i_obs = std::max(0.001 * sigo[obs_idx], iobs[obs_idx]);
       double i_calc_twin = 0;
       for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic)
-        i_calc_twin += alphas[rbo2c[ib][io][ic]] * std::norm(sum_fcalc(rb2a[ib][rbo2a[ib][io][ic]], false));
+        if (alphas[rbo2c[ib][io][ic]] < 0)
+          throw std::runtime_error("negative alpha");
+        else
+          i_calc_twin += alphas[rbo2c[ib][io][ic]] * std::norm(sum_fcalc(rb2a[ib][rbo2a[ib][io][ic]], false));
       // printf("debug: i_obs %f i_calc_twin %f\n", i_obs, i_calc_twin);
       for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic) {
         f_est[rbo2a[ib][io][ic]] += alphas[rbo2c[ib][io][ic]] * std::sqrt(i_obs / i_calc_twin);
@@ -354,7 +357,7 @@ struct TwinData {
     }
     Eigen::VectorXd f_true(rb2a[ib].size());
     for (int ia = 0; ia < rb2a[ib].size(); ++ia) {
-      f_true(ia) = f_est[ia] * std::abs(sum_fcalc(rb2a[ib][ia], false));
+      f_true(ia) = std::max(1e-6, f_est[ia] * std::abs(sum_fcalc(rb2a[ib][ia], false)));
       if (std::isnan(f_true(ia)))
         throw std::runtime_error("initial f_true is nan");
     }
@@ -501,7 +504,7 @@ struct TwinData {
     //return f0 + 0.5 * std::log(det); // Laplace approximation. omitted (2pi)**N/2
 
     for (int i = 0; i < rb2a[ib].size(); ++i)
-      f_true_max[rb2a[ib][i]] = f_true(i);
+      f_true_max[rb2a[ib][i]] = std::max(f_true(i), 1e-6);
 
     //throw std::runtime_error("did not converge. ib = " + std::to_string(ib));
   }
@@ -671,18 +674,12 @@ void add_twin(py::module& m) {
                         (double*) sigIo.request().ptr);
       }
     })
-    .def("ll", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
-      // Io should be masked using NaN if outside the selection
-      if (Io.shape(0) != sigIo.shape(0))
-        throw std::runtime_error("ll: Io and sigIo shape mismatch");
+    .def("ll", [](const TwinData &self) {
       double ret = 0;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
         // if (bin >= 0 && b != bin)
         //   continue;
-        self.est_f_true(ib,
-                        (double*) Io.request().ptr,
-                        (double*) sigIo.request().ptr);
         // calculate Rice distribution using Ftrue as Fobs
         for (int i = 0; i < self.rb2a[ib].size(); ++i) {
           const int ia = self.rb2a[ib][i];
@@ -699,10 +696,7 @@ void add_twin(py::module& m) {
       }
       return ret;
     })
-    .def("ll_der", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
-      // Io should be masked using NaN if outside the selection
-      if (Io.shape(0) != sigIo.shape(0))
-        throw std::runtime_error("ll: Io and sigIo shape mismatch");
+    .def("ll_der_D_S", [](const TwinData &self) {
       const size_t n_cols = self.n_models + 1;
       auto ret = py::array_t<double>({self.asu.size(), n_cols});
       double* ptr = (double*) ret.request().ptr;
@@ -710,9 +704,6 @@ void add_twin(py::module& m) {
         ptr[i] = NAN;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
-        self.est_f_true(ib,
-                        (double*) Io.request().ptr,
-                        (double*) sigIo.request().ptr);
         // calculate Rice distribution using Ftrue as Fobs
         for (int i = 0; i < self.rb2a[ib].size(); ++i) {
           const int ia = self.rb2a[ib][i];
@@ -780,6 +771,33 @@ void add_twin(py::module& m) {
       }
       return ret;
     })
+    .def("ll_der_fc0", [](const TwinData &self) {
+      auto ret1 = py::array_t<std::complex<double>>(self.asu.size());
+      auto ret2 = py::array_t<double>(self.asu.size());
+      std::complex<double>* ptr1 = (std::complex<double>*) ret1.request().ptr;
+      double* ptr2 = (double*) ret2.request().ptr;
+      for (int i = 0; i < ret1.size(); ++i) {
+        ptr1[i] = NAN;
+        ptr2[i] = NAN;
+      }
+      for (int ia = 0; ia < self.asu.size(); ++ia) {
+        const int b = self.bin[ia];
+        const std::complex<double> DFc = self.sum_fcalc(ia, true);
+        const double fmax = self.f_true_max[ia];
+        if (!std::isnan(fmax)) {
+          const int c = self.centric[ia] + 1;
+          const double eps = self.epsilon[ia];
+          const double S = self.ml_sigma(b);
+          const double X_der = fmax / (S * eps);
+          const double X = std::abs(DFc) * X;
+          const double m = fom(X, c);
+          const std::complex<double> exp_ip = std::exp(std::arg(DFc) * std::complex<double>(0, 1));
+          ptr1[ia] = (3 - c) * (std::abs(DFc) - m * fmax) / (eps * S) * self.ml_scale(b, 0) * exp_ip; // assuming 0 is atomic structure
+          ptr2[ia] = ((3 - c) / (eps * S) - fom_der(m, X, c) * sq((3 - c) * X_der)) * sq(self.ml_scale(b, 0));
+        }
+      }
+      return py::make_tuple(ret1, ret2);
+    })
     // helper function for least-square scaling
     // n_models should include mask, but last f_falc is ignored
     // 0: F_calc = sqrt(sum(alpha * |Fc,0 + Fc,1 * k_sol * exp(-B_sol s^2/4) |^2))
@@ -836,6 +854,12 @@ void add_twin(py::module& m) {
         }
       return ret;
     })
-
+    .def("debye_waller_factors", [](const TwinData &self, double b_iso) {
+      auto ret = py::array_t<double>(self.asu.size());
+      double* ptr = (double*) ret.request().ptr;
+      for (int i = 0; i < ret.size(); ++i)
+        ptr[i] = std::exp(-b_iso / 4 * self.s2_array[i]);
+      return ret;
+    }, py::arg("b_iso"))
     ;
 }

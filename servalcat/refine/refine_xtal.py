@@ -14,7 +14,7 @@ import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int
+from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine
 from servalcat.refmac import refmac_keywords
@@ -228,7 +228,11 @@ def main(args):
     if params["write_trajectory"]:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
 
-    if is_int:
+    if ll.twin_data:
+        # replace hkldata
+        hkldata = calculate_maps_twin(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, ll.twin_data,
+                                      centric_and_selections, use=use_in_target)
+    elif is_int:
         calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
                            use=use_in_target)
     else:
@@ -236,7 +240,9 @@ def main(args):
                        use=use_in_target)
 
     # Write mtz file
-    if is_int:
+    if ll.twin_data:
+        labs = ["F_est"]
+    elif is_int:
         labs = ["I", "SIGI", "FOM"]
     else:
         labs = ["FP", "SIGFP", "FOM"]
@@ -249,7 +255,7 @@ def main(args):
         labs.append("FREE")
     labs += ll.D_labs + ["S"] # for debugging, for now
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F"})
 
 # main()
 

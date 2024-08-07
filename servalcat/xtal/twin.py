@@ -40,7 +40,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
             ccs[-1].append(cc)
             nums[-1].append(len(val))
         alphas.append(numpy.array(ratios) / sum(ratios))
-    alphas = numpy.mean(alphas, axis=0)
+    alphas = numpy.maximum(0, numpy.mean(alphas, axis=0))
     alphas /= numpy.sum(alphas)
     ccs = numpy.array(ccs)
     nums = numpy.array(nums)
@@ -96,7 +96,8 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
 
     df = pandas.DataFrame(tmp)
     df.iloc[:,:] /= df.sum(axis=1).to_numpy()[:,None]
-    mean_alphas = df.mean().tolist()
+    mean_alphas = numpy.maximum(0, df.mean())
+    mean_alphas /= numpy.sum(mean_alphas)
     logger.write(" Estimated fractions from data-model correlations: ")
     logger.writeln(" ".join("%.2f"%x for x in mean_alphas))
     twin_data.alphas = mean_alphas
