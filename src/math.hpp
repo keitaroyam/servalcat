@@ -6,6 +6,7 @@
 
 #include "lambertw.hpp"
 #include <gemmi/bessel.hpp>    // for log_bessel_i0, bessel_i1_over_i0
+#include <gemmi/math.hpp>    //   for log_cosh
 #include <Eigen/Dense>
 
 namespace servalcat {
@@ -21,6 +22,7 @@ inline double fom(double X, int c) {
 }
 
 inline double fom_der(double m, double X, int c) {
+  // XXX when c=1, needs 2x.
   return c == 1 ? 1 - 0.5 * m / X - m * m : 1 - m * m;
 }
 

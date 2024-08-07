@@ -683,9 +683,12 @@ class Refine:
             self.ll.update_fc()
             self.ll.overall_scale()
             self.ll.update_ml_params()
+            self.ll.prepare_target()
             llstats = self.ll.calc_stats(bin_stats=True)
             stats[-1]["data"] = {"summary": llstats["summary"],
                                  "binned": llstats["bin_stats"].to_dict(orient="records")}
+            if "twin_alpha" in llstats:
+                stats[-1]["twin_alpha"] = llstats["twin_alpha"]
             show_binstats(llstats["bin_stats"], 0)
         if self.adp_mode > 0:
             utils.model.adp_analysis(self.st)
@@ -713,12 +716,15 @@ class Refine:
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()
                 self.ll.update_ml_params()
+                self.ll.prepare_target()
                 llstats = self.ll.calc_stats(bin_stats=True)#(i==ncycles-1))
                 if llstats["summary"]["-LL"] > f0:
                     logger.writeln("WARNING: -LL has increased after ML parameter optimization:"
                                    "{} to {}".format(f0, llstats["summary"]["-LL"]))
                 stats[-1]["data"] = {"summary": llstats["summary"],
                                      "binned": llstats["bin_stats"].to_dict(orient="records")}
+                if "twin_alpha" in llstats:
+                    stats[-1]["twin_alpha"] = llstats["twin_alpha"]
                 show_binstats(llstats["bin_stats"], i+1)
             if self.adp_mode > 0:
                 utils.model.adp_analysis(self.st)

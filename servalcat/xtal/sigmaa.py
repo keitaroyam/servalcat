@@ -17,6 +17,7 @@ import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
+from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model
 
 """
 DFc = sum_j D_j F_c,j
@@ -51,6 +52,7 @@ def add_arguments(parser):
                         help="Use CC(|F1|,|F2|) to CC(F1,F2) conversion to derive D and S")
     parser.add_argument('--use', choices=["all", "work", "test"], default="all",
                         help="Which reflections to be used for the parameter estimate.")
+    parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument('--mask',
                         help="A solvent mask (by default calculated from the coordinates)")
     parser.add_argument('--keep_charges',  action='store_true',
@@ -71,7 +73,7 @@ def nanaverage(cc, w):
         return numpy.nan
     return numpy.average(cc[sel], weights=w[sel]) 
 
-def calc_r_and_cc(hkldata, centric_and_selections):
+def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df.copy()
@@ -80,7 +82,10 @@ def calc_r_and_cc(hkldata, centric_and_selections):
         stats[["n_work", "n_free"]] = 0
     rlab = "R1" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
-    Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
+    if twin_data:
+        Fc = numpy.sqrt(twin_data.i_calc_twin())
+    else:
+        Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
     if has_int:
         obs = hkldata.df.I
         obs_sqrt = numpy.sqrt(numpy.maximum(0, hkldata.df.I))
@@ -161,46 +166,63 @@ class LsqScale:
         self.b_aniso = None
         self.stats = {}
 
-    def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None):
+    def set_data(self, hkldata, fc_list, use_int=False, sigma_cutoff=None, twin_data=None):
         assert 0 < len(fc_list) < 3
         self.use_int = use_int
         if sigma_cutoff is not None:
             if use_int:
-                sel = hkldata.df.I / hkldata.df.SIGI > sigma_cutoff
+                self.sel = hkldata.df.I / hkldata.df.SIGI > sigma_cutoff
                 self.labcut = "(I/SIGI>{})".format(sigma_cutoff)
             else:
-                sel = hkldata.df.FP / hkldata.df.SIGFP > sigma_cutoff
+                self.sel = hkldata.df.FP / hkldata.df.SIGFP > sigma_cutoff
                 self.labcut = "(F/SIGF>{})".format(sigma_cutoff)
         else:
-            sel = hkldata.df.index
+            self.sel = hkldata.df.index
             self.labcut = ""
-        self.obs = hkldata.df["I" if use_int else "FP"].to_numpy()[sel]
-        self.calc = [x[sel] for x in fc_list]
-        self.s2mat = hkldata.ssq_mat()[:,sel]
-        self.s2 = 1. / hkldata.d_spacings().to_numpy()[sel]**2
+        self.obs = hkldata.df["I" if use_int else "FP"].to_numpy(copy=True)
+        self.obs[~self.sel] = numpy.nan
+        self.calc = [x for x in fc_list]
+        self.s2mat = hkldata.ssq_mat()
+        self.s2 = 1. / hkldata.d_spacings().to_numpy()**2
         self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=False)
+        self.twin_data = twin_data
         if use_int:
             self.sqrt_obs = numpy.sqrt(self.obs)
         
     def get_solvent_scale(self, k_sol, b_sol, s2=None):
         if s2 is None: s2 = self.s2
         return k_sol * numpy.exp(-b_sol * s2 / 4)
-    
-    def scaled_fc(self, x):
+
+    def fc_and_mask_grad(self, x):
         fc0 = self.calc[0]
         if len(self.calc) == 2:
-            fmask = self.calc[1]
-            fbulk = self.get_solvent_scale(x[-2], x[-1]) * fmask
-            fc = fc0 + fbulk
+            if self.twin_data:
+                r = self.twin_data.scaling_fc_and_mask_grad(self.calc[1], x[-2], x[-1])
+                return r[:,0], r[:,1], r[:,2]
+            else:
+                fmask = self.calc[1]
+                temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
+                fbulk = x[-2] * temp_sol * fmask
+                fc = fc0 + fbulk
+                re_fmask_fcconj = (fmask * fc.conj()).real
+                fc_abs = numpy.abs(fc)
+                tmp = temp_sol / fc_abs * re_fmask_fcconj
+                return fc_abs, tmp, -tmp * x[-2] * self.s2 / 4
         else:
-            fc = fc0
+            if self.twin_data:
+                return numpy.sqrt(self.twin_data.i_calc_twin()), None, None
+            else:
+                return numpy.abs(fc0), None, None
+
+    def scaled_fc(self, x):
+        fc = self.fc_and_mask_grad(x)[0]
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
         return self.k_trans(x[0]) * kani * fc
 
     def target(self, x):
-        y = numpy.abs(self.scaled_fc(x))
+        y = self.scaled_fc(x)
         if self.use_int:
             diff = self.sqrt_obs - y
             #y2 = y**2
@@ -217,18 +239,10 @@ class LsqScale:
         
     def grad(self, x):
         g = numpy.zeros_like(x)
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
-            fbulk = x[-2] * temp_sol * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
+        fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
-        fc_abs = numpy.abs(fc)
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
         if self.use_int:
@@ -250,30 +264,19 @@ class LsqScale:
         g[0] = numpy.nansum(kani * fc_abs * dfdy * self.k_trans_der(x[0]))
         g[1:nadp+1] = numpy.dot(dfdb, self.adpdirs.T)
         if len(self.calc) == 2:
-            re_fmask_fcconj = (fmask * fc.conj()).real
-            tmp = k * kani * temp_sol / fc_abs * re_fmask_fcconj
-            g[-2] = numpy.nansum(tmp * dfdy)
-            g[-1] = numpy.nansum(-tmp * dfdy * x[-2] * self.s2 / 4)
+            g[-2] = numpy.nansum(k * kani * der_ksol * dfdy)
+            g[-1] = numpy.nansum(k * kani * der_bsol * dfdy)
 
         return g
 
     def calc_shift(self, x):
         # TODO: sort out code duplication, if we use this.
-        g = numpy.zeros((len(self.calc[0]), len(x)))
+        g = numpy.zeros((len(self.obs), len(x)))
         H = numpy.zeros((len(x), len(x)))
-        
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            temp_sol = numpy.exp(-x[-1] * self.s2 / 4)
-            fbulk = x[-2] * temp_sol * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
+        fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
         B = numpy.dot(x[1:nadp+1], self.adpdirs)
         kani = numpy.exp(numpy.dot(-B, self.s2mat))
-        fc_abs = numpy.abs(fc)
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
         if self.use_int:
@@ -300,27 +303,20 @@ class LsqScale:
         g[:,0] = kani * fc_abs * self.k_trans_der(x[0])
         g[:,1:nadp+1] = numpy.dot(dfdb.T, self.adpdirs.T)
         if len(self.calc) == 2:
-            re_fmask_fcconj = (fmask * fc.conj()).real
-            tmp = k * kani * temp_sol / fc_abs * re_fmask_fcconj
-            g[:,-2] = tmp
-            g[:,-1] = -tmp * x[-2] * self.s2 / 4
+            g[:,-2] = k * kani * der_ksol
+            g[:,-1] = k * kani * der_bsol
 
-        # XXX won't work with NaNs.
+        # no numpy.nandot..
+        g, dfdy, dfdy2 = g[self.sel, :], dfdy[self.sel], dfdy2[self.sel]
         H = numpy.dot(g.T, g * dfdy2[:,None])
         g = numpy.sum(dfdy[:,None] * g, axis=0)
         dx = -numpy.dot(g, numpy.linalg.pinv(H))
         return dx
 
     def initial_kb(self):
-        fc0 = self.calc[0]
-        if len(self.calc) == 2:
-            fmask = self.calc[1]
-            fbulk = self.get_solvent_scale(self.k_sol, self.b_sol) * fmask
-            fc = fc0 + fbulk
-        else:
-            fc = fc0
-        sel = self.obs > 0
-        f1p, f2p, s2p = self.obs[sel], numpy.abs(fc)[sel], self.s2[sel]
+        fc_abs = self.fc_and_mask_grad([self.k_sol, self.b_sol])[0]
+        sel = self.obs > 0 # exclude nan as well
+        f1p, f2p, s2p = self.obs[sel], fc_abs[sel], self.s2[sel]
         if self.use_int: f2p *= f2p
         tmp = numpy.log(f2p) - numpy.log(f1p)
         # g = [dT/dk, dT/db]
@@ -421,7 +417,7 @@ class LsqScale:
             self.k_sol = res_x[-2] 
             self.b_sol = res_x[-1]
             logger.writeln(" k_sol= {:.2e} B_sol= {:.2e}".format(self.k_sol, self.b_sol))
-        calc = numpy.abs(self.scaled_fc(res_x))
+        calc = self.scaled_fc(res_x)
         if self.use_int: calc *= calc
         self.stats["cc"] = utils.hkl.correlation(self.obs, calc)
         self.stats["r"] = utils.hkl.r_factor(self.obs, calc)
@@ -513,6 +509,43 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     return -g / H
 # mli_shift_S()
 
+def mltwin_est_ftrue(twin_data, df, k_ani, idxes):
+    kani2_inv = 1 / k_ani**2
+    i_sigi = numpy.empty((2, len(df.index)))
+    i_sigi[:] = numpy.nan
+    i_sigi[0, idxes] = (df.I.to_numpy() * kani2_inv)[idxes]
+    i_sigi[1, idxes] = (df.SIGI.to_numpy() * kani2_inv)[idxes]
+    twin_data.est_f_true(i_sigi[0,:], i_sigi[1,:])
+# mltwin_est_ftrue()
+
+def mltwin(df, twin_data, Ds, S, k_ani, idxes, i_bin):
+    twin_data.ml_sigma[i_bin] = S
+    twin_data.ml_scale[i_bin, :] = Ds
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    return twin_data.ll()
+# mltwin()
+    
+def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
+    twin_data.ml_sigma[i_bin] = S
+    twin_data.ml_scale[i_bin, :] = Ds
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S()
+    g = numpy.zeros(r.shape[1])
+    g[:-1] = numpy.nansum(r[:,:-1], axis=0) # D
+    g[-1] = numpy.nansum(r[:,-1]) # S
+    return g
+# deriv_mlf_wrt_D_S()
+
+def mltwin_shift_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
+    twin_data.ml_sigma[i_bin] = S
+    twin_data.ml_scale[i_bin, :] = Ds
+    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S()
+    g = numpy.nansum(r[:,-1])
+    H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
+    return -g / H
+# mlf_shift_S()
+
 def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, use="all", smoothing="gauss"):
     # theorhetical values
     cc_a = lambda cc: (numpy.pi/4*(1-cc**2)**2 * scipy.special.hyp2f1(3/2, 3/2, 1, cc**2) - numpy.pi/4) / (1-numpy.pi/4)
@@ -597,7 +630,7 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selection
     smooth_params(hkldata, D_labs, smoothing)
 # determine_mlf_params_from_cc()
 
-def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use):
+def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use, twin_data=None):
     # Initial values
     for lab in D_labs: hkldata.binned_df[lab] = 1.
     hkldata.binned_df["S"] = 10000.
@@ -617,8 +650,11 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selectio
             Io = hkldata.df.I.to_numpy()[idxes]
         else:
             Io = hkldata.df.FP.to_numpy()[idxes]**2
-        Io /= k_ani[idxes]**2 
-        Ic = numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
+        Io /= k_ani[idxes]**2
+        if twin_data:
+            Ic = twin_data.i_calc_twin()[idxes]
+        else:
+            Ic = numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
         mean_Io = numpy.mean(Io)
         mean_Ic = numpy.mean(Ic)
         cc = numpy.corrcoef(Io, Ic)[1,0]
@@ -638,16 +674,21 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selectio
             min_D = hkldata.binned_df[D_lab][hkldata.binned_df[D_lab] > 0].min() * 0.1
             logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
             hkldata.binned_df[D_lab].where(hkldata.binned_df[D_lab] > 0, min_D, inplace=True) # arbitrary
-        
+
+    if twin_data:
+        twin_data.ml_scale[:] = hkldata.binned_df.loc[:, D_labs]
+        twin_data.ml_sigma[:] = hkldata.binned_df.loc[:, "S"]
+            
     logger.writeln("Initial estimates:")
     logger.writeln(hkldata.binned_df.to_string())
 # initialize_ml_params()
 
 def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_selections,
-                        D_trans=None, S_trans=None, use="all", n_cycle=1, smoothing="gauss"):
+                        D_trans=None, S_trans=None, use="all", n_cycle=1, smoothing="gauss",
+                        twin_data=None):
     assert use in ("all", "work", "test")
     assert smoothing in (None, "gauss")
-    logger.writeln("Estimating sigma-A parameters using {}..".format("intensities" if use_int else "amplitudes"))
+    logger.writeln("Estimating sigma-A parameters using {}..".format(("intensities" if use_int else "amplitudes") + " (twin)" if twin_data else ""))
     trans = VarTrans(D_trans, S_trans)
     lab_obs = "I" if use_int else "FP"
     def get_idxes(i_bin):
@@ -658,7 +699,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
             return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
 
     if not set(D_labs + ["S"]).issubset(hkldata.binned_df):
-        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use)
+        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selections, use, twin_data=twin_data)
         for dlab, fclab in zip(D_labs, fc_labs):
             hkldata.binned_df["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
 
@@ -684,8 +725,12 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 else:
                     Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                     S = trans.S(x[-1])
-                f = mli if use_int else mlf
-                return f(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+
+                if twin_data:
+                    return mltwin(hkldata.df, twin_data, Ds, S, k_ani, idxes, i_bin)
+                else:
+                    f = mli if use_int else mlf
+                    return f(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
 
             def grad(x):
                 if refpar == "all":
@@ -700,8 +745,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                     Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                     S = trans.S(x[-1])
                     n_par = 1
-                calc_deriv = deriv_mli_wrt_D_S if use_int else deriv_mlf_wrt_D_S
-                r = calc_deriv(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
+                if twin_data:
+                    r = deriv_mltwin_wrt_D_S(hkldata.df, twin_data, Ds, S, k_ani, idxes, i_bin)
+                else:
+                    calc_deriv = deriv_mli_wrt_D_S if use_int else deriv_mlf_wrt_D_S
+                    r = calc_deriv(hkldata.df, fc_labs, Ds, S, k_ani, idxes)
                 g = numpy.zeros(n_par)
                 if refpar in ("all", "D"):
                     g[:len(fc_labs)] = r[:len(fc_labs)]
@@ -726,6 +774,18 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 for ids in range(10):
                     refpar = "D"
                     x0 = numpy.array([trans.D_inv(hkldata.binned_df.loc[i_bin, lab]) for lab in D_labs])
+                    #print("MLTWIN=", target(x0))
+                    #quit()
+                    if 0:
+                        h = 1e-3
+                        f00 = target(x0)
+                        g00 = grad(x0)
+                        for ii in range(len(x0)):
+                            xx = x0.copy()
+                            xx[ii] += h
+                            f01 = target(xx)
+                            nder = (f01 - f00) / h
+                            logger.writeln(f"DEBUG_der_D bin_{i_bin} {ii} ad={g00[ii]} nd={nder} r={g00[ii]/nder}")
                     vals_now = []
                     if 0:
                         f0 = target(x0)
@@ -761,15 +821,29 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                         for i, lab in enumerate(D_labs):
                             hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
                             vals_now.append(hkldata.binned_df.loc[i_bin, lab])
+                        if twin_data:
+                            twin_data.ml_scale[i_bin, :] = trans.D(res.x)
                     refpar = "S"
                     if 1:
                         for cyc_s in range(1):
                             x0 = trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])
+                            if 0:
+                                h = 1e-1
+                                f00 = target([x0])
+                                g00 = grad([x0])
+                                xx = x0 + h
+                                f01 = target([xx])
+                                nder = (f01 - f00) / h
+                                logger.writeln(f"DEBUG_der_S bin_{i_bin} ad={g00} nd={nder} r={g00/nder}")
+
                             f0 = target([x0])
                             Ds = [hkldata.binned_df.loc[i_bin, lab] for lab in D_labs]
                             nfev_total += 1
-                            calc_shift_S = mli_shift_S if use_int else mlf_shift_S
-                            shift = calc_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
+                            if twin_data:
+                                shift = mltwin_shift_S(hkldata.df, twin_data, Ds, trans.S(x0), k_ani, idxes, i_bin)
+                            else:
+                                calc_shift_S = mli_shift_S if use_int else mlf_shift_S
+                                shift = calc_shift_S(hkldata.df, fc_labs, Ds, trans.S(x0), k_ani, idxes)
                             shift /= trans.S_deriv(x0)
                             if abs(shift) < 1e-3: break
                             for itry in range(10):
@@ -790,6 +864,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                             else:
                                 #print("all bad")
                                 break
+                        if twin_data:
+                            twin_data.ml_sigma[i_bin] = hkldata.binned_df.loc[i_bin, "S"]
                     else:
                         # somehow this does not work well.
                         x0 = [trans.S_inv(hkldata.binned_df.loc[i_bin, "S"])]
@@ -799,6 +875,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                         #print(i_bin, "mini cycle", ids, refpar)
                         #print(res)
                         hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
+                        if twin_data:
+                            twin_data.ml_sigma[i_bin] = trans.S(res.x[-1])
                     vals_now.append(hkldata.binned_df.loc[i_bin, "S"])
                     vals_now = numpy.array(vals_now)
                     if vals_last is not None and numpy.all(numpy.abs((vals_last - vals_now) / vals_now) < 1e-2):
@@ -815,17 +893,30 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 for i, lab in enumerate(D_labs):
                     hkldata.binned_df.loc[i_bin, lab] = trans.D(res.x[i])
                 hkldata.binned_df.loc[i_bin, "S"] = trans.S(res.x[-1])
+                if twin_data:
+                    twin_data.ml_scale[i_bin, :] = trans.D(res.x[:-1])
+                    twin_data.ml_sigma[i_bin] = trans.S(res.x[-1])
 
-        for i_bin, idxes in hkldata.binned():
-            for dlab, fclab in zip(D_labs, fc_labs):
-                mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df[dlab][i_bin] * hkldata.df[fclab][idxes]))
-                hkldata.binned_df.loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
+        if twin_data:
+            dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
+            for i_bin, idxes in hkldata.binned():
+                dfc_bin = dfc[numpy.asarray(twin_data.bin)==i_bin,:]
+                mean_dfc = numpy.nanmean(dfc_bin, axis=0)
+                for i, (dlab, fclab) in enumerate(zip(D_labs, fc_labs)):
+                    hkldata.binned_df.loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc[i]
+        else:
+            for i_bin, idxes in hkldata.binned():
+                for dlab, fclab in zip(D_labs, fc_labs):
+                    mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df[dlab][i_bin] * hkldata.df[fclab][idxes]))
+                    hkldata.binned_df.loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
                 
         logger.writeln("Refined estimates:")
         logger.writeln(hkldata.binned_df.to_string())
+        #numpy.testing.assert_allclose(hkldata.binned_df.S, twin_data.ml_sigma)
+        #numpy.testing.assert_allclose(hkldata.binned_df[D_labs], twin_data.ml_scale)
         logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
 
-        if not use_int:
+        if not use_int or twin_data:
             break # did not implement MLF B_aniso optimization
         
         # Refine b_aniso
@@ -903,7 +994,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
     return b_aniso
 # determine_ml_params()
 
-def smooth_params(hkldata, D_labs, smoothing):
+def smooth_params(hkldata, D_labs, smoothing): # XXX twin_data
     if smoothing is None or len(hkldata.binned()) < 2:
         for i, lab in enumerate(D_labs + ["S"]):
             hkldata.df[lab] = hkldata.binned_data_as_array(lab)
@@ -984,6 +1075,43 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
             hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
 # calculate_maps_int()
+
+def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_and_selections, use="all"):
+    k_ani2_inv = 1 / hkldata.debye_waller_factors(b_cart=b_aniso)**2
+    Io = hkldata.df.I.to_numpy(copy=True) * k_ani2_inv
+    sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
+    # Mask Io
+    for i_bin, idxes in hkldata.binned():
+        for c, work, test in centric_and_selections[i_bin]:
+            if use != "all":
+                tohide = test if use == "work" else work
+                Io[tohide] = numpy.nan
+    
+    twin_data.est_f_true(Io, sigIo)
+    F_true = numpy.asarray(twin_data.f_true_max)
+    Ds = twin_data.ml_scale_array()
+    DFc = (twin_data.f_calc * Ds).sum(axis=1)
+    exp_ip = numpy.exp(numpy.angle(DFc)*1j)
+    Ft = numpy.asarray(twin_data.f_true_max)
+    m = twin_data.calc_fom()
+    fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
+                      2 * m * Ft * exp_ip - DFc, m * Ft * exp_ip)
+    delfwt = m * Ft * exp_ip - DFc
+    sel = numpy.isnan(fwt)
+    fwt[sel] = DFc[sel]
+    
+    hkldata2 = utils.hkl.HklData(hkldata.cell, hkldata.sg,
+                                 utils.hkl.df_from_twin_data(twin_data, fc_labs))
+    hkldata2.df["FWT"] = fwt
+    hkldata2.df["DELFWT"] = delfwt
+    hkldata2.df["FOM"] = m
+    hkldata2.df["F_est"] = F_true
+    hkldata2.df["FC"] = twin_data.f_calc.sum(axis=1)
+    hkldata2.df["DFC"] = DFc
+    hkldata2.df[D_labs] = Ds
+    hkldata2.df["S"] = twin_data.ml_sigma_array()
+    return hkldata2
+# calculate_maps_twin()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
     st2 = sts[0].clone()
@@ -1145,13 +1273,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.setup_binning(n_bins=n_bins)
     logger.writeln("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
 
-    fc_labs = []
-    for i, st in enumerate(sts):
-        lab = "FC{}".format(i)
-        hkldata.df[lab] = utils.model.calc_fc_fft(st, d_min-1e-6,
-                                                  source=source, mott_bethe=(source=="electron"),
-                                                  miller_array=hkldata.miller_array())
-        fc_labs.append(lab)
+    fc_labs = ["FC{}".format(i)  for i, _ in enumerate(sts)]
 
     # Create a centric selection table for faster look up
     centric_and_selections = {}
@@ -1204,10 +1326,34 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     return hkldata, sts, fc_labs, centric_and_selections, free
 # process_input()
 
+def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None):
+    #assert (hkldata, twin_data).count(None) == 1
+    # hkldata not updated when twin_data is given
+    for i, st in enumerate(st_list):
+        if st.ncs:
+            st = st.clone()
+            st.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
+        if twin_data:
+            hkl = twin_data.asu
+        else:
+            hkl = hkldata.miller_array()
+        fc = utils.model.calc_fc_fft(st, d_min - 1e-6,
+                                     monlib=monlib,
+                                     source=source,
+                                     mott_bethe=mott_bethe,
+                                     miller_array=hkl)
+        if twin_data:
+            twin_data.f_calc[:,i] = fc
+        else:
+            hkldata.df[fc_labs[i]] = fc
+    if not twin_data:
+        hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
+# update_fc()
+
 def calc_Fmask(st, d_min, miller_array):
     logger.writeln("Calculating solvent contribution..")
     grid = gemmi.FloatGrid()
-    grid.setup_from(st, spacing=min(0.6, d_min / 2 - 1e-9))
+    grid.setup_from(st, spacing=min(0.6, (d_min-1e-6) / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
     masker.put_mask_on_float_grid(grid, st[0])
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
@@ -1215,29 +1361,44 @@ def calc_Fmask(st, d_min, miller_array):
     return Fmask
 # calc_Fmask()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh"):
-    fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
+def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh", twin_data=None):
+    # fc_labs must have solvent part at the end
+    miller_array = twin_data.asu if twin_data else hkldata.miller_array()
+    d_min = twin_data.d_min(sts[0].cell) if twin_data else hkldata.d_min_max()[0]
     if use_solvent:
         if mask is None:
-            Fmask = calc_Fmask(merge_models(sts), hkldata.d_min_max()[0] - 1e-6, hkldata.miller_array())
+            Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
-            Fmask = fmask_gr.get_value_by_hkl(hkldata.miller_array())
-        fc_list.append(Fmask)
+            Fmask = fmask_gr.get_value_by_hkl(miller_array)
+        if twin_data:
+            fc_sum = twin_data.f_calc[:,:-1].sum(axis=1)
+        else:
+            fc_sum = hkldata.df[fc_labs[:-1]].sum(axis=1).to_numpy()
+        fc_list = [fc_sum, Fmask]
+    else:
+        if twin_data:
+            fc_list = [twin_data.f_calc.sum(axis=1)]
+        else:
+            fc_list = [hkldata.df[fc_labs].sum(axis=1).to_numpy()]
 
     scaling = LsqScale(func_type=func_type)
-    scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0)
+    scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0, twin_data=twin_data)
     scaling.scale()
     b_iso = scaling.b_iso
-    k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
     k_aniso = hkldata.debye_waller_factors(b_cart=scaling.b_aniso)
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
     
     if use_solvent:
-        fc_labs.append("Fbulk")
-        solvent_scale = scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol,
-                                                  1. / hkldata.d_spacings().to_numpy()**2)
-        hkldata.df[fc_labs[-1]] = Fmask * solvent_scale
+        if twin_data:
+            s2 = numpy.asarray(twin_data.s2_array)
+        else:
+            s2 = 1. / hkldata.d_spacings().to_numpy()**2
+        Fbulk = Fmask * scaling.get_solvent_scale(scaling.k_sol, scaling.b_sol, s2)
+        if twin_data:
+            twin_data.f_calc[:,-1] = Fbulk
+        else:
+            hkldata.df[fc_labs[-1]] = Fbulk
 
     # Apply scales
     if use_int:
@@ -1247,9 +1408,13 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     else:
         o_labs = ["FP", "SIGFP", "F(+)","SIGF(+)", "F(-)", "SIGF(-)"]
         hkldata.df[hkldata.df.columns.intersection(o_labs)] /= scaling.k_overall
-    for lab in fc_labs: hkldata.df[lab] *= k_iso
-    # total Fc
-    hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
+    if twin_data:
+        twin_data.f_calc[:] *= twin_data.debye_waller_factors(b_iso=b_iso)[:,None]
+    else:
+        k_iso = hkldata.debye_waller_factors(b_iso=b_iso)
+        for lab in fc_labs: hkldata.df[lab] *= k_iso
+        # total Fc
+        hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
     return scaling
 # bulk_solvent_and_lsq_scales()
 
@@ -1366,6 +1531,16 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    if args.twin:
+        twin_data = find_twin_domains_from_data(hkldata)
+    else:
+        twin_data = None
+    if twin_data:
+        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
+
+    update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
+              source=args.source, mott_bethe=(args.source=="electron"),
+              hkldata=hkldata, twin_data=twin_data)
     is_int = "I" in hkldata.df
 
     if args.mask:
@@ -1375,48 +1550,70 @@ def main(args):
     
     # Overall scaling & bulk solvent
     # FP/SIGFP will be scaled. Total FC will be added.
+    if not args.no_solvent:
+        fc_labs.append("Fbulk")
     lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
-                                      use_int=is_int, mask=mask)
+                                      use_int=is_int, mask=mask, twin_data=twin_data)
     b_aniso = lsq.b_aniso
     # stats
-    stats, overall = calc_r_and_cc(hkldata, centric_and_selections)
+    stats, overall = calc_r_and_cc(hkldata, centric_and_selections, twin_data)
     for lab in "R", "CC":
         logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
     if is_int:
         logger.writeln("R1 is calculated for reflections with I/sigma>2.")
+
+    if twin_data:
+        estimate_twin_fractions_from_model(twin_data, hkldata)
+        #del hkldata.df["FC"]
+        #del hkldata.df["Fbulk"]
+        # Need to redo scaling?
+        lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+                                          use_int=is_int, mask=mask, twin_data=twin_data)
+        b_aniso = lsq.b_aniso
+        stats, overall = calc_r_and_cc(hkldata, centric_and_selections, twin_data)
+        for lab in "R", "CC":
+            logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
 
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
 
     if args.use_cc:
         assert not is_int
+        assert not args.twin
         logger.writeln("Estimating sigma-A parameters from CC..")
         determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, centric_and_selections, args.use)
     else:
-        b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use)
-    if is_int:
-        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections,
-                           use={"all": "all", "work": "work", "test": "work"}[args.use])
+        b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use,
+                                      twin_data=twin_data)
+    use = {"all": "all", "work": "work", "test": "work"}[args.use]
+    if twin_data:
+        # replace hkldata
+        hkldata = calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_and_selections, use)
+    elif is_int:
+        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections, use)
     else:
         log_out = "{}.log".format(args.output_prefix)
-        calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, log_out,
-                       use={"all": "all", "work": "work", "test": "work"}[args.use])
+        calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, log_out, use)
 
     # Write mtz file
-    if is_int:
-        labs = ["I", "SIGI", "FOM"]
+    if twin_data:
+        labs = ["F_est"]
+    elif is_int:
+        labs = ["I", "SIGI"]
     else:
-        labs = ["FP", "SIGFP", "FOM"]
-    labs.extend(["FWT", "DELFWT", "FC", "DFC"])
+        labs = ["FP", "SIGFP"]
+    labs.extend(["FOM", "FWT", "DELFWT", "FC", "DFC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
     if not args.no_solvent:
         labs.append("Fbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    if "F_true_est" in hkldata.df:
+        labs.append("F_true_est")
     labs += D_labs + ["S"]
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "F_est": "F"})
     return hkldata
 # main()
 if __name__ == "__main__":

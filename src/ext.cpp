@@ -12,6 +12,7 @@ namespace py = pybind11;
 void add_refine(py::module& m); // refine.cpp
 void add_intensity(py::module& m); // intensity.cpp
 void add_amplitude(py::module& m); // amplitude.cpp
+void add_twin(py::module& m); // twin.cpp
 
 template<typename T> // radius in A^-1 unit
 gemmi::FPhiGrid<T> hard_sphere_kernel_recgrid(std::tuple<int,int,int> size,
@@ -66,6 +67,7 @@ PYBIND11_MODULE(ext, m) {
   add_refine(m);
   add_intensity(m);
   add_amplitude(m);
+  add_twin(m);
   m.def("hard_sphere_kernel_recgrid", hard_sphere_kernel_recgrid<float>);
   m.def("soft_mask_from_model", soft_mask_from_model<float>);
 }
