@@ -24,7 +24,10 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         return
     twin_data = ext.TwinData()
     twin_data.setup(hkldata.miller_array().to_numpy(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
-    Io = hkldata.df.I.to_numpy()
+    if "I" in hkldata.df:
+        Io = hkldata.df.I.to_numpy()
+    else:
+        Io = hkldata.df.FP.to_numpy()**2
     alphas = []
     ccs, nums = [], []
     for i_bin, bin_idxes in hkldata.binned():
@@ -61,7 +64,11 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
     logger.writeln(df.to_string(float_format="%.2f"))
 
     sel_idxes = [i for i, a in enumerate(alphas) if i > 0 and a > min_alpha]
-    if len(sel_idxes) != len(alphas):
+    if not sel_idxes:
+        logger.writeln(" No twinning detected")
+        return
+    
+    if len(sel_idxes) + 1 != len(alphas):
         ops = [ops[i-1] for i in sel_idxes]
         logger.writeln(" Twin operators after filtering small fractions")
         alphas = numpy.array([alphas[0]] + [alphas[i] for i in sel_idxes])
@@ -72,6 +79,10 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         twin_data = ext.TwinData()
         twin_data.setup(hkldata.miller_array().to_numpy(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
     twin_data.alphas = alphas
+    if "I" not in hkldata.df:
+        logger.writeln('Generating "observed" intensities for twin refinement: Io = Fo**2, SigIo = 2*F*SigFo')
+        hkldata.df["I"] = hkldata.df.FP**2
+        hkldata.df["SIGI"] = 2 * hkldata.df.FP * hkldata.df.SIGFP
     return twin_data
 
 # find_twin_domains_from_data()

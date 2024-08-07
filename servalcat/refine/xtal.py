@@ -26,7 +26,6 @@ class LL_Xtal:
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
-        self.is_int = "I" in self.hkldata.df
         self.centric_and_selections = centric_and_selections
         self.free = free
         self.st = st
@@ -47,9 +46,11 @@ class LL_Xtal:
         self.scaling = sigmaa.LsqScale()
         if twin:
             self.twin_data = find_twin_domains_from_data(self.hkldata)
-            self.twin_data.setup_f_calc(len(self.fc_labs))
         else:
             self.twin_data = None
+        if self.twin_data:
+            self.twin_data.setup_f_calc(len(self.fc_labs))    
+        self.is_int = "I" in self.hkldata.df
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 

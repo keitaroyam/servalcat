@@ -1533,9 +1533,10 @@ def main(args):
 
     if args.twin:
         twin_data = find_twin_domains_from_data(hkldata)
-        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
     else:
         twin_data = None
+    if twin_data:
+        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
 
     update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
               source=args.source, mott_bethe=(args.source=="electron"),
