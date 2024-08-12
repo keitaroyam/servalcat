@@ -40,7 +40,12 @@ class Geom:
             self.atom_pos = list(range(len(self.atoms)))
         self.n_refine_atoms = max(self.atom_pos) + 1
         self.lookup = {x.atom: x for x in self.st[0].all()}
-        self.geom = ext.Geometry(self.st, self.atom_pos, monlib.ener_lib)
+        try:
+            self.geom = ext.Geometry(self.st, self.atom_pos, monlib.ener_lib)
+        except TypeError as e:
+            raise SystemExit(f"An error occurred while creating the Geometry object:\n{e}\n\n"
+                             "This likely indicates an installation issue. "
+                             "Please verify that you have the correct version of gemmi installed and that both gemmi and servalcat were compiled in the same environment.")
         self.specs = utils.model.find_special_positions(self.st)
         #cs_count = len(self.st.find_spacegroup().operations())
         for atom, images, matp, mata in self.specs:
