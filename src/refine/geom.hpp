@@ -283,6 +283,7 @@ struct GeomTarget {
   std::vector<int> atom_pos; // atom index in vn. -1 if fixed
   int nmpos;
   size_t n_atoms() const { return atoms.size(); }
+  size_t n_pairs() const { return pairs.size(); }
   std::pair<int, int> get_offsets(int kind) const {
     std::pair<int, int> ret = {0, 0}; // first and second derivatives
     if (kind == 0) // xyz

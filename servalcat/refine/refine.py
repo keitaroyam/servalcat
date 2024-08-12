@@ -561,6 +561,8 @@ class Refine:
         self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
         self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
+        logger.writeln(f"atoms = {self.geom.geom.target.n_atoms()}")
+        logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
 
     def get_x(self):
         n_atoms = self.geom.n_refine_atoms
@@ -680,6 +682,8 @@ class Refine:
         self.geom.setup_nonbonded(self.refine_xyz)
         self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
+        logger.writeln(f"atoms = {self.geom.geom.target.n_atoms()}")
+        logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
         stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
                                                        adp_mode=self.adp_mode,
                                                        use_occr=self.refine_occ,

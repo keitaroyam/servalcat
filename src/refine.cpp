@@ -661,6 +661,8 @@ void add_refine(py::module& m) {
     .def_readonly("vn", &GeomTarget::vn)
     .def_readonly("am", &GeomTarget::am)
     .def_property_readonly("am_spmat", &GeomTarget::make_spmat)
+    .def("n_atoms", &GeomTarget::n_atoms)
+    .def("n_pairs", &GeomTarget::n_pairs)
   ;
   geom
     .def(py::init<gemmi::Structure&, const std::vector<int> &, const gemmi::EnerLib*>(),
