@@ -63,7 +63,6 @@ class Geom:
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if params is None:
             params = {}
-        exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
         for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
             if k in params:
                 self.calc_kwds[k] = params[k]
@@ -76,6 +75,7 @@ class Geom:
         if not self.unrestrained:
             self.geom.load_topo(topo)
             self.check_chemtypes(os.path.join(monlib.path(), "ener_lib.cif"), topo)
+        exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
