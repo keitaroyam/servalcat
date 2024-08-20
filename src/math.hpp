@@ -126,7 +126,7 @@ double bisect(Func&& func, double a, double b,
 inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {
   if (x.rows() != y.rows() || x.cols() != y.cols() || x.cols() != 3)
     throw std::runtime_error("procrust_dist: dimension mismatch");
-  if (!x.size()) return 0;
+  if (!x.size()) return NAN;
   const Eigen::Vector3d xmean = x.colwise().mean(), ymean = y.colwise().mean();
   x.rowwise() -= xmean.transpose();
   y.rowwise() -= ymean.transpose();

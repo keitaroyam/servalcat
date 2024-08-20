@@ -655,12 +655,7 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
                       gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid):
             polymers.setdefault(p_type, []).append((chain, rs))
 
-    scoring = gemmi.AlignmentScoring()
-    scoring.match = 0
-    scoring.mismatch = -1
-    scoring.gapo = 0
-    scoring.gape = -1
-            
+    scoring = gemmi.AlignmentScoring("p") # AlignmentScoring::partial_model
     al_res = []
     ncslist = ext.NcsList()
     for pt in polymers:
@@ -670,12 +665,25 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
             q = [x.name for x in pols[i][1]]
             for j in range(i+1, len(pols)):
                 al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt, scoring)
+                if 0: # debug
+                    wrap_width = 100
+                    logger.writeln(f"seq1: {pols[i][0].name} {pols[i][1][0].seqid}..{pols[i][1][-1].seqid}")
+                    logger.writeln(f"seq2: {pols[j][0].name} {pols[j][1][0].seqid}..{pols[j][1][-1].seqid}")
+                    logger.writeln(f"match_count: {al.match_count}")
+                    s1 = gemmi.one_letter_code(q)
+                    p_seq = gemmi.one_letter_code(pols[j][1].extract_sequence())
+                    p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
+                    for k in range(0, len(p1), wrap_width):
+                        logger.writeln(" seq.  {}".format(p1[k:k+wrap_width]))
+                        logger.writeln("       {}".format(al.match_string[k:k+wrap_width]))
+                        logger.writeln(" model {}\n".format(p2[k:k+wrap_width]))
                 if al.match_count < min_nalign: continue
                 su = gemmi.calculate_superposition(pols[i][1], pols[j][1], pt, gemmi.SupSelect.All)
                 obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1])
                 obj.calculate_local_rms(rms_loc_nlen)
-                if len(obj.local_rms) == 0: continue
-                ave_local_rms = numpy.mean(obj.local_rms)
+                if len(obj.local_rms) == 0 or numpy.all(numpy.isnan(obj.local_rms)):
+                    continue
+                ave_local_rms = numpy.nanmean(obj.local_rms)
                 if ave_local_rms > max_rms_loc: continue
                 ncslist.ncss.append(obj)
                 al_res.append({"chain_1": "{} ({}..{})".format(pols[i][0].name, pols[i][1][0].seqid, pols[i][1][-1].seqid),
