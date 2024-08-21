@@ -690,8 +690,9 @@ def check_args(args):
     if args.keyword_file:
         args.keyword_file = sum(args.keyword_file, [])
         for f in args.keyword_file:
+            if not os.path.exists(f):
+                raise SystemExit(f"Error: keyword file was not found: {f}")
             logger.writeln("Keyword file: {}".format(f))
-            assert os.path.exists(f)
     else:
         args.keyword_file = []
 
