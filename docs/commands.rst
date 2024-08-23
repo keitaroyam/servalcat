@@ -4,10 +4,10 @@ Servalcat commands
 SPA
 ---
 
-refine_spa
-~~~~~~~~~~
+refine_spa_norefmac
+~~~~~~~~~~~~~~~~~~~
 
-REFMAC5 pipeline for SPA. The weighted and sharpened Fo-Fc map is calculated after the refinement. For details please see the reference.
+Refinement pipeline for SPA. The weighted and sharpened Fo-Fc map is calculated after the refinement. For details please see the reference.
 
 .. literalinclude:: help/refine_spa.txt
    :language: console

@@ -1,15 +1,16 @@
 $ servalcat fofc -h
 usage: servalcat fofc [-h] [--halfmaps HALFMAPS HALFMAPS | --map MAP]
                       [--pixel_size PIXEL_SIZE] --model MODEL -d RESOLUTION
-                      [-m MASK] [-r MASK_RADIUS] [-B B] [--half1_only]
-                      [--normalized_map] [--no_fsc_weights]
-                      [--sharpening_b SHARPENING_B] [--trim] [--trim_mtz]
-                      [--monlib MONLIB] [--omit_proton] [--omit_h_electron]
-                      [-o OUTPUT_PREFIX]
+                      [-m MASK] [-r MASK_RADIUS] [--no_check_mask_with_model]
+                      [-B B] [--half1_only] [--normalized_map]
+                      [--no_fsc_weights] [--sharpening_b SHARPENING_B]
+                      [--trim] [--trim_mtz] [--monlib MONLIB] [--omit_proton]
+                      [--omit_h_electron] [--source {electron,xray,neutron}]
+                      [-o OUTPUT_PREFIX] [--keep_charges]
 
 Fo-Fc map calculation based on model and data errors
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --halfmaps HALFMAPS HALFMAPS
   --map MAP             Use only if you really do not have half maps.
@@ -20,10 +21,13 @@ optional arguments:
   -m MASK, --mask MASK  mask file
   -r MASK_RADIUS, --mask_radius MASK_RADIUS
                         mask radius (not used if --mask is given)
+  --no_check_mask_with_model
+                        Disable mask test using model
   -B B                  Estimated blurring
   --half1_only          Only use half 1 for map calculation (use half 2 only
                         for noise estimation)
-  --normalized_map      Write normalized map in the masked region
+  --normalized_map      Write normalized map in the masked region. Now this is
+                        on by default.
   --no_fsc_weights      Just for debugging purpose: turn off FSC-based
                         weighting
   --sharpening_b SHARPENING_B
@@ -34,4 +38,8 @@ optional arguments:
   --monlib MONLIB       Monomer library path. Default: $CLIBD_MON
   --omit_proton         Omit proton from model in map calculation
   --omit_h_electron     Omit hydrogen electrons from model in map calculation
+  --source {electron,xray,neutron}
   -o OUTPUT_PREFIX, --output_prefix OUTPUT_PREFIX
+                        output file name prefix (default: diffmap)
+  --keep_charges        Use scattering factor for charged atoms. Use it with
+                        care.

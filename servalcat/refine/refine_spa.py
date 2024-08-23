@@ -56,7 +56,7 @@ def add_arguments(parser):
     parser.add_argument('--newligand_continue', action='store_true',
                         help="Make ad-hoc restraints for unknown ligands (not recommended)")
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
-                        help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
+                        help="all: (re)generate hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
     parser.add_argument('--hout', action='store_true', help="write hydrogen atoms in the output model")
     parser.add_argument('--jellybody', action='store_true',
@@ -67,15 +67,15 @@ def add_arguments(parser):
     parser.add_argument('--jellyonly', action='store_true',
                         help="Jelly body only (experimental, may not be useful)")
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
-    parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting NCS")
+    parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting strict NCS copies")
     parser.add_argument('--ignore_symmetry',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--find_links', action='store_true', 
                         help='Automatically add links')
     parser.add_argument('--no_check_ncs_overlaps', action='store_true', 
-                        help='Disable model overlap (e.g. expanded model is used with --pg) test')
+                        help='Disable model overlap test due to strict NCS')
     parser.add_argument('--no_check_ncs_map', action='store_true', 
-                        help='Disable map NCS consistency test')
+                        help='Disable map symmetry test due to strict NCS')
     parser.add_argument('--no_check_mask_with_model', action='store_true', 
                         help='Disable mask test using model')
     parser.add_argument('--keywords', nargs='+', action="append",
@@ -83,7 +83,7 @@ def add_arguments(parser):
     parser.add_argument('--keyword_file', nargs='+', action="append",
                         help="refmac keyword file(s)")
     parser.add_argument('--randomize', type=float, default=0,
-                        help='Shake coordinates with specified rmsd')
+                        help='Shake coordinates with the specified rmsd value')
     parser.add_argument('--ncycle', type=int, default=10,
                         help="number of CG cycles (default: %(default)d)")
     parser.add_argument('--weight', type=float,
@@ -93,20 +93,22 @@ def add_arguments(parser):
     parser.add_argument('--target_bond_rmsz_range', nargs=2, type=float, default=[0.5, 1.],
                         help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--adpr_weight', type=float, default=1.,
-                        help="ADP restraint weight in B (default: %(default)f)")
+                        help="ADP restraint weight (default: %(default)f)")
     parser.add_argument('--ncsr', action='store_true', 
                         help='Use local NCS restraints')
     parser.add_argument('--bfactor', type=float,
-                        help="reset all atomic B values to specified value")
-    parser.add_argument('--fix_xyz', action="store_true")
-    parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso")
+                        help="reset all atomic B values to the specified value")
+    parser.add_argument('--fix_xyz', action="store_true",
+                        help="Fix atomic coordinates")
+    parser.add_argument('--adp',  choices=["fix", "iso", "aniso"], default="iso",
+                        help="ADP parameterization")
     parser.add_argument('--refine_all_occ', action="store_true")
     parser.add_argument('--max_dist_for_adp_restraint', type=float, default=4.)
     parser.add_argument('--adp_restraint_power', type=float)
     parser.add_argument('--adp_restraint_exp_fac', type=float)
     parser.add_argument('--adp_restraint_no_long_range', action='store_true')
     parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="diff")
-    parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
+    parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen against data (default: only restraints apply)")
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="refined")
     parser.add_argument('--cross_validation', action='store_true',
