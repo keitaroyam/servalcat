@@ -566,6 +566,11 @@ void add_refine(py::module& m) {
     ;
   angle
     .def(py::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
+    .def("set_images", &Geometry::Angle::set_images)
+    .def_readwrite("sym_idx_1", &Geometry::Angle::sym_idx_1)
+    .def_readwrite("sym_idx_2", &Geometry::Angle::sym_idx_2)
+    .def_readwrite("pbc_shift_1", &Geometry::Angle::pbc_shift_1)
+    .def_readwrite("pbc_shift_2", &Geometry::Angle::pbc_shift_2)
     .def_readwrite("atoms", &Geometry::Angle::atoms)
     .def_readwrite("values", &Geometry::Angle::values)
     ;

@@ -171,7 +171,7 @@ def read_exte(s):
                         logger.writeln("WARNING: wrong type is given. setting to 2.\n=> {}".format(" ".join(s)))
                         ret["restr"]["itype_in"] = 2
                     itk += 2
-                elif s[itk].lower().startswith("symm"): # only for distance
+                elif s[itk].lower().startswith("symm"): # only for distance and angle
                     ret["restr"]["symm_in"] = s[itk+1][0].lower() == "y"
                     itk += 2
                 else:

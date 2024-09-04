@@ -498,8 +498,30 @@ struct Geometry {
       if (atoms[0]->serial > atoms[2]->serial)
         std::reverse(atoms.begin(), atoms.end());
     }
-    std::tuple<int,int,int> sort_key() const {
-      return std::tie(atoms[0]->serial, atoms[1]->serial, atoms[2]->serial);
+    void set_images(const gemmi::UnitCell& cell, gemmi::Asu asu1, gemmi::Asu asu3) {
+      const gemmi::NearestImage im1 = cell.find_nearest_image(atoms[1]->pos, atoms[0]->pos, asu1);
+      const gemmi::NearestImage im2 = cell.find_nearest_image(atoms[1]->pos, atoms[2]->pos, asu3);
+      sym_idx_1 = im1.sym_idx;
+      sym_idx_2 = im2.sym_idx;
+      std::copy(std::begin(im1.pbc_shift), std::end(im1.pbc_shift), std::begin(pbc_shift_1));
+      std::copy(std::begin(im2.pbc_shift), std::end(im2.pbc_shift), std::begin(pbc_shift_2));
+    }
+    bool same_asu(int i) const {
+      switch (i) {
+      case 0:
+        return sym_idx_1 == 0 && pbc_shift_1[0]==0 && pbc_shift_1[1]==0 && pbc_shift_1[2]==0;
+      case 1:
+        return true;
+      case 2:
+        return sym_idx_2 == 0 && pbc_shift_2[0]==0 && pbc_shift_2[1]==0 && pbc_shift_2[2]==0;
+      default:
+        throw std::runtime_error("invalid index in Angle::same_asu()");
+      }
+    }
+    std::tuple<int,int,int,int,int,int,int,int,int,int,int> sort_key() const {
+      return std::tie(atoms[0]->serial, atoms[1]->serial, atoms[2]->serial,
+                      sym_idx_1, pbc_shift_1[0], pbc_shift_1[1], pbc_shift_1[2],
+                      sym_idx_2, pbc_shift_2[0], pbc_shift_2[1], pbc_shift_2[2]);
     }
     const Value* find_closest_value(double v) const {
       double db = std::numeric_limits<double>::infinity();
@@ -517,8 +539,10 @@ struct Geometry {
       for (auto &value : values)
         value.value = gemmi::angle_abs_diff(value.value, 0.); // limit to [0,180]
     }
-    double calc(double waskal, GeomTarget* target, Reporting *reporting) const;
+    double calc(const gemmi::UnitCell& cell, double waskal, GeomTarget* target, Reporting *reporting) const;
     int type = 1; // 0 or not
+    int sym_idx_1 = 0, sym_idx_2 = 0;
+    std::array<int, 3> pbc_shift_1 = {{0,0,0}}, pbc_shift_2 = {{0,0,0}};
     std::array<gemmi::Atom*, 3> atoms;
     std::vector<Value> values;
   };
@@ -786,6 +810,10 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
       if (t.restr->esd <= 0) return;
       angles.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2]);
       angles.back().values.emplace_back(t.restr->value, t.restr->esd);
+      if (asu != gemmi::Asu::Same) {
+        // Not implemented yet. Need to identify asu - which atom is in symmetry
+        // angles.back().set_images(st.cell, asu1, asu3);
+      }
     } else if (rule.rkind == gemmi::Topo::RKind::Torsion) {
       const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
       if (t.restr->esd <= 0) return;
@@ -1235,7 +1263,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
       ret += t.calc(st.cell, use_nucleus, wbond, target_ptr, rep_ptr);
   for (const auto &t : angles)
     if (has_selected(t.atoms))
-      ret += t.calc(wangle, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wangle, target_ptr, rep_ptr);
   for (const auto &t : torsions)
     if (has_selected(t.atoms))
       ret += t.calc(wtors, target_ptr, rep_ptr);
@@ -1559,10 +1587,12 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   return robustf.f;
 }
 
-inline double Geometry::Angle::calc(double waskal, GeomTarget* target, Reporting *reporting) const {
-  const gemmi::Position& x1 = atoms[0]->pos;
+inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, GeomTarget* target, Reporting *reporting) const {
+  const gemmi::Transform tr1 = get_transform(cell, sym_idx_1, pbc_shift_1);
+  const gemmi::Transform tr2 = get_transform(cell, sym_idx_2, pbc_shift_2);
+  const gemmi::Position& x1 = same_asu(0) ? atoms[0]->pos : gemmi::Position(tr1.apply(atoms[0]->pos));
   const gemmi::Position& x2 = atoms[1]->pos;
-  const gemmi::Position& x3 = atoms[2]->pos;
+  const gemmi::Position& x3 = same_asu(2) ? atoms[2]->pos : gemmi::Position(tr2.apply(atoms[2]->pos));
   const gemmi::Position v1 = x2 - x1;
   const gemmi::Position v2 = x2 - x3;
   const double v1n = std::max(v1.length(), 0.02);
@@ -1582,7 +1612,10 @@ inline double Geometry::Angle::calc(double waskal, GeomTarget* target, Reporting
     dadx[0] = ((v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n)) / sina) * gemmi::deg(1);
     dadx[2] = ((v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n)) / sina) * gemmi::deg(1);
     dadx[1] = -dadx[0] - dadx[2];
-
+    if (!same_asu(0))
+      dadx[0] = tr1.mat.transpose().multiply(dadx[0]);
+    if (!same_asu(2))
+      dadx[2] = tr2.mat.transpose().multiply(dadx[2]);
     for(int i = 0; i < 3; ++i)
       if (ia[i] >= 0) {
         target->incr_vn(ia[i] * 3, weight * da, dadx[i]);

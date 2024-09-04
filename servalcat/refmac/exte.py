@@ -125,11 +125,14 @@ def read_external_restraints(params, st, geom):
             symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
             if r["restr"].get("symm_in", defs["symall_block"]) or symm1:
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
-                im = st.cell.find_nearest_image(ex.atoms[0].pos, ex.atoms[1].pos, asu)
-                ex.set_image(im)
+                ex.set_image(st.cell, asu)
             #print("dist=", ex.alpha, ex.type, ex.values[-1].value, ex.values[-1].sigma, ex.sym_idx, ex.pbc_shift, ex.atoms)
         elif r["rest_type"] == "angl":
-            pass
+            symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
+            if any(spec.get("symm") for spec in r["restr"]["specs"]):
+                asu1 = gemmi.Asu.Different if r["restr"]["specs"][0].get("symm") else gemmi.Asu.Same
+                asu3 = gemmi.Asu.Different if r["restr"]["specs"][2].get("symm") else gemmi.Asu.Same
+                ex.set_images(st.cell, asu1, asu3)
             #print("angl=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
         elif r["rest_type"] == "tors":
             pass
