@@ -114,8 +114,8 @@ struct PlaneDeriv {
     for (size_t i = 0; i < atoms.size(); ++i) {
       const gemmi::Vec3 p = gemmi::Vec3(atoms[i]->pos) - xs;
       const gemmi::SMat33<double> dAdx[3] = {{2 * p.x, 0.,      0.,      p.y, p.z, 0.},   // dA/dx
-                                      {0.,      2 * p.y, 0.,      p.x, 0.,  p.z},  // dA/dy
-                                      {0.,      0.,      2 * p.z, 0.,  p.x, p.y}}; // dA/dz
+                                             {0.,      2 * p.y, 0.,      p.x, 0.,  p.z},  // dA/dy
+                                             {0.,      0.,      2 * p.z, 0.,  p.x, p.y}}; // dA/dz
       for (size_t j = 0; j < 3; ++j)
         dvmdx[i][j] = pinv.multiply(dAdx[j].multiply(vm));
     }
@@ -451,15 +451,14 @@ struct Geometry {
       double sigma_nucleus;
       // alpha should be here?
     };
-    Bond(gemmi::Atom* atom1, gemmi::Atom* atom2) : atoms({atom1, atom2}) {}
-    void set_image(const gemmi::NearestImage& im) {
+    Bond(gemmi::Atom* atom1, gemmi::Atom* atom2) : atoms({atom1, atom2}) {
+      if (atoms[0]->serial > atoms[1]->serial)
+        std::reverse(atoms.begin(), atoms.end());
+    }
+    void set_image(const gemmi::UnitCell& cell, gemmi::Asu asu) {
+      const gemmi::NearestImage im = cell.find_nearest_image(atoms[0]->pos, atoms[1]->pos, asu);
       sym_idx = im.sym_idx;
       std::copy(std::begin(im.pbc_shift), std::end(im.pbc_shift), std::begin(pbc_shift));
-    }
-    void swap_atoms() {
-      std::reverse(atoms.begin(), atoms.end());
-      if (!same_asu()) // 0 stays 0, for ease of duplication finding
-        sym_idx = -sym_idx - 1;
     }
     bool same_asu() const {
       return (sym_idx == 0 || sym_idx == -1) && pbc_shift[0]==0 && pbc_shift[1]==0 && pbc_shift[2]==0;
@@ -484,7 +483,7 @@ struct Geometry {
 
     int type = 1; // 0-2
     double alpha = 1; // only effective for type=2
-    int sym_idx = 0; // if negative, atoms need to be swapped.
+    int sym_idx = 0;
     std::array<int, 3> pbc_shift = {{0,0,0}};
     std::array<gemmi::Atom*, 2> atoms;
     std::vector<Value> values;
@@ -495,9 +494,9 @@ struct Geometry {
       double value;
       double sigma;
     };
-    Angle(gemmi::Atom* atom1, gemmi::Atom* atom2, gemmi::Atom* atom3) : atoms({atom1, atom2, atom3}) {}
-    void swap_atoms() {
-      std::reverse(atoms.begin(), atoms.end());
+    Angle(gemmi::Atom* atom1, gemmi::Atom* atom2, gemmi::Atom* atom3) : atoms({atom1, atom2, atom3}) {
+      if (atoms[0]->serial > atoms[2]->serial)
+        std::reverse(atoms.begin(), atoms.end());
     }
     std::tuple<int,int,int> sort_key() const {
       return std::tie(atoms[0]->serial, atoms[1]->serial, atoms[2]->serial);
@@ -531,9 +530,9 @@ struct Geometry {
       int period;
       std::string label;
     };
-    Torsion(gemmi::Atom* atom1, gemmi::Atom* atom2, gemmi::Atom* atom3, gemmi::Atom* atom4) : atoms({atom1, atom2, atom3, atom4}) {}
-    void swap_atoms() {
-      std::reverse(atoms.begin(), atoms.end());
+    Torsion(gemmi::Atom* atom1, gemmi::Atom* atom2, gemmi::Atom* atom3, gemmi::Atom* atom4) : atoms({atom1, atom2, atom3, atom4}) {
+      if (atoms[0]->serial > atoms[3]->serial)
+        std::reverse(atoms.begin(), atoms.end());
     }
     std::tuple<int,int,int,int> sort_key() const {
       return std::tie(atoms[0]->serial, atoms[1]->serial, atoms[2]->serial, atoms[3]->serial);
@@ -773,66 +772,59 @@ private:
 
 inline void Geometry::load_topo(const gemmi::Topo& topo) {
   auto add = [&](const gemmi::Topo::Rule& rule, gemmi::Asu asu = gemmi::Asu::Same) {
-               if (asu != gemmi::Asu::Same && rule.rkind != gemmi::Topo::RKind::Bond) return; // not supported
-               if (rule.rkind == gemmi::Topo::RKind::Bond) {
-                 const gemmi::Topo::Bond& t = topo.bonds[rule.index];
-                 if (t.restr->esd <= 0) return;
-                 if (t.atoms[0]->serial < t.atoms[1]->serial)
-                   bonds.emplace_back(t.atoms[0], t.atoms[1]);
-                 else
-                   bonds.emplace_back(t.atoms[1], t.atoms[0]);
-                 bonds.back().values.emplace_back(t.restr->value, t.restr->esd,
-                                                  t.restr->value_nucleus, t.restr->esd_nucleus);
-                 if (asu != gemmi::Asu::Same) {
-                   gemmi::NearestImage im = st.cell.find_nearest_image(bonds.back().atoms[0]->pos,
-                                                                       bonds.back().atoms[1]->pos,
-                                                                       asu);
-                   bonds.back().set_image(im);
-                 }
-               } else if (rule.rkind == gemmi::Topo::RKind::Angle) {
-                 const gemmi::Topo::Angle& t = topo.angles[rule.index];
-                 if (t.restr->esd <= 0) return;
-                 angles.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2]);
-                 angles.back().values.emplace_back(t.restr->value, t.restr->esd);
-               } else if (rule.rkind == gemmi::Topo::RKind::Torsion) {
-                 const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
-                 if (t.restr->esd <= 0) return;
-                 torsions.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
-                 torsions.back().values.emplace_back(t.restr->value, t.restr->esd, t.restr->period);
-                 torsions.back().values.back().label = t.restr->label;
-               } else if (rule.rkind == gemmi::Topo::RKind::Chirality) {
-                 const gemmi::Topo::Chirality& t = topo.chirs[rule.index];
-                 const auto val_sigma = ideal_chiral_abs_volume_sigma(topo, t);
-                 if (val_sigma.second <= 0 ||
-                     !std::isfinite(val_sigma.first) || !std::isfinite(val_sigma.second)) return;
-                 chirs.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
-                 chirs.back().value = val_sigma.first;
-                 chirs.back().sigma = val_sigma.second;
-                 chirs.back().sign = t.restr->sign;
-               } else if (rule.rkind == gemmi::Topo::RKind::Plane) {
-                 const gemmi::Topo::Plane& t = topo.planes[rule.index];
-                 if (t.restr->esd <= 0) return;
-                 planes.emplace_back(t.atoms);
-                 planes.back().sigma = t.restr->esd;
-                 planes.back().label = t.restr->label;
-               }
-             };
+    if (asu != gemmi::Asu::Same && rule.rkind != gemmi::Topo::RKind::Bond) return; // not supported
+    if (rule.rkind == gemmi::Topo::RKind::Bond) {
+      const gemmi::Topo::Bond& t = topo.bonds[rule.index];
+      if (t.restr->esd <= 0) return;
+      bonds.emplace_back(t.atoms[0], t.atoms[1]);
+      bonds.back().values.emplace_back(t.restr->value, t.restr->esd,
+                                       t.restr->value_nucleus, t.restr->esd_nucleus);
+      if (asu != gemmi::Asu::Same)
+        bonds.back().set_image(st.cell, asu);
+    } else if (rule.rkind == gemmi::Topo::RKind::Angle) {
+      const gemmi::Topo::Angle& t = topo.angles[rule.index];
+      if (t.restr->esd <= 0) return;
+      angles.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2]);
+      angles.back().values.emplace_back(t.restr->value, t.restr->esd);
+    } else if (rule.rkind == gemmi::Topo::RKind::Torsion) {
+      const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
+      if (t.restr->esd <= 0) return;
+      torsions.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
+      torsions.back().values.emplace_back(t.restr->value, t.restr->esd, t.restr->period);
+      torsions.back().values.back().label = t.restr->label;
+    } else if (rule.rkind == gemmi::Topo::RKind::Chirality) {
+      const gemmi::Topo::Chirality& t = topo.chirs[rule.index];
+      const auto val_sigma = ideal_chiral_abs_volume_sigma(topo, t);
+      if (val_sigma.second <= 0 ||
+          !std::isfinite(val_sigma.first) || !std::isfinite(val_sigma.second)) return;
+      chirs.emplace_back(t.atoms[0], t.atoms[1], t.atoms[2], t.atoms[3]);
+      chirs.back().value = val_sigma.first;
+      chirs.back().sigma = val_sigma.second;
+      chirs.back().sign = t.restr->sign;
+    } else if (rule.rkind == gemmi::Topo::RKind::Plane) {
+      const gemmi::Topo::Plane& t = topo.planes[rule.index];
+      if (t.restr->esd <= 0) return;
+      planes.emplace_back(t.atoms);
+      planes.back().sigma = t.restr->esd;
+      planes.back().label = t.restr->label;
+    }
+  };
 
   auto test_hydr_tors = [&](const gemmi::Topo::Torsion &t) {
     return use_hydr_tors && (t.atoms[0]->is_hydrogen() || t.atoms[3]->is_hydrogen());
   };
   auto test_r = [&topo,&test_hydr_tors](const gemmi::Topo::Rule& rule, const std::string& id,
-                                         const std::map<std::string, std::vector<std::string>> &tors_names) {
-                       if (rule.rkind != gemmi::Topo::RKind::Torsion)
-                         return true;
-                       const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
-                       if (test_hydr_tors(t))
-                           return true;
-                       const auto it = tors_names.find(id);
-                       if (it == tors_names.end())
-                         return false;
-                       return std::find(it->second.begin(), it->second.end(), t.restr->label) != it->second.end();
-                     };
+                                        const std::map<std::string, std::vector<std::string>> &tors_names) {
+    if (rule.rkind != gemmi::Topo::RKind::Torsion)
+      return true;
+    const gemmi::Topo::Torsion& t = topo.torsions[rule.index];
+    if (test_hydr_tors(t))
+      return true;
+    const auto it = tors_names.find(id);
+    if (it == tors_names.end())
+      return false;
+    return std::find(it->second.begin(), it->second.end(), t.restr->label) != it->second.end();
+  };
 
   for (const gemmi::Topo::ChainInfo& chain_info : topo.chain_infos)
     for (const gemmi::Topo::ResInfo& ri : chain_info.res_infos) {
@@ -875,9 +867,6 @@ inline void Geometry::finalize_restraints() {
   // type = 1: add it
   // check type 2. remove if type 0 (or 1?) bonds defined
 
-  for (auto& b : bonds)
-    if (b.atoms[0]->serial > b.atoms[1]->serial)
-      b.swap_atoms();
   if (bonds.size() > 1)
     std::stable_sort(bonds.begin(), bonds.end(),
                      [](const Bond& l, const Bond& r) { return l.sort_key() < r.sort_key(); });
@@ -901,11 +890,8 @@ inline void Geometry::finalize_restraints() {
     bonds.erase(bonds.begin() + (*it));
 
   // sort angles
-  for (auto& t : angles) {
+  for (auto& t : angles)
     t.normalize_ideal();
-    if (t.atoms[0]->serial > t.atoms[2]->serial)
-      t.swap_atoms();
-  }
   if (angles.size() > 1) {
     std::stable_sort(angles.begin(), angles.end(),
                      [](const Angle& l, const Angle& r) { return l.sort_key() < r.sort_key(); });
@@ -922,9 +908,6 @@ inline void Geometry::finalize_restraints() {
   }
 
   // sort torsions
-  for (auto& t : torsions)
-    if (t.atoms[0]->serial > t.atoms[3]->serial)
-      t.swap_atoms();
   if (torsions.size() > 1) {
     std::stable_sort(torsions.begin(), torsions.end(),
                      [](const Torsion& l, const Torsion& r) { return l.sort_key() < r.sort_key(); });
@@ -1531,10 +1514,9 @@ inline void Geometry::calc_jellybody() {
 inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal,
                                    GeomTarget* target, Reporting *reporting) const {
   assert(!values.empty());
-  const bool swapped = sym_idx < 0;
-  const gemmi::Atom* atom1 = atoms[swapped ? 1 : 0];
-  const gemmi::Atom* atom2 = atoms[swapped ? 0 : 1];
-  const gemmi::Transform tr = get_transform(cell, swapped ? -sym_idx - 1 : sym_idx, pbc_shift);
+  const gemmi::Atom* atom1 = atoms[0];
+  const gemmi::Atom* atom2 = atoms[1];
+  const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
   const gemmi::Position& x1 = atom1->pos;
   const gemmi::Position& x2 = same_asu() ? atom2->pos : gemmi::Position(tr.apply(atom2->pos));
   const double b = x1.dist(x2);
@@ -1700,11 +1682,11 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
     for (int i = 0; i < 3; ++i)
       for (int j = i+1; j < 4; ++j)
         if (ia[i] >= 0 && ia[j] >= 0) {
-            auto mp = target->find_restraint(ia[i], ia[j]);
-            if (mp.imode == 0)
-              target->incr_am_ndiag(mp.ipos, weight, dthdx[i], dthdx[j]);
-            else
-              target->incr_am_ndiag(mp.ipos, weight, dthdx[j], dthdx[i]);
+          auto mp = target->find_restraint(ia[i], ia[j]);
+          if (mp.imode == 0)
+            target->incr_am_ndiag(mp.ipos, weight, dthdx[i], dthdx[j]);
+          else
+            target->incr_am_ndiag(mp.ipos, weight, dthdx[j], dthdx[i]);
         }
     target->target += ret;
   }
@@ -2084,7 +2066,7 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos).eval();
       if (use_rr)
         m += (hmax * alpha * (Eigen::Matrix3d::Identity()
-                                      - spec.Rspec_pos * spec.Rspec_pos)).eval();
+                              - spec.Rspec_pos * spec.Rspec_pos)).eval();
       else
         m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
       a[0] = m(0,0);
@@ -2120,7 +2102,7 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       m = (spec.Rspec_aniso.transpose() * m * spec.Rspec_aniso).eval();
       if (use_rr)
         m += (hmax * alpha * (Eigen::Matrix<double,6,6>::Identity()
-                                      - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
+                              - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
       else
         m += (hmax * alpha * Eigen::Matrix<double,6,6>::Identity()).eval();
 

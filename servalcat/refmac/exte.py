@@ -120,8 +120,6 @@ def read_external_restraints(params, st, geom):
         if r["rest_type"] == "dist":
             if not (defs["dist_min_external"] < r["restr"]["value"] < defs["dist_max_external"]):
                 continue
-            if ex.atoms[0].serial > ex.atoms[1].serial:
-                ex.atoms = ex.atoms[::-1]
             ex.alpha = r["restr"].get("alpha_in", defs["alpha_default"])
             ex.type = r["restr"].get("itype_in", defs["type_default"])
             symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
