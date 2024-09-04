@@ -626,7 +626,7 @@ struct Geometry {
   };
   struct Ncsr {
     Ncsr(const Vdw *vdw1, const Vdw *vdw2, int idx) : pairs({vdw1, vdw2}), idx(idx) {}
-    double calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting, double) const;
+    double calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting, double, double) const;
     std::array<const Vdw*, 2> pairs;
     double alpha;
     double sigma;
@@ -753,7 +753,8 @@ struct Geometry {
   // NCS local
   double ncsr_alpha = -2; // alpha in the robust function
   double ncsr_sigma = 0.05;
-  double ncsr_diff_cutoff = 1.0;
+  double ncsr_diff_cutoff = 10.0;
+  float ncsr_max_dist = 4.2;
 
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
@@ -1059,7 +1060,9 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
   gemmi::NeighborSearch ns(st.first_model(), st.cell, 4);
   ns.populate();
   const float max_vdwr = 2.98f; // max from ener_lib, Cs.
-  const float max_dist_sq = gemmi::sq(std::max(std::max(ridge_dmax, adpr_max_dist), max_vdwr * 2));
+  // we can reduce memory usage when ridge/adpr/ncsr not used - these max_dist parameters should be set zero
+  const float max_other_sq = gemmi::sq(std::max(ridge_dmax, std::max(adpr_max_dist, ncsr_max_dist)));
+  const float max_dist_sq = std::max(max_other_sq, gemmi::sq(max_vdwr * 2));
   // XXX Refmac uses intervals for distances as well? vdw_and_contacts.f remove_bonds_and_angles()
   // ref: gemmi/contact.hpp ContactSearch::for_each_contact
   for (int n_ch = 0; n_ch != (int) ns.model->chains.size(); ++n_ch) {
@@ -1108,6 +1111,10 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                      vdws.back().type += 6;
                                  }
                                  vdws.back().set_image(im);
+                                 // don't include if too far. x1.5 is too large?
+                                 if (skip_critical_dist ? (dist_sq > max_other_sq)
+                                     : (dist_sq > std::min((double)max_other_sq, gemmi::sq(vdws.back().value * 1.5))))
+                                   vdws.pop_back();
                                }
                              }
                            }
@@ -1270,7 +1277,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
       ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
   for (const auto &t : ncsrs)
     if (has_selected(t.pairs[0]->atoms) || has_selected(t.pairs[1]->atoms))
-      ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff);
+      ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff, ncsr_max_dist);
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
@@ -2017,7 +2024,7 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
 
 inline double
 Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting,
-                     double ncsr_diff_cutoff) const {
+                     double ncsr_diff_cutoff, double ncsr_max_dist) const {
   if (sigma <= 0) return 0.;
   const Vdw &vdw1 = *pairs[0], &vdw2 = *pairs[1];
   const bool swapped[2] = {vdw1.sym_idx < 0, vdw2.sym_idx < 0};
@@ -2036,7 +2043,7 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
   const double b1 = x1.dist(x2);
   const double b2 = x3.dist(x4);
   const double db = b1 - b2;
-  const double weight = std::abs(db) > ncsr_diff_cutoff ? 0 : wncsr / sigma;
+  const double weight = (std::abs(db) > ncsr_diff_cutoff || b1 > ncsr_max_dist || b2 > ncsr_max_dist) ? 0 : wncsr / sigma;
   const double y = db * weight;
   Barron2019 robustf(alpha, y);
 

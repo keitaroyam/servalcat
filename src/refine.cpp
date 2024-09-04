@@ -750,7 +750,8 @@ void add_refine(py::module& m) {
     .def_readwrite("ncsr_alpha", &Geometry::ncsr_alpha)
     .def_readwrite("ncsr_sigma", &Geometry::ncsr_sigma)
     .def_readwrite("ncsr_diff_cutoff", &Geometry::ncsr_diff_cutoff)
-  ;
+    .def_readwrite("ncsr_max_dist", &Geometry::ncsr_max_dist)
+    ;
 
   py::class_<TableS3>(m, "TableS3")
     .def(py::init<double, double>(), py::arg("d_min"), py::arg("d_max"))
