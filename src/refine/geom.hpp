@@ -604,23 +604,26 @@ struct Geometry {
     std::array<std::vector<gemmi::Atom*>, 2> planes;
   };
   struct Vdw {
-    Vdw(gemmi::Atom* atom1, gemmi::Atom* atom2) : atoms({atom1, atom2}) {}
-    void set_image(const gemmi::NearestImage& im) {
+    Vdw(gemmi::Atom* atom1, gemmi::Atom* atom2) : atoms({atom1, atom2}) {
+      if (atoms[0]->serial > atoms[1]->serial)
+        std::reverse(atoms.begin(), atoms.end());
+    }
+    void set_image(const gemmi::UnitCell& cell, gemmi::Asu asu) {
+      const gemmi::NearestImage im = cell.find_nearest_image(atoms[0]->pos, atoms[1]->pos, asu);
       sym_idx = im.sym_idx;
       std::copy(std::begin(im.pbc_shift), std::end(im.pbc_shift), std::begin(pbc_shift));
     }
-    void swap_atoms() {
-      std::reverse(atoms.begin(), atoms.end());
-      sym_idx = -sym_idx - 1;
-    }
     bool same_asu() const {
       return sym_idx == 0 && pbc_shift[0]==0 && pbc_shift[1]==0 && pbc_shift[2]==0;
+    }
+    std::tuple<int,int,int,int,int,int> sort_key() const {
+      return std::tie(atoms[0]->serial, atoms[1]->serial, sym_idx, pbc_shift[0], pbc_shift[1], pbc_shift[2]);
     }
     double calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const;
     int type = 0; // 1: vdw, 2: torsion, 3: hbond, 4: metal, 5: dummy-nondummy, 6: dummy-dummy
     double value; // critical distance
     double sigma = 0.;
-    int sym_idx = 0; // if negative, atoms need to be swapped.
+    int sym_idx = 0;
     std::array<int, 3> pbc_shift = {{0,0,0}};
     std::array<gemmi::Atom*, 2> atoms;
   };
@@ -1098,24 +1101,24 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                      group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]) &&
                                    (atom.occ + cra2.atom->occ < 1.0001))
                                  continue;
-                               gemmi::NearestImage im = st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, m.image_idx);
-                               int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, im.sym_idx == 0 && im.same_asu());
-                               if (d_1_2 == 3 && in_same_plane(&atom, cra2.atom))
+                               vdws.emplace_back(&atom, cra2.atom);
+                               if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
+                                 vdws.back().set_image(st.cell, gemmi::Asu::Any);
+                               int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, vdws.back().same_asu());
+                               if (d_1_2 < 3 || (d_1_2 == 3 && in_same_plane(&atom, cra2.atom))) {
+                                 vdws.pop_back();
                                  continue;
-                               if (d_1_2 > 2) {
-                                 vdws.emplace_back(&atom, cra2.atom);
-                                 if (!skip_critical_dist) {
-                                   set_vdw_values(vdws.back(), d_1_2);
-                                   assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
-                                   if (im.sym_idx != 0 || !im.same_asu())
-                                     vdws.back().type += 6;
-                                 }
-                                 vdws.back().set_image(im);
-                                 // don't include if too far. x1.5 is too large?
-                                 if (skip_critical_dist ? (dist_sq > max_other_sq)
-                                     : (dist_sq > std::min((double)max_other_sq, gemmi::sq(vdws.back().value * 1.5))))
-                                   vdws.pop_back();
                                }
+                               if (!skip_critical_dist) {
+                                 set_vdw_values(vdws.back(), d_1_2);
+                                 assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
+                                 if (!vdws.back().same_asu())
+                                   vdws.back().type += 6;
+                               }
+                               // don't include if too far. x1.5 is too large?
+                               if (skip_critical_dist ? (dist_sq > max_other_sq)
+                                   : (dist_sq > std::min((double)max_other_sq, gemmi::sq(vdws.back().value * 1.5))))
+                                 vdws.pop_back();
                              }
                            }
                          });
@@ -1128,27 +1131,20 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
   ncsrs.clear();
   // vdws should be sorted.
   std::sort(vdws.begin(), vdws.end(),
-            [](const Vdw &lhs, const Vdw &rhs) {
-              return lhs.atoms[0] == rhs.atoms[0] ?
-                lhs.atoms[1] < rhs.atoms[1] : lhs.atoms[0] < rhs.atoms[0];
-            });
+            [](const Vdw &l, const Vdw &r) { return l.sort_key() < r.sort_key(); });
   struct CompVdwAndPair {
     using pair_t = std::pair<const gemmi::Atom*, const gemmi::Atom*>;
+    static pair_t sorted_pair(const gemmi::Atom* a1, const gemmi::Atom* a2) {
+      return a1->serial < a2->serial ? std::make_pair(a1, a2) : std::make_pair(a2, a1);
+    }
+    std::pair<int,int> make_key(const pair_t &p) const {
+      return std::make_pair(p.first->serial, p.second->serial);
+    }
     bool operator()(const Vdw &lhs, const pair_t &rhs) const {
-      return lhs.atoms[0] == rhs.first ? lhs.atoms[1] < rhs.second : lhs.atoms[0] < rhs.first;
+      return make_key(sorted_pair(lhs.atoms[0], lhs.atoms[1])) < make_key(rhs);
     }
     bool operator()(const pair_t &lhs, const Vdw &rhs) const {
-      return lhs.first == rhs.atoms[0] ? lhs.second < rhs.atoms[1] : lhs.first < rhs.atoms[0];
-    }
-  };
-  struct CompFirstAtom {
-    using key_t = const gemmi::Atom*;
-    using pair_t = std::pair<key_t, key_t>;
-    bool operator()(const pair_t &lhs, const key_t &rhs) const {
-      return lhs.first < rhs;
-    }
-    bool operator()(const key_t &lhs, const pair_t &rhs) const {
-      return lhs < rhs.first;
+      return make_key(lhs) < make_key(sorted_pair(rhs.atoms[0], rhs.atoms[1]));
     }
   };
   for (const auto &vdw : vdws) {
@@ -1159,8 +1155,7 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
       if (it1 == ncslist.all_pairs[i].end()) continue;
       auto it2 = ncslist.all_pairs[i].find(vdw.atoms[1]);
       if (it2 == ncslist.all_pairs[i].end()) continue;
-      auto pair = std::make_pair(it1->second, it2->second);
-      if (pair.first > pair.second) std::swap(pair.first, pair.second);
+      const auto pair = CompVdwAndPair::sorted_pair(it1->second, it2->second);
       auto p = std::equal_range(vdws.begin(), vdws.end(), pair, CompVdwAndPair());
       if (p.first != p.second) {
         ncsrs.emplace_back(&vdw, &(*p.first), i);
@@ -1504,14 +1499,13 @@ inline void Geometry::calc_jellybody() {
 
   for (const auto &t : vdws) {
     if (!ridge_symm && !t.same_asu()) continue;
-    const bool swapped = t.sym_idx < 0;
-    const gemmi::Atom& atom1 = *t.atoms[swapped ? 1 : 0];
-    const gemmi::Atom& atom2 = *t.atoms[swapped ? 0 : 1];
+    const gemmi::Atom& atom1 = *t.atoms[0];
+    const gemmi::Atom& atom2 = *t.atoms[1];
     if (atom1.is_hydrogen() || atom2.is_hydrogen()) continue;
     const int ia1 = target.atom_pos[atom1.serial - 1];
     const int ia2 = target.atom_pos[atom2.serial - 1];
     if (ia1 < 0 && ia2 < 0) continue; // both fixed
-    const gemmi::Transform tr = get_transform(st.cell, swapped ? -t.sym_idx - 1 : t.sym_idx, t.pbc_shift);
+    const gemmi::Transform tr = get_transform(st.cell, t.sym_idx, t.pbc_shift);
     const gemmi::Position& x1 = atom1.pos;
     const gemmi::Position& x2 = t.same_asu() ? atom2.pos : gemmi::Position(tr.apply(atom2.pos));
     const double b = x1.dist(x2);
@@ -1980,10 +1974,9 @@ inline double
 Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const {
   if (sigma <= 0) return 0.;
   const double weight = wvdw * wvdw / (sigma * sigma);
-  const bool swapped = sym_idx < 0;
-  const gemmi::Atom& atom1 = *atoms[swapped ? 1 : 0];
-  const gemmi::Atom& atom2 = *atoms[swapped ? 0 : 1];
-  const gemmi::Transform tr = get_transform(cell, swapped ? -sym_idx - 1 : sym_idx, pbc_shift);
+  const gemmi::Atom& atom1 = *atoms[0];
+  const gemmi::Atom& atom2 = *atoms[1];
+  const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
   const gemmi::Position& x1 = atom1.pos;
   const gemmi::Position& x2 = same_asu() ? atom2.pos : gemmi::Position(tr.apply(atom2.pos));
   const double b = x1.dist(x2);
@@ -2027,15 +2020,9 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
                      double ncsr_diff_cutoff, double ncsr_max_dist) const {
   if (sigma <= 0) return 0.;
   const Vdw &vdw1 = *pairs[0], &vdw2 = *pairs[1];
-  const bool swapped[2] = {vdw1.sym_idx < 0, vdw2.sym_idx < 0};
-  const gemmi::Atom* atoms[4] = {
-    vdw1.atoms[swapped[0] ? 1 : 0],
-    vdw1.atoms[swapped[0] ? 0 : 1],
-    vdw2.atoms[swapped[1] ? 1 : 0],
-    vdw2.atoms[swapped[1] ? 0 : 1]
-  };
-  const gemmi::Transform tr1 = get_transform(cell, swapped[0] ? -vdw1.sym_idx - 1 : vdw1.sym_idx, vdw1.pbc_shift);
-  const gemmi::Transform tr2 = get_transform(cell, swapped[1] ? -vdw2.sym_idx - 1 : vdw2.sym_idx, vdw2.pbc_shift);
+  const gemmi::Atom* atoms[4] = {vdw1.atoms[0], vdw1.atoms[1], vdw2.atoms[0], vdw2.atoms[1]};
+  const gemmi::Transform tr1 = get_transform(cell, vdw1.sym_idx, vdw1.pbc_shift);
+  const gemmi::Transform tr2 = get_transform(cell, vdw2.sym_idx, vdw2.pbc_shift);
   const gemmi::Position& x1 = atoms[0]->pos;
   const gemmi::Position& x2 = vdw1.same_asu() ? atoms[1]->pos : gemmi::Position(tr1.apply(atoms[1]->pos));
   const gemmi::Position& x3 = atoms[2]->pos;
