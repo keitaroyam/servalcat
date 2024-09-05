@@ -92,6 +92,8 @@ def add_arguments(parser):
     parser.add_argument('-o','--output_prefix')
     parser.add_argument("--write_trajectory", action='store_true',
                         help="Write all output from cycles")
+    parser.add_argument("--vonmises", action='store_true',
+                        help="Experimental: von Mises type restraint for angles")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -200,6 +202,7 @@ def main(args):
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),
                 ncslist=ncslist)
+    geom.geom.angle_von_mises = args.vonmises
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
     if args.adp_restraint_exp_fac is not None: geom.geom.adpr_exp_fac = args.adp_restraint_exp_fac

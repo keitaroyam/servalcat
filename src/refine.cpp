@@ -715,6 +715,8 @@ void add_refine(py::module& m) {
     .def_readwrite("dinc_dummy", &Geometry::dinc_dummy)
     .def_readwrite("vdw_sdi_dummy", &Geometry::vdw_sdi_dummy)
     .def_readwrite("max_vdw_radius", &Geometry::max_vdw_radius)
+    // angle parameters
+    .def_readwrite("angle_von_mises", &Geometry::angle_von_mises)
     // torsion parameters
     .def_readwrite("use_hydr_tors", &Geometry::use_hydr_tors)
     .def_readwrite("link_tors_names", &Geometry::link_tors_names)

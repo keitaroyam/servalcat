@@ -539,7 +539,7 @@ struct Geometry {
       for (auto &value : values)
         value.value = gemmi::angle_abs_diff(value.value, 0.); // limit to [0,180]
     }
-    double calc(const gemmi::UnitCell& cell, double waskal, GeomTarget* target, Reporting *reporting) const;
+    double calc(const gemmi::UnitCell& cell, double waskal, bool von_mises, GeomTarget* target, Reporting *reporting) const;
     int type = 1; // 0 or not
     int sym_idx_1 = 0, sym_idx_2 = 0;
     std::array<int, 3> pbc_shift_1 = {{0,0,0}}, pbc_shift_2 = {{0,0,0}};
@@ -750,6 +750,9 @@ struct Geometry {
   //double dvdw_cut_min    = 1.75; // no need? // VDWR VDWC val
   //double dvdw_cut_min_x  = 1.75; // used as twice in fast_hessian_tabulation.f // VDWR VDWC val
   double max_vdw_radius = 2.0;
+
+  // angle
+  bool angle_von_mises = false;
 
   // torsion
   bool use_hydr_tors = true;
@@ -1263,7 +1266,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
       ret += t.calc(st.cell, use_nucleus, wbond, target_ptr, rep_ptr);
   for (const auto &t : angles)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, wangle, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wangle, angle_von_mises, target_ptr, rep_ptr);
   for (const auto &t : torsions)
     if (has_selected(t.atoms))
       ret += t.calc(wtors, target_ptr, rep_ptr);
@@ -1587,7 +1590,8 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   return robustf.f;
 }
 
-inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, GeomTarget* target, Reporting *reporting) const {
+inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, bool von_mises,
+                                    GeomTarget* target, Reporting *reporting) const {
   const gemmi::Transform tr1 = get_transform(cell, sym_idx_1, pbc_shift_1);
   const gemmi::Transform tr2 = get_transform(cell, sym_idx_2, pbc_shift_2);
   const gemmi::Position& x1 = same_asu(0) ? atoms[0]->pos : gemmi::Position(tr1.apply(atoms[0]->pos));
@@ -1603,14 +1607,16 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   const double a = gemmi::deg(std::acos(std::max(-1., std::min(1., cosa))));
   auto closest = find_closest_value(a);
   const double da = a - closest->value;
-  const double weight = waskal * waskal / (closest->sigma * closest->sigma);
-  const double ret = da * da * weight * 0.5;
+  const double weight = gemmi::sq(waskal / closest->sigma * (von_mises ? gemmi::deg(1) : 1));
+  const double ret = von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
   if (target != nullptr) {
     int ia[3];
     for (int i = 0; i < 3; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
     gemmi::Vec3 dadx[3];
-    dadx[0] = ((v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n)) / sina) * gemmi::deg(1);
-    dadx[2] = ((v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n)) / sina) * gemmi::deg(1);
+    // sin(a-a0)/sina if von_mises
+    const double tmp = von_mises ? (std::cos(gemmi::rad(closest->value)) - cosa / sina * std::sin(gemmi::rad(closest->value))) : 1/sina;
+    dadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n)) * gemmi::deg(1);
+    dadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n)) * gemmi::deg(1);
     dadx[1] = -dadx[0] - dadx[2];
     if (!same_asu(0))
       dadx[0] = tr1.mat.transpose().multiply(dadx[0]);
@@ -1618,8 +1624,8 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
       dadx[2] = tr2.mat.transpose().multiply(dadx[2]);
     for(int i = 0; i < 3; ++i)
       if (ia[i] >= 0) {
-        target->incr_vn(ia[i] * 3, weight * da, dadx[i]);
-        target->incr_am_diag(ia[i] * 6, weight, dadx[i]);
+        target->incr_vn(ia[i] * 3, von_mises ? weight : (weight * da), dadx[i] * tmp);
+        target->incr_am_diag(ia[i] * 6, weight, dadx[i] / sina);
       }
 
     for (int i = 0; i < 2; ++i)
@@ -1627,9 +1633,9 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
         if (ia[i] >= 0 && ia[j] >= 0) {
           auto mp = target->find_restraint(ia[i], ia[j]);
           if (mp.imode == 0) // ia[i] > ia[j]
-            target->incr_am_ndiag(mp.ipos, weight, dadx[i], dadx[j]);
+            target->incr_am_ndiag(mp.ipos, weight, dadx[i] / sina, dadx[j] / sina);
           else
-            target->incr_am_ndiag(mp.ipos, weight, dadx[j], dadx[i]);
+            target->incr_am_ndiag(mp.ipos, weight, dadx[j] / sina, dadx[i] / sina);
         }
     target->target += ret;
   }
