@@ -82,7 +82,10 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 if at.occ > 1: # XXX should I check special positions?
                     at.occ = 1.
 
-    if not keep_entities:
+    refmac_fixes = utils.refmac.FixForRefmac()
+    if keep_entities:
+        refmac_fixes.store_res_labels(st)
+    else:
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
 
     if unre:
@@ -120,7 +123,6 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 logger.writeln(" removing unknown link id ({}). Ad-hoc link will be generated.".format(con.link_id))
                 con.link_id = ""
 
-    refmac_fixes = utils.refmac.FixForRefmac()
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
     if max_seq_num > 9999:
         logger.writeln("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
@@ -241,17 +243,18 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
         # should we check metals and put MetalC?
 
     # fix entity (Refmac seems to make DNA non-polymer; as seen in 1fix)
-    utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
-    for e in st.entities:
-        if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
-            rspan = st[0].get_subchain(e.subchains[0])
-            e.full_sequence = [r.name for r in rspan]
+    if not fixes or not fixes.res_labels:
+        utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
+        for e in st.entities:
+            if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
+                rspan = st[0].get_subchain(e.subchains[0])
+                e.full_sequence = [r.name for r in rspan]
 
-    # fix label_seq_id
-    for chain in st[0]:
-        for res in chain:
-            res.label_seq = None
-    st.assign_label_seq_id()
+        # fix label_seq_id
+        for chain in st[0]:
+            for res in chain:
+                res.label_seq = None
+        st.assign_label_seq_id()
 
     # add servalcat version
     if len(st.meta.software) > 0 and st.meta.software[-1].name == "refmac":

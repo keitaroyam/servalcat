@@ -148,6 +148,8 @@ class FixForRefmac:
         self.MAXNUM = 9999
         self.fixes = []
         self.resn_old_new = []
+        self.res_labels = []
+        self.entities = None
         
     def fix_before_topology(self, st, topo, fix_microheterogeneity=True, fix_resimax=True, fix_nonpolymer=True, add_gaps=False):
         self.chainids = set(chain.name for chain in st[0])
@@ -385,6 +387,14 @@ class FixForRefmac:
         st.shorten_ccd_codes()
         self.resn_old_new = [x for x in st.shortened_ccd_codes]
 
+    def store_res_labels(self, st):
+        self.res_labels = []
+        self.entities = gemmi.EntityList(st.entities)
+        for chain in st[0]:
+            self.res_labels.append([])
+            for res in chain:
+                self.res_labels[-1].append((res.subchain, res.entity_id, res.label_seq))
+        
     def fix_model(self, st, changedict):
         chain_newid = set()
         for chain in st[0]:
@@ -411,6 +421,15 @@ class FixForRefmac:
             st.shortened_ccd_codes = self.resn_old_new
             st.restore_full_ccd_codes()
 
+        if self.res_labels:
+            st.entities = self.entities
+            #print(f"debug {len(self.res_labels)}")
+            #print(f"debug {[x.name for x in st[0]]}")
+            assert len(self.res_labels) == len(st[0])
+            for ic, chain in enumerate(st[0]):
+                assert len(self.res_labels[ic]) == len(chain)
+                for ir, res in enumerate(chain):
+                    res.subchain, res.entity_id, res.label_seq = self.res_labels[ic][ir]
 
 class Refmac:
     def __init__(self, **kwargs):

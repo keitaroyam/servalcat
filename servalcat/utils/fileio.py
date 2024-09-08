@@ -307,7 +307,7 @@ def read_cif_safe(cif_in):
     return doc
 # read_cif_safe()
 
-def read_structure(xyz_in, assign_het_flags=True):
+def read_structure(xyz_in, assign_het_flags=True, merge_chain_parts=True):
     spext = splitext(xyz_in)
     st = None
     if spext[1].lower() in (".pdb", ".ent"):
@@ -355,6 +355,8 @@ def read_structure(xyz_in, assign_het_flags=True):
         logger.writeln("")
     if assign_het_flags:
         st.assign_het_flags()
+    if merge_chain_parts:
+        st.merge_chain_parts()
     return st
 # read_structure()
 
