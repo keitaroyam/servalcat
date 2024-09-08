@@ -749,7 +749,7 @@ class Refine:
                     weight /= 1.1
             if self.st_traj is not None:
                 self.st_traj.add_model(self.st[0])
-                self.st_traj[-1].name = str(i+1)
+                self.st_traj[-1].name = str(len(self.st_traj))
             if stats_json_out:
                 write_stats_json_safe(stats, stats_json_out)
 

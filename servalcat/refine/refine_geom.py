@@ -44,6 +44,8 @@ def add_arguments(parser):
                         help="refmac keyword file(s)")
     parser.add_argument('-o','--output_prefix',
                         help="Output prefix")
+    parser.add_argument("--write_trajectory", action='store_true',
+                        help="Write all output from cycles")
 
 # add_arguments()
 
@@ -164,11 +166,13 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     else:
         ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=randomize, params=params, ncslist=ncslist)
-    refiner = Refine(st, geom)
+    refiner = Refine(st, geom, params=params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
     refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
+    if params["write_trajectory"]:
+        utils.fileio.write_model(refiner.st_traj, output_prefix + "_traj", cif=True)
 # refine_geom()
 
 def main(args):
@@ -178,6 +182,7 @@ def main(args):
     decide_prefix = lambda f: utils.fileio.splitext(os.path.basename(f))[0] + "_refined"
     if args.model:
         params = refmac_keywords.parse_keywords(keywords)
+        params["write_trajectory"] = args.write_trajectory
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.model)
         if args.ligand:
