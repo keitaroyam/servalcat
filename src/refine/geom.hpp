@@ -1603,7 +1603,7 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   const double v2n = std::max(v2.length(), 0.02);
   const double v12 = v1.dot(v2);
   const double cosa = std::min(1., v12 / v1n / v2n);
-  const double sina = std::min(1., std::max(std::sqrt(1 - cosa * cosa), 0.1));
+  const double sina = std::min(1., std::max(std::sqrt(1 - cosa * cosa), 0.001));
   const double a = gemmi::deg(std::acos(std::max(-1., std::min(1., cosa))));
   auto closest = find_closest_value(a);
   const double da = a - closest->value;
@@ -1612,30 +1612,32 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   if (target != nullptr) {
     int ia[3];
     for (int i = 0; i < 3; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
-    gemmi::Vec3 dadx[3];
-    // sin(a-a0)/sina if von_mises
-    const double tmp = von_mises ? (std::cos(gemmi::rad(closest->value)) - cosa / sina * std::sin(gemmi::rad(closest->value))) : 1/sina;
-    dadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n)) * gemmi::deg(1);
-    dadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n)) * gemmi::deg(1);
+    gemmi::Vec3 dadx[3]; // scales will be multiplied later
+    dadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n));
+    dadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n));
     dadx[1] = -dadx[0] - dadx[2];
     if (!same_asu(0))
       dadx[0] = tr1.mat.transpose().multiply(dadx[0]);
     if (!same_asu(2))
       dadx[2] = tr2.mat.transpose().multiply(dadx[2]);
+    const double deriv_fac = von_mises
+      // sin(a-a0) / sina
+      ? (weight * (std::cos(gemmi::rad(closest->value)) - cosa / sina * std::sin(gemmi::rad(closest->value))))
+      : (weight * da * gemmi::deg(1) / sina);
+    const double secder_fac = von_mises ? (weight / gemmi::sq(sina)) : (weight * gemmi::sq(gemmi::deg(1) / sina));
     for(int i = 0; i < 3; ++i)
       if (ia[i] >= 0) {
-        target->incr_vn(ia[i] * 3, von_mises ? weight : (weight * da), dadx[i] * tmp);
-        target->incr_am_diag(ia[i] * 6, weight, dadx[i] / sina);
+        target->incr_vn(ia[i] * 3, deriv_fac, dadx[i]);
+        target->incr_am_diag(ia[i] * 6, secder_fac, dadx[i]);
       }
-
     for (int i = 0; i < 2; ++i)
       for (int j = i+1; j < 3; ++j)
         if (ia[i] >= 0 && ia[j] >= 0) {
           auto mp = target->find_restraint(ia[i], ia[j]);
           if (mp.imode == 0) // ia[i] > ia[j]
-            target->incr_am_ndiag(mp.ipos, weight, dadx[i] / sina, dadx[j] / sina);
+            target->incr_am_ndiag(mp.ipos, secder_fac, dadx[i], dadx[j]);
           else
-            target->incr_am_ndiag(mp.ipos, weight, dadx[j] / sina, dadx[i] / sina);
+            target->incr_am_ndiag(mp.ipos, secder_fac, dadx[j], dadx[i]);
         }
     target->target += ret;
   }
