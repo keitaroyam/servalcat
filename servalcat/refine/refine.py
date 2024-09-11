@@ -181,15 +181,16 @@ class Geom:
                         logger.writeln(df.to_string(float_format="{:.3f}".format, index=False) + "\n")
 
         # Per-atom score
-        peratom = self.geom.reporting.per_atom_score(len(self.atoms), self.use_nucleus, "mean")
-        df = pandas.DataFrame(peratom)
-        df.insert(0, "atom", [str(self.lookup[x]) for x in self.atoms])
-        df = df[df["total"] >= self.outlier_sigmas["per_atom"]]
-        if show_outliers and len(df.index) > 0:
-            df.sort_values("total", ascending=False, inplace=True)
-            ret["outliers"]["per_atom"] = df
-            logger.writeln(" *** Per-atom violations (Z >= {}) ***\n".format(self.outlier_sigmas["per_atom"]))
-            logger.writeln(df.to_string(float_format="{:.2f}".format, index=False) + "\n")
+        if 0:
+            peratom = self.geom.reporting.per_atom_score(len(self.atoms), self.use_nucleus, "mean")
+            df = pandas.DataFrame(peratom)
+            df.insert(0, "atom", [str(self.lookup[x]) for x in self.atoms])
+            df = df[df["total"] >= self.outlier_sigmas["per_atom"]]
+            if show_outliers and len(df.index) > 0:
+                df.sort_values("total", ascending=False, inplace=True)
+                ret["outliers"]["per_atom"] = df
+                logger.writeln(" *** Per-atom violations (Z >= {}) ***\n".format(self.outlier_sigmas["per_atom"]))
+                logger.writeln(df.to_string(float_format="{:.2f}".format, index=False) + "\n")
 
         df = pandas.DataFrame(self.geom.reporting.get_summary_table(self.use_nucleus))
         df = df.set_index("Restraint type").rename_axis(index=None)

@@ -278,7 +278,7 @@ void add_refine(py::module& m) {
     })
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
-      std::vector<double> values, ideals, zs, alphas;
+      std::vector<double> values, ideals, sigmas, zs, alphas;
       std::vector<int> types;
       for (const auto& b : self.bonds) {
         const auto& restr = std::get<0>(b);
@@ -291,17 +291,18 @@ void add_refine(py::module& m) {
           atom2.push_back(restr->atoms[1]);
           values.push_back(std::get<2>(b) + ideal);
           ideals.push_back(ideal);
+          sigmas.push_back(sigma);
           zs.push_back(z);
           types.push_back(restr->type);
           alphas.push_back(restr->alpha);
         }
       }
       return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "z"_a=zs, "type"_a=types, "alpha"_a=alphas);
+                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types, "alpha"_a=alphas);
     }, py::arg("use_nucleus"), py::arg("min_z"))
     .def("get_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.angles) {
         const auto& restr = std::get<0>(t);
         const auto& val = std::get<1>(t);
@@ -311,16 +312,17 @@ void add_refine(py::module& m) {
           atom2.push_back(restr->atoms[1]);
           atom3.push_back(restr->atoms[2]);
           values.push_back(std::get<2>(t) + val->value);
+          sigmas.push_back(val->sigma);
           ideals.push_back(val->value);
           zs.push_back(z);
         }
       }
       return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3,
-                      "value"_a=values, "ideal"_a=ideals, "z"_a=zs);
+                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_torsion_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       std::vector<int> pers;
       std::vector<std::string> labels;
       for (const auto& t : self.torsions) {
@@ -335,16 +337,17 @@ void add_refine(py::module& m) {
           labels.push_back(val->label);
           values.push_back(std::get<3>(t));
           ideals.push_back(val->value);
+          sigmas.push_back(val->sigma);
           pers.push_back(val->period);
           zs.push_back(z);
         }
       }
       return py::dict("label"_a=labels, "atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3, "atom4"_a=atom4,
-                      "value"_a=values, "ideal"_a=ideals, "per"_a=pers, "z"_a=zs);
+                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "per"_a=pers, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_chiral_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       std::vector<bool> signs;
       for (const auto& t : self.chirs) {
         const auto& restr = std::get<0>(t);
@@ -356,16 +359,17 @@ void add_refine(py::module& m) {
           atom4.push_back(restr->atoms[3]);
           values.push_back(std::get<1>(t) + std::get<2>(t));
           ideals.push_back(std::get<2>(t));
+          sigmas.push_back(restr->sigma);
           signs.push_back(restr->sign == gemmi::ChiralityType::Both);
           zs.push_back(z);
         }
       }
       return py::dict("atomc"_a=atom1, "atom1"_a=atom2, "atom2"_a=atom3, "atom3"_a=atom4,
-                      "value"_a=values, "ideal"_a=ideals, "both"_a=signs, "z"_a=zs);
+                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "both"_a=signs, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_plane_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atoms;
-      std::vector<double> values, zs;
+      std::vector<double> values, sigmas, zs;
       std::vector<std::string> labels;
       for (const auto& t : self.planes) {
         const auto& restr = std::get<0>(t);
@@ -375,15 +379,16 @@ void add_refine(py::module& m) {
             atoms.push_back(restr->atoms[i]);
             labels.push_back(restr->label);
             values.push_back(std::get<1>(t)[i]);
+            sigmas.push_back(restr->sigma);
             zs.push_back(z);
           }
         }
       }
-      return py::dict("label"_a=labels, "atom"_a=atoms, "dev"_a=values, "z"_a=zs);
+      return py::dict("label"_a=labels, "atom"_a=atoms, "dev"_a=values, "sigma"_a=sigmas, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_stacking_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.stackings) {
         const auto& restr = std::get<0>(t);
         const double za = std::get<1>(t) / restr->sd_angle;
@@ -392,14 +397,16 @@ void add_refine(py::module& m) {
           atom2.push_back(restr->planes[1][0]);
           values.push_back(std::get<1>(t) + restr->angle);
           ideals.push_back(restr->angle);
+          sigmas.push_back(restr->sd_angle);
           zs.push_back(za);
         }
       }
-      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values, "ideal"_a=ideals, "z"_a=zs);
+      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
+                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_stacking_dist_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.stackings) {
         const auto& restr = std::get<0>(t);
         const double zd1 = std::get<2>(t) / restr->sd_dist;
@@ -410,14 +417,16 @@ void add_refine(py::module& m) {
           atom2.push_back(restr->planes[1][0]);
           values.push_back(zd * restr->sd_dist + restr->dist);
           ideals.push_back(restr->dist);
+          sigmas.push_back(restr->sd_dist);
           zs.push_back(zd);
         }
       }
-      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values, "ideal"_a=ideals,  "z"_a=zs);
+      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
+                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
     }, py::arg("min_z"))
     .def("get_vdw_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
-      std::vector<double> values, ideals, zs;
+      std::vector<double> values, ideals, sigmas, zs;
       std::vector<int> types;
       for (const auto& t : self.vdws) {
         const auto& restr = std::get<0>(t);
@@ -427,16 +436,17 @@ void add_refine(py::module& m) {
           atom2.push_back(restr->atoms[1]);
           values.push_back(std::get<1>(t) + restr->value);
           ideals.push_back(restr->value);
+          sigmas.push_back(restr->sigma);
           zs.push_back(z);
           types.push_back(restr->type);
         }
       }
       return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "z"_a=zs, "type"_a=types);
+                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types);
     }, py::arg("min_z"))
     .def("get_ncsr_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
-      std::vector<double> dist1, dist2, devs, zs;
+      std::vector<double> dist1, dist2, devs, sigmas, zs;
       for (const auto& t : self.ncsrs) {
         const auto& restr = std::get<0>(t);
         const double d1 = std::get<1>(t), d2 = std::get<2>(t);
@@ -449,11 +459,12 @@ void add_refine(py::module& m) {
           dist1.push_back(d1);
           dist2.push_back(d2);
           devs.push_back(d1 - d2);
+          sigmas.push_back(restr->sigma);
           zs.push_back(z);
         }
       }
       return py::dict("1_atom1"_a=atom1, "1_atom2"_a=atom2, "2_atom1"_a=atom3, "2_atom2"_a=atom4,
-                      "dist_1"_a=dist1, "dist_2"_a=dist2, "del_dist"_a=devs, "z"_a=zs);
+                      "dist_1"_a=dist1, "dist_2"_a=dist2, "del_dist"_a=devs, "sigma"_a=sigmas, "z"_a=zs);
     }, py::arg("min_z"))
     .def("per_atom_score", [](const Geometry::Reporting& self, int n_atoms,
                               bool use_nucleus, const std::string& metric) {
