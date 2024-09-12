@@ -877,8 +877,12 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
       for (const gemmi::Atom& atom : ri.res->atoms) {
         const gemmi::ChemComp& cc = ri.get_final_chemcomp(atom.altloc);
         auto it = cc.find_atom(atom.name);
-        if (it != cc.atoms.end())
-          chemtypes.emplace(atom.serial, it->chem_type);
+        if (it != cc.atoms.end()) {
+          const std::string &chem_type = it->is_hydrogen() ? "H" : it->chem_type;
+          if (ener_lib && ener_lib->atoms.find(chem_type) == ener_lib->atoms.end())
+            throw std::runtime_error("Energy type " + chem_type + " of " + ri.res->name + " not found in ener_lib");
+          chemtypes.emplace(atom.serial, chem_type);
+        }
       }
     }
 
