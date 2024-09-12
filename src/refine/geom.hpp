@@ -1121,7 +1121,7 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                  continue;
                                vdws.emplace_back(&atom, cra2.atom);
                                if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
-                                 vdws.back().set_image(st.cell, gemmi::Asu::Any);
+                                 vdws.back().set_image(st.cell, gemmi::Asu::Different);
                                int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, vdws.back().same_asu());
                                if (d_1_2 < 3 || (d_1_2 == 3 && in_same_plane(&atom, cra2.atom))) {
                                  vdws.pop_back();
