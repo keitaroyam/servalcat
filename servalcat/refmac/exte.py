@@ -128,11 +128,12 @@ def read_external_restraints(params, st, geom):
                 ex.set_image(st.cell, asu)
             #print("dist=", ex.alpha, ex.type, ex.values[-1].value, ex.values[-1].sigma, ex.sym_idx, ex.pbc_shift, ex.atoms)
         elif r["rest_type"] == "angl":
-            symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
             if any(spec.get("symm") for spec in r["restr"]["specs"]):
-                asu1 = gemmi.Asu.Different if r["restr"]["specs"][0].get("symm") else gemmi.Asu.Same
-                asu3 = gemmi.Asu.Different if r["restr"]["specs"][2].get("symm") else gemmi.Asu.Same
-                ex.set_images(st.cell, asu1, asu3)
+                asus = [gemmi.Asu.Different if r["restr"]["specs"][i].get("symm") else gemmi.Asu.Same
+                        for i in range(3)]
+                if atoms[0].serial > atoms[2].serial:
+                    asus = asus[::-1]
+                ex.set_images(st.cell, asus[0], asus[2])
             #print("angl=", ex.values[-1].value, ex.values[-1].sigma, ex.atoms)
         elif r["rest_type"] == "tors":
             pass
