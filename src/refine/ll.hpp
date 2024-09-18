@@ -238,12 +238,14 @@ struct LL{
   int adp_mode;
   bool refine_occ;
   bool refine_h;
+  bool use_q_b_mixed_derivatives = true;
   // table (distances x b values)
   std::vector<double> table_bs;
   std::vector<std::vector<double>> pp1; // for x-x diagonal
   std::vector<std::vector<double>> bb;  // for B-B diagonal
   std::vector<std::vector<double>> aa; // for B-B diagonal, aniso
   std::vector<std::vector<double>> qq; // for q-q diagonal
+  std::vector<std::vector<double>> qb; // for q-B
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
@@ -271,14 +273,44 @@ struct LL{
       if (!tr.is_identity())
         ncs.push_back(tr);
   }
-
+  size_t n_grad() const {
+    size_t np = 0;
+    if (refine_xyz)
+      np += 3;
+    if (adp_mode == 1)
+      np += 1;
+    else if (adp_mode == 2)
+      np += 6;
+    if (refine_occ)
+      np += 1;
+    return np * atoms.size();
+  }
+  size_t n_fisher() const {
+    size_t np = 0;
+    if (refine_xyz)
+      np += 6;
+    if (adp_mode == 1)
+      np += 1;
+    else if (adp_mode == 2)
+      np += 21;
+    if (refine_occ) {
+      np += 1;
+      if (use_q_b_mixed_derivatives) {
+        if (adp_mode == 1)
+          np += 1;
+        else if (adp_mode == 2)
+          np += 6;
+      }
+    }
+    return np * atoms.size();
+  }
   // FFT-based gradient calculation: Murshudov et al. (1997) 10.1107/S0907444996012255
   // if cryo-EM SPA, den is the Fourier transform of (dLL/dAc-i dLL/dBc)*mott_bethe_factor/s^2
   // When b_add is given, den must have been sharpened
   template <typename Table>
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = atoms.size();
-    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6) + (refine_occ ? 1 : 0));
+    const size_t n_v = n_grad();
     vn.assign(n_v, 0.);
     const int offset = (refine_xyz ? n_atoms * 3 : 0); // for adp
     const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 6 : 0)); // for occ
@@ -447,6 +479,7 @@ struct LL{
     bb.assign(1, std::vector<double>(b_dim));
     aa.assign(1, std::vector<double>(b_dim));
     qq.assign(1, std::vector<double>(b_dim));
+    qb.assign(1, std::vector<double>(b_dim));
 
     table_bs.clear();
     table_bs.reserve(b_dim);
@@ -456,7 +489,7 @@ struct LL{
       const double b = b_min + b_step * ib;
       table_bs.push_back(b);
 
-      std::vector<double> tpp(s_dim+1), tbb(s_dim+1), taa(s_dim+1), tqq(s_dim+1);
+      std::vector<double> tpp(s_dim+1), tbb(s_dim+1), taa(s_dim+1), tqq(s_dim+1), tqb(s_dim+1);
       for (int i = 0; i <= s_dim; ++i) {
         const double s = s_min + s_step * i;
         const double s2 = s * s;
@@ -466,6 +499,7 @@ struct LL{
         tbb[i] = gemmi::pi() / 4 * w_c_ft_c * s2; // 1/16 * 4pi
         taa[i] = gemmi::pi() / 20 * w_c_ft_c * s2; // 1/16 * 4pi/5 (later *1, *1/3, *4/3)
         tqq[i] = gemmi::pi() * 4 * w_c_ft_c; // 4pi
+        tqb[i] = -gemmi::pi() * w_c_ft_c; // -pi
         if (mott_bethe) {
           tqq[i] /= s2;
         } else {
@@ -474,28 +508,33 @@ struct LL{
           tbb[i] *= s4;
           taa[i] *= s4;
           tqq[i] *= s2;
+          tqb[i] *= s4;
         }
       }
 
       // Numerical integration by Simpson's rule
       double sum_tpp1 = 0, sum_tpp2 = 0, sum_tbb1 = 0, sum_tbb2 = 0, sum_taa1 = 0, sum_taa2 = 0, sum_tqq1 = 0, sum_tqq2 = 0;
+      double sum_tqb1 = 0, sum_tqb2 = 0;
       for (int i = 1; i < s_dim; i+=2) {
         sum_tpp1 += tpp[i];
         sum_tbb1 += tbb[i];
         sum_taa1 += taa[i];
         sum_tqq1 += tqq[i];
+        sum_tqb1 += tqb[i];
       }
       for (int i = 2; i < s_dim; i+=2) {
         sum_tpp2 += tpp[i];
         sum_tbb2 += tbb[i];
         sum_taa2 += taa[i];
         sum_tqq2 += tqq[i];
+        sum_tqb2 += tqb[i];
       }
 
       pp1[0][ib] = (tpp[0] + tpp.back() + 4 * sum_tpp1 + 2 * sum_tpp2) * s_step / 3.;
       bb[0][ib] = (tbb[0] + tbb.back() + 4 * sum_tbb1 + 2 * sum_tbb2) * s_step / 3.;
       aa[0][ib] = (taa[0] + taa.back() + 4 * sum_taa1 + 2 * sum_taa2) * s_step / 3.;
       qq[0][ib] = (tqq[0] + tqq.back() + 4 * sum_tqq1 + 2 * sum_tqq2) * s_step / 3.;
+      qb[0][ib] = (tqb[0] + tqb.back() + 4 * sum_tqb1 + 2 * sum_tqb2) * s_step / 3.;
     }
   }
 
@@ -514,6 +553,7 @@ struct LL{
     bb.assign(1, std::vector<double>(b_dim));
     aa.assign(1, std::vector<double>(b_dim));
     qq.assign(1, std::vector<double>(b_dim));
+    qb.assign(1, std::vector<double>(b_dim));
     table_bs.clear();
     table_bs.reserve(b_dim);
 
@@ -527,30 +567,35 @@ struct LL{
       for (size_t i = 0; i < svals.size(); ++i) {
         const double s = svals[i], w_c = yvals[i];
         if (std::isnan(w_c)) continue;
-        const double s2 = s * s; 
+        const double s2 = s * s;
         const double s4 = s2 * s2;
         const double w_c_ft_c = w_c * std::exp(-b*s2/4.);
         double tpp = 4. * gemmi::pi() * gemmi::pi() * w_c_ft_c / 3.; // (2pi)^2 /3
         double tbb = 1. / 16 * w_c_ft_c; // 1/16
         double taa = 1. / 80 * w_c_ft_c; // 1/16 /5 (later *1, *1/3, *4/3)
         double tqq = w_c_ft_c; // 1
+        double tqb = -w_c_ft_c / 4;
         if (mott_bethe) {
           tpp /= s2;
           tqq /= s4;
+          tqb /= s2;
         } else {
           tpp *= s2;
           tbb *= s4;
           taa *= s4;
+          tqb *= s2;
         }
         pp1[0][ib] += tpp;
         bb[0][ib] += tbb;
         aa[0][ib] += taa;
         qq[0][ib] += tqq;
+        qb[0][ib] += tqb;
       }
       pp1[0][ib] *= fac;
       bb[0][ib] *= fac;
       aa[0][ib] *= fac;
       qq[0][ib] *= fac;
+      qb[0][ib] *= fac;
     }
   }
 
@@ -577,11 +622,12 @@ struct LL{
   template <typename Table>
   void fisher_diag_from_table() {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21) + (refine_occ ? 1 : 0));
+    const size_t n_a = n_fisher();
     const int N = Table::Coef::ncoeffs;
     am.assign(n_a, 0.);
     const int offset = refine_xyz ? n_atoms * 6 : 0; // for adp
     const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 21 : 0));  // for occ
+    const int offset3 = offset2 + n_atoms;  // for occ-B
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
@@ -589,7 +635,7 @@ struct LL{
       const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
-      double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0.;
+      double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
 
       // TODO can be reduced for the same elements
       for (int j = 0; j < N + 1; ++j)
@@ -602,6 +648,7 @@ struct LL{
           fac_b += aj * ak * interp_1d(table_bs, bb[0], b);
           fac_a += aj * ak * interp_1d(table_bs, aa[0], b);
           fac_q += aj * ak * interp_1d(table_bs, qq[0], b);
+          fac_qb += aj * ak * interp_1d(table_bs, qb[0], b);
         }
 
       const int ipos = i*6;
@@ -613,14 +660,22 @@ struct LL{
         for (int j = 3; j < 6; ++j) am[offset + 21*i + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
         am[offset + 21*i + 6] = am[offset + 21*i + 7] = am[offset + 21*i + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
-      if (refine_occ) am[offset2 + i] = fac_q; // w = q^2 not needed
+      if (refine_occ) {
+        am[offset2 + i] = fac_q; // w = q^2 not needed
+        if (use_q_b_mixed_derivatives) {
+          if (adp_mode == 1)
+            am[offset3 + i] = fac_qb * atom.occ;
+          else if (adp_mode == 2)
+            am[offset3 + 6 * i] = am[offset3 + 6 * i + 1] = am[offset3 + 6 * i + 2] = fac_qb * atom.occ / 3;
+        }
+      }
     }
   }
 
   Eigen::SparseMatrix<double> make_spmat() const {
     const size_t n_atoms = atoms.size();
-    const size_t n_a = n_atoms * ((refine_xyz ? 6 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 21) + (refine_occ ? 1 : 0));
-    const size_t n_v = n_atoms * ((refine_xyz ? 3 : 0) + (adp_mode == 0 ? 0 : adp_mode == 1 ? 1 : 6) + (refine_occ ? 1 : 0));
+    const size_t n_a = n_fisher();
+    const size_t n_v = n_grad();
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {
@@ -629,7 +684,7 @@ struct LL{
       if (i != j)
         data.emplace_back(j, i, v);
     };
-    size_t i = 0, offset = 0;
+    size_t i = 0, offset = 0, offset_b = 0;
     if (refine_xyz) {
       for (size_t j = 0; j < n_atoms; ++j, i+=6) {
         add_data(3*j,   3*j,   am[i]);
@@ -639,7 +694,7 @@ struct LL{
         add_data(3*j,   3*j+2, am[i+4]);
         add_data(3*j+1, 3*j+2, am[i+5]);
       }
-      offset = 3 * n_atoms;
+      offset = offset_b = 3 * n_atoms;
     }
     if (adp_mode == 1) {
       for (size_t j = 0; j < n_atoms; ++j, ++i)
@@ -653,12 +708,22 @@ struct LL{
           for (size_t l = k + 1; l < 6; ++l, ++i)
             add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
       }
-      offset += 21 * n_atoms;
+      offset += 6 * n_atoms;
     }
-    if (refine_occ)
+    if (refine_occ) {
       for (size_t j = 0; j < n_atoms; ++j, ++i)
         add_data(offset + j, offset + j, am[i]);
-
+      if (use_q_b_mixed_derivatives) {
+        if (adp_mode == 1) {
+          for (size_t j = 0; j < n_atoms; ++j, ++i)
+            add_data(offset_b + j, offset + j, am[i]);
+        } else if (adp_mode == 2) {
+          for (size_t j = 0; j < n_atoms; ++j)
+            for (size_t k = 0; k < 6; ++k, ++i)
+              add_data(offset_b + 6 * j + k, offset + j, am[i]);
+        }
+      }
+    }
     if(i != n_a) gemmi::fail("wrong matrix size");
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;

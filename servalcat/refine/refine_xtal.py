@@ -68,6 +68,8 @@ def add_arguments(parser):
                         help='Use local NCS restraints')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight (default: %(default)f)")
+    parser.add_argument('--occr_weight', type=float, default=1.,
+                        help="Occupancy restraint weight (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
@@ -199,7 +201,7 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, params=params,
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),
                 ncslist=ncslist)
     geom.geom.angle_von_mises = args.vonmises

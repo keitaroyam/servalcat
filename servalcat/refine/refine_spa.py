@@ -94,6 +94,8 @@ def add_arguments(parser):
                         help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight (default: %(default)f)")
+    parser.add_argument('--occr_weight', type=float, default=1.,
+                        help="Occupancy restraint weight (default: %(default)f)")
     parser.add_argument('--ncsr', action='store_true', 
                         help='Use local NCS restraints')
     parser.add_argument('--bfactor', type=float,
@@ -214,7 +216,7 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight,
+    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.jellyonly,
                 ncslist=ncslist)
     ll = spa.LL_SPA(hkldata, st, monlib,

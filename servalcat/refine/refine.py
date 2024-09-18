@@ -28,7 +28,7 @@ b_to_u = utils.model.b_to_u
 #atexit.register(profile.print_stats)
 
 class Geom:
-    def __init__(self, st, topo, monlib, adpr_w=1, shake_rms=0,
+    def __init__(self, st, topo, monlib, adpr_w=1, occr_w=1, shake_rms=0,
                  params=None, unrestrained=False, use_nucleus=False,
                  ncslist=None, atom_pos=None):
         self.st = st
@@ -53,7 +53,7 @@ class Geom:
             n_sym = len(images) + 1
             self.geom.specials.append(ext.Geometry.Special(atom, matp, mata, n_sym))
         self.adpr_w = adpr_w
-        self.occr_w = 1.
+        self.occr_w = occr_w
         self.unrestrained = unrestrained
         if shake_rms > 0:
             numpy.random.seed(0)
@@ -442,6 +442,9 @@ class Refine:
                 logger.writeln("  sigmas: {}".format(" ".join("{:.2f}".format(x) for x in g.adpr_kl_sigs)))
             else:
                 raise LookupError("unknown adpr_mode")
+        if self.refine_occ:
+            logger.writeln(" Occupancy restraints")
+            logger.writeln("  weight: {}".format(self.geom.occr_w))
 
     def scale_shifts(self, dx, scale):
         n_atoms = self.geom.n_refine_atoms

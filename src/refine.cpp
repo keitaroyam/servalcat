@@ -801,6 +801,7 @@ void add_refine(py::module& m) {
     .def_readonly("aa", &LL::aa)
     .def_readonly("vn", &LL::vn)
     .def_readonly("am", &LL::am)
+    .def_readwrite("use_q_b_mixed_derivatives", &LL::use_q_b_mixed_derivatives)
     ;
   m.def("precondition_eigen_coo", &precondition_eigen_coo);
   py::class_<CgSolve>(m, "CgSolve")
