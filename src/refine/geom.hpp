@@ -1112,12 +1112,13 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                //  consider vdw if within the same residue and the same conformer
                                //  also consider vdw if belonging to the same occupancy group
                                //  otherwise, exclude if sum of occupancies <= 1
-                               if (!(&res == cra2.residue &&
-                                     gemmi::is_same_conformer(atom.altloc, cra2.atom->altloc)) &&
-                                   !(!group_idxes.empty() &&
-                                     group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
-                                     group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]) &&
-                                   (atom.occ + cra2.atom->occ < 1.0001))
+                               //  if symmetry related, only check the sum of occupancies.
+                               const bool same_res_conf = &res == cra2.residue && gemmi::is_same_conformer(atom.altloc, cra2.atom->altloc);
+                               const bool sum_q_le1 = atom.occ + cra2.atom->occ < 1.0001;
+                               const bool same_group = (!group_idxes.empty() &&
+                                                        group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
+                                                        group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]);
+                               if (m.image_idx != 0 ? sum_q_le1 : (!same_res_conf && !same_group && sum_q_le1))
                                  continue;
                                vdws.emplace_back(&atom, cra2.atom);
                                if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
