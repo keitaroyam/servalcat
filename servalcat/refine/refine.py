@@ -293,6 +293,7 @@ class GroupOccupancy:
         vals = []
         for _, atoms in self.groups:
             occ = numpy.mean([a.occ for a in atoms])
+            occ = max(1, min(1e-3, occ))
             vals.append(occ)
         for is_comp, idxes in self.consts:
             sum_occ = sum(vals[i] for i in idxes)
@@ -311,6 +312,7 @@ class GroupOccupancy:
         for p, (_, atoms) in zip(x, self.groups):
             for a in atoms:
                 a.occ = p
+                #a.occ = max(1, min(1e-3, p))
 
     def target(self, x, ll, ls, u):
         self.set_x(x)
