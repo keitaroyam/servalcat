@@ -314,8 +314,10 @@ class HklData:
         self.df.sort_values("d", ascending=ascending, inplace=True)
     # sort_by_resolution()
 
-    def d_min_max(self):
+    def d_min_max(self, labs=None):
         d = self.d_spacings()
+        if labs:
+            d = d[~self.df[labs].isna().any(axis=1)]
         return numpy.min(d), numpy.max(d)
     # d_min_max()
 

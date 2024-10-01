@@ -1252,12 +1252,14 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI","FP","SIGFP"] if name in hkldata.df})
-
+    d_min_data = hkldata.d_min_max(newlabels)[0]
+    if d_min is None and hkldata.d_min_max()[0] != d_min_data:
+        d_min = d_min_data
+        logger.writeln(f"Changing resolution to {d_min:.3f} A")
     if (d_min, d_max).count(None) != 2:
         hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
     if hkldata.df.empty:
         raise RuntimeError("No data left in hkl data")
-    d_min, d_max = hkldata.d_min_max()
         
     hkldata.complete()
     hkldata.sort_by_resolution()
