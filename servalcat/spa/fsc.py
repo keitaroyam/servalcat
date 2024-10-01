@@ -20,13 +20,14 @@ def add_arguments(parser):
 
     parser.add_argument('--model',
                         help="")
-    parser.add_argument('--map',
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--map',
                         help='Input map file(s)')
-    parser.add_argument('--mtz',
+    group.add_argument("--halfmaps",  nargs=2)
+    group.add_argument('--mtz',
                         help='Input mtz file.')
     parser.add_argument('--labin', nargs=2,
                         help='label (F and PHI) for mtz')
-    parser.add_argument("--halfmaps",  nargs=2)
     parser.add_argument('--pixel_size', type=float,
                         help='Override pixel size (A)')
     parser.add_argument('--mask', help='Mask file')
@@ -68,13 +69,10 @@ def write_loggraph(stats, labs_fc, log_out):
     model_labs1 = [l for l in stats if any(l.startswith("fsc_"+fc) for fc in labs_fc)]
     model_labs2 = [l for l in stats if any(l.startswith(("cc_"+fc, "mcos_"+fc)) for fc in labs_fc)]
     power_labs = [l for l in stats if l.startswith("power_")]
-    half_labs1 = ["fsc_half_unmasked", "fsc_half_masked", "fsc_half_masked_rand", "fsc_half_masked_corrected"]
-    half_labs2 = ["cc_half", "mcos_half"]
-    if not all(l in stats for l in half_labs1):
-        if "fsc_half" in stats:
-            half_labs1 = ["fsc_half"]
-        else:
-            half_labs1 = []
+    half_labs1 = [l for l in ("fsc_half_unmasked", "fsc_half_masked", "fsc_half_masked_rand", "fsc_half_masked_corrected") if l in stats]
+    half_labs2 = [l for l in ("cc_half", "mcos_half") if l in stats]
+    if not half_labs1 and "fsc_half" in stats:
+        half_labs1 = ["fsc_half"]
 
     stats2 = stats.copy()
     stats2.insert(0, "bin", stats.index)
