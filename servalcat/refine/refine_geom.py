@@ -93,9 +93,12 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
         if len(st) > 0: break
     else:
         raise SystemExit("No model in the cif file")
-    monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir, # monlib is needed for ener_lib
-                                                   cif_files=[cif_in],
-                                                   stop_for_unknowns=True)
+    try:
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir, # monlib is needed for ener_lib
+                                                       cif_files=[cif_in],
+                                                       stop_for_unknowns=True)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
     all_stats = []
     for i_macro in 0, 1:
         try:
@@ -147,11 +150,13 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         logger.writeln("Take NCS constraints into account.")
         st2.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
         utils.fileio.write_model(st2, file_name="input_expanded.pdb")
-
-    monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,
-                                                   cif_files=cif_files,
-                                                   stop_for_unknowns=True,
-                                                   params=params)
+    try:
+        monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,
+                                                       cif_files=cif_files,
+                                                       stop_for_unknowns=True,
+                                                       params=params)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
     utils.restraints.find_and_fix_links(st, monlib, find_metal_links=find_links,
                                         add_found=find_links) # should remove unknown id here?
     try:
