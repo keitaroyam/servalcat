@@ -1088,15 +1088,23 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_an
                 Io[tohide] = numpy.nan
     
     twin_data.est_f_true(Io, sigIo)
-    F_true = numpy.asarray(twin_data.f_true_max)
     Ds = twin_data.ml_scale_array()
     DFc = (twin_data.f_calc * Ds).sum(axis=1)
     exp_ip = numpy.exp(numpy.angle(DFc)*1j)
     Ft = numpy.asarray(twin_data.f_true_max)
     m = twin_data.calc_fom()
-    fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
-                      2 * m * Ft * exp_ip - DFc, m * Ft * exp_ip)
-    delfwt = m * Ft * exp_ip - DFc
+    Fexp = twin_data.expected_F(Io, sigIo)
+    if 1:
+        fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
+                          2 * m * Ft * exp_ip - DFc,
+                          m * Ft * exp_ip)
+        delfwt = m * Ft * exp_ip - DFc
+    else: # based on "more accurate" evaluation of <m|F|>
+        fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
+                          2 * Fexp * exp_ip - DFc,
+                          m * Fexp * exp_ip)
+        delfwt = Fexp * exp_ip - DFc
+
     sel = numpy.isnan(fwt)
     fwt[sel] = DFc[sel]
     
@@ -1105,7 +1113,8 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_an
     hkldata2.df["FWT"] = fwt
     hkldata2.df["DELFWT"] = delfwt
     hkldata2.df["FOM"] = m
-    hkldata2.df["F_est"] = F_true
+    hkldata2.df["F_est"] = Ft
+    hkldata2.df["F_exp"] = Fexp
     hkldata2.df["FC"] = twin_data.f_calc.sum(axis=1)
     hkldata2.df["DFC"] = DFc
     hkldata2.df[D_labs] = Ds
@@ -1597,7 +1606,7 @@ def main(args):
 
     # Write mtz file
     if twin_data:
-        labs = ["F_est"]
+        labs = ["F_est", "F_exp"]
     elif is_int:
         labs = ["I", "SIGI"]
     else:
@@ -1613,7 +1622,7 @@ def main(args):
         labs.append("F_true_est")
     labs += D_labs + ["S"]
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "F_est": "F"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "F_est": "F", "F_exp": "F"})
     return hkldata
 # main()
 if __name__ == "__main__":

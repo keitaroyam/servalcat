@@ -415,14 +415,9 @@ struct TwinData {
       //        printf("%.6e, ", (f1_2h - 2 * f1_h + f0)/e/e);
       // }
       // printf("\n");
-      Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(ders.second);
-      Eigen::VectorXd eig_inv = es.eigenvalues();
-      det = es.eigenvalues().prod();
-
-      // Invert
-      for (int i = 0; i < eig_inv.size(); ++i)
-        eig_inv(i) = std::abs(eig_inv(i)) < 1e-8 ? 1 : (1. / eig_inv(i));
-      auto a_inv = es.eigenvectors() * eig_inv.asDiagonal() * es.eigenvectors().adjoint();
+      SymMatEig eig(ders.second);
+      det = eig.det();
+      auto a_inv = eig.inv();
       f_true_old = f_true;
       Eigen::VectorXd shift = a_inv * ders.first;
       // std::cout << ib << " " << f_true.format(Fmt)
@@ -744,29 +739,39 @@ void add_twin(py::module& m) {
       }
       return ret;
     })
-    // calculate FWT and DELFWT
-    .def("map_coeffs", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
-      auto ret = py::array_t<std::complex<double>>({self.asu.size(), (size_t)2}); // FWT, DELFWT
-      std::complex<double>* ptr = (std::complex<double>*) ret.request().ptr;
-      for (int i = 0; i < ret.size(); ++i)
-        ptr[i] = NAN;
-      for (int ia = 0; ia < self.asu.size(); ++ia) {
-        const int b = self.bin[ia];
-        const std::complex<double> DFc = self.sum_fcalc(ia, true);
-        const double fmax = self.f_true_max[ia];
-        if (std::isnan(fmax))
-          ptr[ia*2] = DFc;
-        else {
+    // for FWT and DELFWT: <m|F|>
+    .def("expected_F", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
+      auto ret = py::array_t<double>(self.asu.size());
+      double* ptr = (double*) ret.request().ptr;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        const size_t b = self.rbin[ib];
+        Eigen::VectorXd f_true(self.rb2a[ib].size());
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+          f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        auto ders = self.calc_f_der(ib,
+                                    (double*) Io.request().ptr,
+                                    (double*) sigIo.request().ptr,
+                                    f_true);
+        auto f_inv = SymMatEig(ders.second).inv();
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i) {
+          const size_t ia = self.rb2a[ib][i];
+          const double Ft = self.f_true_max[ia];
           const int c = self.centric[ia] + 1;
           const double eps = self.epsilon[ia];
+          const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const double S = self.ml_sigma(self.bin[ia]);
-          const double m = fom(fmax * std::abs(DFc) / (S * eps), c);
-          const std::complex<double> exp_ip = std::exp(std::arg(DFc) * std::complex<double>(0, 1));
-          if (c == 1) // acentric
-            ptr[ia*2] = 2 * m * fmax * exp_ip - DFc;
-          else
-            ptr[ia*2] = m * fmax * exp_ip;
-          ptr[ia*2+1] = m * fmax * exp_ip - DFc;
+          const double r = std::abs(DFc) / (S * eps); // X without |F|
+          const double m = fom(Ft * r, c);
+          const double g = m * Ft;
+          const double g2 = g * g;
+          const double g_der_sq = gemmi::sq(c == 1
+                                            ? (2 * Ft * r * (1 - gemmi::sq(m))) // acentric
+                                            : (m + Ft * r * (1 - gemmi::sq(m)))); // centric
+          const double g_der2 = c == 1
+            ? (8 * Ft * gemmi::sq(r) * (m*m*m - m) + 2 * r * (gemmi::sq(m) + 1))
+            : (2 * (r - Ft * gemmi::sq(r) * m) * (1 - gemmi::sq(m)));
+          const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
+          ptr[ia] = g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
         }
       }
       return ret;

@@ -246,7 +246,7 @@ def main(args):
 
     # Write mtz file
     if ll.twin_data:
-        labs = ["F_est"]
+        labs = ["F_est", "F_exp", "FOM"]
     elif is_int:
         labs = ["I", "SIGI", "FOM"]
     else:
@@ -260,7 +260,7 @@ def main(args):
         labs.append("FREE")
     labs += ll.D_labs + ["S"] # for debugging, for now
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F"})
 
 # main()
 

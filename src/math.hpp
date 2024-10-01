@@ -137,5 +137,19 @@ inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {
   return dist;
 }
 
+struct SymMatEig {
+  SymMatEig(const Eigen::MatrixXd &m) : es(m) {}
+  double det() const {
+    return es.eigenvalues().prod();
+  }
+  Eigen::MatrixXd inv() const {
+    Eigen::VectorXd eig_inv = es.eigenvalues();
+    for (int i = 0; i < eig_inv.size(); ++i)
+      eig_inv(i) = std::abs(eig_inv(i)) < 1e-8 ? 1 : (1. / eig_inv(i));
+    return es.eigenvectors() * eig_inv.asDiagonal() * es.eigenvectors().adjoint();
+  }
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es;
+};
+
 } // namespace servalcat
 #endif
