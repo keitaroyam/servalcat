@@ -1,18 +1,17 @@
 // Author: "Keitaro Yamashita, Garib N. Murshudov"
 // MRC Laboratory of Molecular Biology
 
-#include <pybind11/stl.h>
-#include <pybind11/numpy.h>    // for vectorize
+#include <nanobind/nanobind.h>
 #include <gemmi/grid.hpp>
 #include <gemmi/fourier.hpp>
 #include <gemmi/neighbor.hpp>
 #include <gemmi/solmask.hpp>
 
-namespace py = pybind11;
-void add_refine(py::module& m); // refine.cpp
-void add_intensity(py::module& m); // intensity.cpp
-void add_amplitude(py::module& m); // amplitude.cpp
-void add_twin(py::module& m); // twin.cpp
+namespace nb = nanobind;
+void add_refine(nb::module_& m); // refine.cpp
+void add_intensity(nb::module_& m); // intensity.cpp
+void add_amplitude(nb::module_& m); // amplitude.cpp
+void add_twin(nb::module_& m); // twin.cpp
 
 template<typename T> // radius in A^-1 unit
 gemmi::FPhiGrid<T> hard_sphere_kernel_recgrid(std::tuple<int,int,int> size,
@@ -61,7 +60,7 @@ void soft_mask_from_model(gemmi::Grid<T> &grid, gemmi::Model &model,
       }
 }
 
-PYBIND11_MODULE(ext, m) {
+NB_MODULE(ext, m) {
   m.doc() = "Servalcat extension";
 
   add_refine(m);

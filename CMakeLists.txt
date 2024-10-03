@@ -12,7 +12,7 @@ include(GNUInstallDirs)
 
 if (DEFINED SKBUILD)  # building with scikit-build-core (pip install)
   set(PYTHON_INSTALL_DIR "${SKBUILD_PLATLIB_DIR}")
-  set(CMAKE_INSTALL_BINDIR "${SKBUILD_SCRIPTS_DIR}")
+  #set(CMAKE_INSTALL_BINDIR "${SKBUILD_SCRIPTS_DIR}")
 endif()
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -35,13 +35,14 @@ else()
   find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
-# use pybind11-config (if available) to determine pybind11_DIR
-execute_process(COMMAND pybind11-config --cmakedir OUTPUT_VARIABLE pybind11_DIR)
-string(STRIP "${pybind11_DIR}" pybind11_DIR)
-find_package(pybind11 2.6 CONFIG REQUIRED)
-message(STATUS "Found pybind11 ${pybind11_VERSION}: ${pybind11_INCLUDE_DIRS}")
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
+list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
+find_package(nanobind 2.2.0 CONFIG REQUIRED)
+message(STATUS "Found nanobind ${nanobind_VERSION}: ${NB_DIR}")
 
-pybind11_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
+nanobind_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
 
 if (EXISTS "${CMAKE_HOME_DIRECTORY}/eigen/Eigen")
   include_directories("${CMAKE_CURRENT_SOURCE_DIR}/eigen")
@@ -55,10 +56,10 @@ endif()
 if (DEFINED SKBUILD)
   if (WIN32)
     # Gemmi is installed in an overlay directory in virtualenv.
-    # For now, locate it relatively to pybind11.
-    get_filename_component(gemmi_ROOT "${pybind11_INCLUDE_DIR}/../../../.." ABSOLUTE)
+    # For now, locate it relatively to nanobind.
+    get_filename_component(gemmi_ROOT "${NB_DIR}/../../.." ABSOLUTE)
   endif()
-  find_package(gemmi 0.6.7 CONFIG REQUIRED)
+  find_package(gemmi 0.7.0 CONFIG REQUIRED)
 else()
   set(USE_PYTHON ON CACHE BOOL "" FORCE)
   message(STATUS "")
@@ -71,7 +72,7 @@ else()
     FetchContent_Declare(
       gemmi
       GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
-      GIT_TAG        v0.6.7
+      #GIT_TAG        v0.6.7
     )
     FetchContent_GetProperties(gemmi)
     if (NOT gemmi_POPULATED)

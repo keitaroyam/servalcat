@@ -1,13 +1,13 @@
 // Author: "Keitaro Yamashita, Garib N. Murshudov"
 // MRC Laboratory of Molecular Biology
 
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
-#include <pybind11/complex.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/complex.h>
 #include <gemmi/bessel.hpp>
 #include <gemmi/math.hpp>
 #include "math.hpp"
-namespace py = pybind11;
+namespace nb = nanobind;
 using namespace servalcat;
 
 // for MLI
@@ -237,6 +237,7 @@ struct IntensityIntegrator {
       return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
   }
 
+#if 0
   template<bool for_DS>
   py::array_t<double>
   ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
@@ -387,9 +388,11 @@ struct IntensityIntegrator {
     }
     return ret;
   }
+#endif
 };
 
-void add_intensity(py::module& m) {
+void add_intensity(nb::module_& m) {
+#if 0
   m.def("integ_J", py::vectorize(integ_j),
         py::arg("k"), py::arg("to"), py::arg("tf"), py::arg("sig1"), py::arg("c"), py::arg("return_log"),
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
@@ -397,12 +400,14 @@ void add_intensity(py::module& m) {
         py::arg("k_num"), py::arg("k_den"), py::arg("l"), py::arg("to"), py::arg("tf"),
         py::arg("sig1"), py::arg("c"),
         py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
-  py::class_<IntensityIntegrator>(m, "IntensityIntegrator")
-    .def(py::init<>())
-    .def_readwrite("h", &IntensityIntegrator::h)
-    .def_readwrite("N", &IntensityIntegrator::N)
-    .def_readwrite("ewmax", &IntensityIntegrator::ewmax)
-    .def_readwrite("exp2_threshold", &IntensityIntegrator::exp2_threshold)
+#endif
+  nb::class_<IntensityIntegrator>(m, "IntensityIntegrator")
+    .def(nb::init<>())
+    .def_rw("h", &IntensityIntegrator::h)
+    .def_rw("N", &IntensityIntegrator::N)
+    .def_rw("ewmax", &IntensityIntegrator::ewmax)
+    .def_rw("exp2_threshold", &IntensityIntegrator::exp2_threshold)
+#if 0
     .def("ll_int", py::vectorize(&IntensityIntegrator::ll_int),
          py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"))
     .def("ll_int_der1_DS", &IntensityIntegrator::ll_int_der1_params_py<true>)
@@ -410,7 +415,9 @@ void add_intensity(py::module& m) {
     .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)
     .def("ll_int_fw_der1_S", &IntensityIntegrator::ll_int_fw_der1_params_py<true>)
     .def("ll_int_fw_der1_ani", &IntensityIntegrator::ll_int_fw_der1_params_py<false>)
+#endif
     ;
+#if 0
   m.def("lambertw", py::vectorize(lambertw::lambertw));
   m.def("find_root", &find_root);
   m.def("f1_orig2", py::vectorize(f1_orig2));
@@ -419,4 +426,5 @@ void add_intensity(py::module& m) {
   m.def("f1_exp2", py::vectorize(f1_exp2));
   m.def("f1_exp2_der1", py::vectorize(f1_exp2_der1));
   m.def("f1_exp2_der2", py::vectorize(f1_exp2_der2));
+#endif
 }

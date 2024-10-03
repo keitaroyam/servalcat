@@ -11,39 +11,39 @@
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
 
-#include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
-#include <pybind11/numpy.h>
-#include <pybind11/iostream.h>  // for detail::pythonbuf
-#include <pybind11/eigen.h>
-namespace py = pybind11;
-using namespace pybind11::literals; // to bring in the `_a` literal
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/bind_vector.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/eigen/dense.h>
+namespace nb = nanobind;
+using namespace nanobind::literals; // to bring in the `_a` literal
 using namespace servalcat;
 
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Bond>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Bond::Value>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Angle>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Angle::Value>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Torsion>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Torsion::Value>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Chirality>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Plane>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Interval>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Stacking>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Harmonic>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Special>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Vdw>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Ncsr>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::bond_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::angle_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::torsion_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
-PYBIND11_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Bond>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Bond::Value>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Angle>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Angle::Value>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Torsion>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Torsion::Value>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Chirality>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Plane>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Interval>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Stacking>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Harmonic>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Special>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Vdw>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Ncsr>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::bond_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::angle_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::torsion_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 
-py::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
+#if 0
+nb::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
                                  py::array_t<int> cols, int N, double cutoff) {
   int* colp = (int*) cols.request().ptr;
   int* rowp = (int*) rows.request().ptr;
@@ -77,23 +77,25 @@ py::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
       }
   }
 
-  return py::make_tuple(ret, py::make_tuple(retrow, retcol));
+  return nb::make_tuple(ret, nb::make_tuple(retrow, retcol));
 }
+#endif
 
-void add_refine(py::module& m) {
-  py::class_<GeomTarget> geomtarget(m, "GeomTarget");
-  py::class_<Geometry> geom(m, "Geometry");
+void add_refine(nb::module_& m) {
+  nb::class_<GeomTarget> geomtarget(m, "GeomTarget");
+  nb::class_<Geometry> geom(m, "Geometry");
 
-  py::class_<Geometry::Reporting>(geom, "Reporting")
-    .def_readonly("bonds", &Geometry::Reporting::bonds)
-    .def_readonly("angles", &Geometry::Reporting::angles)
-    .def_readonly("torsions", &Geometry::Reporting::torsions)
-    .def_readonly("chirs", &Geometry::Reporting::chirs)
-    .def_readonly("planes", &Geometry::Reporting::planes)
-    .def_readonly("stackings", &Geometry::Reporting::stackings)
-    .def_readonly("vdws", &Geometry::Reporting::vdws)
-    .def_readonly("adps", &Geometry::Reporting::adps)
-    .def_readonly("occs", &Geometry::Reporting::occs)
+  nb::class_<Geometry::Reporting>(geom, "Reporting")
+    .def_ro("bonds", &Geometry::Reporting::bonds)
+    .def_ro("angles", &Geometry::Reporting::angles)
+    .def_ro("torsions", &Geometry::Reporting::torsions)
+    .def_ro("chirs", &Geometry::Reporting::chirs)
+    .def_ro("planes", &Geometry::Reporting::planes)
+    .def_ro("stackings", &Geometry::Reporting::stackings)
+    .def_ro("vdws", &Geometry::Reporting::vdws)
+    .def_ro("adps", &Geometry::Reporting::adps)
+    .def_ro("occs", &Geometry::Reporting::occs)
+#if 0
     .def("get_summary_table", [](const Geometry::Reporting& self, bool use_nucleus) {
       std::vector<std::string> keys;
       std::vector<int> nrest;
@@ -273,7 +275,7 @@ void add_refine(py::module& m) {
                  p.first == 2 ? "Occupancies (angle)" :
                  "Occupancies (others)", p.second, zsq[p.first], sigmas[p.first]);
 
-      return py::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
+      return nb::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
                       "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz, "Mn(sigma)"_a=msigma);
     })
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
@@ -297,9 +299,9 @@ void add_refine(py::module& m) {
           alphas.push_back(restr->alpha);
         }
       }
-      return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
+      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types, "alpha"_a=alphas);
-    }, py::arg("use_nucleus"), py::arg("min_z"))
+    }, nb::arg("use_nucleus"), nb::arg("min_z"))
     .def("get_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3;
       std::vector<double> values, ideals, sigmas, zs;
@@ -317,9 +319,9 @@ void add_refine(py::module& m) {
           zs.push_back(z);
         }
       }
-      return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3,
+      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3,
                       "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_torsion_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
       std::vector<double> values, ideals, sigmas, zs;
@@ -342,9 +344,9 @@ void add_refine(py::module& m) {
           zs.push_back(z);
         }
       }
-      return py::dict("label"_a=labels, "atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3, "atom4"_a=atom4,
+      return nb::dict("label"_a=labels, "atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3, "atom4"_a=atom4,
                       "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "per"_a=pers, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_chiral_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
       std::vector<double> values, ideals, sigmas, zs;
@@ -364,9 +366,9 @@ void add_refine(py::module& m) {
           zs.push_back(z);
         }
       }
-      return py::dict("atomc"_a=atom1, "atom1"_a=atom2, "atom2"_a=atom3, "atom3"_a=atom4,
+      return nb::dict("atomc"_a=atom1, "atom1"_a=atom2, "atom2"_a=atom3, "atom3"_a=atom4,
                       "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "both"_a=signs, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_plane_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atoms;
       std::vector<double> values, sigmas, zs;
@@ -384,8 +386,8 @@ void add_refine(py::module& m) {
           }
         }
       }
-      return py::dict("label"_a=labels, "atom"_a=atoms, "dev"_a=values, "sigma"_a=sigmas, "z"_a=zs);
-    }, py::arg("min_z"))
+      return nb::dict("label"_a=labels, "atom"_a=atoms, "dev"_a=values, "sigma"_a=sigmas, "z"_a=zs);
+    }, nb::arg("min_z"))
     .def("get_stacking_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs;
@@ -401,9 +403,9 @@ void add_refine(py::module& m) {
           zs.push_back(za);
         }
       }
-      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
+      return nb::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_stacking_dist_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs;
@@ -421,9 +423,9 @@ void add_refine(py::module& m) {
           zs.push_back(zd);
         }
       }
-      return py::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
+      return nb::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_vdw_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs;
@@ -441,9 +443,9 @@ void add_refine(py::module& m) {
           types.push_back(restr->type);
         }
       }
-      return py::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
+      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
                       "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("get_ncsr_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
       std::vector<double> dist1, dist2, devs, sigmas, zs;
@@ -463,9 +465,9 @@ void add_refine(py::module& m) {
           zs.push_back(z);
         }
       }
-      return py::dict("1_atom1"_a=atom1, "1_atom2"_a=atom2, "2_atom1"_a=atom3, "2_atom2"_a=atom4,
+      return nb::dict("1_atom1"_a=atom1, "1_atom2"_a=atom2, "2_atom1"_a=atom3, "2_atom2"_a=atom4,
                       "dist_1"_a=dist1, "dist_2"_a=dist2, "del_dist"_a=devs, "sigma"_a=sigmas, "z"_a=zs);
-    }, py::arg("min_z"))
+    }, nb::arg("min_z"))
     .def("per_atom_score", [](const Geometry::Reporting& self, int n_atoms,
                               bool use_nucleus, const std::string& metric) {
       if (metric != "max" && metric != "mean" && metric != "sum")
@@ -534,212 +536,213 @@ void add_refine(py::module& m) {
           for (size_t i = 0; i < ret[j].size(); ++i)
             ret[j][i] = std::sqrt(ret[j][i] / num[j][i]);
       }
-      return py::dict("total"_a=ret[0], "bonds"_a=ret[1], "angles"_a=ret[2],
+      return nb::dict("total"_a=ret[0], "bonds"_a=ret[1], "angles"_a=ret[2],
                       "torsions"_a=ret[3], "chirs"_a=ret[4], "planes"_a=ret[5],
                       "vdws"_a=ret[6]);
     })
+#endif
     ;
-  py::class_<Geometry::Bond> bond(geom, "Bond");
-  py::class_<Geometry::Angle> angle(geom, "Angle");
-  py::class_<Geometry::Torsion> torsion(geom, "Torsion");
-  py::class_<Geometry::Chirality> chirality(geom, "Chirality");
-  py::class_<Geometry::Plane> plane(geom, "Plane");
-  py::class_<Geometry::Vdw> vdw(geom, "Vdw");
-  py::class_<Geometry::Ncsr> ncsr(geom, "Ncsr");
-  py::class_<Geometry::Bond::Value>(bond, "Value")
-    .def(py::init<double,double,double,double>())
-    .def_readwrite("value", &Geometry::Bond::Value::value)
-    .def_readwrite("sigma", &Geometry::Bond::Value::sigma)
-    .def_readwrite("value_nucleus", &Geometry::Bond::Value::value_nucleus)
-    .def_readwrite("sigma_nucleus", &Geometry::Bond::Value::sigma_nucleus)
+  nb::class_<Geometry::Bond> bond(geom, "Bond");
+  nb::class_<Geometry::Angle> angle(geom, "Angle");
+  nb::class_<Geometry::Torsion> torsion(geom, "Torsion");
+  nb::class_<Geometry::Chirality> chirality(geom, "Chirality");
+  nb::class_<Geometry::Plane> plane(geom, "Plane");
+  nb::class_<Geometry::Vdw> vdw(geom, "Vdw");
+  nb::class_<Geometry::Ncsr> ncsr(geom, "Ncsr");
+  nb::class_<Geometry::Bond::Value>(bond, "Value")
+    .def(nb::init<double,double,double,double>())
+    .def_rw("value", &Geometry::Bond::Value::value)
+    .def_rw("sigma", &Geometry::Bond::Value::sigma)
+    .def_rw("value_nucleus", &Geometry::Bond::Value::value_nucleus)
+    .def_rw("sigma_nucleus", &Geometry::Bond::Value::sigma_nucleus)
     ;
-  py::class_<Geometry::Angle::Value>(angle, "Value")
-    .def(py::init<double,double>())
-    .def_readwrite("value", &Geometry::Angle::Value::value)
-    .def_readwrite("sigma", &Geometry::Angle::Value::sigma)
+  nb::class_<Geometry::Angle::Value>(angle, "Value")
+    .def(nb::init<double,double>())
+    .def_rw("value", &Geometry::Angle::Value::value)
+    .def_rw("sigma", &Geometry::Angle::Value::sigma)
     ;
-  py::class_<Geometry::Torsion::Value>(torsion, "Value")
-    .def(py::init<double,double,int>())
-    .def_readwrite("value", &Geometry::Torsion::Value::value)
-    .def_readwrite("sigma", &Geometry::Torsion::Value::sigma)
-    .def_readwrite("period", &Geometry::Torsion::Value::period)
-    .def_readwrite("label", &Geometry::Torsion::Value::label)
+  nb::class_<Geometry::Torsion::Value>(torsion, "Value")
+    .def(nb::init<double,double,int>())
+    .def_rw("value", &Geometry::Torsion::Value::value)
+    .def_rw("sigma", &Geometry::Torsion::Value::sigma)
+    .def_rw("period", &Geometry::Torsion::Value::period)
+    .def_rw("label", &Geometry::Torsion::Value::label)
     ;
   bond
-    .def(py::init<gemmi::Atom*,gemmi::Atom*>())
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
     .def("set_image", &Geometry::Bond::set_image)
-    .def_readwrite("type", &Geometry::Bond::type)
-    .def_readwrite("alpha", &Geometry::Bond::alpha)
-    .def_readwrite("sym_idx", &Geometry::Bond::sym_idx)
-    .def_readwrite("pbc_shift", &Geometry::Bond::pbc_shift)
-    .def_readwrite("atoms", &Geometry::Bond::atoms)
-    .def_readwrite("values", &Geometry::Bond::values)
+    .def_rw("type", &Geometry::Bond::type)
+    .def_rw("alpha", &Geometry::Bond::alpha)
+    .def_rw("sym_idx", &Geometry::Bond::sym_idx)
+    .def_rw("pbc_shift", &Geometry::Bond::pbc_shift)
+    .def_rw("atoms", &Geometry::Bond::atoms)
+    .def_rw("values", &Geometry::Bond::values)
     ;
   angle
-    .def(py::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
     .def("set_images", &Geometry::Angle::set_images)
-    .def_readwrite("sym_idx_1", &Geometry::Angle::sym_idx_1)
-    .def_readwrite("sym_idx_2", &Geometry::Angle::sym_idx_2)
-    .def_readwrite("pbc_shift_1", &Geometry::Angle::pbc_shift_1)
-    .def_readwrite("pbc_shift_2", &Geometry::Angle::pbc_shift_2)
-    .def_readwrite("atoms", &Geometry::Angle::atoms)
-    .def_readwrite("values", &Geometry::Angle::values)
+    .def_rw("sym_idx_1", &Geometry::Angle::sym_idx_1)
+    .def_rw("sym_idx_2", &Geometry::Angle::sym_idx_2)
+    .def_rw("pbc_shift_1", &Geometry::Angle::pbc_shift_1)
+    .def_rw("pbc_shift_2", &Geometry::Angle::pbc_shift_2)
+    .def_rw("atoms", &Geometry::Angle::atoms)
+    .def_rw("values", &Geometry::Angle::values)
     ;
   torsion
-    .def(py::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
-    .def_readwrite("atoms", &Geometry::Torsion::atoms)
-    .def_readwrite("values", &Geometry::Torsion::values)
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
+    .def_rw("atoms", &Geometry::Torsion::atoms)
+    .def_rw("values", &Geometry::Torsion::values)
     ;
   chirality
-    .def(py::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
-    .def_readwrite("value", &Geometry::Chirality::value)
-    .def_readwrite("sigma", &Geometry::Chirality::sigma)
-    .def_readwrite("sign", &Geometry::Chirality::sign)
-    .def_readwrite("atoms", &Geometry::Chirality::atoms)
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
+    .def_rw("value", &Geometry::Chirality::value)
+    .def_rw("sigma", &Geometry::Chirality::sigma)
+    .def_rw("sign", &Geometry::Chirality::sign)
+    .def_rw("atoms", &Geometry::Chirality::atoms)
     ;
   plane
-    .def(py::init<std::vector<gemmi::Atom*>>())
-    .def_readwrite("sigma", &Geometry::Plane::sigma)
-    .def_readwrite("label", &Geometry::Plane::label)
-    .def_readwrite("atoms", &Geometry::Plane::atoms)
+    .def(nb::init<std::vector<gemmi::Atom*>>())
+    .def_rw("sigma", &Geometry::Plane::sigma)
+    .def_rw("label", &Geometry::Plane::label)
+    .def_rw("atoms", &Geometry::Plane::atoms)
     ;
-  py::class_<Geometry::Interval>(geom, "Interval")
-    .def(py::init<gemmi::Atom*,gemmi::Atom*>())
-    .def_readwrite("dmin", &Geometry::Interval::dmin)
-    .def_readwrite("dmax", &Geometry::Interval::dmax)
-    .def_readwrite("smin", &Geometry::Interval::smin)
-    .def_readwrite("smax", &Geometry::Interval::smax)
-    .def_readwrite("atoms", &Geometry::Interval::atoms)
+  nb::class_<Geometry::Interval>(geom, "Interval")
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
+    .def_rw("dmin", &Geometry::Interval::dmin)
+    .def_rw("dmax", &Geometry::Interval::dmax)
+    .def_rw("smin", &Geometry::Interval::smin)
+    .def_rw("smax", &Geometry::Interval::smax)
+    .def_rw("atoms", &Geometry::Interval::atoms)
     ;
-  py::class_<Geometry::Harmonic>(geom, "Harmonic")
-    .def(py::init<gemmi::Atom*>())
-    .def_readwrite("sigma", &Geometry::Harmonic::sigma)
-    .def_readwrite("atom", &Geometry::Harmonic::atom)
+  nb::class_<Geometry::Harmonic>(geom, "Harmonic")
+    .def(nb::init<gemmi::Atom*>())
+    .def_rw("sigma", &Geometry::Harmonic::sigma)
+    .def_rw("atom", &Geometry::Harmonic::atom)
     ;
-  py::class_<Geometry::Special>(geom, "Special")
-    .def(py::init<gemmi::Atom*, const Geometry::Special::Mat33&, const Geometry::Special::Mat66&, int>())
-    .def_readwrite("Rspec_pos", &Geometry::Special::Rspec_pos)
-    .def_readwrite("Rspec_aniso", &Geometry::Special::Rspec_aniso)
-    .def_readwrite("n_mult", &Geometry::Special::n_mult)
-    .def_readwrite("atom", &Geometry::Special::atom)
+  nb::class_<Geometry::Special>(geom, "Special")
+    .def(nb::init<gemmi::Atom*, const Geometry::Special::Mat33&, const Geometry::Special::Mat66&, int>())
+    .def_rw("Rspec_pos", &Geometry::Special::Rspec_pos)
+    .def_rw("Rspec_aniso", &Geometry::Special::Rspec_aniso)
+    .def_rw("n_mult", &Geometry::Special::n_mult)
+    .def_rw("atom", &Geometry::Special::atom)
     ;
-  py::class_<Geometry::Stacking>(geom, "Stacking")
-    .def(py::init<std::vector<gemmi::Atom*>,std::vector<gemmi::Atom*>>())
-    .def_readwrite("dist", &Geometry::Stacking::dist)
-    .def_readwrite("sd_dist", &Geometry::Stacking::sd_dist)
-    .def_readwrite("angle", &Geometry::Stacking::angle)
-    .def_readwrite("sd_angle", &Geometry::Stacking::sd_angle)
-    .def_readwrite("planes", &Geometry::Stacking::planes)
+  nb::class_<Geometry::Stacking>(geom, "Stacking")
+    .def(nb::init<std::vector<gemmi::Atom*>,std::vector<gemmi::Atom*>>())
+    .def_rw("dist", &Geometry::Stacking::dist)
+    .def_rw("sd_dist", &Geometry::Stacking::sd_dist)
+    .def_rw("angle", &Geometry::Stacking::angle)
+    .def_rw("sd_angle", &Geometry::Stacking::sd_angle)
+    .def_rw("planes", &Geometry::Stacking::planes)
     ;
   vdw
-    .def(py::init<gemmi::Atom*,gemmi::Atom*>())
+    .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
     .def("set_image", &Geometry::Vdw::set_image)
     .def("same_asu", &Geometry::Vdw::same_asu)
-    .def_readwrite("type", &Geometry::Vdw::type)
-    .def_readwrite("value", &Geometry::Vdw::value)
-    .def_readwrite("sigma", &Geometry::Vdw::sigma)
-    .def_readwrite("sym_idx", &Geometry::Vdw::sym_idx)
-    .def_readwrite("pbc_shift", &Geometry::Vdw::pbc_shift)
-    .def_readwrite("atoms", &Geometry::Vdw::atoms)
+    .def_rw("type", &Geometry::Vdw::type)
+    .def_rw("value", &Geometry::Vdw::value)
+    .def_rw("sigma", &Geometry::Vdw::sigma)
+    .def_rw("sym_idx", &Geometry::Vdw::sym_idx)
+    .def_rw("pbc_shift", &Geometry::Vdw::pbc_shift)
+    .def_rw("atoms", &Geometry::Vdw::atoms)
     ;
   ncsr
-    .def(py::init<const Geometry::Vdw*, const Geometry::Vdw*, int>())
-    .def_readwrite("pairs", &Geometry::Ncsr::pairs)
-    .def_readwrite("alpha", &Geometry::Ncsr::alpha)
-    .def_readwrite("sigma", &Geometry::Ncsr::sigma)
+    .def(nb::init<const Geometry::Vdw*, const Geometry::Vdw*, int>())
+    .def_rw("pairs", &Geometry::Ncsr::pairs)
+    .def_rw("alpha", &Geometry::Ncsr::alpha)
+    .def_rw("sigma", &Geometry::Ncsr::sigma)
     ;
 
-  py::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>>(geom, "ReportingBonds");
-  py::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>>(geom, "ReportingAngles");
-  py::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>>(geom, "ReportingTorsions");
-  py::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>>(geom, "ReportingChirals");
-  py::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>>(geom, "ReportingPlanes");
-  py::bind_vector<std::vector<Geometry::Reporting::stacking_reporting_t>>(geom, "ReportingStackings");
-  py::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>>(geom, "ReportingVdws");
-  py::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>>(geom, "ReportingNcsrs");
-  py::bind_vector<std::vector<Geometry::Bond>>(geom, "Bonds");
-  py::bind_vector<std::vector<Geometry::Angle>>(geom, "Angles");
-  py::bind_vector<std::vector<Geometry::Chirality>>(geom, "Chiralitys");
-  py::bind_vector<std::vector<Geometry::Torsion>>(geom, "Torsions");
-  py::bind_vector<std::vector<Geometry::Plane>>(geom, "Planes");
-  py::bind_vector<std::vector<Geometry::Interval>>(geom, "Intervals");
-  py::bind_vector<std::vector<Geometry::Stacking>>(geom, "Stackings");
-  py::bind_vector<std::vector<Geometry::Harmonic>>(geom, "Harmonics");
-  py::bind_vector<std::vector<Geometry::Special>>(geom, "Specials");
-  py::bind_vector<std::vector<Geometry::Vdw>>(geom, "Vdws");
-  py::bind_vector<std::vector<Geometry::Ncsr>>(geom, "Ncsrs");
-  py::bind_vector<std::vector<Geometry::Bond::Value>>(bond, "Values");
-  py::bind_vector<std::vector<Geometry::Angle::Value>>(angle, "Values");
-  py::bind_vector<std::vector<Geometry::Torsion::Value>>(torsion, "Values");
+  nb::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>>(geom, "ReportingBonds");
+  nb::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>>(geom, "ReportingAngles");
+  nb::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>>(geom, "ReportingTorsions");
+  nb::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>>(geom, "ReportingChirals");
+  nb::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>>(geom, "ReportingPlanes");
+  nb::bind_vector<std::vector<Geometry::Reporting::stacking_reporting_t>>(geom, "ReportingStackings");
+  nb::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>>(geom, "ReportingVdws");
+  nb::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>>(geom, "ReportingNcsrs");
+  nb::bind_vector<std::vector<Geometry::Bond>>(geom, "Bonds");
+  nb::bind_vector<std::vector<Geometry::Angle>>(geom, "Angles");
+  nb::bind_vector<std::vector<Geometry::Chirality>>(geom, "Chiralitys");
+  nb::bind_vector<std::vector<Geometry::Torsion>>(geom, "Torsions");
+  nb::bind_vector<std::vector<Geometry::Plane>>(geom, "Planes");
+  nb::bind_vector<std::vector<Geometry::Interval>>(geom, "Intervals");
+  nb::bind_vector<std::vector<Geometry::Stacking>>(geom, "Stackings");
+  nb::bind_vector<std::vector<Geometry::Harmonic>>(geom, "Harmonics");
+  nb::bind_vector<std::vector<Geometry::Special>>(geom, "Specials");
+  nb::bind_vector<std::vector<Geometry::Vdw>>(geom, "Vdws");
+  nb::bind_vector<std::vector<Geometry::Ncsr>>(geom, "Ncsrs");
+  nb::bind_vector<std::vector<Geometry::Bond::Value>>(bond, "Values");
+  nb::bind_vector<std::vector<Geometry::Angle::Value>>(angle, "Values");
+  nb::bind_vector<std::vector<Geometry::Torsion::Value>>(torsion, "Values");
 
   geomtarget
-    .def_readonly("target", &GeomTarget::target)
-    .def_readonly("vn", &GeomTarget::vn)
-    .def_readonly("am", &GeomTarget::am)
-    .def_property_readonly("am_spmat", &GeomTarget::make_spmat)
+    .def_ro("target", &GeomTarget::target)
+    .def_ro("vn", &GeomTarget::vn)
+    .def_ro("am", &GeomTarget::am)
+    .def_prop_ro("am_spmat", &GeomTarget::make_spmat)
     .def("n_atoms", &GeomTarget::n_atoms)
     .def("n_pairs", &GeomTarget::n_pairs)
   ;
   geom
-    .def(py::init<gemmi::Structure&, const std::vector<int> &, const gemmi::EnerLib*>(),
-         py::arg("st"), py::arg("atom_pos"), py::arg("ener_lib")=nullptr)
-    .def_readonly("bonds", &Geometry::bonds)
-    .def_readonly("angles", &Geometry::angles)
-    .def_readonly("chirs", &Geometry::chirs)
-    .def_readonly("torsions", &Geometry::torsions)
-    .def_readonly("planes", &Geometry::planes)
-    .def_readonly("intervals", &Geometry::intervals)
-    .def_readonly("stackings", &Geometry::stackings)
-    .def_readonly("harmonics", &Geometry::harmonics)
-    .def_readonly("specials", &Geometry::specials)
-    .def_readonly("vdws", &Geometry::vdws)
-    .def_readonly("ncsrs", &Geometry::ncsrs)
-    .def_readonly("target", &Geometry::target)
-    .def_readonly("reporting", &Geometry::reporting)
+    .def(nb::init<gemmi::Structure&, const std::vector<int> &, const gemmi::EnerLib*>(),
+         nb::arg("st"), nb::arg("atom_pos"), nb::arg("ener_lib")=nb::none())
+    .def_ro("bonds", &Geometry::bonds)
+    .def_ro("angles", &Geometry::angles)
+    .def_ro("chirs", &Geometry::chirs)
+    .def_ro("torsions", &Geometry::torsions)
+    .def_ro("planes", &Geometry::planes)
+    .def_ro("intervals", &Geometry::intervals)
+    .def_ro("stackings", &Geometry::stackings)
+    .def_ro("harmonics", &Geometry::harmonics)
+    .def_ro("specials", &Geometry::specials)
+    .def_ro("vdws", &Geometry::vdws)
+    .def_ro("ncsrs", &Geometry::ncsrs)
+    .def_ro("target", &Geometry::target)
+    .def_ro("reporting", &Geometry::reporting)
     .def("load_topo", &Geometry::load_topo)
     .def("finalize_restraints", &Geometry::finalize_restraints)
     .def("setup_target", &Geometry::setup_target)
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
-         py::arg("skip_critical_dist")=false,
-         py::arg("group_idxes")=std::vector<int>{})
+         nb::arg("skip_critical_dist")=false,
+         nb::arg("group_idxes")=std::vector<int>{})
     .def("setup_ncsr", &Geometry::setup_ncsr)
-    .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
-         py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
-         py::arg("wchir")=1, py::arg("wplane")=1, py::arg("wstack")=1, py::arg("wvdw")=1,
-         py::arg("wncs")=1)
+    .def("calc", &Geometry::calc, nb::arg("use_nucleus"), nb::arg("check_only"),
+         nb::arg("wbond")=1, nb::arg("wangle")=1, nb::arg("wtors")=1,
+         nb::arg("wchir")=1, nb::arg("wplane")=1, nb::arg("wstack")=1, nb::arg("wvdw")=1,
+         nb::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("calc_occ_restraint", &Geometry::calc_occ_restraint)
-    .def("spec_correction", &Geometry::spec_correction, py::arg("alpha")=1e-3, py::arg("use_rr")=true)
-    .def_readonly("bondindex", &Geometry::bondindex)
+    .def("spec_correction", &Geometry::spec_correction, nb::arg("alpha")=1e-3, nb::arg("use_rr")=true)
+    .def_ro("bondindex", &Geometry::bondindex)
     // vdw parameters
-    .def_readwrite("vdw_sdi_vdw", &Geometry::vdw_sdi_vdw)
-    .def_readwrite("vdw_sdi_torsion", &Geometry::vdw_sdi_torsion)
-    .def_readwrite("vdw_sdi_hbond", &Geometry::vdw_sdi_hbond)
-    .def_readwrite("vdw_sdi_metal", &Geometry::vdw_sdi_metal)
-    .def_readwrite("hbond_dinc_ad", &Geometry::hbond_dinc_ad)
-    .def_readwrite("hbond_dinc_ah", &Geometry::hbond_dinc_ah)
-    .def_readwrite("dinc_torsion_o", &Geometry::dinc_torsion_o)
-    .def_readwrite("dinc_torsion_n", &Geometry::dinc_torsion_n)
-    .def_readwrite("dinc_torsion_c", &Geometry::dinc_torsion_c)
-    .def_readwrite("dinc_torsion_all", &Geometry::dinc_torsion_all)
-    .def_readwrite("dinc_dummy", &Geometry::dinc_dummy)
-    .def_readwrite("vdw_sdi_dummy", &Geometry::vdw_sdi_dummy)
-    .def_readwrite("max_vdw_radius", &Geometry::max_vdw_radius)
+    .def_rw("vdw_sdi_vdw", &Geometry::vdw_sdi_vdw)
+    .def_rw("vdw_sdi_torsion", &Geometry::vdw_sdi_torsion)
+    .def_rw("vdw_sdi_hbond", &Geometry::vdw_sdi_hbond)
+    .def_rw("vdw_sdi_metal", &Geometry::vdw_sdi_metal)
+    .def_rw("hbond_dinc_ad", &Geometry::hbond_dinc_ad)
+    .def_rw("hbond_dinc_ah", &Geometry::hbond_dinc_ah)
+    .def_rw("dinc_torsion_o", &Geometry::dinc_torsion_o)
+    .def_rw("dinc_torsion_n", &Geometry::dinc_torsion_n)
+    .def_rw("dinc_torsion_c", &Geometry::dinc_torsion_c)
+    .def_rw("dinc_torsion_all", &Geometry::dinc_torsion_all)
+    .def_rw("dinc_dummy", &Geometry::dinc_dummy)
+    .def_rw("vdw_sdi_dummy", &Geometry::vdw_sdi_dummy)
+    .def_rw("max_vdw_radius", &Geometry::max_vdw_radius)
     // angle parameters
-    .def_readwrite("angle_von_mises", &Geometry::angle_von_mises)
+    .def_rw("angle_von_mises", &Geometry::angle_von_mises)
     // torsion parameters
-    .def_readwrite("use_hydr_tors", &Geometry::use_hydr_tors)
-    .def_readwrite("link_tors_names", &Geometry::link_tors_names)
-    .def_readwrite("mon_tors_names", &Geometry::mon_tors_names)
+    .def_rw("use_hydr_tors", &Geometry::use_hydr_tors)
+    .def_rw("link_tors_names", &Geometry::link_tors_names)
+    .def_rw("mon_tors_names", &Geometry::mon_tors_names)
     // ADP restraint parameters
-    .def_readwrite("adpr_max_dist", &Geometry::adpr_max_dist)
-    .def_readwrite("adpr_d_power", &Geometry::adpr_d_power)
-    .def_readwrite("adpr_exp_fac", &Geometry::adpr_exp_fac)
-    .def_readwrite("adpr_long_range", &Geometry::adpr_long_range)
-    .def_readwrite("adpr_kl_sigs", &Geometry::adpr_kl_sigs)
-    .def_readwrite("adpr_diff_sigs", &Geometry::adpr_diff_sigs)
-    .def_property("adpr_mode",
+    .def_rw("adpr_max_dist", &Geometry::adpr_max_dist)
+    .def_rw("adpr_d_power", &Geometry::adpr_d_power)
+    .def_rw("adpr_exp_fac", &Geometry::adpr_exp_fac)
+    .def_rw("adpr_long_range", &Geometry::adpr_long_range)
+    .def_rw("adpr_kl_sigs", &Geometry::adpr_kl_sigs)
+    .def_rw("adpr_diff_sigs", &Geometry::adpr_diff_sigs)
+    .def_prop_rw("adpr_mode",
                   [](const Geometry& self) {
                     switch(self.adpr_mode) {
                       case 0: return "diff";
@@ -756,33 +759,33 @@ void add_refine(py::module& m) {
                       throw std::runtime_error("unknown adpr mode");
                   })
     // Occupancy restraint parameters
-    .def_readwrite("occr_max_dist", &Geometry::occr_max_dist)
-    .def_readwrite("occr_long_range", &Geometry::occr_long_range)
-    .def_readwrite("occr_sigs", &Geometry::occr_sigs)
+    .def_rw("occr_max_dist", &Geometry::occr_max_dist)
+    .def_rw("occr_long_range", &Geometry::occr_long_range)
+    .def_rw("occr_sigs", &Geometry::occr_sigs)
     // jelly body parameters
-    .def_readwrite("ridge_dmax", &Geometry::ridge_dmax)
-    .def_readwrite("ridge_sigma", &Geometry::ridge_sigma)
-    .def_readwrite("ridge_symm", &Geometry::ridge_symm)
-    .def_readwrite("ridge_exclude_short_dist", &Geometry::ridge_exclude_short_dist)
+    .def_rw("ridge_dmax", &Geometry::ridge_dmax)
+    .def_rw("ridge_sigma", &Geometry::ridge_sigma)
+    .def_rw("ridge_symm", &Geometry::ridge_symm)
+    .def_rw("ridge_exclude_short_dist", &Geometry::ridge_exclude_short_dist)
     // NCS restraint parameters
-    .def_readwrite("ncsr_alpha", &Geometry::ncsr_alpha)
-    .def_readwrite("ncsr_sigma", &Geometry::ncsr_sigma)
-    .def_readwrite("ncsr_diff_cutoff", &Geometry::ncsr_diff_cutoff)
-    .def_readwrite("ncsr_max_dist", &Geometry::ncsr_max_dist)
+    .def_rw("ncsr_alpha", &Geometry::ncsr_alpha)
+    .def_rw("ncsr_sigma", &Geometry::ncsr_sigma)
+    .def_rw("ncsr_diff_cutoff", &Geometry::ncsr_diff_cutoff)
+    .def_rw("ncsr_max_dist", &Geometry::ncsr_max_dist)
     ;
 
-  py::class_<TableS3>(m, "TableS3")
-    .def(py::init<double, double>(), py::arg("d_min"), py::arg("d_max"))
-    .def_readonly("s3_values", &TableS3::s3_values)
-    .def_readonly("y_values", &TableS3::y_values)
+  nb::class_<TableS3>(m, "TableS3")
+    .def(nb::init<double, double>(), nb::arg("d_min"), nb::arg("d_max"))
+    .def_ro("s3_values", &TableS3::s3_values)
+    .def_ro("y_values", &TableS3::y_values)
     .def("make_table",&TableS3::make_table)
     .def("get_value", &TableS3::get_value)
-    .def_readwrite("maxbin", &TableS3::maxbin)
+    .def_rw("maxbin", &TableS3::maxbin)
     ;
-  py::class_<LL>(m, "LL")
-    .def(py::init<const gemmi::Structure &, const std::vector<int> &, bool, bool, int, bool, bool>(),
-         py::arg("st"), py::arg("atom_pos"), py::arg("mott_bethe"),
-         py::arg("refine_xyz"), py::arg("adp_mode"), py::arg("refine_occ"), py::arg("refine_h"))
+  nb::class_<LL>(m, "LL")
+    .def(nb::init<const gemmi::Structure &, const std::vector<int> &, bool, bool, int, bool, bool>(),
+         nb::arg("st"), nb::arg("atom_pos"), nb::arg("mott_bethe"),
+         nb::arg("refine_xyz"), nb::arg("adp_mode"), nb::arg("refine_occ"), nb::arg("refine_h"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)
@@ -793,37 +796,42 @@ void add_refine(py::module& m) {
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_n92", &LL::fisher_diag_from_table<gemmi::Neutron92<double>>)
     .def("spec_correction", &LL::spec_correction,
-         py::arg("specials"), py::arg("alpha")=1e-3, py::arg("use_rr")=true)
-    .def_property_readonly("fisher_spmat", &LL::make_spmat)
-    .def_readonly("table_bs", &LL::table_bs)
-    .def_readonly("pp1", &LL::pp1)
-    .def_readonly("bb", &LL::bb)
-    .def_readonly("aa", &LL::aa)
-    .def_readonly("vn", &LL::vn)
-    .def_readonly("am", &LL::am)
-    .def_readwrite("use_q_b_mixed_derivatives", &LL::use_q_b_mixed_derivatives)
+         nb::arg("specials"), nb::arg("alpha")=1e-3, nb::arg("use_rr")=true)
+    .def_prop_ro("fisher_spmat", &LL::make_spmat)
+    .def_ro("table_bs", &LL::table_bs)
+    .def_ro("pp1", &LL::pp1)
+    .def_ro("bb", &LL::bb)
+    .def_ro("aa", &LL::aa)
+    .def_ro("vn", &LL::vn)
+    .def_ro("am", &LL::am)
+    .def_rw("use_q_b_mixed_derivatives", &LL::use_q_b_mixed_derivatives)
     ;
+#if 0
   m.def("precondition_eigen_coo", &precondition_eigen_coo);
-  py::class_<CgSolve>(m, "CgSolve")
-    .def(py::init<const GeomTarget *, const LL *>(),
-         py::arg("geom"), py::arg("ll")=nullptr)
-    .def("solve", [](CgSolve &self, double weight, const py::object& pystream,
+#endif
+  nb::class_<CgSolve>(m, "CgSolve")
+    .def(nb::init<const GeomTarget *, const LL *>(),
+         nb::arg("geom"), nb::arg("ll")=nb::none())
+    .def("solve", [](CgSolve &self, double weight, const nb::object& pystream,
                      bool use_ic) {
       std::ostream os(nullptr);
+#if 0
       std::unique_ptr<py::detail::pythonbuf> buffer;
       buffer.reset(new py::detail::pythonbuf(pystream));
       os.rdbuf(buffer.get());
+#endif
       if (use_ic)
         return self.solve<Eigen::IncompleteCholesky<double>>(weight, &os);
       else
         return self.solve<>(weight, &os);
     })
-    .def_readwrite("gamma", &CgSolve::gamma)
-    .def_readwrite("toler", &CgSolve::toler)
-    .def_readwrite("ncycle", &CgSolve::ncycle)
-    .def_readwrite("max_gamma_cyc", &CgSolve::max_gamma_cyc)
+    .def_rw("gamma", &CgSolve::gamma)
+    .def_rw("toler", &CgSolve::toler)
+    .def_rw("ncycle", &CgSolve::ncycle)
+    .def_rw("max_gamma_cyc", &CgSolve::max_gamma_cyc)
     ;
 
+#if 0
   m.def("smooth_gauss", [](py::array_t<double> bin_centers, py::array_t<double> bin_values,
                            py::array_t<double> s_array, int n, double kernel_width) {
     // assume all values are sorted by resolution
@@ -867,24 +875,25 @@ void add_refine(py::module& m) {
     }
     return ret;
   });
+#endif
 
 
-  py::class_<NcsList> ncslist(m, "NcsList");
-  py::class_<NcsList::Ncs>(ncslist, "Ncs")
-    .def(py::init([](const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable) {
-      return NcsList::Ncs(al, fixed, movable);
-    }))
+  nb::class_<NcsList> ncslist(m, "NcsList");
+  nb::class_<NcsList::Ncs>(ncslist, "Ncs")
+    .def("__init__", [](NcsList::Ncs* p, const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable) {
+      new(p) NcsList::Ncs(al, fixed, movable);
+    })
     .def("calculate_local_rms", &NcsList::Ncs::calculate_local_rms)
-    .def_readonly("atoms", &NcsList::Ncs::atoms)
-    .def_readonly("seqids", &NcsList::Ncs::seqids)
-    .def_readonly("n_atoms", &NcsList::Ncs::n_atoms)
-    .def_readonly("local_rms", &NcsList::Ncs::local_rms)
+    .def_ro("atoms", &NcsList::Ncs::atoms)
+    .def_ro("seqids", &NcsList::Ncs::seqids)
+    .def_ro("n_atoms", &NcsList::Ncs::n_atoms)
+    .def_ro("local_rms", &NcsList::Ncs::local_rms)
     ;
   ncslist
-    .def(py::init<>())
+    .def(nb::init<>())
     .def("set_pairs", &NcsList::set_pairs)
-    .def_readonly("ncss", &NcsList::ncss)
-    .def_readonly("all_pairs", &NcsList::all_pairs)
+    .def_ro("ncss", &NcsList::ncss)
+    .def_ro("all_pairs", &NcsList::all_pairs)
     ;
-  py::bind_vector<std::vector<NcsList::Ncs>>(ncslist, "Ncs_vector");
+  nb::bind_vector<std::vector<NcsList::Ncs>>(ncslist, "Ncs_vector");
 }

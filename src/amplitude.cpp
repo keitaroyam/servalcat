@@ -1,13 +1,13 @@
 // Author: "Keitaro Yamashita, Garib N. Murshudov"
 // MRC Laboratory of Molecular Biology
 
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
-#include <pybind11/complex.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/complex.h>
 #include <gemmi/bessel.hpp>
 #include <gemmi/math.hpp>
 #include "math.hpp"
-namespace py = pybind11;
+namespace nb = nanobind;
 using namespace servalcat;
 
 // ML amplitude target; -log(|Fo|; Fc) without constants
@@ -24,6 +24,7 @@ double ll_amp(double Fo, double sigFo, double k_ani, double S, double Fc, int c)
   return std::log(Sigma) / c + (sq(Fo_iso) + sq(Fc)) / (Sigma * c) - log_ic0 - tmp;
 }
 
+#if 0
 py::array_t<double>
 ll_amp_der1_params_py(py::array_t<double> Fo, py::array_t<double> sigFo, py::array_t<double> k_ani,
                       double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
@@ -77,10 +78,13 @@ ll_amp_der1_params_py(py::array_t<double> Fo, py::array_t<double> sigFo, py::arr
   }
   return ret;
 }
+#endif
 
-void add_amplitude(py::module& m) {
+void add_amplitude(nb::module_& m) {
+#if 0
   m.def("ll_amp", py::vectorize(ll_amp),
         py::arg("Fo"), py::arg("sigFo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"));
   m.def("ll_amp_der1_DS", &ll_amp_der1_params_py);
   //m.def("ll_int_der1_ani", &ll_int_der1_params_py<false>);
+#endif
 }
