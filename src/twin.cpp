@@ -1,20 +1,21 @@
 // Author: "Keitaro Yamashita, Garib N. Murshudov"
 // MRC Laboratory of Molecular Biology
 
-#include <pybind11/numpy.h>
-#include <pybind11/stl.h>
-#include <pybind11/stl_bind.h>
-#include <pybind11/complex.h>
-#include <pybind11/eigen.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/array.h>
+#include <nanobind/stl/vector.h>
+#include <nanobind/stl/complex.h>
+#include <nanobind/eigen/dense.h>
 #include <cmath> // for NAN
 #include <gemmi/symmetry.hpp>
 #include <gemmi/unitcell.hpp>
 #include <complex>
 #include <vector>
 #include <map>
+#include <numeric>  // for iota
 #include <iostream>
 #include "math.hpp"
-namespace py = pybind11;
+namespace nb = nanobind;
 using namespace servalcat;
 
 struct TwinData {
@@ -505,24 +506,25 @@ struct TwinData {
   }
 };
 
-void add_twin(py::module& m) {
-  py::class_<TwinData>(m, "TwinData")
-    .def(py::init<>())
-    .def_readonly("rb2o", &TwinData::rb2o)
-    .def_readonly("rb2a", &TwinData::rb2a)
-    .def_readonly("rbo2a", &TwinData::rbo2a)
-    .def_readonly("rbo2c", &TwinData::rbo2c)
-    .def_readonly("rbin", &TwinData::rbin)
-    .def_readonly("asu", &TwinData::asu)
-    .def_readonly("centric", &TwinData::centric)
-    .def_readonly("epsilon", &TwinData::epsilon)
-    .def_readonly("bin", &TwinData::bin)
-    .def_readonly("s2_array", &TwinData::s2_array)
-    .def_readonly("f_true_max", &TwinData::f_true_max)
-    .def_property_readonly("f_calc", [](TwinData &self) {
+void add_twin(nb::module_& m) {
+  nb::class_<TwinData>(m, "TwinData")
+    .def(nb::init<>())
+    .def_ro("rb2o", &TwinData::rb2o)
+    .def_ro("rb2a", &TwinData::rb2a)
+    .def_ro("rbo2a", &TwinData::rbo2a)
+    .def_ro("rbo2c", &TwinData::rbo2c)
+    .def_ro("rbin", &TwinData::rbin)
+    .def_ro("asu", &TwinData::asu)
+    .def_ro("centric", &TwinData::centric)
+    .def_ro("epsilon", &TwinData::epsilon)
+    .def_ro("bin", &TwinData::bin)
+    .def_ro("s2_array", &TwinData::s2_array)
+    .def_ro("f_true_max", &TwinData::f_true_max)
+#if 0
+    .def_prop_ro("f_calc", [](TwinData &self) {
       const size_t size = sizeof(decltype(self.f_calc_)::value_type);
       // auto v = new std::vector<decltype(self.f_calc)::value_type>(std::move(self.f_calc));
-      // pybind11::capsule cap(v, [](void* p) { delete (std::vector<decltype(self.f_calc)::value_type>*) p; });
+      // py::capsule cap(v, [](void* p) { delete (std::vector<decltype(self.f_calc)::value_type>*) p; });
       return py::array_t<decltype(self.f_calc_)::value_type>({self.asu.size(), self.n_models},
                                                              {size * self.n_models, size},
                                                              self.f_calc_.data(),
@@ -535,9 +537,11 @@ void add_twin(py::module& m) {
       //                             {size * self.n_models, size} // strides
       //                                       ));
     })
-    .def_readonly("mlparams", &TwinData::mlparams) // debug raw access
+#endif
+    .def_ro("mlparams", &TwinData::mlparams) // debug raw access
+#if 0
     // Sigma
-    .def_property_readonly("ml_sigma", [](TwinData &self) {
+    .def_prop_ro("ml_sigma", [](TwinData &self) {
       const size_t size = sizeof(decltype(self.mlparams)::value_type);
       const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
       return py::array_t<decltype(self.mlparams)::value_type>({bin_max},
@@ -546,7 +550,7 @@ void add_twin(py::module& m) {
                                                               py::none());
     })
     // D
-    .def_property_readonly("ml_scale", [](TwinData &self) {
+    .def_prop_ro("ml_scale", [](TwinData &self) {
       const size_t size = sizeof(decltype(self.mlparams)::value_type);
       const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
       return py::array_t<decltype(self.mlparams)::value_type>({bin_max, self.n_models},
@@ -571,8 +575,10 @@ void add_twin(py::module& m) {
         ptr[ia] = self.ml_sigma(self.bin[ia]);
       return ret;
     })
-    .def_readonly("ops", &TwinData::ops)
-    .def_readwrite("alphas", &TwinData::alphas)
+#endif
+    .def_ro("ops", &TwinData::ops)
+    .def_rw("alphas", &TwinData::alphas)
+#if 0
     .def("idx_of_asu", [](const TwinData &self, py::array_t<int> hkl, bool inv){
       auto h = hkl.unchecked<2>();
       if (h.shape(1) < 3)
@@ -596,8 +602,10 @@ void add_twin(py::module& m) {
       }
       return ret;
     }, py::arg("hkl"), py::arg("inv")=false)
+#endif
     .def("setup_f_calc", &TwinData::setup_f_calc)
     .def("d_min", &TwinData::d_min)
+#if 0
     .def("setup", [](TwinData &self, py::array_t<int> hkl, const std::vector<int> &bin,
                      const gemmi::SpaceGroup &sg, const gemmi::UnitCell &cell,
                      const std::vector<gemmi::Op> &operators) {
@@ -610,6 +618,7 @@ void add_twin(py::module& m) {
         hkls.push_back({h(i, 0), h(i, 1), h(i, 2)});
       self.setup(hkls, bin, sg, cell, operators);
     })
+#endif
     .def("pairs", [](const TwinData &self, int i_op, int i_bin) {
       if (i_op < 0 || i_op >= self.alphas.size())
         throw std::runtime_error("bad i_op");
@@ -625,7 +634,8 @@ void add_twin(py::module& m) {
               idxes.push_back({self.rb2o[ib][io], self.rb2o[ib][io2]});
       }
       return idxes;
-    }, py::arg("i_op"), py::arg("i_bin")=-1)
+    }, nb::arg("i_op"), nb::arg("i_bin")=-1)
+#if 0
     .def("obs_related_asu", [](const TwinData &self) {
       const size_t n_ops = self.n_ops(); // include identity
       auto ret = py::array_t<int>({self.n_obs(), n_ops});
@@ -669,6 +679,7 @@ void add_twin(py::module& m) {
                         (double*) sigIo.request().ptr);
       }
     })
+#endif
     .def("ll", [](const TwinData &self) {
       double ret = 0;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
@@ -691,6 +702,7 @@ void add_twin(py::module& m) {
       }
       return ret;
     })
+#if 0
     .def("ll_der_D_S", [](const TwinData &self) {
       const size_t n_cols = self.n_models + 1;
       auto ret = py::array_t<double>({self.asu.size(), n_cols});
@@ -866,5 +878,6 @@ void add_twin(py::module& m) {
         ptr[i] = std::exp(-b_iso / 4 * self.s2_array[i]);
       return ret;
     }, py::arg("b_iso"))
+#endif
     ;
 }

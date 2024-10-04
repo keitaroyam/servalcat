@@ -2,6 +2,7 @@
 // MRC Laboratory of Molecular Biology
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/tuple.h>
 #include <gemmi/grid.hpp>
 #include <gemmi/fourier.hpp>
 #include <gemmi/neighbor.hpp>

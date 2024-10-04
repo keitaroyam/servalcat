@@ -11,10 +11,14 @@
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
 
+#include <nanobind/stl/array.h>
+#include <nanobind/stl/map.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/ndarray.h>
-#include <nanobind/eigen/dense.h>
+#include <nanobind/eigen/sparse.h>
 namespace nb = nanobind;
 using namespace nanobind::literals; // to bring in the `_a` literal
 using namespace servalcat;
@@ -40,6 +44,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 
 #if 0
@@ -85,6 +90,14 @@ void add_refine(nb::module_& m) {
   nb::class_<GeomTarget> geomtarget(m, "GeomTarget");
   nb::class_<Geometry> geom(m, "Geometry");
 
+  nb::class_<Geometry::Bond> bond(geom, "Bond");
+  nb::class_<Geometry::Angle> angle(geom, "Angle");
+  nb::class_<Geometry::Torsion> torsion(geom, "Torsion");
+  nb::class_<Geometry::Chirality> chirality(geom, "Chirality");
+  nb::class_<Geometry::Plane> plane(geom, "Plane");
+  nb::class_<Geometry::Vdw> vdw(geom, "Vdw");
+  nb::class_<Geometry::Ncsr> ncsr(geom, "Ncsr");
+
   nb::class_<Geometry::Reporting>(geom, "Reporting")
     .def_ro("bonds", &Geometry::Reporting::bonds)
     .def_ro("angles", &Geometry::Reporting::angles)
@@ -95,7 +108,6 @@ void add_refine(nb::module_& m) {
     .def_ro("vdws", &Geometry::Reporting::vdws)
     .def_ro("adps", &Geometry::Reporting::adps)
     .def_ro("occs", &Geometry::Reporting::occs)
-#if 0
     .def("get_summary_table", [](const Geometry::Reporting& self, bool use_nucleus) {
       std::vector<std::string> keys;
       std::vector<int> nrest;
@@ -275,9 +287,15 @@ void add_refine(nb::module_& m) {
                  p.first == 2 ? "Occupancies (angle)" :
                  "Occupancies (others)", p.second, zsq[p.first], sigmas[p.first]);
 
-      return nb::dict("Restraint type"_a=keys, "N restraints"_a=nrest,
-                      "r.m.s.d."_a=rmsd, "r.m.s.Z"_a=rmsz, "Mn(sigma)"_a=msigma);
+      nb::dict d;
+      d["Restraint type"] = keys;
+      d["N restraints"] = nrest;
+      d["r.m.s.d."] = rmsd;
+      d["r.m.s.Z"] = rmsz;
+      d["Mn(sigma)"]=msigma;
+      return d;
     })
+#if 0
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs, alphas;
@@ -542,13 +560,6 @@ void add_refine(nb::module_& m) {
     })
 #endif
     ;
-  nb::class_<Geometry::Bond> bond(geom, "Bond");
-  nb::class_<Geometry::Angle> angle(geom, "Angle");
-  nb::class_<Geometry::Torsion> torsion(geom, "Torsion");
-  nb::class_<Geometry::Chirality> chirality(geom, "Chirality");
-  nb::class_<Geometry::Plane> plane(geom, "Plane");
-  nb::class_<Geometry::Vdw> vdw(geom, "Vdw");
-  nb::class_<Geometry::Ncsr> ncsr(geom, "Ncsr");
   nb::class_<Geometry::Bond::Value>(bond, "Value")
     .def(nb::init<double,double,double,double>())
     .def_rw("value", &Geometry::Bond::Value::value)
