@@ -82,7 +82,11 @@ else()
   endif()
   add_dependencies(ext gemmi_py)
 endif()
-target_link_libraries(ext PRIVATE gemmi::gemmi_cpp)
+# $<TARGET_OBJECTS:gemmi_cpp> works for now, another option would be
+# to set BUILD_SHARED_LIBS=OFF before building gemmi
+#target_link_libraries(ext PRIVATE gemmi::gemmi_cpp)
+target_link_libraries(ext PRIVATE gemmi::headers)
+target_sources(ext PRIVATE $<TARGET_OBJECTS:gemmi_cpp>)
 
 if (DEFINED PYTHON_INSTALL_DIR)
   message(STATUS "Install directory for Python module: ${PYTHON_INSTALL_DIR}")
