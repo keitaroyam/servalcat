@@ -22,7 +22,7 @@ from servalcat.utils import fileio
 
 re_version = re.compile("#.* Refmac *version ([^ ]+) ")
 re_error = re.compile('(warn|error *[:]|error *==|^error)', re.IGNORECASE)
-re_outlier_start = re.compile("\*\*\*\*.*outliers")
+re_outlier_start = re.compile(r"\*\*\*\*.*outliers")
 
 def check_version(exe="refmac5"):
     ver = ()
