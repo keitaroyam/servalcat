@@ -462,7 +462,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
     unit_cell = maps[0][0].unit_cell
     spacegroup = gemmi.SpaceGroup(1)
     start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
-    A = numpy.array(unit_cell.orthogonalization_matrix.tolist())
+    A = unit_cell.orthogonalization_matrix.array
     center = numpy.sum(A, axis=1) / 2 #+ start_xyz
 
     # Create mask
@@ -618,7 +618,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         args.keywords.append("make cr prepared")
         gemmi.setup_for_crd(st)
         doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
-        doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
+        doc.write_file(crdout, options=gemmi.cif.Style.NoBlankLines)
         logger.writeln("crd file written: {}".format(crdout))
 
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None, with_000=False)

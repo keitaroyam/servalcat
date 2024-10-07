@@ -347,8 +347,8 @@ def translate_into_box(st, origin=None, apply_shift=True):
     if origin is None: origin = gemmi.Position(0,0,0)
     
     # apply unit cell translations to put model into a box (unit cell)
-    omat = numpy.array(st.cell.orthogonalization_matrix)
-    fmat = numpy.array(st.cell.fractionalization_matrix).transpose()
+    omat = st.cell.orthogonalization_matrix.array
+    fmat = st.cell.fractionalization_matrix.array.transpose()
     com = numpy.array((st[0].calculate_center_of_mass() - origin).tolist())
     shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
     tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
@@ -443,7 +443,7 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
             logger.writeln("  correcting aniso= {}".format(tostr(atom.aniso.elements_pdb())))
             logger.writeln("        aniso_viol= {}".format(tostr(diff)))
 
-        mats = [st.cell.orth.combine(st.cell.images[i-1]).combine(st.cell.frac).mat for i in images]
+        mats = [st.cell.orth.combine(st.cell.images[i-1]).combine(st.cell.frac).mat.array for i in images]
         mat_total = (numpy.identity(3) + sum(numpy.array(m) for m in mats)) / n_images
         mat_total_aniso = (numpy.identity(6) + sum(mat33_as66(m.tolist()) for m in mats)) / n_images
         mat_total_aniso = numpy.linalg.pinv(mat_total_aniso)
@@ -727,7 +727,7 @@ def st_from_positions(positions, bs=None, qs=None):
             
 def invert_model(st):
     # invert x-axis
-    A = numpy.array(st.cell.orthogonalization_matrix.tolist())
+    A = st.cell.orthogonalization_matrix.array
     center = numpy.sum(A,axis=1) / 2
     center = gemmi.Vec3(*center)
     mat = gemmi.Mat33([[-1,0,0],[0,1,0],[0,0,1]]) 

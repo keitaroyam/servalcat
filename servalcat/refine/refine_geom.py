@@ -133,7 +133,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
                 row[i+4] = "{:.3f}".format(p[i])
     # add description
     add_program_info_to_dictionary(block, st[0][0][0].name)
-    doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
+    doc.write_file(output_prefix + "_updated.cif", options=gemmi.cif.Style.Aligned)
     logger.writeln("Updated dictionary saved: {}".format(output_prefix + "_updated.cif"))
     with open(output_prefix + "_stats.json", "w") as ofs:
         json.dump([convert_stats_to_dicts(x) for x in all_stats],

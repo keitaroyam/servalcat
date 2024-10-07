@@ -530,7 +530,7 @@ class Refine:
             elif self.adp_mode == 2:
                 a = x[offset_b + 6 * j: offset_b + 6 * (j+1)]
                 a = gemmi.SMat33d(*a)
-                M = numpy.array(a.as_mat33())
+                M = a.as_mat33().array
                 v, Q = numpy.linalg.eigh(M) # eig() may return complex due to numerical precision?
                 v = numpy.maximum(v, 0.5) # avoid NPD with minimum B = 0.5
                 M2 = Q.dot(numpy.diag(v)).dot(Q.T)

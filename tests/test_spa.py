@@ -64,10 +64,10 @@ def load_mmcif():
 class TestFunctions(unittest.TestCase):
     def test_h_add(self):
         st = load_mmcif()
-        self.assertEqual(st[0].count_hydrogen_sites(), 0)
+        self.assertFalse(st[0].has_hydrogen())
         monlib = utils.restraints.load_monomer_library(st)
         utils.restraints.add_hydrogens(st, monlib, "elec")
-        self.assertEqual(st[0].count_hydrogen_sites(), 841)
+        self.assertEqual(st[0].count_atom_sites(gemmi.Selection('[H,D]')), 841)
         bad_h = [numpy.allclose(cra.atom.pos.tolist(), [0,0,0]) for cra in st[0].all()]
         self.assertEqual(sum(bad_h), 0)
     # test_h_add()

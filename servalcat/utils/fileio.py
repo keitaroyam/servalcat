@@ -108,7 +108,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         block.find_mmcif_category("_atom_sites.").erase()
         st_new.update_mmcif_block(block, groups)
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
-        doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
+        doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
@@ -116,7 +116,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         doc = gemmi.cif.Document()
         block = doc.add_new_block("new")
         st_new.update_mmcif_block(block, groups)
-        doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
+        doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
 # write_mmcif()
 
 def write_pdb(st, pdb_out):
@@ -457,7 +457,7 @@ def merge_ligand_cif(cifs_in, cif_out):
             if b.name not in list_names:
                 doc.add_copied_block(b)
 
-    doc.write_file(cif_out, style=gemmi.cif.Style.Aligned)
+    doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
 # merge_ligand_cif()
 
 def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO support gz?

@@ -55,7 +55,7 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
         start_xyz = numpy.zeros(3)
 
     if args.center is None:
-        A = numpy.array(cell.orthogonalization_matrix.tolist())
+        A = cell.orthogonalization_matrix.array
         center = numpy.sum(A, axis=1) / 2 #+ start_xyz
         logger.writeln("Center: {}".format(center))
     else:
@@ -156,7 +156,7 @@ def show_operators_axis_angle(ops):
 def show_ncs_operators_axis_angle(ops):
     # ops: List of gemmi.NcsOp
     for i, op in enumerate(ops):
-        op2 = numpy.array(op.tr.mat.tolist())
+        op2 = op.tr.mat.array
         ax, ang = generate_operators.Rotation2AxisAngle_general(op2)
         axlab = "[{: .4f}, {: .4f}, {: .4f}]".format(*ax)
         trlab = "[{: 9.4f}, {: 9.4f}, {: 9.4f}]".format(*op.tr.vec.tolist())
@@ -210,7 +210,7 @@ def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1
 
 def make_NcsOps_from_matrices(matrices, cell=None, center=None):
     if center is None:
-        A = numpy.array(cell.orthogonalization_matrix.tolist())
+        A = cell.orthogonalization_matrix.array
         center = numpy.sum(A,axis=1) / 2
 
     center = gemmi.Vec3(*center)
@@ -225,9 +225,9 @@ def make_NcsOps_from_matrices(matrices, cell=None, center=None):
 # make_NcsOps_from_matrices()
 
 def find_center_of_origin(mat, vec): # may not be unique.
-    tmp = numpy.identity(3) - numpy.array(mat)
+    tmp = numpy.identity(3) - numpy.array(mat.array)
     ret = numpy.dot(numpy.linalg.pinv(tmp), vec.tolist())
-    resid = vec.tolist() - (numpy.dot(mat, -ret) + ret)
+    resid = vec.tolist() - (numpy.dot(mat.array, -ret) + ret)
     return gemmi.Vec3(*ret), gemmi.Vec3(*resid)
 # find_center_of_origin()
 
