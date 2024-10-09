@@ -871,12 +871,14 @@ void add_refine(py::module& m) {
 
   py::class_<NcsList> ncslist(m, "NcsList");
   py::class_<NcsList::Ncs>(ncslist, "Ncs")
-    .def(py::init([](const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable) {
-      return NcsList::Ncs(al, fixed, movable);
+    .def(py::init([](const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable,
+                     const std::string &chain_fixed, const std::string &chain_movable) {
+      return NcsList::Ncs(al, fixed, movable, chain_fixed, chain_movable);
     }))
     .def("calculate_local_rms", &NcsList::Ncs::calculate_local_rms)
     .def_readonly("atoms", &NcsList::Ncs::atoms)
     .def_readonly("seqids", &NcsList::Ncs::seqids)
+    .def_readonly("chains", &NcsList::Ncs::chains)
     .def_readonly("n_atoms", &NcsList::Ncs::n_atoms)
     .def_readonly("local_rms", &NcsList::Ncs::local_rms)
     ;
