@@ -83,6 +83,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.scale = True
         groups.assembly = True
         groups.entity = True
+        groups.entity_poly = True
         groups.entity_poly_seq = True
         groups.cis = True
         groups.conn = True
