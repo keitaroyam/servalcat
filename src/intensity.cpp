@@ -7,6 +7,7 @@
 #include <gemmi/bessel.hpp>
 #include <gemmi/math.hpp>
 #include "math.hpp"
+#include "array.h"
 namespace nb = nanobind;
 using namespace servalcat;
 
@@ -219,9 +220,9 @@ struct IntensityIntegrator {
   int N = 200;
   double ewmax = 20.;
   double exp2_threshold = 3.;
-  
+
   // ML intensity target; -log(Io; Fc) without constants
-  double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) {
+  double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) const {
     if (std::isnan(Io) || S <= 0) return NAN;
     const double k = c == 1 ? 0 : -0.5;
     const double to = Io / sigIo - sigIo / c / sq(k_ani) / S;
@@ -237,26 +238,25 @@ struct IntensityIntegrator {
       return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
   }
 
-#if 0
   template<bool for_DS>
-  py::array_t<double>
-  ll_int_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                        double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
-                        py::array_t<int> c, py::array_t<int> eps) {
-    if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
-    const size_t n_models = Fcs.shape(1);
-    const size_t n_ref = Fcs.shape(0);
+  nb::ndarray<nb::numpy, double>
+  ll_int_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
+                        double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
+                        np_array<int> c, np_array<int> eps) const {
+    auto Io_ = Io.view();
+    auto sigIo_ = sigIo.view();
+    auto k_ani_ = k_ani.view();
+    auto Fcs_ = Fcs.view();
+    auto c_ = c.view();
+    auto eps_ = eps.view();
+    const size_t n_models = Fcs_.shape(1);
+    const size_t n_ref = Fcs_.shape(0);
     const size_t n_cols = for_DS ? n_models + 1 : 1;
-    auto Io_ = Io.unchecked<1>();
-    auto sigIo_ = sigIo.unchecked<1>();
-    auto k_ani_ = k_ani.unchecked<1>();
-    auto Fcs_ = Fcs.unchecked<2>();
-    auto c_ = c.unchecked<1>();
-    auto eps_ = eps.unchecked<1>();
+    if (Ds.size() != n_models) throw std::runtime_error("Fc and D shape mismatch");
 
     // der1 wrt D1, D2, .., S, or k_ani
-    auto ret = py::array_t<double>({n_ref, n_cols});
-    double* ptr = (double*) ret.request().ptr;
+    auto ret = make_numpy_array<double>({n_ref, n_cols});
+    double* ptr = ret.data();
     auto sum_Fc = [&](int i) {
       std::complex<double> s = Fcs_(i, 0) * Ds[0];
       for (size_t j = 1; j < n_models; ++j)
@@ -303,18 +303,18 @@ struct IntensityIntegrator {
   }
 
   // an attempt to fast update of Sigma, but it does look good.
-  double find_ll_int_S_from_current_estimates_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                                                 double S, py::array_t<std::complex<double>> Fcs, std::vector<double> Ds,
-                                                 py::array_t<int> c, py::array_t<int> eps) {
+  double find_ll_int_S_from_current_estimates_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
+                                                 double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
+                                                 np_array<int> c, np_array<int> eps) const {
+    auto Io_ = Io.view();
+    auto sigIo_ = sigIo.view();
+    auto k_ani_ = k_ani.view();
+    auto Fcs_ = Fcs.view();
+    auto c_ = c.view();
+    auto eps_ = eps.view();
+    const size_t n_models = Fcs_.shape(1);
+    const size_t n_ref = Fcs_.shape(0);
     if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
-    const size_t n_models = Fcs.shape(1);
-    const size_t n_ref = Fcs.shape(0);
-    auto Io_ = Io.unchecked<1>();
-    auto sigIo_ = sigIo.unchecked<1>();
-    auto k_ani_ = k_ani.unchecked<1>();
-    auto Fcs_ = Fcs.unchecked<2>();
-    auto c_ = c.unchecked<1>();
-    auto eps_ = eps.unchecked<1>();
 
     auto sum_Fc = [&](int i) {
       std::complex<double> s = Fcs_(i, 0) * Ds[0];
@@ -354,19 +354,19 @@ struct IntensityIntegrator {
 
 // For French-Wilson
   template<bool for_S>
-  py::array_t<double>
-  ll_int_fw_der1_params_py(py::array_t<double> Io, py::array_t<double> sigIo, py::array_t<double> k_ani,
-                           double S, py::array_t<int> c, py::array_t<int> eps) {
+  nb::ndarray<nb::numpy, double>
+  ll_int_fw_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
+                           double S, np_array<int> c, np_array<int> eps) const {
+    auto Io_ = Io.view();
+    auto sigIo_ = sigIo.view();
+    auto k_ani_ = k_ani.view();
+    auto c_ = c.view();
+    auto eps_ = eps.view();
     size_t n_ref = Io.shape(0);
-    auto Io_ = Io.unchecked<1>();
-    auto sigIo_ = sigIo.unchecked<1>();
-    auto k_ani_ = k_ani.unchecked<1>();
-    auto c_ = c.unchecked<1>();
-    auto eps_ = eps.unchecked<1>();
 
     // der1 wrt S or k_ani
-    auto ret = py::array_t<double>(n_ref);
-    double* ptr = (double*) ret.request().ptr;
+    auto ret = make_numpy_array<double>({n_ref});
+    double* ptr = ret.data();
     for (size_t i = 0; i < n_ref; ++i) {
       if (std::isnan(Io_(i))) {
         ptr[i] = NAN;
@@ -388,43 +388,82 @@ struct IntensityIntegrator {
     }
     return ret;
   }
-#endif
 };
 
 void add_intensity(nb::module_& m) {
-#if 0
-  m.def("integ_J", py::vectorize(integ_j),
-        py::arg("k"), py::arg("to"), py::arg("tf"), py::arg("sig1"), py::arg("c"), py::arg("return_log"),
-        py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
-  m.def("integ_J_ratio", py::vectorize(integ_j_ratio),
-        py::arg("k_num"), py::arg("k_den"), py::arg("l"), py::arg("to"), py::arg("tf"),
-        py::arg("sig1"), py::arg("c"),
-        py::arg("exp2_threshold")=10, py::arg("h")=0.5, py::arg("N")=200, py::arg("ewmax")=20.);
-#endif
+  m.def("integ_J", [](double k, np_array<double> to, np_array<double> tf, np_array<double> sig1, int c, bool return_log,
+                      double exp2_threshold, double h, int N, double ewmax) {
+    auto to_ = to.view();
+    auto tf_ = tf.view();
+    auto sig1_ = sig1.view();
+    size_t len = to_.shape(0);
+    if (len != tf_.shape(0) || len != sig1_.shape(0))
+      throw std::runtime_error("integ_j: shape mismatch");
+    auto ret = make_numpy_array<double>({len});
+    double* retp = ret.data();
+    for (size_t i = 0; i < len; ++i)
+      retp[i] = integ_j(k, to_(i), tf_(i), sig1_(i), c, return_log, exp2_threshold, h, N, ewmax);
+    return ret;
+  },
+    nb::arg("k"), nb::arg("to"), nb::arg("tf"), nb::arg("sig1"), nb::arg("c"), nb::arg("return_log"),
+    nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
+  m.def("integ_J_ratio", [](np_array<double> k_num, np_array<double> k_den, bool l, np_array<double> to, np_array<double> tf,
+                            np_array<double> sig1, np_array<int> c, double exp2_threshold, double h, int N, double ewmax) {
+    auto k_num_ = k_num.view();
+    auto k_den_ = k_den.view();
+    auto to_ = to.view();
+    auto tf_ = tf.view();
+    auto sig1_ = sig1.view();
+    auto c_ = c.view();
+    size_t len = to_.shape(0);
+    if (len != k_num_.shape(0) || len != k_den_.shape(0) || len != tf_.shape(0) ||
+        len != sig1_.shape(0) || len != c_.shape(0))
+      throw std::runtime_error("integ_j_ratio: shape mismatch");
+    auto ret = make_numpy_array<double>({len});
+    double* retp = ret.data();
+    for (size_t i = 0; i < len; ++i)
+      retp[i] = integ_j_ratio(k_num_(i), k_den_(i), l, to_(i), tf_(i), sig1_(i), c_(i), exp2_threshold, h, N, ewmax);
+    return ret;
+  },
+    nb::arg("k_num"), nb::arg("k_den"), nb::arg("l"), nb::arg("to"), nb::arg("tf"),
+    nb::arg("sig1"), nb::arg("c"),
+    nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   nb::class_<IntensityIntegrator>(m, "IntensityIntegrator")
     .def(nb::init<>())
     .def_rw("h", &IntensityIntegrator::h)
     .def_rw("N", &IntensityIntegrator::N)
     .def_rw("ewmax", &IntensityIntegrator::ewmax)
     .def_rw("exp2_threshold", &IntensityIntegrator::exp2_threshold)
-#if 0
-    .def("ll_int", py::vectorize(&IntensityIntegrator::ll_int),
-         py::arg("Io"), py::arg("sigIo"), py::arg("k_ani"), py::arg("S"), py::arg("Fc"), py::arg("c"))
+    .def("ll_int", [](const IntensityIntegrator& self, np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
+                      np_array<double> S, np_array<double> Fc, np_array<int> c) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      auto k_ani_ = k_ani.view();
+      auto S_ = S.view();
+      auto Fc_ = Fc.view();
+      auto c_ = c.view();
+      size_t len = Io_.shape(0);
+      if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) || len != Fc_.shape(0) || len != c_.shape(0))
+        throw std::runtime_error("ll_int: shape mismatch");
+      auto ret = make_numpy_array<double>({len});
+      double* retp = ret.data();
+      for (size_t i = 0; i < len; ++i)
+        retp[i] = self.ll_int(Io_(i), sigIo_(i), k_ani_(i), S_(i), Fc_(i), c_(i));
+      return ret;
+    },
+         nb::arg("Io"), nb::arg("sigIo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"))
     .def("ll_int_der1_DS", &IntensityIntegrator::ll_int_der1_params_py<true>)
     .def("ll_int_der1_ani", &IntensityIntegrator::ll_int_der1_params_py<false>)
     .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)
     .def("ll_int_fw_der1_S", &IntensityIntegrator::ll_int_fw_der1_params_py<true>)
     .def("ll_int_fw_der1_ani", &IntensityIntegrator::ll_int_fw_der1_params_py<false>)
-#endif
     ;
-#if 0
-  m.def("lambertw", py::vectorize(lambertw::lambertw));
+  m.def("lambertw", &lambertw::lambertw);
   m.def("find_root", &find_root);
-  m.def("f1_orig2", py::vectorize(f1_orig2));
-  m.def("f1_orig2_der1", py::vectorize(f1_orig2_der1));
-  m.def("f1_orig2_der2", py::vectorize(f1_orig2_der2));
-  m.def("f1_exp2", py::vectorize(f1_exp2));
-  m.def("f1_exp2_der1", py::vectorize(f1_exp2_der1));
-  m.def("f1_exp2_der2", py::vectorize(f1_exp2_der2));
-#endif
+  m.def("f1_orig2", &f1_orig2);
+  m.def("f1_orig2_der1", &f1_orig2_der1);
+  m.def("f1_orig2_der2", &f1_orig2_der2);
+  m.def("f1_exp2", &f1_exp2);
+  m.def("f1_exp2_der1", &f1_exp2_der1);
+  m.def("f1_exp2_der2", &f1_exp2_der2);
 }

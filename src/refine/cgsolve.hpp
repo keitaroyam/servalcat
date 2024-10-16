@@ -7,6 +7,7 @@
 #include "ll.hpp"
 #include "geom.hpp"
 #include <ostream>
+#include <gemmi/topo.hpp> // for gemmi::Logger::Callback
 #include <Eigen/Sparse>
 #include <Eigen/IterativeLinearSolvers>
 
@@ -49,23 +50,20 @@ struct CgSolve {
     : geom(geom), ll(ll) {}
 
   template<typename Preconditioner = Eigen::IdentityPreconditioner>
-  Eigen::VectorXd solve(double weight, std::ostream* logger) {
+  Eigen::VectorXd solve(double weight, const gemmi::Logger& logger){
     Eigen::VectorXd vn = Eigen::VectorXd::Map(geom->vn.data(), geom->vn.size());
     Eigen::SparseMatrix<double> am = geom->make_spmat();
-    if (logger)
-      *logger << "diag(geom) min= " << am.diagonal().minCoeff()
-              << " max= " <<  am.diagonal().maxCoeff() << "\n";
+    logger.mesg("diag(geom) min= ", std::to_string(am.diagonal().minCoeff()),
+                " max= ", std::to_string(am.diagonal().maxCoeff()));
     if (ll != nullptr) {
       auto ll_mat = ll->make_spmat();
-      if (logger)
-        *logger << "diag(data) min= " << ll_mat.diagonal().minCoeff()
-                << " max= " <<  ll_mat.diagonal().maxCoeff() << "\n";
+      logger.mesg("diag(data) min= ", std::to_string(ll_mat.diagonal().minCoeff()),
+                  " max= ", std::to_string(ll_mat.diagonal().maxCoeff()));
       vn += Eigen::VectorXd::Map(ll->vn.data(), ll->vn.size()) * weight;
       am += ll_mat * weight;
     }
-    if (logger)
-      *logger << "diag(all) min= " << am.diagonal().minCoeff()
-              << " max= " <<  am.diagonal().maxCoeff() << "\n";
+    logger.mesg("diag(all) min= ", std::to_string(am.diagonal().minCoeff()),
+                " max= ", std::to_string(am.diagonal().maxCoeff()));
     const int n = am.cols();
 
     // this changes am
@@ -80,9 +78,8 @@ struct CgSolve {
       cg.setTolerance(toler);
       cg.compute(am);
       dv = cg.solve(vn);
-      if (logger)
-        *logger << "#iterations:     " << cg.iterations() << "\n"
-                << "estimated error: " << cg.error()      << std::endl;
+      logger.mesg("#iterations:     ", cg.iterations(), "\n",
+                  "estimated error: ", std::to_string(cg.error()));
       return pmat * dv;
     }
 
@@ -102,8 +99,7 @@ struct CgSolve {
     double step = 0.05;
 
     for (int gamma_cyc = 0; gamma_cyc < max_gamma_cyc; ++gamma_cyc, gamma+=step) {
-      if (logger)
-        *logger << "Trying gamma equal " << gamma << "\n";
+      logger.mesg("Trying gamma equal ", std::to_string(gamma));
       Eigen::VectorXd r = vn - (am * dv + gamma * dv);
       double rnorm2 = r.squaredNorm();
       if (rnorm2 < test_lim)
@@ -121,13 +117,11 @@ struct CgSolve {
         rnorm2 = r.squaredNorm();
         if (rnorm2 < test_lim) {
           if (!gamma_flag) {
-            if (logger)
-              *logger << "Convergence reached after " << itr+1 << " iterations with no gamma cycles\n";
+            logger.mesg("Convergence reached after ", itr+1, " iterations with no gamma cycles");
             exit_flag = true;
             break;
           } else if (conver_flag) {
-            if (logger)
-              *logger << "Convergence reached with gamma equal " << gamma << "\n";
+            logger.mesg("Convergence reached with gamma equal ", std::to_string(gamma));
             step *= 1.01;
             exit_flag = true;
             break;
@@ -137,8 +131,7 @@ struct CgSolve {
             dv_save = dv;
             gamma = std::max(0., gamma - step/5.);
             step = std::max(step/1.1, 0.0001);
-            if (logger)
-              *logger << "Gamma decreased to " << gamma << "\n";
+            logger.mesg("Gamma decreased to ", std::to_string(gamma));
             exit_flag = true;
             break;
           }
@@ -148,8 +141,7 @@ struct CgSolve {
         double rho1 = rho0;
         rho0 = r.dot(z);
         if (rho0 > 4 * rho1) {
-          if (logger)
-            *logger << "Not converging with gamma equal " << gamma << "\n";
+          logger.mesg("Not converging with gamma equal ", std::to_string(gamma));
           step *= 1.05;
           break;
         }
@@ -164,8 +156,7 @@ struct CgSolve {
       else {
         dv = dv_save;
         gamma = gamma_save;
-        if (logger)
-          *logger << "Back to gamma equal " << gamma << "\n";
+        logger.mesg("Back to gamma equal ", std::to_string(gamma));
       }
     }
     return pmat * dv;

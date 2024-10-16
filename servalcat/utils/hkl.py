@@ -200,6 +200,8 @@ def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
 def fft_map(cell, sg, miller_array, data, grid_size=None, sample_rate=3):
     if data is not None:
         data = data.astype(numpy.complex64) # we may want to keep complex128?
+    if type(data) is pandas.core.series.Series:
+        data = data.to_numpy()
     asu = gemmi.ComplexAsuData(cell, sg, miller_array, data)
     if grid_size is None:
         ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True

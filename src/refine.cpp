@@ -5,6 +5,7 @@
 #include "refine/ll.hpp"      // for LL
 #include "refine/cgsolve.hpp" // for CgSolve
 #include "refine/ncsr.hpp"    // for
+#include "array.h"
 #include <gemmi/it92.hpp>
 #include <gemmi/neutron92.hpp>
 #include <gemmi/monlib.hpp>
@@ -20,7 +21,6 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/eigen/sparse.h>
 namespace nb = nanobind;
-using namespace nanobind::literals; // to bring in the `_a` literal
 using namespace servalcat;
 
 NB_MAKE_OPAQUE(std::vector<Geometry::Bond>)
@@ -47,18 +47,17 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 
-#if 0
-nb::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
-                                 py::array_t<int> cols, int N, double cutoff) {
-  int* colp = (int*) cols.request().ptr;
-  int* rowp = (int*) rows.request().ptr;
-  double* amp = (double*) am.request().ptr;
-  auto len = cols.shape(0);
+nb::tuple precondition_eigen_coo(np_array<double> am, np_array<int> rows,
+                                 np_array<int> cols, int N, double cutoff) {
+  auto colp = cols.view();
+  auto rowp = rows.view();
+  auto amp = am.view();
+  auto len = colp.shape(0);
 
   //std::vector<gemmi::SMat33<double>> blocks(N);
   std::vector<double> blocks(2*N);
   for(int i = 0; i < len; ++i) {
-    const int c = colp[i], r = rowp[i];
+    const int c = colp(i), r = rowp(i);
     const int b = c % 3, j = c / 3;
     int k;
     if (r < c - b || r > c) continue;
@@ -66,7 +65,7 @@ nb::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
     else if (b == 1 && r == c - 1) k = 3;
     else if (b == 2 && r == c - 2) k = 4;
     else k = 5; //if (b == 2 && r == c - 1) k = 5;
-    blocks[j*6+k] = amp[i];
+    blocks[j*6+k] = amp(i);
   }
 
   std::vector<double> ret(N * 3);
@@ -84,7 +83,6 @@ nb::tuple precondition_eigen_coo(py::array_t<double> am, py::array_t<int> rows,
 
   return nb::make_tuple(ret, nb::make_tuple(retrow, retcol));
 }
-#endif
 
 void add_refine(nb::module_& m) {
   nb::class_<GeomTarget> geomtarget(m, "GeomTarget");
@@ -295,7 +293,6 @@ void add_refine(nb::module_& m) {
       d["Mn(sigma)"]=msigma;
       return d;
     })
-#if 0
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs, alphas;
@@ -317,8 +314,16 @@ void add_refine(nb::module_& m) {
           alphas.push_back(restr->alpha);
         }
       }
-      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types, "alpha"_a=alphas);
+      nb::dict d;
+      d["atom1"] = atom1;
+      d["atom2"] = atom2;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      d["type"] = types;
+      d["alpha"] = alphas;
+      return d;
     }, nb::arg("use_nucleus"), nb::arg("min_z"))
     .def("get_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3;
@@ -337,8 +342,15 @@ void add_refine(nb::module_& m) {
           zs.push_back(z);
         }
       }
-      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3,
-                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
+      nb::dict d;
+      d["atom1"] = atom1;
+      d["atom2"] = atom2;
+      d["atom3"] = atom3;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_torsion_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
@@ -362,8 +374,18 @@ void add_refine(nb::module_& m) {
           zs.push_back(z);
         }
       }
-      return nb::dict("label"_a=labels, "atom1"_a=atom1, "atom2"_a=atom2, "atom3"_a=atom3, "atom4"_a=atom4,
-                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "per"_a=pers, "z"_a=zs);
+      nb::dict d;
+      d["label"] = labels;
+      d["atom1"] = atom1;
+      d["atom2"] = atom2;
+      d["atom3"] = atom3;
+      d["atom4"] = atom4;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["per"] = pers;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_chiral_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
@@ -384,8 +406,17 @@ void add_refine(nb::module_& m) {
           zs.push_back(z);
         }
       }
-      return nb::dict("atomc"_a=atom1, "atom1"_a=atom2, "atom2"_a=atom3, "atom3"_a=atom4,
-                      "value"_a=values, "ideal"_a=ideals, "sigma"_a=sigmas, "both"_a=signs, "z"_a=zs);
+      nb::dict d;
+      d["atomc"] = atom1;
+      d["atom1"] = atom2;
+      d["atom2"] = atom3;
+      d["atom3"] = atom4;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["both"] = signs;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_plane_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atoms;
@@ -404,7 +435,13 @@ void add_refine(nb::module_& m) {
           }
         }
       }
-      return nb::dict("label"_a=labels, "atom"_a=atoms, "dev"_a=values, "sigma"_a=sigmas, "z"_a=zs);
+      nb::dict d;
+      d["label"] = labels;
+      d["atom"] = atoms;
+      d["dev"] = values;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_stacking_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
@@ -421,8 +458,14 @@ void add_refine(nb::module_& m) {
           zs.push_back(za);
         }
       }
-      return nb::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
+      nb::dict d;
+      d["plane1"] = atom1;
+      d["plane2"] = atom2;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_stacking_dist_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
@@ -441,8 +484,14 @@ void add_refine(nb::module_& m) {
           zs.push_back(zd);
         }
       }
-      return nb::dict("plane1"_a=atom1, "plane2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs);
+      nb::dict d;
+      d["plane1"] = atom1;
+      d["plane2"] = atom2;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("get_vdw_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
@@ -461,8 +510,15 @@ void add_refine(nb::module_& m) {
           types.push_back(restr->type);
         }
       }
-      return nb::dict("atom1"_a=atom1, "atom2"_a=atom2, "value"_a=values,
-                      "ideal"_a=ideals, "sigma"_a=sigmas, "z"_a=zs, "type"_a=types);
+      nb::dict d;
+      d["atom1"] = atom1;
+      d["atom2"] = atom2;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      d["type"] = types;
+      return d;
     }, nb::arg("min_z"))
     .def("get_ncsr_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
@@ -483,8 +539,17 @@ void add_refine(nb::module_& m) {
           zs.push_back(z);
         }
       }
-      return nb::dict("1_atom1"_a=atom1, "1_atom2"_a=atom2, "2_atom1"_a=atom3, "2_atom2"_a=atom4,
-                      "dist_1"_a=dist1, "dist_2"_a=dist2, "del_dist"_a=devs, "sigma"_a=sigmas, "z"_a=zs);
+      nb::dict d;
+      d["1_atom1"] = atom1;
+      d["1_atom2"] = atom2;
+      d["2_atom1"] = atom3;
+      d["2_atom2"] = atom4;
+      d["dist_1"] = dist1;
+      d["dist_2"] = dist2;
+      d["del_dist"] = devs;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
     }, nb::arg("min_z"))
     .def("per_atom_score", [](const Geometry::Reporting& self, int n_atoms,
                               bool use_nucleus, const std::string& metric) {
@@ -554,11 +619,16 @@ void add_refine(nb::module_& m) {
           for (size_t i = 0; i < ret[j].size(); ++i)
             ret[j][i] = std::sqrt(ret[j][i] / num[j][i]);
       }
-      return nb::dict("total"_a=ret[0], "bonds"_a=ret[1], "angles"_a=ret[2],
-                      "torsions"_a=ret[3], "chirs"_a=ret[4], "planes"_a=ret[5],
-                      "vdws"_a=ret[6]);
+      nb::dict d;
+      d["total"] = ret[0];
+      d["bonds"] = ret[1];
+      d["angles"] = ret[2];
+      d["torsions"] = ret[3];
+      d["chirs"] = ret[4];
+      d["planes"] = ret[5];
+      d["vdws"] = ret[6];
+      return d;
     })
-#endif
     ;
   nb::class_<Geometry::Bond::Value>(bond, "Value")
     .def(nb::init<double,double,double,double>())
@@ -817,24 +887,30 @@ void add_refine(nb::module_& m) {
     .def_ro("am", &LL::am)
     .def_rw("use_q_b_mixed_derivatives", &LL::use_q_b_mixed_derivatives)
     ;
-#if 0
   m.def("precondition_eigen_coo", &precondition_eigen_coo);
-#endif
   nb::class_<CgSolve>(m, "CgSolve")
     .def(nb::init<const GeomTarget *, const LL *>(),
          nb::arg("geom"), nb::arg("ll")=nb::none())
     .def("solve", [](CgSolve &self, double weight, const nb::object& pystream,
                      bool use_ic) {
-      std::ostream os(nullptr);
-#if 0
-      std::unique_ptr<py::detail::pythonbuf> buffer;
-      buffer.reset(new py::detail::pythonbuf(pystream));
-      os.rdbuf(buffer.get());
-#endif
+      auto callback = [&pystream]() -> gemmi::Logger::Callback {
+        if (pystream.is_none())
+          return {};
+        if (nb::hasattr(pystream, "write") && nb::hasattr(pystream, "flush"))
+          return [&](const std::string& s) {
+            pystream.attr("write")(nb::str((s + "\n").c_str()));
+            pystream.attr("flush")();
+          };
+        return [&](const std::string& s) {
+          pystream(nb::str(s.c_str()));
+        };
+      };
+      gemmi::Logger logger;
+      logger.callback = callback();
       if (use_ic)
-        return self.solve<Eigen::IncompleteCholesky<double>>(weight, &os);
+        return self.solve<Eigen::IncompleteCholesky<double>>(weight, logger);
       else
-        return self.solve<>(weight, &os);
+        return self.solve<>(weight, logger);
     })
     .def_rw("gamma", &CgSolve::gamma)
     .def_rw("toler", &CgSolve::toler)
@@ -842,22 +918,20 @@ void add_refine(nb::module_& m) {
     .def_rw("max_gamma_cyc", &CgSolve::max_gamma_cyc)
     ;
 
-#if 0
-  m.def("smooth_gauss", [](py::array_t<double> bin_centers, py::array_t<double> bin_values,
-                           py::array_t<double> s_array, int n, double kernel_width) {
+  m.def("smooth_gauss", [](np_array<double> bin_centers, np_array<double, 2> bin_values,
+                           np_array<double> s_array, int n, double kernel_width) {
+    auto s_ = s_array.view();
+    auto bin_cen_ = bin_centers.view();
+    auto bin_val_ = bin_values.view();
     // assume all values are sorted by resolution
-    if (bin_centers.size() != (size_t)bin_values.shape(0)) throw std::runtime_error("bin_centers and bin_values shape mismatch");
-    if (s_array.ndim() != 1) throw std::runtime_error("s_array dimension != 1");
+    if (bin_cen_.shape(0) != bin_val_.shape(0)) throw std::runtime_error("bin_centers and bin_values shape mismatch");
     if (n < 1) throw std::runtime_error("non positive n");
     const double krn2 = gemmi::sq(kernel_width) * 2;
-    const size_t n_par = bin_values.shape(1);
-    const size_t n_bin = bin_values.shape(0);
-    const size_t n_ref = s_array.size();
-    auto s_ = s_array.unchecked<1>();
-    auto bin_cen_ = bin_centers.unchecked<1>();
-    auto bin_val_ = bin_values.unchecked<2>();
-    auto ret = py::array_t<double>({n_ref, n_par});
-    double* ptr = (double*) ret.request().ptr;
+    const size_t n_par = bin_val_.shape(1);
+    const size_t n_bin = bin_val_.shape(0);
+    const size_t n_ref = s_.shape(0);
+    auto ret = make_numpy_array<double>({n_ref, n_par});
+    double* ptr = ret.data();
 
     // setup new (finer) binning
     const double s_step = (s_(n_ref-1) - s_(0)) / n;
@@ -886,7 +960,6 @@ void add_refine(nb::module_& m) {
     }
     return ret;
   });
-#endif
 
 
   nb::class_<NcsList> ncslist(m, "NcsList");

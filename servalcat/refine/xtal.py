@@ -78,8 +78,8 @@ class LL_Xtal:
                                            for sel in self.centric_and_selections[i_bin]])
             mask = numpy.empty(len(self.hkldata.df.index)) * numpy.nan
             mask[idxes] = 1 / self.hkldata.debye_waller_factors(b_cart=self.b_aniso)[idxes]**2
-            self.twin_data.est_f_true(self.hkldata.df.I * mask,
-                                      self.hkldata.df.SIGI * mask)
+            self.twin_data.est_f_true(self.hkldata.df.I.to_numpy() * mask,
+                                      self.hkldata.df.SIGI.to_numpy() * mask)
         
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()

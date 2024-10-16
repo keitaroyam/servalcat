@@ -1018,10 +1018,9 @@ def smooth_params(hkldata, D_labs, smoothing): # XXX twin_data
 # smooth_params()
 
 def expected_F_from_int(Io, sigIo, k_ani, DFc, eps, c, S):
-    if c == 0: # acentric
-        k_num, k_den = 0.5, 0.
-    else:
-        k_num, k_den = 0., -0.5
+    k_num = numpy.repeat(0.5 if c == 0 else 0., Io.size) # 0.5 if acentric
+    k_den = k_num - 0.5
+    if numpy.isscalar(c): c = numpy.repeat(c, Io.size)
     to = Io / sigIo - sigIo / (c+1) / k_ani**2 / S / eps
     tf = k_ani * numpy.abs(DFc) / numpy.sqrt(sigIo)
     sig1 = k_ani**2 * S * eps / sigIo

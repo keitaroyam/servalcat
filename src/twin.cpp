@@ -15,6 +15,7 @@
 #include <numeric>  // for iota
 #include <iostream>
 #include "math.hpp"
+#include "array.h"
 namespace nb = nanobind;
 using namespace servalcat;
 
@@ -507,6 +508,7 @@ struct TwinData {
 };
 
 void add_twin(nb::module_& m) {
+  using T = double;
   nb::class_<TwinData>(m, "TwinData")
     .def(nb::init<>())
     .def_ro("rb2o", &TwinData::rb2o)
@@ -514,53 +516,46 @@ void add_twin(nb::module_& m) {
     .def_ro("rbo2a", &TwinData::rbo2a)
     .def_ro("rbo2c", &TwinData::rbo2c)
     .def_ro("rbin", &TwinData::rbin)
-    .def_ro("asu", &TwinData::asu)
+    .def_prop_ro("asu", [](TwinData &self) {
+      int64_t stride = static_cast<int64_t>(sizeof(gemmi::Op::Miller) / sizeof(int));
+      return nb::ndarray<nb::numpy, int, nb::shape<-1,3>>(&self.asu.front()[0],
+                                                          {self.asu.size(), 3}, // shape
+                                                          nb::handle(), {stride, 1});
+    }, nb::rv_policy::reference_internal)
     .def_ro("centric", &TwinData::centric)
     .def_ro("epsilon", &TwinData::epsilon)
     .def_ro("bin", &TwinData::bin)
     .def_ro("s2_array", &TwinData::s2_array)
     .def_ro("f_true_max", &TwinData::f_true_max)
-#if 0
     .def_prop_ro("f_calc", [](TwinData &self) {
-      const size_t size = sizeof(decltype(self.f_calc_)::value_type);
-      // auto v = new std::vector<decltype(self.f_calc)::value_type>(std::move(self.f_calc));
-      // py::capsule cap(v, [](void* p) { delete (std::vector<decltype(self.f_calc)::value_type>*) p; });
-      return py::array_t<decltype(self.f_calc_)::value_type>({self.asu.size(), self.n_models},
-                                                             {size * self.n_models, size},
-                                                             self.f_calc_.data(),
-                                                             py::none());
-      // return py::array(py::buffer_info(self.f_calc.data(),
-      //                             size,
-      //                             py::format_descriptor<decltype(self.f_calc)::value_type>::format(),
-      //                             2,
-      //                             {self.asu.size(), self.n_models}, // dimensions
-      //                             {size * self.n_models, size} // strides
-      //                                       ));
-    })
-#endif
+      const size_t size = sizeof(std::complex<T>);
+      return nb::ndarray<nb::numpy, std::complex<T>>(self.f_calc_.data(),
+                                                     {self.asu.size(), self.n_models},
+                                                     nb::handle(),
+                                                     {(int64_t)self.n_models, 1});
+    }, nb::rv_policy::reference_internal)
     .def_ro("mlparams", &TwinData::mlparams) // debug raw access
-#if 0
     // Sigma
     .def_prop_ro("ml_sigma", [](TwinData &self) {
-      const size_t size = sizeof(decltype(self.mlparams)::value_type);
+      const size_t size = sizeof(T);
       const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
-      return py::array_t<decltype(self.mlparams)::value_type>({bin_max},
-                                                              {size * (self.n_models+1)},
-                                                              self.mlparams.data(),
-                                                              py::none());
-    })
+      return nb::ndarray<nb::numpy, T>(self.mlparams.data(),
+                                       {bin_max},
+                                       nb::handle(),
+                                       {(int64_t)self.n_models+1});
+    }, nb::rv_policy::reference_internal)
     // D
     .def_prop_ro("ml_scale", [](TwinData &self) {
-      const size_t size = sizeof(decltype(self.mlparams)::value_type);
+      const size_t size = sizeof(T);
       const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
-      return py::array_t<decltype(self.mlparams)::value_type>({bin_max, self.n_models},
-                                                              {size * (self.n_models+1), size},
-                                                              self.mlparams.data() + 1,
-                                                              py::none());
-    })
+      return nb::ndarray<nb::numpy, T>(self.mlparams.data() + 1,
+                                       {bin_max, self.n_models},
+                                       nb::handle(),
+                                       {(int64_t)self.n_models+1, 1});
+    }, nb::rv_policy::reference_internal)
     .def("ml_scale_array", [](const TwinData &self) {
-      auto ret = py::array_t<double>({self.asu.size(), self.n_models});
-      double* ptr = (double*) ret.request().ptr;
+      auto ret =  make_numpy_array<double>({self.asu.size(), self.n_models});
+      double* ptr = ret.data();
       for (size_t ia = 0; ia < self.asu.size(); ++ia) {
         const int ibin = self.bin[ia];
         for (int j = 0; j < self.n_models; ++j)
@@ -569,26 +564,24 @@ void add_twin(nb::module_& m) {
       return ret;
     })
     .def("ml_sigma_array", [](const TwinData &self) {
-      auto ret = py::array_t<double>(self.asu.size());
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.asu.size()});
+      double* ptr = ret.data();
       for (size_t ia = 0; ia < self.asu.size(); ++ia)
         ptr[ia] = self.ml_sigma(self.bin[ia]);
       return ret;
     })
-#endif
     .def_ro("ops", &TwinData::ops)
     .def_rw("alphas", &TwinData::alphas)
-#if 0
-    .def("idx_of_asu", [](const TwinData &self, py::array_t<int> hkl, bool inv){
-      auto h = hkl.unchecked<2>();
+    .def("idx_of_asu", [](const TwinData &self, np_array<int, 2> hkl, bool inv){
+      auto h = hkl.view();
       if (h.shape(1) < 3)
         throw std::domain_error("error: the size of the second dimension < 3");
       const size_t ret_size = inv ? self.asu.size() : h.shape(0);
-      auto ret = py::array_t<int>(ret_size);
-      int* ptr = (int*) ret.request().ptr;
-      for (py::ssize_t i = 0; i < ret_size; ++i)
+      auto ret = make_numpy_array<int>({ret_size});
+      int* ptr = ret.data();
+      for (size_t i = 0; i < ret_size; ++i)
         ptr[i] = -1;
-      for (py::ssize_t i = 0; i < h.shape(0); ++i) {
+      for (size_t i = 0; i < h.shape(0); ++i) {
         int j = self.idx_of_asu({h(i, 0), h(i, 1), h(i, 2)});
         // if (j >= h.shape(0))
         //   throw std::runtime_error("bad idx_of_asu " +
@@ -601,24 +594,21 @@ void add_twin(nb::module_& m) {
           ptr[i] = j;
       }
       return ret;
-    }, py::arg("hkl"), py::arg("inv")=false)
-#endif
+    }, nb::arg("hkl"), nb::arg("inv")=false)
     .def("setup_f_calc", &TwinData::setup_f_calc)
     .def("d_min", &TwinData::d_min)
-#if 0
-    .def("setup", [](TwinData &self, py::array_t<int> hkl, const std::vector<int> &bin,
+    .def("setup", [](TwinData &self, np_array<int, 2> hkl, const std::vector<int> &bin,
                      const gemmi::SpaceGroup &sg, const gemmi::UnitCell &cell,
                      const std::vector<gemmi::Op> &operators) {
-      auto h = hkl.unchecked<2>();
+      auto h = hkl.view();
       if (h.shape(1) < 3)
         throw std::domain_error("error: the size of the second dimension < 3");
       std::vector<gemmi::Op::Miller> hkls;
       hkls.reserve(h.shape(0));
-      for (py::ssize_t i = 0; i < h.shape(0); ++i)
+      for (size_t i = 0; i < h.shape(0); ++i)
         hkls.push_back({h(i, 0), h(i, 1), h(i, 2)});
       self.setup(hkls, bin, sg, cell, operators);
     })
-#endif
     .def("pairs", [](const TwinData &self, int i_op, int i_bin) {
       if (i_op < 0 || i_op >= self.alphas.size())
         throw std::runtime_error("bad i_op");
@@ -635,11 +625,10 @@ void add_twin(nb::module_& m) {
       }
       return idxes;
     }, nb::arg("i_op"), nb::arg("i_bin")=-1)
-#if 0
     .def("obs_related_asu", [](const TwinData &self) {
       const size_t n_ops = self.n_ops(); // include identity
-      auto ret = py::array_t<int>({self.n_obs(), n_ops});
-      int *ptr = (int*) ret.request().ptr;
+      auto ret = make_numpy_array<int>({self.n_obs(), n_ops});
+      int *ptr = ret.data();
       for (int ib = 0; ib < self.rb2o.size(); ++ib)
         for (int io = 0; io < self.rb2o[ib].size(); ++io) {
           int *ptr2 = ptr + self.rb2o[ib][io] * n_ops;
@@ -659,8 +648,8 @@ void add_twin(nb::module_& m) {
         return rasu.to_asu(op.apply_to_hkl(h), gops).first;
       };
       const size_t n_ops = self.n_ops();
-      auto ret = py::array_t<int>({n_asu, n_ops});
-      int* ptr = (int*) ret.request().ptr;
+      auto ret = make_numpy_array<int>({n_asu, n_ops});
+      int* ptr = ret.data();
       //auto data_ = data.unchecked<1>();
       for (int i = 0; i < n_asu; ++i) {
         const auto h = self.asu[i];
@@ -672,14 +661,12 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("est_f_true", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
-      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
-        self.est_f_true(ib,
-                        (double*) Io.request().ptr,
-                        (double*) sigIo.request().ptr);
-      }
+    .def("est_f_true", [](TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
+        self.est_f_true(ib, Io_.data(), sigIo_.data());
     })
-#endif
     .def("ll", [](const TwinData &self) {
       double ret = 0;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
@@ -702,11 +689,10 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-#if 0
     .def("ll_der_D_S", [](const TwinData &self) {
       const size_t n_cols = self.n_models + 1;
-      auto ret = py::array_t<double>({self.asu.size(), n_cols});
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.asu.size(), n_cols});
+      double* ptr = ret.data();
       for (int i = 0; i < ret.size(); ++i)
         ptr[i] = NAN;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
@@ -736,8 +722,8 @@ void add_twin(nb::module_& m) {
     })
     // F_true must be estimated beforehand
     .def("calc_fom", [](const TwinData &self) {
-      auto ret = py::array_t<double>(self.asu.size());
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.asu.size()});
+      double* ptr = ret.data();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
         for (int i = 0; i < self.rb2a[ib].size(); ++i) {
@@ -752,18 +738,17 @@ void add_twin(nb::module_& m) {
       return ret;
     })
     // for FWT and DELFWT: <m|F|>
-    .def("expected_F", [](TwinData &self, py::array_t<double> Io, py::array_t<double> sigIo) {
-      auto ret = py::array_t<double>(self.asu.size());
-      double* ptr = (double*) ret.request().ptr;
+    .def("expected_F", [](TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+      auto ret = make_numpy_array<double>({self.asu.size()});
+      double* ptr = ret.data();
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const size_t b = self.rbin[ib];
         Eigen::VectorXd f_true(self.rb2a[ib].size());
         for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
           f_true(i) = self.f_true_max[self.rb2a[ib][i]];
-        auto ders = self.calc_f_der(ib,
-                                    (double*) Io.request().ptr,
-                                    (double*) sigIo.request().ptr,
-                                    f_true);
+        auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
         auto f_inv = SymMatEig(ders.second).inv();
         for (size_t i = 0; i < self.rb2a[ib].size(); ++i) {
           const size_t ia = self.rb2a[ib][i];
@@ -789,10 +774,10 @@ void add_twin(nb::module_& m) {
       return ret;
     })
     .def("ll_der_fc0", [](const TwinData &self) {
-      auto ret1 = py::array_t<std::complex<double>>(self.asu.size());
-      auto ret2 = py::array_t<double>(self.asu.size());
-      std::complex<double>* ptr1 = (std::complex<double>*) ret1.request().ptr;
-      double* ptr2 = (double*) ret2.request().ptr;
+      auto ret1 = make_numpy_array<std::complex<double>>({self.asu.size()});
+      auto ret2 = make_numpy_array<double>({self.asu.size()});
+      std::complex<double>* ptr1 = ret1.data();
+      double* ptr2 = ret2.data();
       for (int i = 0; i < ret1.size(); ++i) {
         ptr1[i] = NAN;
         ptr2[i] = NAN;
@@ -813,7 +798,7 @@ void add_twin(nb::module_& m) {
           ptr2[ia] = ((3 - c) / (eps * S) - fom_der(m, X, c) * sq((3 - c) * X_der)) * sq(self.ml_scale(b, 0));
         }
       }
-      return py::make_tuple(ret1, ret2);
+      return nb::make_tuple(ret1, ret2);
     })
     // helper function for least-square scaling
     // n_models should include mask, but last f_falc is ignored
@@ -821,13 +806,13 @@ void add_twin(nb::module_& m) {
     // 1: dF/dk_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * exp(...)).conj)
     // 2: dF/dB_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * k_sol * exp(...) * (-s^2/4)).conj)
     .def("scaling_fc_and_mask_grad", [](const TwinData &self,
-                                        py::array_t<std::complex<double>> f_mask,
+                                        np_array<std::complex<double>> f_mask,
                                         double k_sol, double b_sol) {
-      auto f_mask_ = f_mask.unchecked<1>();
-      if (f_mask.shape(0) != self.asu.size())
+      auto f_mask_ = f_mask.view();
+      if (f_mask_.shape(0) != self.asu.size())
         throw std::runtime_error("bad f_mask size");
-      auto ret = py::array_t<double>({self.n_obs(), (size_t)3});
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.n_obs(), (size_t)3});
+      double* ptr = ret.data();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
         for (int io = 0; io < self.rb2o[ib].size(); ++io) {
           double i_calc_twin = 0, der1 = 0, der2 = 0;
@@ -855,8 +840,8 @@ void add_twin(nb::module_& m) {
     })
     // for stats calculation
     .def("i_calc_twin", [](const TwinData &self) {
-      auto ret = py::array_t<double>(self.n_obs());
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.n_obs()});
+      double* ptr = ret.data();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
         for (int io = 0; io < self.rb2o[ib].size(); ++io) {
           double i_calc_twin = 0;
@@ -872,12 +857,11 @@ void add_twin(nb::module_& m) {
       return ret;
     })
     .def("debye_waller_factors", [](const TwinData &self, double b_iso) {
-      auto ret = py::array_t<double>(self.asu.size());
-      double* ptr = (double*) ret.request().ptr;
+      auto ret = make_numpy_array<double>({self.asu.size()});
+      double* ptr = ret.data();
       for (int i = 0; i < ret.size(); ++i)
         ptr[i] = std::exp(-b_iso / 4 * self.s2_array[i]);
       return ret;
-    }, py::arg("b_iso"))
-#endif
+    }, nb::arg("b_iso"))
     ;
 }
