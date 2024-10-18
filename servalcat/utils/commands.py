@@ -292,6 +292,9 @@ def add_arguments(p):
     parser = subparsers.add_parser("seq", description = 'Print/align model sequence')
     parser.add_argument("--model", required=True)
     parser.add_argument('--seq', nargs="*", action="append", help="Sequence file(s)")
+    parser.add_argument('--scoring', nargs=6, type=int, default=(1, 0, -1, -1, 0, -1),
+                        metavar=("match", "mismatch", "gapo", "gape", "good_gapo", "bad_gapo"),
+                        help="scoring function. default: %(default)s")
 
     # dnarna
     parser = subparsers.add_parser("dnarna", description = 'DNA to RNA or RNA to DNA model conversion')
@@ -1382,6 +1385,9 @@ def seq(args):
         for sf in args.seq:
             seqs.extend(fileio.read_sequence_file(sf))
         
+    sc = gemmi.AlignmentScoring()
+    sc.match, sc.mismatch, sc.gapo, sc.gape, sc.good_gapo, sc.bad_gapo = args.scoring
+    
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)    
     for chain in st[0]:
@@ -1397,13 +1403,16 @@ def seq(args):
                     gemmi.PolymerType.Rna: gemmi.ResidueKind.RNA}.get(p_type, gemmi.ResidueKind.AA)
             s = [gemmi.expand_one_letter(x, kind) for x in seq]
             if None in s: continue
-            results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type), seq])
+            #als = [gemmi.align_sequence_to_polymer(s, p, p_type, gemmi.AlignmentScoring(x)) for x in ("s", "p")]
+            #results.append([name, max(als, key=lambda x: x.match_count), seq])
+            results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type, sc), seq])
 
         if results:
             logger.writeln("Chain: {}".format(chain.name))
             logger.writeln(" polymer type: {}".format(str(p_type).replace("PolymerType.", "")))
-            name, al, s1 = max(results, key=lambda x: x[1].score)
+            name, al, s1 = max(results, key=lambda x: (x[1].match_count, x[1].score))
             logger.writeln(" match: {}".format(name))
+            logger.writeln(" aligned: {}".format(al.match_count))
             logger.writeln(" score: {}".format(al.score))
             p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
             unkseq = [x.start() for x in re.finditer(r"\-", p1)]
