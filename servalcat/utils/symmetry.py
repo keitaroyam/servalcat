@@ -55,7 +55,7 @@ def ncsops_from_args(args, cell, map_and_start=None, st=None, helical_min_n=None
         start_xyz = numpy.zeros(3)
 
     if args.center is None:
-        A = cell.orthogonalization_matrix.array
+        A = cell.orth.mat.array
         center = numpy.sum(A, axis=1) / 2 #+ start_xyz
         logger.writeln("Center: {}".format(center))
     else:
@@ -210,7 +210,7 @@ def generate_helical_operators(start_xyz, center, axsym, deltaphi, deltaz, axis1
 
 def make_NcsOps_from_matrices(matrices, cell=None, center=None):
     if center is None:
-        A = cell.orthogonalization_matrix.array
+        A = cell.orth.mat.array
         center = numpy.sum(A,axis=1) / 2
 
     center = gemmi.Vec3(*center)

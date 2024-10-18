@@ -272,7 +272,7 @@ class HklData:
 
     def s_array(self):
         hkl = self.miller_array()
-        return numpy.dot(hkl, self.cell.fractionalization_matrix.array)
+        return numpy.dot(hkl, self.cell.frac.mat.array)
 
     def ssq_mat(self):
         # k_aniso = exp(-s^T B_aniso s / 4)
@@ -291,7 +291,7 @@ class HklData:
             s2 = 1 / self.d_spacings()**2
             return numpy.exp(-b_iso / 4 * s2)
         if b_cart is not None:
-            b_star = b_cart.transformed_by(self.cell.fractionalization_matrix)
+            b_star = b_cart.transformed_by(self.cell.frac.mat)
             return numpy.exp(-b_star.r_u_r(self.miller_array()) / 4)
     
     def calc_d(self):

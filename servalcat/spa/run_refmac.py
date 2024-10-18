@@ -462,7 +462,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
     unit_cell = maps[0][0].unit_cell
     spacegroup = gemmi.SpaceGroup(1)
     start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
-    A = unit_cell.orthogonalization_matrix.array
+    A = unit_cell.orth.mat.array
     center = numpy.sum(A, axis=1) / 2 #+ start_xyz
 
     # Create mask

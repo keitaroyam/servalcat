@@ -347,8 +347,8 @@ def translate_into_box(st, origin=None, apply_shift=True):
     if origin is None: origin = gemmi.Position(0,0,0)
     
     # apply unit cell translations to put model into a box (unit cell)
-    omat = st.cell.orthogonalization_matrix.array
-    fmat = st.cell.fractionalization_matrix.array.transpose()
+    omat = st.cell.orth.mat.array
+    fmat = st.cell.frac.mat.array.transpose()
     com = numpy.array((st[0].calculate_center_of_mass() - origin).tolist())
     shift = sum([omat[:,i]*numpy.floor(1-numpy.dot(com, fmat[:,i])) for i in range(3)])
     tr = gemmi.Transform(gemmi.Mat33(), gemmi.Vec3(*shift))
@@ -727,7 +727,7 @@ def st_from_positions(positions, bs=None, qs=None):
             
 def invert_model(st):
     # invert x-axis
-    A = st.cell.orthogonalization_matrix.array
+    A = st.cell.orth.mat.array
     center = numpy.sum(A,axis=1) / 2
     center = gemmi.Vec3(*center)
     mat = gemmi.Mat33([[-1,0,0],[0,1,0],[0,0,1]]) 
@@ -749,7 +749,7 @@ def cx_to_mx(ss): #SmallStructure to Structure
     st[-1][-1][-1].name = "00"
 
     ruc = ss.cell.reciprocal()
-    cif2cart = ss.cell.orthogonalization_matrix.multiply_by_diagonal(gemmi.Vec3(ruc.a, ruc.b, ruc.c))
+    cif2cart = ss.cell.orth.mat.multiply_by_diagonal(gemmi.Vec3(ruc.a, ruc.b, ruc.c))
     as_smat33f = lambda x: gemmi.SMat33f(x.u11, x.u22, x.u33, x.u12, x.u13, x.u23)
     
     for site in ss.sites:
