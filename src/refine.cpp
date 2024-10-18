@@ -21,6 +21,7 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/eigen/sparse.h>
 namespace nb = nanobind;
+constexpr auto rv_ri = nb::rv_policy::reference_internal;
 using namespace servalcat;
 
 NB_MAKE_OPAQUE(std::vector<Geometry::Bond>)
@@ -733,28 +734,28 @@ void add_refine(nb::module_& m) {
     .def_rw("sigma", &Geometry::Ncsr::sigma)
     ;
 
-  nb::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>>(geom, "ReportingBonds");
-  nb::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>>(geom, "ReportingAngles");
-  nb::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>>(geom, "ReportingTorsions");
-  nb::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>>(geom, "ReportingChirals");
-  nb::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>>(geom, "ReportingPlanes");
-  nb::bind_vector<std::vector<Geometry::Reporting::stacking_reporting_t>>(geom, "ReportingStackings");
-  nb::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>>(geom, "ReportingVdws");
-  nb::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>>(geom, "ReportingNcsrs");
-  nb::bind_vector<std::vector<Geometry::Bond>>(geom, "Bonds");
-  nb::bind_vector<std::vector<Geometry::Angle>>(geom, "Angles");
-  nb::bind_vector<std::vector<Geometry::Chirality>>(geom, "Chiralitys");
-  nb::bind_vector<std::vector<Geometry::Torsion>>(geom, "Torsions");
-  nb::bind_vector<std::vector<Geometry::Plane>>(geom, "Planes");
-  nb::bind_vector<std::vector<Geometry::Interval>>(geom, "Intervals");
-  nb::bind_vector<std::vector<Geometry::Stacking>>(geom, "Stackings");
-  nb::bind_vector<std::vector<Geometry::Harmonic>>(geom, "Harmonics");
-  nb::bind_vector<std::vector<Geometry::Special>>(geom, "Specials");
-  nb::bind_vector<std::vector<Geometry::Vdw>>(geom, "Vdws");
-  nb::bind_vector<std::vector<Geometry::Ncsr>>(geom, "Ncsrs");
-  nb::bind_vector<std::vector<Geometry::Bond::Value>>(bond, "Values");
-  nb::bind_vector<std::vector<Geometry::Angle::Value>>(angle, "Values");
-  nb::bind_vector<std::vector<Geometry::Torsion::Value>>(torsion, "Values");
+  nb::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>, rv_ri>(geom, "ReportingBonds");
+  nb::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>, rv_ri>(geom, "ReportingAngles");
+  nb::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>, rv_ri>(geom, "ReportingTorsions");
+  nb::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>, rv_ri>(geom, "ReportingChirals");
+  nb::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>, rv_ri>(geom, "ReportingPlanes");
+  nb::bind_vector<std::vector<Geometry::Reporting::stacking_reporting_t>, rv_ri>(geom, "ReportingStackings");
+  nb::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>, rv_ri>(geom, "ReportingVdws");
+  nb::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>, rv_ri>(geom, "ReportingNcsrs");
+  nb::bind_vector<std::vector<Geometry::Bond>, rv_ri>(geom, "Bonds");
+  nb::bind_vector<std::vector<Geometry::Angle>, rv_ri>(geom, "Angles");
+  nb::bind_vector<std::vector<Geometry::Chirality>, rv_ri>(geom, "Chiralitys");
+  nb::bind_vector<std::vector<Geometry::Torsion>, rv_ri>(geom, "Torsions");
+  nb::bind_vector<std::vector<Geometry::Plane>, rv_ri>(geom, "Planes");
+  nb::bind_vector<std::vector<Geometry::Interval>, rv_ri>(geom, "Intervals");
+  nb::bind_vector<std::vector<Geometry::Stacking>, rv_ri>(geom, "Stackings");
+  nb::bind_vector<std::vector<Geometry::Harmonic>, rv_ri>(geom, "Harmonics");
+  nb::bind_vector<std::vector<Geometry::Special>, rv_ri>(geom, "Specials");
+  nb::bind_vector<std::vector<Geometry::Vdw>, rv_ri>(geom, "Vdws");
+  nb::bind_vector<std::vector<Geometry::Ncsr>, rv_ri>(geom, "Ncsrs");
+  nb::bind_vector<std::vector<Geometry::Bond::Value>, rv_ri>(bond, "Values");
+  nb::bind_vector<std::vector<Geometry::Angle::Value>, rv_ri>(angle, "Values");
+  nb::bind_vector<std::vector<Geometry::Torsion::Value>, rv_ri>(torsion, "Values");
 
   geomtarget
     .def_ro("target", &GeomTarget::target)

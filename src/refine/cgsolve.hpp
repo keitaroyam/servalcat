@@ -7,7 +7,7 @@
 #include "ll.hpp"
 #include "geom.hpp"
 #include <ostream>
-#include <gemmi/topo.hpp> // for gemmi::Logger::Callback
+#include <gemmi/logger.hpp> // for gemmi::Logger::Callback
 #include <Eigen/Sparse>
 #include <Eigen/IterativeLinearSolvers>
 
