@@ -30,6 +30,8 @@ def add_arguments(parser):
     parser.description = 'Sigma-A parameter estimation for crystallographic data'
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
+    parser.add_argument('--spacegroup',
+                        help='Override space group')
     parser.add_argument('--labin',
                         help='MTZ column for F,SIGF,FREE')
     parser.add_argument('--free', type=int,
@@ -1162,7 +1164,7 @@ def decide_mtz_labels(mtz, find_free=True, require=None):
 
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
                   n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False,
-                  allow_unusual_occupancies=False):
+                  allow_unusual_occupancies=False, space_group=None):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
     assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
@@ -1213,6 +1215,12 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     if hkldata.df.empty:
         raise RuntimeError("No data in hkl data")
     
+    if space_group is None:
+        sg_use = None
+    else:
+        sg_use = gemmi.SpaceGroup(space_group)
+        logger.writeln(f"Space group overridden by user. Using {sg_use.xhm()}")
+    
     if sts:
         assert source in ["electron", "xray", "neutron"]
         for st in sts:
@@ -1225,27 +1233,29 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         for st in sts: st.cell = hkldata.cell # mtz cell is used in any case
 
         sg_st = sts[0].find_spacegroup() # may be None
-        sg_use = hkldata.sg
-        if hkldata.sg != sg_st:
-            if st.cell.is_crystal() and sg_st and sg_st.laue_str() != hkldata.sg.laue_str():
-                raise RuntimeError("Crystal symmetry mismatch between model and data")
-            logger.writeln("Warning: space group mismatch between model and mtz")
-            if sg_st and sg_st.laue_str() == hkldata.sg.laue_str():
-                logger.writeln("         using space group from model")
-                sg_use = sg_st
-            else:
-                logger.writeln("         using space group from mtz")
-            logger.writeln("")
-
+        if sg_use is None:
+            sg_use = hkldata.sg
+            if hkldata.sg != sg_st:
+                if st.cell.is_crystal() and sg_st and sg_st.laue_str() != hkldata.sg.laue_str():
+                    raise RuntimeError("Crystal symmetry mismatch between model and data")
+                logger.writeln("Warning: space group mismatch between model and mtz")
+                if sg_st and sg_st.laue_str() == hkldata.sg.laue_str():
+                    logger.writeln("         using space group from model")
+                    sg_use = sg_st
+                else:
+                    logger.writeln("         using space group from mtz")
+                logger.writeln("")
+            
         for st in sts:
             st.spacegroup_hm = sg_use.xhm()
             st.setup_cell_images()
-        hkldata.sg = sg_use
 
         if not keep_charges:
             utils.model.remove_charge(sts)
         utils.model.check_atomsf(sts, source)
 
+    if sg_use is not None:
+        hkldata.sg = sg_use
     if newlabels[0] == "FP":
         hkldata.remove_nonpositive(newlabels[0])
     hkldata.remove_nonpositive(newlabels[1])
@@ -1538,7 +1548,8 @@ def main(args):
                                                                            n_per_bin=n_per_bin,
                                                                            use=args.use,
                                                                            max_bins=30,
-                                                                           keep_charges=args.keep_charges)
+                                                                           keep_charges=args.keep_charges,
+                                                                           space_group=args.spacegroup)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
