@@ -37,14 +37,17 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         for i_op, op in enumerate(ops):
             ii = numpy.array(twin_data.pairs(i_op, i_bin))
             val = numpy.all(numpy.isfinite(Io[ii]), axis=1)
-            cc = numpy.corrcoef(Io[ii][val].T)[0,1]
+            if numpy.sum(val) == 0:
+                cc = numpy.nan
+            else:
+                cc = numpy.corrcoef(Io[ii][val].T)[0,1]
             rr = (1 - numpy.sqrt(1 - cc**2)) / cc
             ratios.append(rr)
             ccs[-1].append(cc)
             nums[-1].append(len(val))
-        alphas.append(numpy.array(ratios) / sum(ratios))
+        alphas.append(numpy.array(ratios) / numpy.nansum(ratios))
     alphas = numpy.maximum(0, numpy.mean(alphas, axis=0))
-    alphas /= numpy.sum(alphas)
+    alphas /= numpy.nansum(alphas)
     ccs = numpy.array(ccs)
     nums = numpy.array(nums)
     tmp = [{"Operator": gemmi.Op().triplet(),
@@ -54,7 +57,10 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
     for i_op, op in enumerate(ops):
         ii = numpy.array(twin_data.pairs(i_op))
         val = numpy.all(numpy.isfinite(Io[ii]), axis=1)
-        r_obs = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
+        if numpy.sum(val) == 0:
+            r_obs = numpy.nan
+        else:
+            r_obs = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
         tmp.append({"Operator": op.triplet(),
                     "CC_mean": numpy.sum(nums[:,i_op] * ccs[:,i_op]) / numpy.sum(nums[:,i_op]),
                     "R_twin_obs": r_obs,
