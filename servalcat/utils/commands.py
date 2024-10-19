@@ -985,7 +985,7 @@ def compare_conf(args):
     for_coot = []
     for ncs in ncslist.ncss:
         c1, c2 = ncs.chains
-        if args.same_chain and len(args.models) > 0 and c1[c1.index("_"):] != c2[c2.index("_"):]:
+        if args.same_chain and len(args.models) > 1 and c1[c1.index("_"):] != c2[c2.index("_"):]:
             continue
         for s1, s2 in ncs.seqids:
             if c1 in confs and s1 in confs[c1] and c2 in confs and s2 in confs[c2]:
