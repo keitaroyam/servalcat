@@ -756,7 +756,7 @@ class MetalCoordination:
                     logger.writeln(" (from ener_lib)")
                 else:
                     logger.writeln(" ".join("{:.4f} ({} coord)".format(x["median"], x["coord"]) for x in vals))
-                    ideals[el] = [(x["median"], x["mad"]) for x in vals if x["mad"] > 0]
+                    ideals[el] = [(x["median"], max(0.02, x["mad"]*1.5)) for x in vals if x["mad"] > 0]
             logger.writeln("")
             for i, am in enumerate(coords[metal]):
                 logger.writeln("  site {}: {}".format(i+1, lookup[am]))
