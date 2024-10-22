@@ -894,20 +894,14 @@ void add_refine(nb::module_& m) {
          nb::arg("geom"), nb::arg("ll")=nb::none())
     .def("solve", [](CgSolve &self, double weight, const nb::object& pystream,
                      bool use_ic) {
-      auto callback = [&pystream]() -> gemmi::Logger::Callback {
-        if (pystream.is_none())
-          return {};
-        if (nb::hasattr(pystream, "write") && nb::hasattr(pystream, "flush"))
-          return [&](const std::string& s) {
-            pystream.attr("write")(nb::str((s + "\n").c_str()));
-            pystream.attr("flush")();
-          };
-        return [&](const std::string& s) {
-          pystream(nb::str(s.c_str()));
-        };
-      };
       gemmi::Logger logger;
-      logger.callback = callback();
+      if (nb::hasattr(pystream, "write") && nb::hasattr(pystream, "flush"))
+        logger.callback = [&](const std::string& s) {
+          pystream.attr("write")(s + "\n");
+          pystream.attr("flush")();
+        };
+      else if (PyCallable_Check(pystream.ptr()))
+        logger.callback = [&](const std::string& s) { pystream(s); };
       if (use_ic)
         return self.solve<Eigen::IncompleteCholesky<double>>(weight, logger);
       else
