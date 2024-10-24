@@ -38,7 +38,7 @@ input = "servalcat/__init__.py"
 build-verbosity = 2
 test-command = "python {project}/tests/test_for_ci.py"
 [tool.cibuildwheel.environment]
-SKBUILD_CMAKE_ARGS = '-DBUILD_SHARED_LIBS=OFF;-DINSTALL_DEV_FILES=ON;-DGENERATE_STUBS=OFF'
+SKBUILD_CMAKE_ARGS = '-DBUILD_SHARED_LIBS=OFF;-DINSTALL_DEV_FILES=ON;-DGENERATE_STUBS=OFF;-DINSTALL_GEMMI_IF_BUILT=1'
 
 [tool.codespell]
 skip = './eigen,./gemmi,*.pdb,*.crd,*.cif,*.mmcif,*.ent,*.log*,*.dic,tags,*.bak,*build*,*~'
