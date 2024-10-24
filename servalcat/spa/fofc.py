@@ -464,7 +464,11 @@ def main(args):
     logger.writeln("coot --script " + py_out)
     if mask is not None:
         logger.writeln("\nWant to list Fo-Fc map peaks? Try:")
-        logger.writeln("servalcat util map_peaks --map {}_normalized_fofc.mrc --model {} --abs_level 4.0".format(args.output_prefix, args.model))
+        if omit_h_electron:
+            logger.writeln("servalcat util map_peaks --map {}_normalized_fofc_flipsign.mrc --model {} --abs_level 4.0".format(args.output_prefix, args.model))
+        else:
+            logger.writeln("servalcat util map_peaks --map {}_normalized_fofc.mrc --model {} --abs_level 4.0".format(args.output_prefix, args.model))
+
 # main()
 
 if __name__ == "__main__":
