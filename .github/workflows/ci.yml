@@ -45,12 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, macos-12, macos-13, macos-14, windows-2022]
-        py: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
-        exclude:
-          - os: macos-14
-            py: '3.7'
-          - os: ubuntu-24.04
-            py: '3.7'
+        py: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
     name: ${{ matrix.os }} py${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     needs: merge

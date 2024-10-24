@@ -1,0 +1,42 @@
+name: test_with_gemmi
+
+on: workflow_dispatch
+
+jobs:
+  dummy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Dummy job"
+  standard:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, macos-12, macos-13, macos-14, windows-2022]
+        py: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    name: ${{ matrix.os }} py${{ matrix.py }}
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: checkout monomers
+      uses: actions/checkout@v4
+      with:
+        repository: MRC-LMB-ComputationalStructuralBiology/monomers
+        path: monomers
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.py }}
+    - name: Python Setup
+      run: python -m pip install -vv . --config-settings=cmake.define.INSTALL_GEMMI_IF_BUILT=1 --config-settings=cmake.define.GENERATE_STUBS=OFF
+    - name: Python Tests
+      continue-on-error: true
+      env:
+        CLIBD_MON: ${{runner.workspace}}/servalcat/monomers
+      run: |
+        cd tests/
+        python3 -m unittest discover -v -s .
+        cd ..
+
