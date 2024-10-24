@@ -36,9 +36,14 @@ input = "servalcat/__init__.py"
 [tool.cibuildwheel]
 # increase pip debugging output
 build-verbosity = 2
-test-command = "python {project}/tests/test_for_ci.py"
+test-command = "python {project}/tests/test_for_ci.py" # comment out to test with gemmi build
 [tool.cibuildwheel.environment]
-SKBUILD_CMAKE_ARGS = '-DBUILD_SHARED_LIBS=OFF;-DINSTALL_DEV_FILES=ON;-DGENERATE_STUBS=OFF'
+SKBUILD_CMAKE_ARGS = '-DGENERATE_STUBS=OFF' # -DINSTALL_GEMMI_IF_BUILT=1 to test with gemmi build
+
+# Needed for full C++17 support on macOS
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "10.14"
+SKBUILD_CMAKE_ARGS = '-DGENERATE_STUBS=OFF' # -DINSTALL_GEMMI_IF_BUILT=1 to test with gemmi build
 
 [tool.codespell]
 skip = './eigen,./gemmi,*.pdb,*.crd,*.cif,*.mmcif,*.ent,*.log*,*.dic,tags,*.bak,*build*,*~'
