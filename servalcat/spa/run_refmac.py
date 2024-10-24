@@ -10,7 +10,6 @@ import gemmi
 import numpy
 import json
 import os
-import io
 import shutil
 import argparse
 from servalcat.utils import logger
@@ -593,7 +592,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
             topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, raise_error=False)
             args.keywords = metal_kws + args.keywords
         elif not no_refmac_fix:
-            topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
+            topo = gemmi.prepare_topology(st, monlib, warnings=logger.silent(), ignore_unknown_links=True)
         else:
             topo = None # not used
         if not no_refmac_fix:

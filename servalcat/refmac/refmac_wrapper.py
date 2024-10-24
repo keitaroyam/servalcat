@@ -11,7 +11,6 @@ import numpy
 import json
 import os
 import sys
-import io
 import tempfile
 import subprocess
 import argparse
@@ -126,8 +125,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
     max_seq_num = max([max(res.seqid.num for res in chain) for model in st for chain in model])
     if max_seq_num > 9999:
         logger.writeln("Max residue number ({}) exceeds 9999. Needs workaround.".format(max_seq_num))
-        sio = io.StringIO()
-        topo = gemmi.prepare_topology(st, monlib, warnings=sio, ignore_unknown_links=True)
+        topo = gemmi.prepare_topology(st, monlib, warnings=logger.silent(), ignore_unknown_links=True)
         refmac_fixes.fix_before_topology(st, topo, 
                                          fix_microheterogeneity=False,
                                          fix_resimax=True,
@@ -135,8 +133,7 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
 
     if unre:
         # Refmac5 does not seem to do anything to hydrogen when unre regardless of "make hydr"
-        sio = io.StringIO()
-        topo = gemmi.prepare_topology(st, monlib, warnings=sio, ignore_unknown_links=True)
+        topo = gemmi.prepare_topology(st, monlib, warnings=logger.silent(), ignore_unknown_links=True)
         metal_kws = []
     else:
         if make.get("hydr") == "a": logger.writeln("(re)generating hydrogen atoms")

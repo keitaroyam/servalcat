@@ -10,7 +10,6 @@ from servalcat.utils import logger
 from servalcat.refmac import refmac_keywords
 from servalcat import ext
 import os
-import io
 import gemmi
 import string
 import random
@@ -87,14 +86,13 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     if cif_files is None:
         cif_files = []
         
+    monlib = gemmi.MonLib()
     if monomer_dir and not ignore_monomer_dir:
         if not os.path.isdir(monomer_dir):
             raise RuntimeError("not a directory: {}".format(monomer_dir))
 
         logger.writeln("Reading monomers from {}".format(monomer_dir))
-        monlib = gemmi.read_monomer_lib(monomer_dir, resnames, ignore_missing=True)
-    else:
-        monlib = gemmi.MonLib()
+        monlib.read_monomer_lib(monomer_dir, resnames, logger)
 
     for f in cif_files:
         logger.writeln("Reading monomer: {}".format(f))
@@ -148,7 +146,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
             logger.writeln("         it is strongly recommended to generate them using AceDRG.")
 
     if update_old_atom_names:
-        logger.write(monlib.update_old_atom_names(st))
+        monlib.update_old_atom_names(st, logger)
 
     if params:
         update_torsions(monlib, params.get("restr", {}).get("torsion_include", {}))
@@ -334,10 +332,9 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
         keywords = []
     # these checks can be done after sorting links
     logger.writeln("Creating restraints..")
-    sio = io.StringIO()
-    topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=sio, reorder=False,
-                                  ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
-    for l in sio.getvalue().splitlines(): logger.writeln(" " + l)
+    with logger.with_prefix("  "):
+        topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=False,
+                                      ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
     unknown_cc = set()
     link_related = set()
     nan_hydr = set()
