@@ -156,6 +156,7 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
 
 def fix_elements_in_model(monlib, st):
     monlib_els = {m: {a.id: a.el for a in monlib.monomers[m].atoms} for m in monlib.monomers}
+    lookup = {x.atom: x for x in st[0].all()}
     for chain in st[0]:
         for res in chain:
             d = monlib_els.get(res.name)
@@ -165,7 +166,7 @@ def fix_elements_in_model(monlib, st):
                     continue
                 el = d[at.name]
                 if at.element != el:
-                    logger.writeln(f"WARNING: correcting element of {st[0].get_cra(at)} to {el.name}")
+                    logger.writeln(f"WARNING: correcting element of {lookup[at]} to {el.name}")
                     at.element = el
 # correct_elements_in_model()
 
