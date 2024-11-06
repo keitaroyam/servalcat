@@ -212,7 +212,8 @@ void add_refine(py::module& m) {
       for (const auto& p : delsq)
         if (!p.second.empty()) {
           const int i = p.first > 6 ? p.first - 6 : p.first;
-          append((i == 1 ? "VDW nonbonded" :
+          append((i == 0 ? "VDW angle" :
+                  i == 1 ? "VDW nonbonded" :
                   i == 2 ? "VDW torsion" :
                   i == 3 ? "VDW hbond" :
                   i == 4 ? "VDW metal" :
@@ -702,7 +703,8 @@ void add_refine(py::module& m) {
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
          py::arg("skip_critical_dist")=false,
-         py::arg("group_idxes")=std::vector<int>{})
+         py::arg("group_idxes")=std::vector<int>{},
+         py::arg("repulse_undefined_angles")=true)
     .def("setup_ncsr", &Geometry::setup_ncsr)
     .def("calc", &Geometry::calc, py::arg("use_nucleus"), py::arg("check_only"),
          py::arg("wbond")=1, py::arg("wangle")=1, py::arg("wtors")=1,
