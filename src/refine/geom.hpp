@@ -684,7 +684,7 @@ struct Geometry {
     : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(s.first_model(), atom_pos) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
-  void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes);
+  void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes, bool repulse_undefined_angles);
   void setup_ncsr(const NcsList &ncslist);
   bool in_same_plane(const gemmi::Atom *a1, const gemmi::Atom *a2) const {
     return std::binary_search(plane_pairs.begin(), plane_pairs.end(),
@@ -987,6 +987,13 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
     hb_type[i] = (it == hbtypes.end()) ? libatom.hb_type : it->second;
   }
 
+  // this only happens when the ideal angle is not defined
+  if (d_1_2 == 2) {
+    vdw.type = 0;
+    vdw.value = vdw.atoms[0]->element.covalent_r() + vdw.atoms[1]->element.covalent_r();
+    vdw.sigma = vdw_sdi_vdw;
+    return;
+  }
   // check torsion related atoms XXX what if within ring? we can remove if torsion.period<3?
   if (d_1_2 == 3) { // for hydrogen also??
     double dinc_curr[2];
@@ -1059,7 +1066,8 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
 // sets up nonbonded interactions for vdwr, ADP restraints, and jellybody
 // group_idxes from occupancy group definition. 0 means not belongig to any group
 inline void Geometry::setup_nonbonded(bool skip_critical_dist,
-                                      const std::vector<int> &group_idxes) {
+                                      const std::vector<int> &group_idxes,
+                                      bool repulse_undefined_angles) {
   if (!group_idxes.empty())
     assert(group_idxes.size() == target.all_atoms.size());
   if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
@@ -1074,6 +1082,22 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
         hbtypes.emplace(b.atoms[h]->serial, p_hb_type == 'D' || p_hb_type == 'B' ? 'H' : 'N');
       }
   }
+
+  auto angle_defined = [&](const gemmi::Atom *a1, const gemmi::Atom *a2) {
+    const auto key = a1->serial < a2->serial
+      ? std::make_pair(a1->serial, a2->serial)
+      : std::make_pair(a2->serial, a1->serial);
+    // ignore symmetry and pbc
+    struct cmp {
+      bool operator()(const Angle &lhs, decltype(key) &rhs) const {
+        return std::make_pair(lhs.atoms[0]->serial, lhs.atoms[2]->serial) < rhs;
+      }
+      bool operator()(decltype(key) &lhs, const Angle &rhs) const {
+        return lhs < std::make_pair(rhs.atoms[0]->serial, rhs.atoms[2]->serial);
+      }
+    };
+    return std::binary_search(angles.begin(), angles.end(), key, cmp());
+  };
 
   vdws.clear();
 
@@ -1124,7 +1148,8 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
                                  vdws.back().set_image(st.cell, gemmi::Asu::Different);
                                int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, vdws.back().same_asu());
-                               if (d_1_2 < 3 || (d_1_2 == 3 && in_same_plane(&atom, cra2.atom))) {
+                               if ((d_1_2 == 3 && in_same_plane(&atom, cra2.atom)) ||
+                                   ((repulse_undefined_angles && d_1_2 == 2) ? angle_defined(&atom, cra2.atom) : d_1_2 < 3)) {
                                  vdws.pop_back();
                                  continue;
                                }

@@ -15,7 +15,9 @@ namespace servalcat {
 struct NcsList {
   struct Ncs {
     Ncs(const gemmi::AlignmentResult &al,
-        gemmi::ConstResidueSpan fixed, gemmi::ConstResidueSpan movable) {
+        gemmi::ConstResidueSpan fixed, gemmi::ConstResidueSpan movable,
+        const std::string &chain_fixed, const std::string &chain_movable)
+      : chains(std::make_pair(chain_fixed, chain_movable)) {
       auto it1 = fixed.first_conformer().begin();
       auto it2 = movable.first_conformer().begin();
       n_atoms.push_back(0);
@@ -56,6 +58,7 @@ struct NcsList {
 
     std::vector<std::pair<const gemmi::Atom*, const gemmi::Atom*>> atoms;
     std::vector<std::pair<gemmi::SeqId, gemmi::SeqId>> seqids;
+    std::pair<std::string, std::string> chains;
     std::vector<size_t> n_atoms;
     std::vector<double> local_rms;
   };

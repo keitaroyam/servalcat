@@ -225,7 +225,8 @@ void add_refine(nb::module_& m) {
       for (const auto& p : delsq)
         if (!p.second.empty()) {
           const int i = p.first > 6 ? p.first - 6 : p.first;
-          append((i == 1 ? "VDW nonbonded" :
+          append((i == 0 ? "VDW angle" :
+                  i == 1 ? "VDW nonbonded" :
                   i == 2 ? "VDW torsion" :
                   i == 3 ? "VDW hbond" :
                   i == 4 ? "VDW metal" :
@@ -787,7 +788,8 @@ void add_refine(nb::module_& m) {
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
          nb::arg("skip_critical_dist")=false,
-         nb::arg("group_idxes")=std::vector<int>{})
+         nb::arg("group_idxes")=std::vector<int>{},
+         nb::arg("repulse_undefined_angles")=true)
     .def("setup_ncsr", &Geometry::setup_ncsr)
     .def("calc", &Geometry::calc, nb::arg("use_nucleus"), nb::arg("check_only"),
          nb::arg("wbond")=1, nb::arg("wangle")=1, nb::arg("wtors")=1,
@@ -959,12 +961,14 @@ void add_refine(nb::module_& m) {
 
   nb::class_<NcsList> ncslist(m, "NcsList");
   nb::class_<NcsList::Ncs>(ncslist, "Ncs")
-    .def("__init__", [](NcsList::Ncs* p, const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable) {
-      new(p) NcsList::Ncs(al, fixed, movable);
+    .def("__init__", [](NcsList::Ncs* p, const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable,
+                     const std::string &chain_fixed, const std::string &chain_movable) {
+      new(p) NcsList::Ncs(al, fixed, movable, chain_fixed, chain_movable);
     })
     .def("calculate_local_rms", &NcsList::Ncs::calculate_local_rms)
     .def_ro("atoms", &NcsList::Ncs::atoms)
     .def_ro("seqids", &NcsList::Ncs::seqids)
+    .def_ro("chains", &NcsList::Ncs::chains)
     .def_ro("n_atoms", &NcsList::Ncs::n_atoms)
     .def_ro("local_rms", &NcsList::Ncs::local_rms)
     ;

@@ -663,34 +663,35 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
             q = [x.name for x in pols[i][1]]
             for j in range(i+1, len(pols)):
                 al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt, scoring)
-                if 0: # debug
-                    wrap_width = 100
-                    logger.writeln(f"seq1: {pols[i][0].name} {pols[i][1][0].seqid}..{pols[i][1][-1].seqid}")
-                    logger.writeln(f"seq2: {pols[j][0].name} {pols[j][1][0].seqid}..{pols[j][1][-1].seqid}")
-                    logger.writeln(f"match_count: {al.match_count}")
-                    s1 = gemmi.one_letter_code(q)
-                    p_seq = gemmi.one_letter_code(pols[j][1].extract_sequence())
-                    p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
-                    for k in range(0, len(p1), wrap_width):
-                        logger.writeln(" seq.  {}".format(p1[k:k+wrap_width]))
-                        logger.writeln("       {}".format(al.match_string[k:k+wrap_width]))
-                        logger.writeln(" model {}\n".format(p2[k:k+wrap_width]))
                 if al.match_count < min_nalign: continue
                 su = gemmi.calculate_superposition(pols[i][1], pols[j][1], pt, gemmi.SupSelect.All)
-                obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1])
+                obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1], pols[i][0].name, pols[j][0].name)
                 obj.calculate_local_rms(rms_loc_nlen)
                 if len(obj.local_rms) == 0 or numpy.all(numpy.isnan(obj.local_rms)):
                     continue
                 ave_local_rms = numpy.nanmean(obj.local_rms)
                 if ave_local_rms > max_rms_loc: continue
                 ncslist.ncss.append(obj)
-                al_res.append({"chain_1": "{} ({}..{})".format(pols[i][0].name, pols[i][1][0].seqid, pols[i][1][-1].seqid),
-                               "chain_2": "{} ({}..{})".format(pols[j][0].name, pols[j][1][0].seqid, pols[j][1][-1].seqid),
+                al_res.append({"chain_1": "{} ({}..{})".format(obj.chains[0], obj.seqids[0][0], obj.seqids[-1][0]),
+                               "chain_2": "{} ({}..{})".format(obj.chains[1], obj.seqids[0][1], obj.seqids[-1][1]),
                                "aligned": al.match_count,
                                "identity": al.calculate_identity(1),
                                "rms": su.rmsd,
                                "ave(rmsloc)": ave_local_rms,
                                })
+                if al_res[-1]["identity"] < 100:
+                    wrap_width = 100
+                    logger.writeln(f"seq1: {pols[i][0].name} {pols[i][1][0].seqid}..{pols[i][1][-1].seqid}")
+                    logger.writeln(f"seq2: {pols[j][0].name} {pols[j][1][0].seqid}..{pols[j][1][-1].seqid}")
+                    logger.writeln(f"match_count: {al.match_count} (identity: {al_res[-1]['identity']:.2f})")
+                    s1 = gemmi.one_letter_code(q)
+                    p_seq = gemmi.one_letter_code(pols[j][1].extract_sequence())
+                    p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
+                    for k in range(0, len(p1), wrap_width):
+                        logger.writeln(" seq1 {}".format(p1[k:k+wrap_width]))
+                        logger.writeln("      {}".format(al.match_string[k:k+wrap_width]))
+                        logger.writeln(" seq2 {}\n".format(p2[k:k+wrap_width]))
+
     ncslist.set_pairs()
     df = pandas.DataFrame(al_res)
     df.index += 1
@@ -753,7 +754,7 @@ class MetalCoordination:
                     logger.writeln(" (from ener_lib)")
                 else:
                     logger.writeln(" ".join("{:.4f} ({} coord)".format(x["median"], x["coord"]) for x in vals))
-                    ideals[el] = [(x["median"], x["mad"]) for x in vals if x["mad"] > 0]
+                    ideals[el] = [(x["median"], max(0.02, x["mad"]*1.5)) for x in vals if x["mad"] > 0]
             logger.writeln("")
             for i, am in enumerate(coords[metal]):
                 logger.writeln("  site {}: {}".format(i+1, lookup[am]))

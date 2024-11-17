@@ -124,13 +124,16 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
     for row in block.find("_chem_comp_atom.", ["atom_id", "?x", "?y", "?z",
                                                "?pdbx_model_Cartn_x_ideal",
                                                "?pdbx_model_Cartn_y_ideal",
-                                               "?pdbx_model_Cartn_z_ideal"]):
+                                               "?pdbx_model_Cartn_z_ideal",
+                                               "?model_Cartn_x", "?model_Cartn_y", "?model_Cartn_z"]):
         p = pos[row.str(0)]
         for i in range(3):
             if row.has(i+1):
                 row[i+1] = "{:.3f}".format(p[i])
             if row.has(i+4):
                 row[i+4] = "{:.3f}".format(p[i])
+            if row.has(i+7):
+                row[i+7] = "{:.3f}".format(p[i])
     # add description
     add_program_info_to_dictionary(block, st[0][0][0].name)
     doc.write_file(output_prefix + "_updated.cif", options=gemmi.cif.Style.Aligned)

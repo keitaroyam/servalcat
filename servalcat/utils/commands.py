@@ -185,6 +185,17 @@ def add_arguments(p):
     parser.add_argument('-o', '--output_prefix', 
                         help="default: taken from input file")
 
+    # conf
+    parser = subparsers.add_parser("conf", description = 'Compare conformations')
+    parser.add_argument('models', nargs="+")
+    parser.add_argument("--min_diff", type=float, default=60.)
+    parser.add_argument('--ligand', nargs="*", action="append")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument("--same_chain", action='store_true', help="Only between same chains (more than one file)")
+    parser.add_argument('-o', '--output_prefix', default="conf",
+                        help="")
+
     # adp
     parser = subparsers.add_parser("adp", description = 'ADP analysis')
     parser.add_argument('model')
@@ -281,6 +292,9 @@ def add_arguments(p):
     parser = subparsers.add_parser("seq", description = 'Print/align model sequence')
     parser.add_argument("--model", required=True)
     parser.add_argument('--seq', nargs="*", action="append", help="Sequence file(s)")
+    parser.add_argument('--scoring', nargs=6, type=int, default=(1, 0, -1, -1, 0, -1),
+                        metavar=("match", "mismatch", "gapo", "gape", "good_gapo", "bad_gapo"),
+                        help="scoring function. default: %(default)s")
 
     # dnarna
     parser = subparsers.add_parser("dnarna", description = 'DNA to RNA or RNA to DNA model conversion')
@@ -919,6 +933,135 @@ def geometry(args):
         fileio.write_model(st, file_name="{}_per_atom_score{}".format(args.output_prefix, model_format))
 # geometry()
 
+def compare_conf(args):
+    def angle_abs_diff(a, b, full=360.):
+        # from gemmi/math.hpp
+        d = abs(a - b)
+        if d > full:
+            d -= numpy.floor(d / full) * full
+        return min(d, full - d)
+    # angle_abs_diff()
+    
+    if args.ligand: args.ligand = sum(args.ligand, [])
+    st = None
+    for i, f in enumerate(args.models):
+        tmp = fileio.read_structure(f)
+        if len(args.models) > 1:
+            for chain in tmp[0]:
+                chain.name = f"{i+1}_{chain.name}"
+        if i == 0:
+            st = tmp
+        else:
+            for chain in tmp[0]:
+                st[0].add_chain(chain)
+    try:
+        monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
+                                                 stop_for_unknowns=True)
+    except RuntimeError as e:
+        raise SystemExit(f"Error: {e}")
+
+    model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+    try:
+        topo, _ = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                              check_hydrogen=False)
+    except RuntimeError as e:
+        raise SystemExit(f"Error: {e}")
+    ncslist = restraints.prepare_ncs_restraints(st)
+    lookup = {x.atom: x for x in st[0].all()}
+    ptypes = {x.name: x.polymer_type for x in st.entities}
+    resn_lookup = {(chain.name, res.seqid): res.name for chain in st[0] for res in chain}
+    confs = {}
+    for t in topo.torsions:
+        cra = lookup[t.atoms[0]]
+        ptype = ptypes[cra.residue.entity_id]
+        is_peptide = ptype in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD)
+        is_peptide_tors = t.restr.label.startswith("chi") or t.restr.label in ("omega", "phi", "psi")
+        is_na = ptype in (gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid)
+        is_na_tors = t.restr.label in ("C2e-chi", "alpha", "beta", "gamma", "C2e-nyu0", "epsilon", "zeta")
+        if (is_peptide and is_peptide_tors) or (is_na and is_na_tors):
+            confs.setdefault(cra.chain.name, {}).setdefault(cra.residue.seqid, {})[t.restr.label] = numpy.rad2deg(t.calculate())
+    fulls = {("ARG", "chi5"): 180., ("TYR", "chi2"): 180., ("PHE", "chi2"): 180., ("ASP", "chi2"): 180., ("GLU", "chi3"): 180.}
+    ret = []
+    for_coot = []
+    for ncs in ncslist.ncss:
+        c1, c2 = ncs.chains
+        if args.same_chain and len(args.models) > 1 and c1[c1.index("_"):] != c2[c2.index("_"):]:
+            continue
+        for s1, s2 in ncs.seqids:
+            if c1 in confs and s1 in confs[c1] and c2 in confs and s2 in confs[c2]:
+                conf1, conf2 = confs[c1][s1], confs[c2][s2]
+                resn = resn_lookup[(c1, s1)]
+                for t in conf1:
+                    if t in conf2:
+                        d = angle_abs_diff(conf1[t], conf2[t], fulls.get((resn, t), 360.))
+                        ret.append((c1, s1, c2, s2, resn, t, conf1[t], conf2[t], d))
+                        if d > args.min_diff:
+                            for_coot.append((c1, s1.num, c2, s2.num, resn, t, d))
+    df = pandas.DataFrame(ret, columns=["chain_1", "seq_1", "chain_2", "seq_2", "resn", "label", "conf_1", "conf_2", "diff"])
+    df.sort_values("diff", ascending=False, inplace=True)
+    logger.writeln(f"\nList of torsion angle differences (>{args.min_diff})")
+    logger.writeln(df[df["diff"] > args.min_diff].to_string(index=False))
+
+    for_coot.sort(key=lambda x:-x[-1])
+    coot_out = args.output_prefix + "_coot.py"
+    with open(coot_out, "w") as ofs:
+        # https://python-gtk-3-tutorial.readthedocs.io/en/latest/treeview.html
+        ofs.write("""\
+from __future__ import absolute_import, division, print_function
+import re
+import gtk
+class coot_serval_conf_list:
+  def __init__(self):
+    window = gtk.Window(gtk.WINDOW_TOPLEVEL)
+    window.set_title("Different conformations (Servalcat)")
+    window.set_default_size(600, 600)
+    scrolled_win = gtk.ScrolledWindow()
+    scrolled_win.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
+    vbox = gtk.VBox(False, 2)
+    self.liststore = gtk.ListStore(str, int, str, int, str, str, float)
+    self.filter = self.liststore.filter_new()
+    self.treeview = gtk.TreeView(model=self.filter)
+    for i, column_title in enumerate(["chain_1", "seq_1", "chain_2", "seq_2", "resn", "label", "diff"]):
+      renderer = gtk.CellRendererText()
+      column = gtk.TreeViewColumn(column_title, renderer, text=i)
+      self.treeview.append_column(column)
+    self.data = {}
+    self.add_data()
+    scrolled_win.add_with_viewport(self.treeview)  # add?
+    vbox.pack_start(scrolled_win, True, True, 0)
+    window.add(vbox)
+    window.show_all()
+    self.treeview.connect("row-activated", self.on_row_activated)
+
+  def on_row_activated(self, treeview, path, column):
+    assert len(path) == 1
+    col_idx = [i for i, c in enumerate(treeview.get_columns()) if column == c][0]
+    row = self.liststore[path[0]]
+    if col_idx < 2:
+      chain, resi = row[0], row[1]
+    elif col_idx < 4:
+      chain, resi = row[2], row[3]
+    else:
+      return
+    if re.search("^[0-9]+_[0-9A-Za-z]", chain):
+      chain = chain[chain.index("_")+1:]
+    imol = active_atom_spec()[1][0]
+    for name in (" CA ", " C1'"):
+      a = get_atom(imol, chain, resi, "", name)
+      if a:
+        set_rotation_center(*a[2])
+        break
+
+  def add_data(self):
+    for i, d in enumerate(self.data):
+      self.liststore.append(d)
+
+gui = coot_serval_conf_list()
+""".format(for_coot))
+    logger.writeln("\nRun:")
+    logger.writeln(f"coot --script {coot_out}")
+# compare_conf()
+
 def adp_stats(args):
     if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_adp"
     st = fileio.read_structure(args.model)
@@ -1242,6 +1385,9 @@ def seq(args):
         for sf in args.seq:
             seqs.extend(fileio.read_sequence_file(sf))
         
+    sc = gemmi.AlignmentScoring()
+    sc.match, sc.mismatch, sc.gapo, sc.gape, sc.good_gapo, sc.bad_gapo = args.scoring
+    
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)    
     for chain in st[0]:
@@ -1257,17 +1403,20 @@ def seq(args):
                     gemmi.PolymerType.Rna: gemmi.ResidueKind.RNA}.get(p_type, gemmi.ResidueKind.AA)
             s = [gemmi.expand_one_letter(x, kind) for x in seq]
             if None in s: continue
-            results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type), seq])
+            #als = [gemmi.align_sequence_to_polymer(s, p, p_type, gemmi.AlignmentScoring(x)) for x in ("s", "p")]
+            #results.append([name, max(als, key=lambda x: x.match_count), seq])
+            results.append([name, gemmi.align_sequence_to_polymer(s, p, p_type, sc), seq])
 
         if results:
             logger.writeln("Chain: {}".format(chain.name))
             logger.writeln(" polymer type: {}".format(str(p_type).replace("PolymerType.", "")))
-            name, al, s1 = max(results, key=lambda x: x[1].score)
+            name, al, s1 = max(results, key=lambda x: (x[1].match_count, x[1].score))
             logger.writeln(" match: {}".format(name))
+            logger.writeln(" aligned: {}".format(al.match_count))
             logger.writeln(" score: {}".format(al.score))
             p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
-            unkseq = [x.start() for x in re.finditer("\-", p1)]
-            mismatches = [x.start() for x in re.finditer("\.", al.match_string)]
+            unkseq = [x.start() for x in re.finditer(r"\-", p1)]
+            mismatches = [x.start() for x in re.finditer(r"\.", al.match_string)]
             if mismatches or unkseq:
                 idxes = {x.start(): i for i, x in enumerate(re.finditer("[^-]", p2))}
                 seqnums = [str(x.seqid) for x in p]
@@ -1371,6 +1520,7 @@ def main(args):
                  merge_models=merge_models,
                  merge_dicts=merge_dicts,
                  geom=geometry,
+                 conf=compare_conf,
                  adp=adp_stats,
                  power=show_power,
                  fcalc=fcalc,
