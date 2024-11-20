@@ -1622,6 +1622,10 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
 
 inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, bool von_mises,
                                     GeomTarget* target, Reporting *reporting) const {
+  // target functions:
+  //  when ideal close to 180: 0.5 * w * h^T h = w * (1 + cosa) where h = v1/|v1| + v2/|v2|
+  //  if von_mises: w * (1 - cos(a - a0))
+  //  otherwise: 0.5 * w * (a - a0)**2
   const gemmi::Transform tr1 = get_transform(cell, sym_idx_1, pbc_shift_1);
   const gemmi::Transform tr2 = get_transform(cell, sym_idx_2, pbc_shift_2);
   const gemmi::Position& x1 = same_asu(0) ? atoms[0]->pos : gemmi::Position(tr1.apply(atoms[0]->pos));
@@ -1639,41 +1643,84 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   auto closest = find_closest_value(a);
   const double da = a - closest->value;
   const double a0_rad = gemmi::rad(closest->value);
-  const double weight = gemmi::sq(waskal / closest->sigma * (von_mises ? gemmi::deg(1) : 1));
-  const double ret = von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
+  const bool close_to_180 = std::abs(closest->value - 180.0) < 0.5;
+  const double weight = gemmi::sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1));
+  const double ret = close_to_180 ? (weight * (1. + cosa)) : von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
   if (target != nullptr) {
     int ia[3];
     for (int i = 0; i < 3; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
-    gemmi::Vec3 dcosadx[3]; // da/dx cosa
-    dcosadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n));
-    dcosadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n));
-    dcosadx[1] = -dcosadx[0] - dcosadx[2];
-    if (!same_asu(0))
-      dcosadx[0] = tr1.mat.transpose().multiply(dcosadx[0]);
-    if (!same_asu(2))
-      dcosadx[2] = tr2.mat.transpose().multiply(dcosadx[2]);
-    const double deriv_fac = von_mises
-      // sin(a-a0) / sina
-      ? (weight * (std::cos(a0_rad) - cosa * (std::abs(a_rad - a0_rad) < 1e-4
-                                              ? 1. : (std::sin(a0_rad) / sina))))
-      : (weight * da * gemmi::deg(1) / sina);
-    const double secder_fac = von_mises
-      ? (weight / gemmi::sq(sina))
-      : (weight * gemmi::sq(gemmi::deg(1) / sina));
-    for(int i = 0; i < 3; ++i)
-      if (ia[i] >= 0) {
-        target->incr_vn(ia[i] * 3, deriv_fac, dcosadx[i]);
-        target->incr_am_diag(ia[i] * 6, secder_fac, dcosadx[i]);
+    if (close_to_180) { // a special case.
+      const gemmi::Vec3 h = v1 / v1n + v2 / v2n;
+      gemmi::Vec3 dhdx[9]; // dh/dx11, dx12, dx13, dx21, ...
+      for (int i = 0; i < 3; ++i) {
+        dhdx[i]   = -(gemmi::Vec3(i==0, i==1, i==2) - v1 * v1.at(i) / gemmi::sq(v1n)) / v1n;
+        dhdx[6+i] = -(gemmi::Vec3(i==0, i==1, i==2) - v2 * v2.at(i) / gemmi::sq(v2n)) / v2n;
+        dhdx[3+i] = -dhdx[i] - dhdx[6+i];
       }
-    for (int i = 0; i < 2; ++i)
-      for (int j = i+1; j < 3; ++j)
-        if (ia[i] >= 0 && ia[j] >= 0) {
-          auto mp = target->find_restraint(ia[i], ia[j]);
-          if (mp.imode == 0) // ia[i] > ia[j]
-            target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[i], dcosadx[j]);
-          else
-            target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[j], dcosadx[i]);
+      gemmi::Mat33 trs[3] = {tr1.mat, {}, tr2.mat};
+      for(int i = 0; i < 3; ++i)
+        if (ia[i] >= 0) {
+          gemmi::Vec3 v(h.dot(dhdx[3*i]), h.dot(dhdx[3*i+1]), h.dot(dhdx[3*i+2]));
+          if (!same_asu(i)) // same_asu(1) will always return true
+            v = trs[i].transpose().multiply(v);
+          target->incr_vn(ia[i] * 3, weight, v);
+          gemmi::SMat33<double> smat{dhdx[3*i].length_sq(), dhdx[3*i+1].length_sq(), dhdx[3*i+2].length_sq(),
+                                     dhdx[3*i].dot(dhdx[3*i+1]), dhdx[3*i].dot(dhdx[3*i+2]), dhdx[3*i+1].dot(dhdx[3*i+2])};
+          if (!same_asu(i))
+            smat = smat.transformed_by<double>(trs[i].transpose());
+          const int ia6 = ia[i] * 6;
+          target->am[ia6]   += weight * smat.u11;
+          target->am[ia6+1] += weight * smat.u22;
+          target->am[ia6+2] += weight * smat.u33;
+          target->am[ia6+3] += weight * smat.u12;
+          target->am[ia6+4] += weight * smat.u13;
+          target->am[ia6+5] += weight * smat.u23;
         }
+      for (int i = 0; i < 2; ++i)
+        for (int j = i+1; j < 3; ++j)
+          if (ia[i] >= 0 && ia[j] >= 0) { // shouldn't we make sure ia[i] != ia[j]?
+            auto mp = target->find_restraint(ia[i], ia[j]);
+            gemmi::Mat33 mat;
+            for (int k = 0; k < 3; ++k)
+              for (int l = 0; l < 3; ++l)
+                mat[l][k] = dhdx[3*i+l].dot(dhdx[3*j+k]);
+            mat = trs[mp.imode == 0 ? i : j].transpose().multiply(mat).multiply(trs[mp.imode == 0 ? j : i]); // correct?
+            for (int k = 0; k < 3; ++k)
+              for (int l = 0; l < 3; ++l)
+                target->am[mp.ipos+3*k+l] += weight * mat[l][k];
+          }
+    } else {
+      gemmi::Vec3 dcosadx[3]; // d/dx cosa
+      dcosadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n));
+      dcosadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n));
+      dcosadx[1] = -dcosadx[0] - dcosadx[2];
+      if (!same_asu(0))
+        dcosadx[0] = tr1.mat.transpose().multiply(dcosadx[0]);
+      if (!same_asu(2))
+        dcosadx[2] = tr2.mat.transpose().multiply(dcosadx[2]);
+      const double deriv_fac = von_mises
+        // sin(a-a0) / sina
+        ? (weight * (std::cos(a0_rad) - cosa * (std::abs(a_rad - a0_rad) < 1e-4
+                                                ? 1. : (std::sin(a0_rad) / sina))))
+        : (weight * da * gemmi::deg(1) / sina);
+      const double secder_fac = von_mises
+        ? (weight / gemmi::sq(sina))
+        : (weight * gemmi::sq(gemmi::deg(1) / sina));
+      for(int i = 0; i < 3; ++i)
+        if (ia[i] >= 0) {
+          target->incr_vn(ia[i] * 3, deriv_fac, dcosadx[i]);
+          target->incr_am_diag(ia[i] * 6, secder_fac, dcosadx[i]);
+        }
+      for (int i = 0; i < 2; ++i)
+        for (int j = i+1; j < 3; ++j)
+          if (ia[i] >= 0 && ia[j] >= 0) {
+            auto mp = target->find_restraint(ia[i], ia[j]);
+            if (mp.imode == 0) // ia[i] > ia[j]
+              target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[i], dcosadx[j]);
+            else
+              target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[j], dcosadx[i]);
+          }
+    }
     target->target += ret;
   }
   if (reporting != nullptr)
