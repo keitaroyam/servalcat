@@ -122,10 +122,14 @@ def write_mmcif(st, cif_out, cif_ref=None):
 
 def write_pdb(st, pdb_out):
     logger.writeln("Writing PDB file: {}".format(pdb_out))
+    st = st.clone()
     chain_id_lens = [len(x) for x in model.all_chain_ids(st)]
     if chain_id_lens and max(chain_id_lens) > 2:
-        st = st.clone()
         st.shorten_chain_names()
+    st.shorten_ccd_codes()
+    if st.shortened_ccd_codes:
+        msg = " ".join("{}->{}".format(o,n) for o,n in st.shortened_ccd_codes)
+        logger.writeln(" Using shortened residue names in the output pdb file: " + msg)
     st.write_pdb(pdb_out, use_linkr=True)
 # write_pdb()
 
