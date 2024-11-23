@@ -44,9 +44,11 @@ def add_arguments(parser):
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument("--omit_proton", action='store_true',
-                        help="Omit proton from model in map calculation")
+                        #help="Omit hydrogen proton (leaving electrons) from model in map calculation")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--omit_h_electron", action='store_true',
-                        help="Omit hydrogen electrons from model in map calculation")
+                        #help="Omit hydrogen electrons (leaving protons) from model in map calculation")
+                        help=argparse.SUPPRESS)
     parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="diffmap",
                         help='output file name prefix (default: %(default)s)')
