@@ -68,7 +68,7 @@ def add_arguments(parser):
                         help="Jelly body only (experimental, may not be useful)")
     utils.symmetry.add_symmetry_args(parser) # add --pg etc
     parser.add_argument('--contacting_only', action="store_true", help="Filter out non-contacting strict NCS copies")
-    parser.add_argument('--ignore_symmetry',
+    parser.add_argument('--ignore_symmetry', action='store_true',
                         help='Ignore symmetry information (MTRIX/_struct_ncs_oper) in the model file')
     parser.add_argument('--find_links', action='store_true', 
                         help='Automatically add links')
