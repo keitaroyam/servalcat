@@ -22,7 +22,7 @@ from servalcat import ext
 b_to_u = utils.model.b_to_u
 
 def add_arguments(parser):
-    parser.description = "EXPERIMENTAL program to refine crystallographic structures"
+    parser.description = "program to refine crystallographic structures"
     parser.add_argument("--hklin", required=True)
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
@@ -64,6 +64,8 @@ def add_arguments(parser):
                         help="refinement weight (default: auto)")
     parser.add_argument('--no_weight_adjust', action='store_true', 
                         help='Do not adjust weight during refinement')
+    parser.add_argument('--target_bond_rmsz_range', nargs=2, type=float, default=[0.5, 1.],
+                        help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--ncsr', action='store_true', 
                         help='Use local NCS restraints')
     parser.add_argument('--adpr_weight', type=float, default=1.,
@@ -90,6 +92,8 @@ def add_arguments(parser):
                         help="Use work reflections in ML parameter estimates")
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
+    parser.add_argument("--keep_entities", action='store_true',
+                        help="Do not override entities")
     parser.add_argument('--allow_unusual_occupancies', action="store_true", help="Allow negative or more than one occupancies")
     parser.add_argument('-o','--output_prefix')
     parser.add_argument("--write_trajectory", action='store_true',
@@ -174,7 +178,8 @@ def main(args):
                                                            params=params)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
-        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+        if not args.keep_entities:
+            utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
         utils.restraints.find_and_fix_links(st, monlib, find_metal_links=args.find_links,
                                             add_found=args.find_links)
         h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
@@ -227,6 +232,7 @@ def main(args):
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
                                weight_adjust=not args.no_weight_adjust,
+                               weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range,
                                stats_json_out=args.output_prefix + "_stats.json")
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)

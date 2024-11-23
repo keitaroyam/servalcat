@@ -19,7 +19,7 @@ from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
 def add_arguments(parser):
-    parser.description = "EXPERIMENTAL program to refine cryo-EM SPA structures"
+    parser.description = "program to refine cryo-EM SPA structures"
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--halfmaps", nargs=2, help="Input half map files")
     group.add_argument("--map", help="Use this only if you really do not have half maps.")
@@ -110,8 +110,9 @@ def add_arguments(parser):
     parser.add_argument('--adp_restraint_exp_fac', type=float)
     parser.add_argument('--adp_restraint_no_long_range', action='store_true')
     parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="diff")
+    parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen against data (default: only restraints apply)")
-    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], default="electron")
     parser.add_argument('-o','--output_prefix', default="refined")
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation. Only "throughout" mode is available (no "shake" mode)')
@@ -144,12 +145,22 @@ def main(args):
     params["write_trajectory"] = args.write_trajectory
 
     st = utils.fileio.read_structure(args.model)
-    try:
-        monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
-                                                       stop_for_unknowns=not args.newligand_continue,
-                                                       params=params)
-    except RuntimeError as e:
-        raise SystemExit("Error: {}".format(e))
+    if args.unrestrained:
+        monlib = gemmi.MonLib()
+        topo = None
+        if args.hydrogen == "all":
+            logger.writeln("WARNING: in unrestrained refinement hydrogen atoms are not generated.")
+        elif args.hydrogen == "no":
+            st.remove_hydrogens()
+        for i, cra in enumerate(st[0].all()):
+            cra.atom.serial = i + 1
+    else:
+        try:
+            monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
+                                                           stop_for_unknowns=not args.newligand_continue,
+                                                           params=params)
+        except RuntimeError as e:
+            raise SystemExit("Error: {}".format(e))
     if not args.keep_entities:
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if not args.keep_charges:
@@ -217,7 +228,7 @@ def main(args):
     else:
         ncslist = False
     geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
-                params=params, unrestrained=args.jellyonly,
+                params=params, unrestrained=args.unrestrained or args.jellyonly,
                 ncslist=ncslist)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
@@ -226,6 +237,7 @@ def main(args):
                      refine_xyz=not args.fix_xyz,
                      adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                      refine_h=args.refine_h,
+                     unrestrained=args.unrestrained,
                      params=params,
                      refine_occ=args.refine_all_occ)
 
