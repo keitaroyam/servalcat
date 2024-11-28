@@ -1126,7 +1126,7 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_an
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
     st2 = sts[0].clone()
     del st2[:]
-    model = gemmi.Model("1")
+    model = gemmi.Model(1)
     for st in sts:
         for m in st:
             for c in m:

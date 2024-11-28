@@ -427,7 +427,7 @@ class Refine:
             self.geom.set_h_parents()
         if params and params.get("write_trajectory"):
             self.st_traj = self.st.clone()
-            self.st_traj[-1].name = "0"
+            self.st_traj[-1].num = 0
         assert self.geom.group_occ.groups or self.n_params() > 0
     # __init__()
     
@@ -741,7 +741,7 @@ class Refine:
                     weight /= 1.1
             if self.st_traj is not None:
                 self.st_traj.add_model(self.st[0])
-                self.st_traj[-1].name = str(len(self.st_traj))
+                self.st_traj[-1].num = len(self.st_traj)
             if stats_json_out:
                 write_stats_json_safe(stats, stats_json_out)
 

@@ -630,7 +630,7 @@ def to_dataframe(st):
         for cra in m.all():
             c,r,a = cra.chain, cra.residue, cra.atom
             # TODO need support r.het_flag, r.flag, a.calc_flag, a.flag, a.serial?
-            app("model", m.name)
+            app("model", m.num)
             app("chain", c.name)
             app("resn", r.name)
             app("subchain", r.subchain)
@@ -665,8 +665,8 @@ def from_dataframe(df, st=None): # Slow!
         for i in range(len(st)):
             del st[0]
         
-    for m_name, dm in df.groupby("model"):
-        st.add_model(gemmi.Model(m_name))
+    for m_num, dm in df.groupby("model"):
+        st.add_model(gemmi.Model(m_num))
         m = st[-1]
         for c_name, dc in dm.groupby("chain"):
             m.add_chain(gemmi.Chain(c_name))
@@ -704,7 +704,7 @@ def from_dataframe(df, st=None): # Slow!
 
 def st_from_positions(positions, bs=None, qs=None):
     st = gemmi.Structure()
-    st.add_model(gemmi.Model("1"))
+    st.add_model(gemmi.Model(1))
     st[0].add_chain(gemmi.Chain("A"))
     c = st[0][0]
     if bs is None: bs = (0. for _ in range(len(positions)))
@@ -742,7 +742,7 @@ def cx_to_mx(ss): #SmallStructure to Structure
     st = gemmi.Structure()
     st.spacegroup_hm = ss.spacegroup.xhm()
     st.cell = ss.cell
-    st.add_model(gemmi.Model("1"))
+    st.add_model(gemmi.Model(1))
     st[-1].add_chain(gemmi.Chain("A"))
     st[-1][-1].add_residue(gemmi.Residue())
     st[-1][-1][-1].seqid.num = 1
