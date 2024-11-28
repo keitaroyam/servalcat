@@ -345,6 +345,8 @@ def read_structure(xyz_in, assign_het_flags=True, merge_chain_parts=True):
                 if st is None:
                     logger.writeln("Reading chemical component file: {}".format(xyz_in))
                     st = gemmi.make_structure_from_chemcomp_block(block)
+                    for i in range(len(st)-1):
+                        del st[1]
     elif spext[1].lower() in (".ins", ".res"):
         logger.writeln("Reading SHELX ins/res file: {}".format(xyz_in))
         st = model.cx_to_mx(read_shelx_ins(ins_in=xyz_in)[0])

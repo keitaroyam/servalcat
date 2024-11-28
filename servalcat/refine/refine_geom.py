@@ -93,6 +93,8 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
         if len(st) > 0: break
     else:
         raise SystemExit("No model in the cif file")
+    for i in range(len(st)-1):
+        del st[1]
     try:
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir, # monlib is needed for ener_lib
                                                        cif_files=[cif_in],
