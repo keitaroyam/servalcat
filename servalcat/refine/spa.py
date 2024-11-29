@@ -38,8 +38,14 @@ class LL_SPA:
         self.lab_obs = lab_obs
         self.st = st
         self.monlib = monlib
-        self.d_min = hkldata.d_min_max()[0]
+        self.d_min_max = hkldata.d_min_max()
         self.ll = None
+        self.b_aniso = None
+
+    def refine_id(self):
+        if self.source == "electron":
+            return "ELECTRON MICROSCOPY"
+        return "NON-EM SPA" # does not happen, I guess
 
     def update_ml_params(self):
         # FIXME make sure D > 0
@@ -52,7 +58,7 @@ class LL_SPA:
         else:
             st = self.st
 
-        self.hkldata.df["FC"] = utils.model.calc_fc_fft(st, self.d_min - 1e-6,
+        self.hkldata.df["FC"] = utils.model.calc_fc_fft(st, self.d_min_max[0] - 1e-6,
                                                         monlib=self.monlib,
                                                         source=self.source,
                                                         mott_bethe=self.mott_bethe,
@@ -92,15 +98,17 @@ class LL_SPA:
         stats = fsc.calc_fsc_all(self.hkldata, labs_fc=["FC"], lab_f=self.lab_obs)
         fsca = fsc.fsc_average(stats.ncoeffs, stats.fsc_FC_full)
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
+        ret = {"summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
         # XXX in fsc object, _full is misleading - it's not full in cross validation mode
         if "D" in self.hkldata.binned_df and "S" in self.hkldata.binned_df:
             stats[["D", "S"]] = self.hkldata.binned_df[["D", "S"]]
-        return {"bin_stats": stats, "summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
+        ret["bin_stats"] = stats
+        return ret
 
     def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs):
         dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
-        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
+        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         for i_bin, idxes in self.hkldata.binned():
             D = self.hkldata.binned_df.D[i_bin]

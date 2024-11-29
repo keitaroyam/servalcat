@@ -30,7 +30,7 @@ class LL_Xtal:
         self.free = free
         self.st = st
         self.monlib = monlib
-        self.d_min = hkldata.d_min_max()[0]
+        self.d_min_max = hkldata.d_min_max()
         self.fc_labs = ["FC0"]
         self.use_solvent = use_solvent
         if use_solvent:
@@ -54,6 +54,9 @@ class LL_Xtal:
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
+    def refine_id(self):
+        return {"xray": "X-RAY", "electron": "ELECTRON", "neutron": "NEUTRON"}.get(self.source, "") + " DIFFRACTION"
+
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
                                                   self.centric_and_selections, use=self.use_in_est,
@@ -63,7 +66,7 @@ class LL_Xtal:
         #                             self.centric_and_selections)
     def update_fc(self):
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
-                         d_min=self.d_min, monlib=self.monlib,
+                         d_min=self.d_min_max[0], monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data)
 
@@ -84,7 +87,7 @@ class LL_Xtal:
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min, miller_array)
+            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array)
             if self.twin_data:
                 fc_sum = self.twin_data.f_calc[:,:-1].sum(axis=1)
             else:
@@ -177,7 +180,7 @@ class LL_Xtal:
         return ret
 
     def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs=None):
-        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
+        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         if self.twin_data:
             dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0()

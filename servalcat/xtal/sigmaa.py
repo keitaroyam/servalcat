@@ -79,7 +79,7 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df.copy()
-    stats["n_obs"] = 0
+    stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
     rlab = "R1" if has_int else "R"
@@ -107,6 +107,7 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
 
     for i_bin, idxes in hkldata.binned():
         stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
+        stats.loc[i_bin, "n_all"] = len(idxes)
         if has_free:
             for j, suf in ((1, "work"), (2, "free")):
                 idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
