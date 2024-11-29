@@ -149,6 +149,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         assert st_sr is None
     
     logger.writeln("Calculating map-model FSC..")
+    ret = {"summary": {}}
 
     if d_min_fsc is None:
         d_min_fsc = utils.maps.nyquist_resolution(maps[0][0])
@@ -219,12 +220,17 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             s.drop(columns=[x for x in s if x.startswith("fsc_FC") and x.endswith(("half1","half2"))], inplace=True)
 
     # FSCaverages
+    ret["summary"]["d_min"] = d_min
+    ret["summary"]["FSCaverage"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model)
+    if cross_validation:
+        ret["summary"]["FSCaverage_half1"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half1)
+        ret["summary"]["FSCaverage_half2"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half2)
     fscavg_text  = "Map-model FSCaverages (at {:.2f} A):\n".format(d_min)
-    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model))
+    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(ret["summary"]["FSCaverage"])
     if cross_validation:
         fscavg_text += "Cross-validated map-model FSCaverages:\n"
-        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half1))
-        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half2))
+        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(ret["summary"]["FSCaverage_half1"])
+        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(ret["summary"]["FSCaverage_half2"])
     
     # for loggraph
     fsc_logfile = "{}_fsc.log".format(output_prefix)
@@ -268,8 +274,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     json.dump(stats.to_dict("records"),
               open("{}_fsc.json".format(output_prefix), "w"),
               indent=True)
-
-    return fscavg_text
+    ret["binned"] = stats2.to_dict(orient="records")
+    return fscavg_text, ret
 # calc_fsc()
 
 def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix="diffmap"):
@@ -954,7 +960,7 @@ def main(args):
                            monlib=monlib, cross_validation=args.cross_validation,
                            blur=args.blur,
                            d_min_fsc=args.fsc_resolution,
-                           cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
+                           cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)[0]
 
     # Calc Fo-Fc (and updated) maps
     calc_fofc(st, st_expanded, maps, monlib, model_format, args)

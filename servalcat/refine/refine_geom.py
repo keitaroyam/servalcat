@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts
+from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts, update_meta
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -177,6 +177,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     refiner = Refine(st, geom, params=params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
+    update_meta(st, stats[-1])
     refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
     if params["write_trajectory"]:

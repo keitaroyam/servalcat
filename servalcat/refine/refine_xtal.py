@@ -16,7 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
 from servalcat.refine.xtal import LL_Xtal
-from servalcat.refine.refine import Geom, Refine
+from servalcat.refine.refine import Geom, Refine, update_meta
 from servalcat.refmac import refmac_keywords
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -228,6 +228,7 @@ def main(args):
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
                                weight_adjust=not args.no_weight_adjust,
                                stats_json_out=args.output_prefix + "_stats.json")
+    update_meta(st, stats[-1], ll)
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:
