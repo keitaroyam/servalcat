@@ -79,7 +79,7 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
     stats = hkldata.binned_df.copy()
-    stats["n_obs"] = 0
+    stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
     rlab = "R1" if has_int else "R"
@@ -107,6 +107,7 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
 
     for i_bin, idxes in hkldata.binned():
         stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
+        stats.loc[i_bin, "n_all"] = len(idxes)
         if has_free:
             for j, suf in ((1, "work"), (2, "free")):
                 idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])
@@ -1020,10 +1021,9 @@ def smooth_params(hkldata, D_labs, smoothing): # XXX twin_data
 # smooth_params()
 
 def expected_F_from_int(Io, sigIo, k_ani, DFc, eps, c, S):
-    if c == 0: # acentric
-        k_num, k_den = 0.5, 0.
-    else:
-        k_num, k_den = 0., -0.5
+    k_num = numpy.repeat(0.5 if c == 0 else 0., Io.size) # 0.5 if acentric
+    k_den = k_num - 0.5
+    if numpy.isscalar(c): c = numpy.repeat(c, Io.size)
     to = Io / sigIo - sigIo / (c+1) / k_ani**2 / S / eps
     tf = k_ani * numpy.abs(DFc) / numpy.sqrt(sigIo)
     sig1 = k_ani**2 * S * eps / sigIo
@@ -1127,7 +1127,7 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, centric_an
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
     st2 = sts[0].clone()
     del st2[:]
-    model = gemmi.Model("1")
+    model = gemmi.Model(1)
     for st in sts:
         for m in st:
             for c in m:

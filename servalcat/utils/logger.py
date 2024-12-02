@@ -18,12 +18,15 @@ class Logger(object):
     def __init__(self, file_out=None, append=True):
         self.ofs = None
         self.stopped = False
+        self.prefix = ""
         if file_out:
             self.set_file(file_out, append)
     # __init__()
     def stop_logging(self): self.stopped = True
     def start_logging(self): self.stopped = False
-
+    def set_prefix(self, p): self.prefix = p
+    def clear_prefix(self): self.prefix = ""
+    
     def set_file(self, file_out, append=True):
         try:
             self.ofs = open(file_out, "a" if append else "w")
@@ -33,6 +36,8 @@ class Logger(object):
 
     def write(self, l, end="", flush=True, fs=None, print_fs=sys.stdout):
         if self.stopped: return
+        if self.prefix:
+            l = "\n".join(self.prefix + x for x in l.splitlines(keepends=True))
         print(l, end=end, file=print_fs, flush=flush)
         for f in (self.ofs, fs):
             if f is not None:
@@ -69,6 +74,25 @@ close = _logger.close
 flush = _logger.flush
 stop = _logger.stop_logging
 start = _logger.start_logging
+set_prefix = _logger.set_prefix
+clear_prefix = _logger.clear_prefix
+
+def with_prefix(prefix):
+    class WithPrefix(object): # should keep original prefix and restore?
+        def __enter__(self):
+            _logger.set_prefix(prefix)
+            return _logger
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            _logger.clear_prefix()
+    return WithPrefix()
+
+def silent():
+    class Silent(object):
+        def write(self, *args, **kwargs):
+            pass
+        def flush(self):
+            pass
+    return Silent()
 
 def dependency_versions():
     import gemmi

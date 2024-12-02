@@ -94,7 +94,7 @@ def hkldata_from_mtz(mtz, labels, newlabels=None, require_types=None):
         if mismatches:
             raise RuntimeError("MTZ column types mismatch: {}".format(" ".join(mismatches)))
 
-    df = pandas.DataFrame(data=numpy.array(mtz, copy=False), columns=mtz.column_labels())
+    df = pandas.DataFrame(data=mtz.array, columns=mtz.column_labels())
     df = df.astype({col: 'int32' for col in col_types if col_types[col] == "H"})
     df = df.astype({col: 'Int64' for col in col_types if col_types[col] in ("B", "Y", "I")}) # pandas's nullable int
     for lab in set(mtz.column_labels()).difference(labels+["H","K","L"]):
@@ -177,7 +177,7 @@ def mtz_selected(mtz, columns):
                         dataset_id=col_dict[col].dataset_id, expand_data=False)
 
     idxes = [col_idxes[col] for col in columns]
-    data = numpy.array(mtz, copy=False)[:, idxes]
+    data = mtz.array[:, idxes]
     mtz2.set_data(data)
     return mtz2
 # mtz_selected()
@@ -200,6 +200,8 @@ def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
 def fft_map(cell, sg, miller_array, data, grid_size=None, sample_rate=3):
     if data is not None:
         data = data.astype(numpy.complex64) # we may want to keep complex128?
+    if type(data) is pandas.core.series.Series:
+        data = data.to_numpy()
     asu = gemmi.ComplexAsuData(cell, sg, miller_array, data)
     if grid_size is None:
         ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
@@ -224,7 +226,7 @@ class HklData:
     def switch_to_asu(self):
         # Need to care phases
         assert not any(numpy.iscomplexobj(self.df[x]) for x in self.df)
-        hkl = self.miller_array().to_numpy()
+        hkl = self.miller_array()
         self.sg.switch_to_asu(hkl)
         self.df[["H","K","L"]] = hkl
         # in some environment type changes to int64 even though hkl's dtype is int32
@@ -266,11 +268,11 @@ class HklData:
     # merge_asu_data()
 
     def miller_array(self):
-        return self.df[["H","K","L"]]
+        return self.df[["H","K","L"]].to_numpy()
 
     def s_array(self):
         hkl = self.miller_array()
-        return numpy.dot(hkl, self.cell.fractionalization_matrix)
+        return numpy.dot(hkl, self.cell.frac.mat.array)
 
     def ssq_mat(self):
         # k_aniso = exp(-s^T B_aniso s / 4)
@@ -289,8 +291,8 @@ class HklData:
             s2 = 1 / self.d_spacings()**2
             return numpy.exp(-b_iso / 4 * s2)
         if b_cart is not None:
-            b_star = b_cart.transformed_by(self.cell.fractionalization_matrix)
-            return numpy.exp(-b_star.r_u_r(self.miller_array().to_numpy()) / 4)
+            b_star = b_cart.transformed_by(self.cell.frac.mat)
+            return numpy.exp(-b_star.r_u_r(self.miller_array()) / 4)
     
     def calc_d(self):
         self.df["d"] = self.cell.calculate_d_array(self.miller_array())
@@ -535,7 +537,7 @@ class HklData:
 
     def fft_map(self, label=None, data=None, grid_size=None, sample_rate=3):
         if data is None:
-            data = self.df[label]
+            data = self.df[label].to_numpy()
         return fft_map(self.cell, self.sg, self.miller_array(), data, grid_size, sample_rate)
     # fft_map()
 

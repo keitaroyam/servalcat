@@ -101,14 +101,14 @@ def determine_Sigma_and_aniso(hkldata):
                 S = hkldata.binned_df.loc[i_bin, "S"]
                 f0 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                 S * hkldata.df.epsilon.to_numpy()[idxes],
-                                                0, hkldata.df.centric.to_numpy()[idxes]+1))
+                                                numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
                 shift = numpy.exp(ll_shift_bin_S(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                  S, hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes]))
                 for k in range(3):
                     ss = shift**(1. / 2**k)
                     f1 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                     S * ss * hkldata.df.epsilon.to_numpy()[idxes],
-                                                    0, hkldata.df.centric.to_numpy()[idxes]+1))
+                                                    numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
                     #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
                     if f1 < f0:
                         hkldata.binned_df.loc[i_bin, "S"] = S * ss
@@ -145,7 +145,7 @@ def ll_all_B(x, ssqmat, hkldata, adpdirs):
     for i_bin, idxes in hkldata.binned():
         ret += numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                           hkldata.binned_df.S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
-                                          0, hkldata.df.centric.to_numpy()[idxes]+1))
+                                          numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
     return ret
 
 def ll_shift_bin_S(Io, sigIo, k_ani, S, c, eps, exp_trans=True):
@@ -176,10 +176,12 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
 
 def expected_F_from_int(Io, sigo, k_ani, eps, c, S):
     to = Io / sigo - sigo / c / k_ani**2 / S / eps
+    tf = numpy.zeros(Io.size)
+    sig1 = numpy.ones(Io.size)
     k_num = numpy.where(c == 1,  0.5, 0.)
-    F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, 0., 1., c,
+    F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, tf, sig1, c,
                                              integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
-    Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, 0., 1., c,
+    Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, tf, sig1, c,
                                    integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
     varF = Fsq - F**2
     return F, numpy.sqrt(varF)

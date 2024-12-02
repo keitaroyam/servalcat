@@ -14,7 +14,7 @@ from servalcat import utils
 from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
 from servalcat.spa import fofc
 from servalcat.refine import spa
-from servalcat.refine.refine import Geom, Refine
+from servalcat.refine.refine import Geom, Refine, update_meta
 from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
@@ -261,12 +261,8 @@ def main(args):
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()
 
-    refiner.st.name = args.output_prefix
-    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
-    if args.hklin:
-        return
         
     # Expand sym here
     st_expanded = refiner.st.clone()
@@ -275,20 +271,28 @@ def main(args):
         utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True, hout=args.hout)
 
     # Calc FSC
-    mask = utils.fileio.read_ccp4_map(args.mask)[0] if args.mask else None
-    fscavg_text = calc_fsc(st_expanded, args.output_prefix, maps,
-                           args.resolution, mask=mask, mask_radius=args.mask_radius if not args.no_mask else None,
-                           soft_edge=args.mask_soft_edge,
-                           b_before_mask=args.b_before_mask,
-                           no_sharpen_before_mask=args.no_sharpen_before_mask,
-                           make_hydrogen="yes", # no change needed in the model
-                           monlib=monlib, 
-                           blur=args.blur,
-                           d_min_fsc=args.fsc_resolution,
-                           cross_validation=args.cross_validation,
-                           cross_validation_method=args.cross_validation_method
-                           )
-    
+    if args.hklin: # cannot update a mask
+        stats_for_meta = stats[-1]
+    else:
+        mask = utils.fileio.read_ccp4_map(args.mask)[0] if args.mask else None
+        fscavg_text, stats2 = calc_fsc(st_expanded, args.output_prefix, maps,
+                                       args.resolution, mask=mask, mask_radius=args.mask_radius if not args.no_mask else None,
+                                       soft_edge=args.mask_soft_edge,
+                                       b_before_mask=args.b_before_mask,
+                                       no_sharpen_before_mask=args.no_sharpen_before_mask,
+                                       make_hydrogen="yes", # no change needed in the model
+                                       monlib=monlib,
+                                       blur=args.blur,
+                                       d_min_fsc=args.fsc_resolution,
+                                       cross_validation=args.cross_validation,
+                                       cross_validation_method=args.cross_validation_method
+                                       )
+        stats_for_meta = {"geom": stats[-1]["geom"], "data": stats2}
+    update_meta(refiner.st, stats_for_meta, ll)
+    refiner.st.name = args.output_prefix
+    utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
+    if args.hklin:
+        return
     # Calc Fo-Fc (and updated) maps
     diffmap_prefix = "{}_diffmap".format(args.output_prefix)
     calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=diffmap_prefix)

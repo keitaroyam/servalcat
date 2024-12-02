@@ -1,16 +1,13 @@
 [build-system]
-requires = ["scikit-build-core~=0.10.5", "pybind11>=2.6.2",
-            "pybind11-stubgen~=2.5.1",
-            "gemmi @ git+https://github.com/project-gemmi/gemmi.git@v0.6.7",
-]
+requires = ["scikit-build-core~=0.10.7", "nanobind >=2.2"]
 build-backend = "scikit_build_core.build"
 
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "servalcat"
 dynamic = ["version"]
-requires-python = ">=3.7"
-dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0', 'gemmi==0.6.7']
+requires-python = ">=3.8"
+dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0']  #'gemmi==0.7.0'
 description="Structure refinement and validation for crystallography and single particle analysis"
 readme = "README.md"
 authors = [
@@ -28,7 +25,7 @@ refmacat  = "servalcat.refmac.refmac_wrapper:command_line"
 #build-dir = "/tmp/gemmi_build2/{wheel_tag}"
 wheel.expand-macos-universal-tags = true  # not sure if this is useful
 cmake.build-type = "Release"
-cmake.verbose = true
+build.verbose = true
 sdist.include = ["eigen/Eigen", "eigen/README.md", "eigen/COPYING*"]
 sdist.exclude = [".*", "eigen/", "scripts/"]
 
@@ -39,9 +36,14 @@ input = "servalcat/__init__.py"
 [tool.cibuildwheel]
 # increase pip debugging output
 build-verbosity = 2
-test-command = "python {project}/tests/test_for_ci.py"
+test-command = "python {project}/tests/test_for_ci.py" # comment out to test with gemmi build
 [tool.cibuildwheel.environment]
-SKBUILD_CMAKE_ARGS = '-DBUILD_SHARED_LIBS=OFF;-DINSTALL_DEV_FILES=ON;-DGENERATE_STUBS=OFF'
+SKBUILD_CMAKE_ARGS = '-DGENERATE_STUBS=OFF' # -DINSTALL_GEMMI_IF_BUILT=1 to test with gemmi build
+
+# Needed for full C++17 support on macOS
+[tool.cibuildwheel.macos.environment]
+MACOSX_DEPLOYMENT_TARGET = "10.14"
+SKBUILD_CMAKE_ARGS = '-DGENERATE_STUBS=OFF' # -DINSTALL_GEMMI_IF_BUILT=1 to test with gemmi build
 
 [tool.codespell]
 skip = './eigen,./gemmi,*.pdb,*.crd,*.cif,*.mmcif,*.ent,*.log*,*.dic,tags,*.bak,*build*,*~'

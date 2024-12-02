@@ -8,11 +8,14 @@ string(REGEX REPLACE "__version__ = '(.+)'" "\\1" serval_version_str ${serval_ve
 project(servalcat LANGUAGES C CXX VERSION ${serval_version_str})
 message(STATUS "Servalcat version ${PROJECT_VERSION}")
 
+option(SEARCH_INSTALLED_GEMMI "Search for gemmi-config.cmake and use it if found" ON)
+option(INSTALL_GEMMI_IF_BUILT "Install also Python module gemmi, if it was built" OFF)
+
 include(GNUInstallDirs)
 
 if (DEFINED SKBUILD)  # building with scikit-build-core (pip install)
   set(PYTHON_INSTALL_DIR "${SKBUILD_PLATLIB_DIR}")
-  set(CMAKE_INSTALL_BINDIR "${SKBUILD_SCRIPTS_DIR}")
+  #set(CMAKE_INSTALL_BINDIR "${SKBUILD_SCRIPTS_DIR}")
 endif()
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -28,6 +31,7 @@ if (NOT CMAKE_BUILD_TYPE AND NOT USING_ENV_CXXFLAGS)
       FORCE)
 endif()
 
+
 # CMake >=3.18 has subcomponent Development.Module, scikit-build-core also has it
 if (${CMAKE_VERSION} VERSION_LESS 3.18 AND NOT SKBUILD)
   find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
@@ -35,13 +39,14 @@ else()
   find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module)
 endif()
 
-# use pybind11-config (if available) to determine pybind11_DIR
-execute_process(COMMAND pybind11-config --cmakedir OUTPUT_VARIABLE pybind11_DIR)
-string(STRIP "${pybind11_DIR}" pybind11_DIR)
-find_package(pybind11 2.6 CONFIG REQUIRED)
-message(STATUS "Found pybind11 ${pybind11_VERSION}: ${pybind11_INCLUDE_DIRS}")
+execute_process(
+  COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
+  OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
+list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
+find_package(nanobind 2.2.0 CONFIG REQUIRED)
+message(STATUS "Found nanobind ${nanobind_VERSION}: ${NB_DIR}")
 
-pybind11_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
+nanobind_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
 
 if (EXISTS "${CMAKE_HOME_DIRECTORY}/eigen/Eigen")
   include_directories("${CMAKE_CURRENT_SOURCE_DIR}/eigen")
@@ -52,31 +57,46 @@ else()
   target_link_libraries(ext PRIVATE Eigen3::Eigen)
 endif()
 
-if (DEFINED SKBUILD)
-  if (WIN32)
-    # Gemmi is installed in an overlay directory in virtualenv.
-    # For now, locate it relatively to pybind11.
-    get_filename_component(gemmi_ROOT "${pybind11_INCLUDE_DIR}/../../../.." ABSOLUTE)
+# We need either gemmi C++ development files (headers, library, cmake config)
+# or gemmi sources. If we have the former with a shared library, it may require
+# extra effort to make sure that the shared library is found at runtime.
+if (SEARCH_INSTALLED_GEMMI)
+  find_package(gemmi 0.7.0 CONFIG)
+endif()
+if (gemmi_FOUND)
+  message(STATUS "  based on config from ${gemmi_DIR}")
+  get_target_property(gemmi_TYPE gemmi::gemmi_cpp TYPE)
+  if (${gemmi_TYPE} STREQUAL "SHARED_LIBRARY")
+    message(STATUS "** Servalcat Python module will be linked with gemmi shared library.  **")
+    message(STATUS "** The module may require 'repairing' to find the library at runtime. **")
   endif()
-  find_package(gemmi 0.6.7 CONFIG REQUIRED)
 else()
   set(USE_PYTHON ON CACHE BOOL "" FORCE)
+  set(BUILD_GEMMI_PROGRAM OFF CACHE BOOL "" FORCE)
+  set(INSTALL_DEV_FILES OFF CACHE BOOL "" FORCE)
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
   message(STATUS "")
   message(STATUS "Configuring GEMMI...")
+  if (INSTALL_GEMMI_IF_BUILT AND NOT gemmi_FOUND)
+    set(exclude_or_not)
+  else()
+    set(exclude_or_not EXCLUDE_FROM_ALL)
+  endif()
   if (EXISTS "${CMAKE_HOME_DIRECTORY}/gemmi/include/gemmi")
     message(STATUS "Using ${CMAKE_HOME_DIRECTORY}/gemmi (internal copy).")
-    add_subdirectory(gemmi EXCLUDE_FROM_ALL)
+    add_subdirectory(gemmi ${exclude_or_not})
   else()
+    message(STATUS "Using FetchContent...")
     include(FetchContent)
     FetchContent_Declare(
       gemmi
       GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
-      GIT_TAG        v0.6.7
+      #GIT_TAG        v0.7.0
     )
     FetchContent_GetProperties(gemmi)
     if (NOT gemmi_POPULATED)
       FetchContent_Populate(gemmi)
-      add_subdirectory(${gemmi_SOURCE_DIR} ${gemmi_BINARY_DIR} EXCLUDE_FROM_ALL)
+      add_subdirectory(${gemmi_SOURCE_DIR} ${gemmi_BINARY_DIR} ${exclude_or_not})
     endif()
   endif()
   add_dependencies(ext gemmi_py)

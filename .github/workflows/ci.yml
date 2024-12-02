@@ -15,7 +15,7 @@ jobs:
       with:
         submodules: true
     - name: Build wheels
-      uses: pypa/cibuildwheel@v2.20.0
+      uses: pypa/cibuildwheel@v2.21.3
       env:
         CIBW_BUILD: 'cp*'
         CIBW_SKIP: 'cp36* *musllinux* *_i686 *-win32'
@@ -44,13 +44,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, macos-12, macos-13, macos-14]
-        py: ['3.7', '3.8', '3.9', '3.10', '3.11', '3.12']
-        exclude:
-          - os: macos-14
-            py: '3.7'
-          - os: ubuntu-24.04
-            py: '3.7'
+        os: [ubuntu-20.04, ubuntu-22.04, ubuntu-24.04, macos-12, macos-13, macos-14, windows-2022]
+        py: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
     name: ${{ matrix.os }} py${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     needs: merge
@@ -75,6 +70,7 @@ jobs:
         python-version: ${{ matrix.py }}
     - name: Python Setup
       run: python -m pip install --find-links=wheels2 servalcat
+      # add gemmi here to test with gemmi build
     - name: Python Tests
       continue-on-error: true
       env:

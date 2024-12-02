@@ -10,7 +10,6 @@ import gemmi
 import numpy
 import json
 import os
-import io
 import shutil
 import argparse
 from servalcat.utils import logger
@@ -150,6 +149,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         assert st_sr is None
     
     logger.writeln("Calculating map-model FSC..")
+    ret = {"summary": {}}
 
     if d_min_fsc is None:
         d_min_fsc = utils.maps.nyquist_resolution(maps[0][0])
@@ -220,12 +220,17 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             s.drop(columns=[x for x in s if x.startswith("fsc_FC") and x.endswith(("half1","half2"))], inplace=True)
 
     # FSCaverages
+    ret["summary"]["d_min"] = d_min
+    ret["summary"]["FSCaverage"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model)
+    if cross_validation:
+        ret["summary"]["FSCaverage_half1"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half1)
+        ret["summary"]["FSCaverage_half2"] = spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half2)
     fscavg_text  = "Map-model FSCaverages (at {:.2f} A):\n".format(d_min)
-    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model))
+    fscavg_text += " FSCaverage(full) = {: .4f}\n".format(ret["summary"]["FSCaverage"])
     if cross_validation:
         fscavg_text += "Cross-validated map-model FSCaverages:\n"
-        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half1))
-        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(spa.fsc.fsc_average(stats2.ncoeffs, stats2.fsc_model_half2))
+        fscavg_text += " FSCaverage(half1)= {: .4f}\n".format(ret["summary"]["FSCaverage_half1"])
+        fscavg_text += " FSCaverage(half2)= {: .4f}\n".format(ret["summary"]["FSCaverage_half2"])
     
     # for loggraph
     fsc_logfile = "{}_fsc.log".format(output_prefix)
@@ -269,8 +274,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     json.dump(stats.to_dict("records"),
               open("{}_fsc.json".format(output_prefix), "w"),
               indent=True)
-
-    return fscavg_text
+    ret["binned"] = stats2.to_dict(orient="records")
+    return fscavg_text, ret
 # calc_fsc()
 
 def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix="diffmap"):
@@ -462,7 +467,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
     unit_cell = maps[0][0].unit_cell
     spacegroup = gemmi.SpaceGroup(1)
     start_xyz = numpy.array(maps[0][0].get_position(*grid_start).tolist())
-    A = numpy.array(unit_cell.orthogonalization_matrix.tolist())
+    A = unit_cell.orth.mat.array
     center = numpy.sum(A, axis=1) / 2 #+ start_xyz
 
     # Create mask
@@ -593,7 +598,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
             topo, metal_kws = utils.restraints.prepare_topology(st, monlib, h_change=h_change, raise_error=False)
             args.keywords = metal_kws + args.keywords
         elif not no_refmac_fix:
-            topo = gemmi.prepare_topology(st, monlib, warnings=io.StringIO(), ignore_unknown_links=True)
+            topo = gemmi.prepare_topology(st, monlib, warnings=logger.silent(), ignore_unknown_links=True)
         else:
             topo = None # not used
         if not no_refmac_fix:
@@ -618,7 +623,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         args.keywords.append("make cr prepared")
         gemmi.setup_for_crd(st)
         doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
-        doc.write_file(crdout, style=gemmi.cif.Style.NoBlankLines)
+        doc.write_file(crdout, options=gemmi.cif.Style.NoBlankLines)
         logger.writeln("crd file written: {}".format(crdout))
 
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None, with_000=False)
@@ -955,7 +960,7 @@ def main(args):
                            monlib=monlib, cross_validation=args.cross_validation,
                            blur=args.blur,
                            d_min_fsc=args.fsc_resolution,
-                           cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)
+                           cross_validation_method=args.cross_validation_method, st_sr=st_sr_expanded)[0]
 
     # Calc Fo-Fc (and updated) maps
     calc_fofc(st, st_expanded, maps, monlib, model_format, args)

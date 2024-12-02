@@ -30,7 +30,7 @@ class LL_Xtal:
         self.free = free
         self.st = st
         self.monlib = monlib
-        self.d_min = hkldata.d_min_max()[0]
+        self.d_min_max = hkldata.d_min_max()
         self.fc_labs = ["FC0"]
         self.use_solvent = use_solvent
         if use_solvent:
@@ -54,6 +54,9 @@ class LL_Xtal:
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
+    def refine_id(self):
+        return {"xray": "X-RAY", "electron": "ELECTRON", "neutron": "NEUTRON"}.get(self.source, "") + " DIFFRACTION"
+
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
                                                   self.centric_and_selections, use=self.use_in_est,
@@ -63,7 +66,7 @@ class LL_Xtal:
         #                             self.centric_and_selections)
     def update_fc(self):
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
-                         d_min=self.d_min, monlib=self.monlib,
+                         d_min=self.d_min_max[0], monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data)
 
@@ -78,13 +81,13 @@ class LL_Xtal:
                                            for sel in self.centric_and_selections[i_bin]])
             mask = numpy.empty(len(self.hkldata.df.index)) * numpy.nan
             mask[idxes] = 1 / self.hkldata.debye_waller_factors(b_cart=self.b_aniso)[idxes]**2
-            self.twin_data.est_f_true(self.hkldata.df.I * mask,
-                                      self.hkldata.df.SIGI * mask)
+            self.twin_data.est_f_true(self.hkldata.df.I.to_numpy() * mask,
+                                      self.hkldata.df.SIGI.to_numpy() * mask)
         
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min, miller_array)
+            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array)
             if self.twin_data:
                 fc_sum = self.twin_data.f_calc[:,:-1].sum(axis=1)
             else:
@@ -177,7 +180,7 @@ class LL_Xtal:
         return ret
 
     def calc_grad(self, atom_pos, refine_xyz, adp_mode, refine_occ, refine_h, specs=None):
-        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min / 3) # TODO need more work
+        blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         if self.twin_data:
             dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0()
@@ -206,8 +209,8 @@ class LL_Xtal:
                         to = Io[cidxes] / sigIo[cidxes] - sigIo[cidxes] / (c+1) / k_ani[cidxes]**2 / S / epsilon
                         tf = k_ani[cidxes] * Fc_abs / numpy.sqrt(sigIo[cidxes])
                         sig1 = k_ani[cidxes]**2 * epsilon * S / sigIo[cidxes]
-                        k_num = 0.5 if c == 0 else 0. # acentric:0.5, centric: 0.
-                        r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, c+1,
+                        k_num = numpy.repeat(0.5 if c == 0 else 0., to.size) # acentric:0.5, centric: 0.
+                        r = ext.integ_J_ratio(k_num, k_num - 0.5, True, to, tf, sig1, numpy.repeat(c+1, to.size),
                                               integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
                         r *= numpy.sqrt(sigIo[cidxes]) / k_ani[cidxes]
                         g = (2-c) * (Fc_abs - r) / epsilon / S  * Ds[:,0]

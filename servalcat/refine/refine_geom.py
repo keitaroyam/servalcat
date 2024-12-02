@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts
+from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts, update_meta
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -138,7 +138,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
                 row[i+7] = "{:.3f}".format(p[i])
     # add description
     add_program_info_to_dictionary(block, st[0][0][0].name)
-    doc.write_file(output_prefix + "_updated.cif", style=gemmi.cif.Style.Aligned)
+    doc.write_file(output_prefix + "_updated.cif", options=gemmi.cif.Style.Aligned)
     logger.writeln("Updated dictionary saved: {}".format(output_prefix + "_updated.cif"))
     with open(output_prefix + "_stats.json", "w") as ofs:
         json.dump([convert_stats_to_dicts(x) for x in all_stats],
@@ -179,6 +179,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     refiner = Refine(st, geom, params=params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
+    update_meta(st, stats[-1])
     refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
     if params["write_trajectory"]:

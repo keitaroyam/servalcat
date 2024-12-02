@@ -36,11 +36,31 @@ class TestRefine(unittest.TestCase):
         stats = json.load(open("5e5z_refined_stats.json"))
         self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond distances, non H"], 0.01)
         
+    def test_refine_xtal_int(self):
+        mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
+        pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", pdbin, "--rand", "0.5",
+                    "--hklin", mtzin, "-s", "xray", "--labin", "I,SIGI,FREE"]
+        main()
+        stats = json.load(open("5e5z_refined_stats.json"))
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.88)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIworkavg"], 0.92)
+
+    def test_refine_xtal(self):
+        mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
+        pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", pdbin, "--rand", "0.5",
+                    "--hklin", mtzin, "-s", "xray", "--labin", "FP,SIGFP,FREE"]
+        main()
+        stats = json.load(open("5e5z_refined_stats.json"))
+        self.assertLess(stats[-1]["data"]["summary"]["Rfree"], 0.22)
+        self.assertLess(stats[-1]["data"]["summary"]["Rwork"], 0.20)
+
     def test_refine_spa(self):
         data = test_spa.data
         sys.argv = ["", "refine_spa_norefmac", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"],
-                    "--resolution", "1.9", "--ncycle", "2",]
+                    "--resolution", "1.9", "--ncycle", "2", "--write_trajectory"]
         main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))

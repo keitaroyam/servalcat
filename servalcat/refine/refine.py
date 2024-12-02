@@ -427,7 +427,7 @@ class Refine:
             self.geom.set_h_parents()
         if params and params.get("write_trajectory"):
             self.st_traj = self.st.clone()
-            self.st_traj[-1].name = "0"
+            self.st_traj[-1].num = 0
         assert self.geom.group_occ.groups or self.n_params() > 0
     # __init__()
     
@@ -530,7 +530,7 @@ class Refine:
             elif self.adp_mode == 2:
                 a = x[offset_b + 6 * j: offset_b + 6 * (j+1)]
                 a = gemmi.SMat33d(*a)
-                M = numpy.array(a.as_mat33())
+                M = a.as_mat33().array
                 v, Q = numpy.linalg.eigh(M) # eig() may return complex due to numerical precision?
                 v = numpy.maximum(v, 0.5) # avoid NPD with minimum B = 0.5
                 M2 = Q.dot(numpy.diag(v)).dot(Q.T)
@@ -741,7 +741,7 @@ class Refine:
                     weight /= 1.1
             if self.st_traj is not None:
                 self.st_traj.add_model(self.st[0])
-                self.st_traj[-1].name = str(len(self.st_traj))
+                self.st_traj[-1].num = len(self.st_traj)
             if stats_json_out:
                 write_stats_json_safe(stats, stats_json_out)
 
@@ -786,43 +786,97 @@ class Refine:
         lstr = utils.make_loggraph_str(df, "stats vs cycle", forplot,
                                        float_format="{:.4f}".format)
         logger.writeln(lstr)
-        self.update_meta(stats[-1])
         return stats
 
-    def update_meta(self, stats):
-        # TODO write stats. probably geom.reporting.get_summary_table should return with _refine_ls_restr.type names
-        # should remove st.mod_residues?
-        self.st.helices.clear()
-        self.st.sheets.clear()
-        raw_remarks = [f'REMARK   3',
-                       f'REMARK   3 REFINEMENT.',
-                       f'REMARK   3   PROGRAM     : SERVALCAT {servalcat.__version__}',
-                       f'REMARK   3   AUTHORS     : YAMASHITA,MURSHUDOV',
-                       f'REMARK   3',
-                       ]
-        si = gemmi.SoftwareItem()
-        si.classification = gemmi.SoftwareItem.Classification.Refinement
-        si.name = "Servalcat"
-        si.version = servalcat.__version__
-        si.date = servalcat.__date__
-        self.st.meta.software = [si]
-
-        ri = gemmi.RefinementInfo()
-        if "geom" in stats:
-            restr_stats = []
-            raw_remarks.append("REMARK   3  RMS DEVIATIONS FROM IDEAL VALUES        COUNT    RMS    WEIGHT")
-            for k, n, l, pl in (("r.m.s.d.", "Bond distances, non H", "s_bond_nonh_d", "BOND LENGTHS REFINED ATOMS        (A)"),
-                                ("r.m.s.d.", "Bond angles, non H", "s_angle_nonh_d", "BOND ANGLES REFINED ATOMS   (DEGREES)")):
-                if k in stats["geom"]["summary"] and n in stats["geom"]["summary"][k]:
-                    rr = gemmi.RefinementInfo.Restr(l)
-                    rr.dev_ideal = stats["geom"]["summary"][k].get(n)
-                    rr.count = stats["geom"]["summary"]["N restraints"].get(n)
-                    rr.weight = stats["geom"]["summary"]["Mn(sigma)"].get(n)
-                    restr_stats.append(rr)
-                    raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
-            ri.restr_stats = restr_stats
-            raw_remarks.append("REMARK   3")
-        self.st.meta.refinement = [ri]
-        self.st.raw_remarks = raw_remarks
-
 # class Refine
+
+def update_meta(st, stats, ll=None):
+    # TODO write stats. probably geom.reporting.get_summary_table should return with _refine_ls_restr.type names
+    # should remove st.mod_residues?
+    st.helices.clear()
+    st.sheets.clear()
+    raw_remarks = [f'REMARK   3',
+                   f'REMARK   3 REFINEMENT.',
+                   f'REMARK   3   PROGRAM     : SERVALCAT {servalcat.__version__}',
+                   f'REMARK   3   AUTHORS     : YAMASHITA,MURSHUDOV',
+                   f'REMARK   3',
+                   ]
+    si = gemmi.SoftwareItem()
+    si.classification = gemmi.SoftwareItem.Classification.Refinement
+    si.name = "Servalcat"
+    si.version = servalcat.__version__
+    si.date = servalcat.__date__
+    st.meta.software = [si]
+
+    ri = gemmi.RefinementInfo()
+    if "geom" in stats:
+        restr_stats = []
+        raw_remarks.append("REMARK   3  RMS DEVIATIONS FROM IDEAL VALUES        COUNT    RMS    WEIGHT")
+        for k, n, l, pl in (("r.m.s.d.", "Bond distances, non H", "s_bond_nonh_d",             "BOND LENGTHS REFINED ATOMS        (A)"),
+                            ("r.m.s.d.", "Bond angles, non H", "s_angle_nonh_deg",             "BOND ANGLES REFINED ATOMS   (DEGREES)"),
+                            ("r.m.s.d.", "Torsion angles, period 1", "s_dihedral_angle_1_deg", "TORSION ANGLES, PERIOD 1    (DEGREES)"),
+                            ("r.m.s.d.", "Torsion angles, period 2", "s_dihedral_angle_2_deg", "TORSION ANGLES, PERIOD 2    (DEGREES)"),
+                            ("r.m.s.d.", "Torsion angles, period 3", "s_dihedral_angle_3_deg", "TORSION ANGLES, PERIOD 3    (DEGREES)"),
+                            ("r.m.s.d.", "Torsion angles, period 6", "s_dihedral_angle_6_deg", "TORSION ANGLES, PERIOD 6    (DEGREES)"),
+                            ("r.m.s.d.", "Chiral centres", "s_chiral_restr",                   "CHIRAL-CENTER RESTRAINTS       (A**3)"),
+                            ("r.m.s.d.", "Planar groups", "s_planes",                          "GENERAL PLANES REFINED ATOMS      (A)"),
+                            ("r.m.s.d.", "VDW nonbonded", "s_nbd",                             ""),
+                            ("r.m.s.d.", "VDW torsion", "s_nbtor",                             ""),
+                            ("r.m.s.d.", "VDW hbond", "s_hbond_nbd",                           ""),
+                            ("r.m.s.d.", "VDW metal", "s_metal_ion",                           ""),
+                            ("r.m.s.d.", "VDW dummy", "s_dummy_nbd",                           ""),
+                            ("r.m.s.d.", "VDW nonbonded, symmetry", "s_symmetry_nbd",          ""),
+                            ("r.m.s.d.", "VDW torsion, symmetry", "s_symmetry_nbtor",          ""),
+                            ("r.m.s.d.", "VDW hbond, symmetry", "s_symmetry_hbond_nbd",        ""),
+                            ("r.m.s.d.", "VDW metal, symmetry", "s_symmetry_metal_ion",        ""),
+                            ("r.m.s.d.", "VDW dummy, symmetry", "s_symmetry_dummy_nbd",        "")):
+            if k in stats["geom"]["summary"] and n in stats["geom"]["summary"][k]:
+                rr = gemmi.RefinementInfo.Restr(l)
+                rr.dev_ideal = stats["geom"]["summary"][k].get(n)
+                rr.count = stats["geom"]["summary"]["N restraints"].get(n)
+                rr.weight = stats["geom"]["summary"]["Mn(sigma)"].get(n)
+                restr_stats.append(rr)
+                if pl:
+                    raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
+        ri.restr_stats = restr_stats
+        raw_remarks.append("REMARK   3")
+    if ll is not None:
+        ri.id = ll.refine_id()
+        ri.mean_b = numpy.mean([cra.atom.b_iso for cra in st[0].all()])
+        if ll.b_aniso is not None:
+            ri.aniso_b = ll.b_aniso
+        for k, kd in (("Rwork", "r_work"), ("Rfree", "r_free"), ("FSCaverage", "fsc_work"),
+                      ("FSCaverage_half1", "fsc_work"), ("FSCaverage_half2", "fsc_free")):
+            if k in stats["data"]["summary"]: setattr(ri, kd, stats["data"]["summary"][k])
+        bins = []
+        n_all = 0
+        for b in stats["data"]["binned"]:
+            bri = gemmi.BasicRefinementInfo()
+            bri.resolution_high = b["d_min"]
+            bri.resolution_low = b["d_max"]
+            for k, kd in (("Rwork", "r_work"), ("Rfree", "r_free"),
+                          ("R1work", "r_work"), ("R1free", "r_free"),
+                          ("R", "r_all"), ("R1", "r_all"),
+                          ("CCI", "cc_intensity_work"), ("CCF", "cc_fo_fc_work"),
+                          ("CCIwork", "cc_intensity_work"), ("CCIfree", "cc_intensity_free"),
+                          ("CCFwork", "cc_fo_fc_work"), ("CCFfree", "cc_fo_fc_free"),
+                          ("fsc_FC_full", "fsc_work"), ("fsc_model", "fsc_work"),
+                          ("fsc_model_half1", "fsc_work"), ("fsc_model_half2", "fsc_free"),
+                          ("n_work", "work_set_count"), ("n_free", "rfree_set_count"),
+                          ("n_obs", "reflection_count"), ("ncoeffs", "reflection_count")):
+                if k in b: setattr(bri, kd, b[k])
+            if "n_all" in b and "n_obs" in b:
+                bri.completeness = b["n_obs"] / b["n_all"] * 100
+                n_all += b["n_all"]
+            bins.append(bri)
+        ri.rfree_set_count = max(-1, sum(b.rfree_set_count for b in bins))
+        ri.work_set_count = max(-1, sum(b.work_set_count for b in bins))
+        ri.reflection_count = max(-1, sum(b.reflection_count for b in bins))
+        ri.resolution_high = min(b.resolution_high for b in bins)
+        ri.resolution_low = max(b.resolution_low for b in bins)
+        if ri.reflection_count > 0 and n_all > 0:
+            ri.completeness = ri.reflection_count / n_all * 100
+        ri.bins = bins
+    st.meta.refinement = [ri]
+    st.raw_remarks = raw_remarks
+# update_meta()

@@ -23,7 +23,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
     if not ops:
         return
     twin_data = ext.TwinData()
-    twin_data.setup(hkldata.miller_array().to_numpy(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
+    twin_data.setup(hkldata.miller_array(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
     if "I" in hkldata.df:
         Io = hkldata.df.I.to_numpy()
     else:
@@ -83,7 +83,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
                                "Alpha": alphas})
         logger.writeln(df.to_string(float_format="%.2f"))
         twin_data = ext.TwinData()
-        twin_data.setup(hkldata.miller_array().to_numpy(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
+        twin_data.setup(hkldata.miller_array(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
     twin_data.alphas = alphas
     if "I" not in hkldata.df:
         logger.writeln('Generating "observed" intensities for twin refinement: Io = Fo**2, SigIo = 2*F*SigFo')
