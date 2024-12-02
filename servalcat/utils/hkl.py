@@ -27,7 +27,7 @@ def correlation(obs, calc):
     return numpy.corrcoef(obs[sel], calc[sel])[0,1]
 
 def df_from_asu_data(asu_data, label):
-    df = pandas.DataFrame(data=asu_data.miller_array,
+    df = pandas.DataFrame(data=asu_data.miller_array.astype(numpy.int32),
                           columns=["H","K","L"])
     if type(asu_data) is gemmi.ValueSigmaAsuData:
         df[label] = to64(asu_data.value_array[:,0])
@@ -37,7 +37,7 @@ def df_from_asu_data(asu_data, label):
     return df
 
 def df_from_raw(miller_array, value_array, label):
-    df = pandas.DataFrame(data=miller_array,
+    df = pandas.DataFrame(data=miller_array.astype(numpy.int32),
                           columns=["H","K","L"])
     df[label] = to64(value_array)
     return df
