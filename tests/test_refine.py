@@ -56,6 +56,23 @@ class TestRefine(unittest.TestCase):
         self.assertLess(stats[-1]["data"]["summary"]["Rfree"], 0.22)
         self.assertLess(stats[-1]["data"]["summary"]["Rwork"], 0.20)
 
+    def test_refine_small_hkl(self):
+        hklin = os.path.join(root, "biotin", "biotin_talos.hkl")
+        xyzin = os.path.join(root, "biotin", "biotin_talos.ins")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", hklin, "-s", "electron", "--unrestrained"]
+        main()
+        stats = json.load(open("biotin_talos_refined_stats.json"))
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
+
+    def test_refine_small_cif(self):
+        cifin = os.path.join(root, "biotin", "biotin_talos.cif")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", cifin,
+                    "--hklin", cifin, "-s", "electron", "--unrestrained"]
+        main()
+        stats = json.load(open("biotin_talos_refined_stats.json"))
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
+    
     def test_refine_spa(self):
         data = test_spa.data
         sys.argv = ["", "refine_spa_norefmac", "--halfmaps", data["half1"], data["half2"],
