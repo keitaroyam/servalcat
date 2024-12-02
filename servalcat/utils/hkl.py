@@ -7,7 +7,6 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import numpy
-import numpy.lib.recfunctions
 import scipy.optimize
 import pandas
 import gemmi
@@ -30,9 +29,9 @@ def correlation(obs, calc):
 def df_from_asu_data(asu_data, label):
     df = pandas.DataFrame(data=asu_data.miller_array,
                           columns=["H","K","L"])
-    if asu_data.value_array.dtype.names == ('value', 'sigma'):
-        df[label] = to64(asu_data.value_array["value"])
-        df["SIG"+label] = to64(asu_data.value_array["sigma"])
+    if type(asu_data) is gemmi.ValueSigmaAsuData:
+        df[label] = to64(asu_data.value_array[:,0])
+        df["SIG"+label] = to64(asu_data.value_array[:,1])
     else:
         df[label] = to64(asu_data.value_array)
     return df
@@ -516,9 +515,7 @@ class HklData:
         if label_sigma is not None:
             assert data is None
             assert not numpy.iscomplexobj(self.df[label])
-            sigma = self.df[label_sigma]
-            data = numpy.lib.recfunctions.unstructured_to_structured(self.df[[label,label_sigma]].to_numpy(),
-                                                                     numpy.dtype([("value", numpy.float32), ("sigma", numpy.float32)]))
+            data = self.df[[label,label_sigma]].to_numpy()
         elif data is None:
             data = self.df[label]
             

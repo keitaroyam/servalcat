@@ -268,9 +268,9 @@ def optimize_peak(grid, ini_pos):
     logger.writeln("Finding peak using interpolation..")
     x = grid.unit_cell.fractionalize(ini_pos)
     logger.writeln("       x0: [{}, {}, {}]".format(*x.tolist()))
-    logger.writeln("       f0: {}".format(-grid.tricubic_interpolation(x)))
+    logger.writeln("       f0: {}".format(-grid.interpolate_value(x, order=3)))
 
-    res = scipy.optimize.minimize(fun=lambda x:-grid.tricubic_interpolation(gemmi.Fractional(*x)),
+    res = scipy.optimize.minimize(fun=lambda x:-grid.interpolate_value(gemmi.Fractional(*x), order=3),
                                   x0=x.tolist(),
                                   jac=lambda x:-numpy.array(grid.tricubic_interpolation_der(gemmi.Fractional(*x))[1:])
                                   )

@@ -60,9 +60,9 @@ def find_peak(tf_map, ini_pos):
 
     x = tf_map.unit_cell.fractionalize(ini_pos)
     logger.writeln("       x0: [{}, {}, {}]".format(*x.tolist()))
-    logger.writeln("       f0: {}".format(-tf_map.tricubic_interpolation(x)))
+    logger.writeln("       f0: {}".format(-tf_map.interpolate_value(x, order=3)))
     
-    res = scipy.optimize.minimize(fun=lambda x:-tf_map.tricubic_interpolation(gemmi.Fractional(*x)),
+    res = scipy.optimize.minimize(fun=lambda x:-tf_map.interpolate_value(gemmi.Fractional(*x), order=3),
                                   x0=x.tolist(),
                                   jac=lambda x:-numpy.array(tf_map.tricubic_interpolation_der(gemmi.Fractional(*x))[1:]))
     logger.writeln(str(res))

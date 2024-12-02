@@ -17,7 +17,6 @@ import re
 import subprocess
 import gemmi
 import numpy
-import numpy.lib.recfunctions
 import gzip
 
 def splitext(path):
@@ -579,7 +578,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         symms.extend([x*gemmi.Op("-x,-y,-z") for x in symms])
 
     ss.symops = [op.triplet() for op in set(symms)]
-    ss.set_spacegroup("s")
+    ss.determine_and_set_spacegroup("s")
     # in case of non-regular setting, gemmi.SpaceGroup cannot be constructed anyway.
     if ss.spacegroup is None:
         raise RuntimeError("Cannot construct space group from symbols: {}".format(ss.symops))
@@ -606,7 +605,7 @@ def read_shelx_hkl(cell, sg, hklf, file_in=None, lines_in=None):
         # wavelength = l[32:40]
 
     ints = gemmi.Intensities()
-    ints.set_data(cell, sg, hkls, vals, sigs)
+    ints.set_data(cell, sg, numpy.asarray(hkls), numpy.asarray(vals), numpy.asarray(sigs))
     ints.merge_in_place(gemmi.DataType.Anomalous)
     if not (ints.isign_array < 0).any(): ints.type = gemmi.DataType.Mean
     logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
