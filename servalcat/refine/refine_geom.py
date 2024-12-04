@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts, update_meta
+from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -171,6 +171,8 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    print_h_options(h_change, st[0].has_hydrogen(), refine_h=True, hout=True, geom_only=True)
+        
     if use_ncsr:
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:

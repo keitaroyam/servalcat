@@ -16,7 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
 from servalcat.refine.xtal import LL_Xtal
-from servalcat.refine.refine import Geom, Refine, update_meta
+from servalcat.refine.refine import Geom, Refine, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -165,10 +165,12 @@ def main(args):
     if args.unrestrained:
         monlib = gemmi.MonLib()
         topo = None
+        h_change = gemmi.HydrogenChange.NoChange
         if args.hydrogen == "all":
-            logger.writeln("WARNING: in unrestrained refinement hydrogen atoms are not generated.")
+            logger.writeln("\nWARNING: in unrestrained refinement hydrogen atoms are not generated.\n")
         elif args.hydrogen == "no":
             st.remove_hydrogens()
+            h_change = gemmi.HydrogenChange.Remove
         for i, cra in enumerate(st[0].all()):
             cra.atom.serial = i + 1
     else:
@@ -192,6 +194,8 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
 
+    print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
+    
     # initialize ADP
     utils.model.reset_adp(st[0], args.bfactor, args.adp)
         

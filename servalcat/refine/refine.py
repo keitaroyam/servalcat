@@ -225,6 +225,26 @@ def write_stats_json_safe(stats, json_out):
     logger.writeln(f"Refinement statistics saved: {json_out}")
 # write_stats_json_safe()
 
+def print_h_options(h_change, h_present, refine_h, hout, geom_only):
+    if not h_present:
+        h_change = gemmi.HydrogenChange.Remove
+    logger.writeln("Hydrogen related options")
+    logger.write(" use in refinement{}: hydrogen atoms ".format("" if geom_only else "/map calculation"))
+    logger.writeln({gemmi.HydrogenChange.ReAddButWater: "have been (re)generated",
+                    gemmi.HydrogenChange.ReAdd:         "(including water) have been (re)generated",
+                    gemmi.HydrogenChange.ReAddKnown:    "(except for rotatable) have been (re) generated",
+                    gemmi.HydrogenChange.NoChange:      "from the input model have been retained",
+                    gemmi.HydrogenChange.Remove:        "have either been removed or were not present"}[h_change])
+    if h_present:
+        logger.write(" target: hydrogen atoms will be ")
+        if geom_only or not refine_h:
+            logger.writeln("just optimized according to geometric restraints")
+        else:
+            logger.writeln("refined against experimental data")
+    logger.writeln(" in output model: " + ("written" if hout and h_present else "not written"))
+    logger.writeln("")
+# print_hydrogen_options()
+
 class GroupOccupancy:
     # TODO max may not be one. should check multiplicity
     def __init__(self, st, params):

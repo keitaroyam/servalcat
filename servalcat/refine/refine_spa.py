@@ -14,7 +14,7 @@ from servalcat import utils
 from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
 from servalcat.spa import fofc
 from servalcat.refine import spa
-from servalcat.refine.refine import Geom, Refine, update_meta
+from servalcat.refine.refine import Geom, Refine, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
@@ -149,7 +149,8 @@ def main(args):
         monlib = gemmi.MonLib()
         topo = None
         if args.hydrogen == "all":
-            logger.writeln("WARNING: in unrestrained refinement hydrogen atoms are not generated.")
+            logger.writeln("\nWARNING: in unrestrained refinement hydrogen atoms are not generated.\n")
+            args.hydrogen = "yes"
         elif args.hydrogen == "no":
             st.remove_hydrogens()
         for i, cra in enumerate(st[0].all()):
@@ -198,6 +199,8 @@ def main(args):
                                                     params=params)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+
+    print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
 
     # initialize ADP
     utils.model.reset_adp(st[0], args.bfactor, args.adp)
