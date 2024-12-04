@@ -832,9 +832,9 @@ def update_meta(st, stats, ll=None):
                             ("r.m.s.d.", "VDW dummy, symmetry", "s_symmetry_dummy_nbd",        "")):
             if k in stats["geom"]["summary"] and n in stats["geom"]["summary"][k]:
                 rr = gemmi.RefinementInfo.Restr(l)
-                rr.dev_ideal = stats["geom"]["summary"][k].get(n)
+                rr.dev_ideal = round(stats["geom"]["summary"][k].get(n), 4)
                 rr.count = stats["geom"]["summary"]["N restraints"].get(n)
-                rr.weight = stats["geom"]["summary"]["Mn(sigma)"].get(n)
+                rr.weight = round(stats["geom"]["summary"]["Mn(sigma)"].get(n), 4)
                 restr_stats.append(rr)
                 if pl:
                     raw_remarks.append(f"REMARK   3   {pl}:{rr.count:6d} ;{rr.dev_ideal:6.3f} ;{rr.weight:6.3f}")
@@ -842,41 +842,45 @@ def update_meta(st, stats, ll=None):
         raw_remarks.append("REMARK   3")
     if ll is not None:
         ri.id = ll.refine_id()
-        ri.mean_b = numpy.mean([cra.atom.b_iso for cra in st[0].all()])
+        ri.mean_b = round(numpy.mean([cra.atom.b_iso for cra in st[0].all()]), 2)
         if ll.b_aniso is not None:
             ri.aniso_b = ll.b_aniso
-        for k, kd in (("Rwork", "r_work"), ("Rfree", "r_free"), ("FSCaverage", "fsc_work"),
-                      ("FSCaverage_half1", "fsc_work"), ("FSCaverage_half2", "fsc_free")):
-            if k in stats["data"]["summary"]: setattr(ri, kd, stats["data"]["summary"][k])
+        for k, kd, nd in (("Rwork", "r_work", 4), ("Rfree", "r_free", 4), ("R", "r_all", 4),
+                          ("FSCaverage", "fsc_work", 4),
+                          ("FSCaverage_half1", "fsc_work", 4), ("FSCaverage_half2", "fsc_free", 4)):
+            if k in stats["data"]["summary"]:
+                setattr(ri, kd, round(stats["data"]["summary"][k], nd))
         bins = []
         n_all = 0
         for b in stats["data"]["binned"]:
             bri = gemmi.BasicRefinementInfo()
-            bri.resolution_high = b["d_min"]
-            bri.resolution_low = b["d_max"]
-            for k, kd in (("Rwork", "r_work"), ("Rfree", "r_free"),
-                          ("R1work", "r_work"), ("R1free", "r_free"),
-                          ("R", "r_all"), ("R1", "r_all"),
-                          ("CCI", "cc_intensity_work"), ("CCF", "cc_fo_fc_work"),
-                          ("CCIwork", "cc_intensity_work"), ("CCIfree", "cc_intensity_free"),
-                          ("CCFwork", "cc_fo_fc_work"), ("CCFfree", "cc_fo_fc_free"),
-                          ("fsc_FC_full", "fsc_work"), ("fsc_model", "fsc_work"),
-                          ("fsc_model_half1", "fsc_work"), ("fsc_model_half2", "fsc_free"),
-                          ("n_work", "work_set_count"), ("n_free", "rfree_set_count"),
-                          ("n_obs", "reflection_count"), ("ncoeffs", "reflection_count")):
-                if k in b: setattr(bri, kd, b[k])
+            bri.resolution_high = round(b["d_min"], 3)
+            bri.resolution_low = round(b["d_max"], 3)
+            for k, kd, nd in (("Rwork", "r_work", 4), ("Rfree", "r_free", 4),
+                              ("R1work", "r_work", 4), ("R1free", "r_free", 4),
+                              ("R", "r_all", 4), ("R1", "r_all", 4),
+                              ("CCI", "cc_intensity_work", 4), ("CCF", "cc_fo_fc_work", 4),
+                              ("CCIwork", "cc_intensity_work", 4), ("CCIfree", "cc_intensity_free", 4),
+                              ("CCFwork", "cc_fo_fc_work", 4), ("CCFfree", "cc_fo_fc_free", 4),
+                              ("fsc_FC_full", "fsc_work", 4), ("fsc_model", "fsc_work", 4),
+                              ("fsc_model_half1", "fsc_work", 4), ("fsc_model_half2", "fsc_free", 4),
+                              ("n_work", "work_set_count", 0), ("n_free", "rfree_set_count", 0),
+                              ("n_obs", "reflection_count", 0), ("ncoeffs", "reflection_count", 0)):
+                if k in b: setattr(bri, kd, round(b[k], nd))
             if "n_all" in b and "n_obs" in b:
-                bri.completeness = b["n_obs"] / b["n_all"] * 100
+                bri.completeness = round(b["n_obs"] / b["n_all"] * 100, 2)
                 n_all += b["n_all"]
             bins.append(bri)
         ri.rfree_set_count = max(-1, sum(b.rfree_set_count for b in bins))
         ri.work_set_count = max(-1, sum(b.work_set_count for b in bins))
         ri.reflection_count = max(-1, sum(b.reflection_count for b in bins))
-        ri.resolution_high = min(b.resolution_high for b in bins)
-        ri.resolution_low = max(b.resolution_low for b in bins)
+        ri.resolution_high = round(min(b.resolution_high for b in bins), 3)
+        ri.resolution_low = round(max(b.resolution_low for b in bins), 3)
         if ri.reflection_count > 0 and n_all > 0:
-            ri.completeness = ri.reflection_count / n_all * 100
+            ri.completeness = round(ri.reflection_count / n_all * 100, 2)
         ri.bins = bins
+        if ri.rfree_set_count > 0:
+            ri.cross_validation_method = "THROUGHOUT"
     st.meta.refinement = [ri]
     st.raw_remarks = raw_remarks
 # update_meta()
