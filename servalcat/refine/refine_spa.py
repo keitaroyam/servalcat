@@ -271,7 +271,6 @@ def main(args):
     st_expanded = refiner.st.clone()
     if not all(op.given for op in st.ncs):
         utils.model.expand_ncs(st_expanded)
-        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True, hout=args.hout)
 
     # Calc FSC
     if args.hklin: # cannot update a mask
@@ -294,6 +293,10 @@ def main(args):
     update_meta(refiner.st, stats_for_meta, ll)
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
+    if not all(op.given for op in st.ncs): # to apply updated metadata
+        st_expanded = refiner.st.clone()
+        utils.model.expand_ncs(st_expanded)
+        utils.fileio.write_model(st_expanded, args.output_prefix+"_expanded", pdb=True, cif=True, hout=args.hout)
     if args.hklin:
         return
     # Calc Fo-Fc (and updated) maps
