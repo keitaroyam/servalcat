@@ -1056,10 +1056,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             S = hkldata.df["S"].to_numpy()[cidxes]
             f, m_proxy = expected_F_from_int(Io[cidxes], sigIo[cidxes], k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
             exp_ip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
-            if c == 0:
-                hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
-            else:
-                hkldata.df.loc[cidxes, "FWT"] = f * exp_ip
+            hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
             if has_ano:
@@ -1473,13 +1470,11 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
                 Sigma = 2 * SigFo**2 + epsilon * S
                 X = 2 * Fo * DFc_abs / Sigma
                 m = gemmi.bessel_i1_over_i0(X)
-                hkldata.df.loc[cidxes, "FWT"] = (2 * m * Fo - DFc_abs) * expip
             else:
                 Sigma = SigFo**2 + epsilon * S
                 X = Fo * DFc_abs / Sigma
                 m = numpy.tanh(X)
-                hkldata.df.loc[cidxes, "FWT"] = (m * Fo) * expip
-
+            hkldata.df.loc[cidxes, "FWT"] = (2 * m * Fo - DFc_abs) * expip
             hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc_abs) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
