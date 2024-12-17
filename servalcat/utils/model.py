@@ -553,7 +553,9 @@ def reset_adp(model, bfactor=None, adp_mode="iso"):
         if adp_mode == "iso" or (adp_mode == "fix" and bfactor is not None):
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
         elif adp_mode == "aniso":
-            if not cra.atom.aniso.nonzero() or bfactor is not None:
+            if cra.atom.aniso.nonzero() and bfactor is None: # just in case
+                cra.atom.b_iso = numpy.mean(cra.atom.aniso.calculate_eigenvalues()) * u_to_b
+            else:
                 u = cra.atom.b_iso * b_to_u
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
 # reset_adp()
