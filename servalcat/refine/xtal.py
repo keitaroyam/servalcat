@@ -94,7 +94,7 @@ class LL_Xtal:
                 fc_sum = self.hkldata.df[self.fc_labs[:-1]].sum(axis=1).to_numpy()
             fc_list = [fc_sum, Fmask]
         else:
-            if twin_data:
+            if self.twin_data:
                 fc_list = [self.twin_data.f_calc.sum(axis=1)]
             else:
                 fc_list = [self.hkldata.df[self.fc_labs].sum(axis=1).to_numpy()]
@@ -239,7 +239,7 @@ class LL_Xtal:
             dll_dab *= self.hkldata.debye_waller_factors(b_iso=-blur)
 
         if self.mott_bethe:
-            d2 = 1 / self.twin_data.s2_array if self.twin_data else self.hkldata.d_spacings()**2
+            d2 = numpy.reciprocal(self.twin_data.s2_array) if self.twin_data else self.hkldata.d_spacings()**2
             dll_dab *= d2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 

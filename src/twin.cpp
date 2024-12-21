@@ -629,10 +629,13 @@ void add_twin(nb::module_& m) {
       const size_t n_ops = self.n_ops(); // include identity
       auto ret = make_numpy_array<int>({self.n_obs(), n_ops});
       int *ptr = ret.data();
+      for (int i = 0; i < ret.size(); ++i)
+        ptr[i] = -1;
       for (int ib = 0; ib < self.rb2o.size(); ++ib)
         for (int io = 0; io < self.rb2o[ib].size(); ++io) {
           int *ptr2 = ptr + self.rb2o[ib][io] * n_ops;
           for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic)
+            // FIXME? It may be safer to put -1 for all if self.rbo2a[ib][io].size() != n_ops
             ptr2[ic] = self.rb2a[ib][self.rbo2a[ib][io][ic]];
         }
       return ret;
@@ -791,7 +794,7 @@ void add_twin(nb::module_& m) {
           const double eps = self.epsilon[ia];
           const double S = self.ml_sigma(b);
           const double X_der = fmax / (S * eps);
-          const double X = std::abs(DFc) * X;
+          const double X = std::abs(DFc) * X_der;
           const double m = fom(X, c);
           const std::complex<double> exp_ip = std::exp(std::arg(DFc) * std::complex<double>(0, 1));
           ptr1[ia] = (3 - c) * (std::abs(DFc) - m * fmax) / (eps * S) * self.ml_scale(b, 0) * exp_ip; // assuming 0 is atomic structure

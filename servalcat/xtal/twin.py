@@ -105,7 +105,7 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
         P = numpy.corrcoef(i_tmp.T)
         iobs = hkldata.df.I.to_numpy()[bin_idxes]
         ic_bin = Ic[rr[bin_idxes,:]]
-        val = numpy.isfinite(iobs) & numpy.isfinite(ic_bin).all(axis=1)
+        val = numpy.isfinite(iobs) & numpy.isfinite(ic_bin).all(axis=1) & numpy.all(rr[bin_idxes,:]>=0, axis=1)
         iobs, ic_bin = iobs[val], ic_bin[val,:]
         cc_o_c = [numpy.corrcoef(iobs, ic_bin[:,i])[0,1] for i in range(len(twin_data.ops)+1)]
         frac_est = numpy.dot(numpy.linalg.pinv(P), cc_o_c)
@@ -115,7 +115,9 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
     df.iloc[:,:] /= df.sum(axis=1).to_numpy()[:,None]
     mean_alphas = numpy.maximum(0, df.mean())
     mean_alphas /= numpy.sum(mean_alphas)
-    logger.write(" Estimated fractions from data-model correlations: ")
+    logger.writeln(" Estimated fractions from data-model correlations per bin: ")
+    logger.writeln(df.to_string())
+    logger.write(" Final twin fraction estimate: ")
     logger.writeln(" ".join("%.2f"%x for x in mean_alphas))
     twin_data.alphas = mean_alphas
 
