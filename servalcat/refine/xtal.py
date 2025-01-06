@@ -235,7 +235,7 @@ class LL_Xtal:
                             m = numpy.tanh(X)
                             g = (Fc_abs - m * Fo) / Sigma * Ds[:,0]
                             dll_dab[cidxes] = g * expip
-                            d2ll_dab2[cidxes] = (1. / Sigma - (Fo / (Sigma * numpy.cosh(X)))**2) * Ds[:,0]**2
+                            d2ll_dab2[cidxes] = (1. / Sigma - (Fo / Sigma)**2 * (1. - m**2)) * Ds[:,0]**2
             dll_dab *= self.hkldata.debye_waller_factors(b_iso=-blur)
 
         if self.mott_bethe:
