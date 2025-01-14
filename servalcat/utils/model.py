@@ -73,11 +73,12 @@ def remove_charge(sts):
 def check_atomsf(sts, source, mott_bethe=True):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": mott_bethe = False
-    logger.writeln("Atomic scattering factors for {}".format("electron (Mott-Bethe)" if mott_bethe else source))
+    logger.writeln("Atomic scattering factors for {}".format("xray (use Mott-Bethe to convert to electrons)" if mott_bethe else source))
     if source != "xray" and not mott_bethe:
         logger.writeln("  Note that charges will be ignored")
     el_charges = {(cra.atom.element, cra.atom.charge) for st in sts for cra in st[0].all()}
     elems = {x[0] for x in el_charges}
+    tmp = {}
     if source == "xray" or mott_bethe:
         shown = set()
         for el, charge in sorted(el_charges, key=lambda x: (x[0].atomic_number, x[1])):
@@ -88,12 +89,16 @@ def check_atomsf(sts, source, mott_bethe=True):
                 charge = 0
             if (el, charge) in shown: continue
             label = el.name if charge == 0 else "{}{:+}".format(el.name, charge)
-            logger.writeln("  {} {}".format(label, tuple(sf.get_coefs())))
             shown.add((el, charge))
+            tmp[label] = {**{f"{k}{i+1}": x for k in ("a", "b") for i, x in enumerate(getattr(sf, k))}, "c": sf.c}
     else:
         for el in sorted(elems, key=lambda x: x.atomic_number):
-            sf = el.c4322 if source == "electron" else el.neutron92
-            logger.writeln("  {} {}".format(el.name, tuple(sf.get_coefs())))
+            if source == "electron":
+                tmp[el.name] = {f"{k}{i+1}": x for k in ("a", "b") for i, x in enumerate(getattr(el.c4322, k))}
+            else:
+                tmp[el.name] = {"a": el.neutron92.get_coefs()[0]}
+    with logger.with_prefix("  "):
+        logger.writeln(pandas.DataFrame(tmp).T.to_string())
     logger.writeln("")
 # check_atomsf()
 

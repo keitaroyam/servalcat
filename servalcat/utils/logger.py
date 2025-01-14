@@ -37,7 +37,7 @@ class Logger(object):
     def write(self, l, end="", flush=True, fs=None, print_fs=sys.stdout):
         if self.stopped: return
         if self.prefix:
-            l = "\n".join(self.prefix + x for x in l.splitlines(keepends=True))
+            l = "".join(self.prefix + x for x in l.splitlines(keepends=True))
         print(l, end=end, file=print_fs, flush=flush)
         for f in (self.ofs, fs):
             if f is not None:
