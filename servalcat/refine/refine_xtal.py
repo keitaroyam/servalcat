@@ -129,19 +129,6 @@ def main(args):
         hklin = utils.fileio.read_mmhkl(hklin)
         labin = decide_mtz_labels(hklin)
         
-    if labin and len(labin) == 3: # with test flags
-        use_in_target = "work"
-        if args.use_work_in_est:
-            use_in_est = "work"
-            n_per_bin = 100
-        else:
-            use_in_est = "test"
-            n_per_bin = 50
-    else:
-        use_in_est = "all"
-        use_in_target = "all"
-        n_per_bin = 100
-
     try:
         hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=hklin,
                                                                                  labin=labin,
@@ -151,13 +138,22 @@ def main(args):
                                                                                  source=args.source,
                                                                                  d_max=args.d_max,
                                                                                  d_min=args.d_min,
-                                                                                 n_per_bin=n_per_bin,
-                                                                                 use=use_in_est,
+                                                                                 use="work" if args.use_work_in_est else "test",
                                                                                  max_bins=30,
                                                                                  keep_charges=args.keep_charges,
                                                                                  allow_unusual_occupancies=args.allow_unusual_occupancies)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
+
+    if "FREE" in hkldata.df:
+        use_in_target = "work"
+        if args.use_work_in_est:
+            use_in_est = "work"
+        else:
+            use_in_est = "test"
+    else:
+        use_in_est = "all"
+        use_in_target = "all"
 
     is_int = "I" in hkldata.df
     st = sts[0]

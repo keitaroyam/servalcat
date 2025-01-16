@@ -493,6 +493,31 @@ class HklData:
             self.df = self.df[~sel]
     # remove_nonpositive()
 
+    def mask_invalid_obs_values(self, labels):
+        assert 1 < len(labels) < 6
+        assert labels[1].startswith("SIG")
+        def do_mask(label, target_labels):
+            sel = self.df[label] <= 0
+            n_bad = sel.sum()
+            if n_bad > 0:
+                logger.writeln("Removing {} reflections with {}<=0".format(n_bad, label))
+                self.df.loc[sel, target_labels] = numpy.nan
+            # If any element within target_labels is non-finite, mask all elements
+            self.df.loc[(~numpy.isfinite(self.df[target_labels])).any(axis=1), target_labels] = numpy.nan
+
+        if len(labels) < 4: # F/SIGF or I/SIGI
+            if labels[0].startswith("F"):
+                do_mask(labels[0], labels[:2]) # bad F
+            do_mask(labels[1], labels[:2]) # bad sigma
+        else: # I(+)/SIGI(+)/I(-)/SIGI(-) or F...
+            assert labels[3].startswith("SIG")
+            if labels[0].startswith("F"):
+                do_mask(labels[0], labels[:2]) # bad F+
+                do_mask(labels[2], labels[2:4]) # bad F-
+            do_mask(labels[1], labels[:2]) # bad sigma+
+            do_mask(labels[3], labels[2:4]) # bad sigma-
+    # mask_invalid_obs_values()
+
     def remove_systematic_absences(self):
         is_absent = self.sg.operations().systematic_absences(self.miller_array())
         n_absent = numpy.sum(is_absent)
@@ -501,12 +526,22 @@ class HklData:
             self.df = self.df[~is_absent]
     # remove_systematic_absences()
 
-    def merge_anomalous(self, labs, newlabs):
+    def merge_anomalous(self, labs, newlabs, method="weighted"):
+        assert method in ("weighted", "simple")
         assert len(labs) == 4 # i+,sigi+,i-,sigi- for example
         assert len(newlabs) == 2
-        # skipna=True is default, so missing value is handled nicely.
-        self.df[newlabs[0]] = self.df[[labs[0], labs[2]]].mean(axis=1)
-        self.df[newlabs[1]] = self.df[[labs[1], labs[3]]].pow(2).mean(axis=1).pow(0.5)
+        if method == "simple":
+            # skipna=True is default, so missing value is handled nicely.
+            self.df[newlabs[0]] = self.df[[labs[0], labs[2]]].mean(axis=1)
+            self.df[newlabs[1]] = self.df[[labs[1], labs[3]]].pow(2).mean(axis=1).pow(0.5)
+        else:
+            obs = self.df[[labs[0], labs[2]]].to_numpy()
+            weights = 1. / self.df[[labs[1], labs[3]]].to_numpy()**2
+            sum_w = numpy.nansum(weights, axis=1)
+            sum_w[sum_w == 0] = numpy.nan # mask when both are nan
+            self.df[newlabs[0]] = numpy.nansum(obs * weights, axis=1) / sum_w
+            self.df[newlabs[1]] = numpy.sqrt(1. / sum_w)
+    # merge_anomalous()
 
     def as_asu_data(self, label=None, data=None, label_sigma=None):
         if label is None: assert data is not None

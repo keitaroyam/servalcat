@@ -1164,7 +1164,6 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
                   allow_unusual_occupancies=False, space_group=None):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
-    assert n_bins or n_per_bin #if n_bins not set, n_per_bin should be given
 
     if len(xyzins) > 0 and type(xyzins[0]) is gemmi.Structure:
         sts = xyzins
@@ -1202,6 +1201,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     logger.writeln("Observation type: {}".format(name))
     if len(newlabels) < len(labin): newlabels.append("FREE")
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+    hkldata.mask_invalid_obs_values(newlabels)
     if newlabels[0] == "F(+)":
         hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
         newlabels = ["FP", "SIGFP"] + newlabels[4:]
@@ -1253,9 +1253,6 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 
     if sg_use is not None:
         hkldata.sg = sg_use
-    if newlabels[0] == "FP":
-        hkldata.remove_nonpositive(newlabels[0])
-    hkldata.remove_nonpositive(newlabels[1])
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI","FP","SIGFP"] if name in hkldata.df})
@@ -1277,6 +1274,17 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         free = hkldata.guess_free_number(newlabels[0])
 
     if n_bins is None:
+        if n_per_bin is None:
+            if use == "all" or "FREE" not in hkldata.df:
+                n_per_bin = 100
+                use = "all"
+            elif use == "work":
+                n_per_bin = 100
+            elif use == "test":
+                n_per_bin = 50
+            else:
+                raise RuntimeError(f"should not happen: {use=}")
+        
         sel = hkldata.df[newlabels[0]].notna()
         if use == "work":
             sel &= hkldata.df.FREE != free
@@ -1495,7 +1503,8 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
         Fc = hkldata.df.FC.to_numpy()[idxes] * k_ani[idxes]
         Fo = hkldata.df.FP.to_numpy()[idxes]
         mean_DFc2 = numpy.nanmean(numpy.abs((Ds[idxes,:] * Fcs[idxes,:]).sum(axis=1) * k_ani[idxes])**2)
-        mean_log_DFcs = numpy.log(numpy.nanmean(numpy.abs(Ds[idxes,:] * Fcs[idxes,:] * k_ani[idxes,None]), axis=0)).tolist()
+        with numpy.errstate(divide="ignore"):
+            mean_log_DFcs = numpy.log(numpy.nanmean(numpy.abs(Ds[idxes,:] * Fcs[idxes,:] * k_ani[idxes,None]), axis=0)).tolist()
         mean_Ds = numpy.nanmean(Ds[idxes,:], axis=0).tolist()
         if sum(nrefs) > 0:
             r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
@@ -1530,7 +1539,6 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
 # calculate_maps()
 
 def main(args):
-    n_per_bin = {"all": 500, "work": 500, "test": 50}[args.use]
     try:
         hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
                                                                            labin=args.labin.split(",") if args.labin else None,
@@ -1540,7 +1548,6 @@ def main(args):
                                                                            source=args.source,
                                                                            d_max=args.d_max,
                                                                            d_min=args.d_min,
-                                                                           n_per_bin=n_per_bin,
                                                                            use=args.use,
                                                                            max_bins=30,
                                                                            keep_charges=args.keep_charges,
