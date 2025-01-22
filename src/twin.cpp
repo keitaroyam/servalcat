@@ -164,6 +164,8 @@ struct TwinData {
     std::vector<bool> done(hkls.size());
     const auto append_if_good = [](std::vector<size_t> &vec, int i) {
       if (i < 0) return false;
+      if (std::find(vec.begin(), vec.end(), i) != vec.end()) // if already exists
+        return false;
       vec.push_back(i);
       return true;
     };
@@ -181,18 +183,32 @@ struct TwinData {
         rb2o.back().push_back(perm[j]);
         done[perm[j]] = true;
       }
-      // loop over twin related
-      for (const auto &op : operators) {
-        const auto hr = apply_and_asu(op, h);
-        for (auto it = std::lower_bound(perm.begin(), perm.end(), hr,
-                                        [&](int lhs, const gemmi::Op::Miller &rhs) {return hkls[lhs] < rhs;});
-             it != perm.end() && hkls[*it] == hr; ++it) {
-          size_t j = std::distance(perm.begin(), it);
-          if (done[perm[j]]) continue;
-          rb2o.back().push_back(perm[j]);
-          done[perm[j]] = true;
+      // A loop instead of recursion for safety.
+      // Even in merohedral cases, if some operators are omitted,
+      // single loop is not sufficient to generate all related hkls
+      // TODO: do we need the same treatment when setting up asu?
+      std::vector<gemmi::Op::Miller> tmp_stack = {h};
+      for (int i_cyc = 0; ; ++i_cyc) {
+        if (i_cyc > 99)
+          throw std::runtime_error("twin: maximum iteration reached. twin operator invalid.");
+        if (tmp_stack.empty())
+          break;
+        const auto hh = tmp_stack.back();
+        tmp_stack.pop_back();
+        // loop over twin related
+        for (const auto &op : operators) {
+          const auto hr = apply_and_asu(op, hh);
+          for (auto it = std::lower_bound(perm.begin(), perm.end(), hr,
+                                          [&](int lhs, const gemmi::Op::Miller &rhs) {return hkls[lhs] < rhs;});
+               it != perm.end() && hkls[*it] == hr; ++it) {
+            size_t j = std::distance(perm.begin(), it);
+            if (done[perm[j]]) continue;
+            rb2o.back().push_back(perm[j]);
+            done[perm[j]] = true;
+          }
+          if (append_if_good(rb2a.back(), idx_of_asu(hr)))
+            tmp_stack.push_back(hr);
         }
-        append_if_good(rb2a.back(), idx_of_asu(hr));
       }
       std::sort(rb2a.back().begin(), rb2a.back().end());
       rb2a.back().erase(std::unique(rb2a.back().begin(), rb2a.back().end()), rb2a.back().end());

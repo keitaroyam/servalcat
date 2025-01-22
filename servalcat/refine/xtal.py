@@ -45,7 +45,7 @@ class LL_Xtal:
         self.ll = None
         self.scaling = sigmaa.LsqScale()
         if twin:
-            self.twin_data = find_twin_domains_from_data(self.hkldata)
+            self.twin_data, _ = find_twin_domains_from_data(self.hkldata)
         else:
             self.twin_data = None
         if self.twin_data:

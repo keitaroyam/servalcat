@@ -1556,7 +1556,7 @@ def main(args):
         raise SystemExit("Error: {}".format(e))
 
     if args.twin:
-        twin_data = find_twin_domains_from_data(hkldata)
+        twin_data, _ = find_twin_domains_from_data(hkldata)
     else:
         twin_data = None
     if twin_data:
