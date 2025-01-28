@@ -1405,8 +1405,14 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
     } else if (target.adp_mode == 2) { // Aniso
       const gemmi::Transform tr = get_transform(st.cell, im.sym_idx, {0,0,0}); // shift does not matter
       const Eigen::Matrix<double,6,6> R = mat33_as66(tr.mat);
-      const Eigen::Matrix<double,6,1> a1(atom1->aniso.scaled(gemmi::u_to_b()).elements_pdb().data()); // safe?
-      Eigen::Matrix<double,6,1> a2(atom2->aniso.scaled(gemmi::u_to_b()).elements_pdb().data());
+      auto amat_ctor = [](const gemmi::Atom* a) {
+        if (a->aniso.nonzero())
+          return Eigen::Matrix<double,6,1>(a->aniso.scaled(gemmi::u_to_b()).elements_pdb().data()); // safe?
+        else
+          return Eigen::Matrix<double,6,1>({a->b_iso, a->b_iso, a->b_iso, 0., 0., 0.});
+      };
+      const Eigen::Matrix<double,6,1> a1 = amat_ctor(atom1);
+      Eigen::Matrix<double,6,1> a2 = amat_ctor(atom2);
       a2 = R * a2;
       const auto a_diff = a1 - a2;
       double f = 0;
