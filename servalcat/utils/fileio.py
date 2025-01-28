@@ -551,9 +551,16 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
             if len(sp) > 11:
                 u = list(map(float, sp[6:12]))
                 site.aniso = gemmi.SMat33d(u[0], u[1], u[2], u[5], u[4], u[3])
-                #TODO site.u_iso needs to be set?
+                site.u_iso = sum(u[:3]) / 3.
             else:
                 site.u_iso = float(sp[6])
+                if site.u_iso < 0:
+                    # most recently defined non-hydrogen atom
+                    u_p = next((s.u_iso for s in reversed(ss.sites) if not s.element.is_hydrogen), None)
+                    if u_p is not None:
+                        site.u_iso *= -u_p
+                    else:
+                        logger.writeln(f"WARNING: parent atom not found for {site.label}")
 
             ss.add_site(site)
 
