@@ -150,8 +150,8 @@ def main(args):
         topo = None
         if args.hydrogen == "all":
             logger.writeln("\nWARNING: in unrestrained refinement hydrogen atoms are not generated.\n")
-            args.hydrogen = "yes"
-        elif args.hydrogen == "no":
+        if args.hydrogen != "yes":
+            args.hydrogen = "no"
             st.remove_hydrogens()
         for i, cra in enumerate(st[0].all()):
             cra.atom.serial = i + 1

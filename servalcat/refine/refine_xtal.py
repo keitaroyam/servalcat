@@ -161,12 +161,13 @@ def main(args):
     if args.unrestrained:
         monlib = gemmi.MonLib()
         topo = None
-        h_change = gemmi.HydrogenChange.NoChange
-        if args.hydrogen == "all":
-            logger.writeln("\nWARNING: in unrestrained refinement hydrogen atoms are not generated.\n")
-        elif args.hydrogen == "no":
-            st.remove_hydrogens()
+        if args.hydrogen == "yes":
+            h_change = gemmi.HydrogenChange.NoChange
+        else:
             h_change = gemmi.HydrogenChange.Remove
+            st.remove_hydrogens()
+            if args.hydrogen == "all":
+                logger.writeln("\nWARNING: in unrestrained refinement hydrogen atoms are not generated.\n")
         for i, cra in enumerate(st[0].all()):
             cra.atom.serial = i + 1
     else:
