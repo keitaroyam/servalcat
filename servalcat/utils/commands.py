@@ -1367,7 +1367,7 @@ def map2mtz(args):
 
 def sm2mm(args):
     if args.output_prefix is None:
-        args.output_prefix = fileio.splitext(args.files[0])[0]
+        args.output_prefix = os.path.basename(fileio.splitext(args.files[0])[0])
     st, mtz = fileio.read_small_molecule_files(args.files)
     if st is not None:
         fileio.write_model(st, prefix=args.output_prefix, pdb=True, cif=True)
