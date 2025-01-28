@@ -37,11 +37,10 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         nums.append([])
         rs = []
         for i_op, op in enumerate(ops):
+            cc = r = numpy.nan
             ii = numpy.array(twin_data.pairs(i_op, i_bin))
-            val = numpy.all(numpy.isfinite(Io[ii]), axis=1)
-            if numpy.sum(val) == 0:
-                cc = r = numpy.nan
-            else:
+            val = numpy.all(numpy.isfinite(Io[ii]), axis=1) if ii.size != 0 else []
+            if numpy.sum(val) != 0:
                 cc = numpy.corrcoef(Io[ii][val].T)[0,1]
                 r = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
             ratio = (1 - numpy.sqrt(1 - cc**2)) / cc
