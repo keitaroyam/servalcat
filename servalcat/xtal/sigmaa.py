@@ -1181,6 +1181,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         assert len(xyzins) == 1
         assert not sts
         st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
+        if None in (st, mtz):
+            raise SystemExit("Failed to read small molecule file(s)")
         sts = [st]
 
     for st in sts:

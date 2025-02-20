@@ -700,20 +700,21 @@ def read_small_molecule_files(files):
     # first pass - find structure
     for filename in files:
         ext = splitext(filename)[1]
-        if ext in (".cif", ".res", ".ins"):
+        if ext in (".cif", ".res", ".ins", ".pdb", ".ent", ".mmcif"):
             try:
                 st = read_structure(filename)
             except:
                 continue
             logger.writeln("Coordinates read from: {}".format(filename))
-            if ext == ".cif":
-                b = gemmi.cif.read(filename).sole_block()
-                res_str = b.find_value("_shelx_res_file")
-            else:
-                res_str = open(filename).read()
-            if res_str:
-                _, info = read_shelx_ins(lines_in=res_str.splitlines())
-                hklf = info["hklf"]
+            if ext in (".cif", ".res", ".ins"):
+                if ext == ".cif":
+                    b = gemmi.cif.read(filename).sole_block()
+                    res_str = b.find_value("_shelx_res_file")
+                else:
+                    res_str = open(filename).read()
+                if res_str:
+                    _, info = read_shelx_ins(lines_in=res_str.splitlines())
+                    hklf = info["hklf"]
     if st is None:
         logger.writeln("ERROR: coordinates not found.")
         return None, None
