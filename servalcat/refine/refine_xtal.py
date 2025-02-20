@@ -254,12 +254,12 @@ def main(args):
 
     # Write mtz file
     if ll.twin_data:
-        labs = ["F_est", "F_exp", "FOM"]
+        labs = ["F_est", "F_exp"]
     elif is_int:
-        labs = ["I", "SIGI", "FOM"]
+        labs = ["I", "SIGI", "F_est"]
     else:
-        labs = ["FP", "SIGFP", "FOM"]
-    labs.extend(["FWT", "DELFWT", "FC"])
+        labs = ["FP", "SIGFP"]
+    labs.extend(["FOM", "FWT", "DELFWT", "FC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
     if not args.no_solvent:

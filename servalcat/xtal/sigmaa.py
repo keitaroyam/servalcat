@@ -1037,6 +1037,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
     nmodels = len(fc_labs)
     hkldata.df["FWT"] = 0j * numpy.nan
     hkldata.df["DELFWT"] = 0j * numpy.nan
+    hkldata.df["F_est"] = numpy.nan
     hkldata.df["FOM"] = numpy.nan # FOM proxy, |<F>| / <|F|>
     has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
     if has_ano:
@@ -1059,6 +1060,7 @@ def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, centric_and_selections
             hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
             hkldata.df.loc[cidxes, "FOM"] = m_proxy
+            hkldata.df.loc[cidxes, "F_est"] = f
             if has_ano:
                 f_p, _ = expected_F_from_int(ano_data[cidxes,0], ano_data[cidxes,1],
                                              k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
@@ -1625,7 +1627,7 @@ def main(args):
     if twin_data:
         labs = ["F_est", "F_exp"]
     elif is_int:
-        labs = ["I", "SIGI"]
+        labs = ["I", "SIGI", "F_est"]
     else:
         labs = ["FP", "SIGFP"]
     labs.extend(["FOM", "FWT", "DELFWT", "FC", "DFC"])
