@@ -221,7 +221,16 @@ def write_stats_json_safe(stats, json_out):
     out_tmp = json_out + ".part"
     with open(out_tmp, "w") as ofs:
         json.dump(tmp, ofs, indent=2)
-    os.replace(out_tmp, json_out)
+    for i in range(10):
+        try:
+            # On Windows, this fails when another process open the file
+            os.replace(out_tmp, json_out)
+            break
+        except PermissionError:
+            logger.writeln(f"{json_out} locked. retrying..")
+            time.sleep(0.5)
+    else:
+        raise RuntimeError(f"Cannot write {json_out}")
     logger.writeln(f"Refinement statistics saved: {json_out}")
 # write_stats_json_safe()
 
