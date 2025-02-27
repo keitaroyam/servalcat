@@ -125,7 +125,7 @@ def add_arguments(parser):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--mask_for_fofc', help="Mask file for Fo-Fc map calculation")
     group.add_argument('--mask_radius_for_fofc', type=float, help="Mask radius for Fo-Fc map calculation")
-    parser.add_argument('--trim_fofc_mtz', action="store_true", help="diffmap.mtz will have smaller cell (if --mask_for_fofc is given)")
+    parser.add_argument('--trim_fofc_mtz', action="store_true", help="maps mtz will have smaller cell (if --mask_for_fofc is given)")
     parser.add_argument("--fsc_resolution", type=float,
                         help="High resolution limit for FSC calculation. Default: Nyquist")
 
@@ -312,7 +312,7 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
     # Create Coot script
     spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
                                model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
-                               mtz_file="{}.mtz".format(diffmap_prefix),
+                               mtz_file="{}_maps.mtz".format(diffmap_prefix),
                                contour_fo=None if mask is None else 1.2,
                                contour_fofc=None if mask is None else 3.0,
                                ncs_ops=st.ncs)
@@ -364,7 +364,7 @@ Weight used: {final_weight}
              If you want to change the weight, give larger (looser restraints)
              or smaller (tighter) value to --weight_auto_scale=.
              
-Open refined model and diffmap.mtz with COOT:
+Open refined model and maps mtz with COOT:
 coot --script {prefix}_coot.py
 
 Open refined model, map and difference map with ChimeraX/ISOLDE:

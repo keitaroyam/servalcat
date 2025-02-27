@@ -357,7 +357,7 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
             hkldata2.translate(lab, -shifts)
         hkldata = hkldata2
         
-    dump_to_mtz(hkldata, map_labs, "{}.mtz".format(output_prefix))
+    dump_to_mtz(hkldata, map_labs, "{}_maps.mtz".format(output_prefix))
     if stats_str: open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
 # write_files()
 
@@ -458,11 +458,11 @@ def main(args):
 
     py_out = "{}_coot.py".format(args.output_prefix)
     write_coot_script(py_out, model_file=args.model,
-                      mtz_file=args.output_prefix+".mtz",
+                      mtz_file=args.output_prefix+"_maps.mtz",
                       contour_fo=None if mask is None else 1.2,
                       contour_fofc=None if mask is None else 3.0,
                       ncs_ops=ncs_org)
-    logger.writeln("\nOpen model and diffmap.mtz with COOT:")
+    logger.writeln("\nOpen model and diffmap mtz with COOT:")
     logger.writeln("coot --script " + py_out)
     if mask is not None:
         logger.writeln("\nWant to list Fo-Fc map peaks? Try:")

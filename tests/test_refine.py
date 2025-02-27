@@ -81,7 +81,7 @@ class TestRefine(unittest.TestCase):
         main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))
-        self.assertTrue(os.path.isfile("refined_diffmap.mtz"))
+        self.assertTrue(os.path.isfile("refined_maps.mtz"))
         self.assertTrue(os.path.isfile("refined_expanded.pdb"))
         
         stats = json.load(open("refined_stats.json"))

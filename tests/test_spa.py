@@ -114,8 +114,8 @@ class TestSPACommands(unittest.TestCase):
         sys.argv = ["", "fofc", "--halfmaps", data["half1"], data["half2"],
                     "--model", data["pdb"], "-d", "1.9"]
         main()
-        self.assertTrue(os.path.isfile("diffmap.mtz"))
-        mtz = gemmi.read_mtz_file("diffmap.mtz")
+        self.assertTrue(os.path.isfile("diffmap_maps.mtz"))
+        mtz = gemmi.read_mtz_file("diffmap_maps.mtz")
         self.assertEqual(mtz.nreflections, 208238)
     # test_fofc()
 
@@ -155,7 +155,7 @@ class TestSPACommands(unittest.TestCase):
         main()
         self.assertTrue(os.path.isfile("refined_fsc.json"))
         self.assertTrue(os.path.isfile("refined.mmcif"))
-        self.assertTrue(os.path.isfile("diffmap.mtz"))
+        self.assertTrue(os.path.isfile("diffmap_maps.mtz"))
         self.assertTrue(os.path.isfile("shifted_refined.log"))
         self.assertTrue(os.path.isfile("refined_expanded.pdb"))
 
@@ -229,7 +229,7 @@ class TestSPACommands(unittest.TestCase):
                     "--mask", data["mask"], "--trim_mtz", "-d", "1.7"]
         main()
 
-        sys.argv = ["", "util", "blur", "--hklin", "nemap.mtz", "-B", "100"]
+        sys.argv = ["", "util", "blur", "--hklin", "nemap_maps.mtz", "-B", "100"]
         main()
     # test_commands()
 # class TestSPACommands

@@ -300,8 +300,7 @@ def main(args):
     if args.hklin:
         return
     # Calc Fo-Fc (and updated) maps
-    diffmap_prefix = "{}_diffmap".format(args.output_prefix)
-    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=diffmap_prefix)
+    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=args.output_prefix)
     
     # Final summary
     adpstats_txt = ""
@@ -320,8 +319,8 @@ def main(args):
     if args.mask_for_fofc:
         map_peaks_str = """\
 List Fo-Fc map peaks in the ASU:
-servalcat util map_peaks --map {diffmap_prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
-""".format(prefix=args.output_prefix, diffmap_prefix=diffmap_prefix)
+servalcat util map_peaks --map {prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
+""".format(prefix=args.output_prefix)
     else:
         map_peaks_str = "WARNING: --mask_for_fofc was not given, so the Fo-Fc map was not normalized."
 
@@ -343,7 +342,7 @@ Weight used: {final_weight:.3e}
              If you want to change the weight, give larger (looser restraints)
              or smaller (tighter) value to --weight=.
              
-Open refined model and {diffmap_prefix}.mtz with COOT:
+Open refined model and {prefix}_maps.mtz with COOT:
 coot --script {prefix}_coot.py
 
 Open refined model, map and difference map with ChimeraX/ISOLDE:
@@ -358,7 +357,6 @@ chimerax {prefix}_chimerax.cxc
            adpstats=adpstats_txt.rstrip(),
            final_weight=args.weight,
            prefix=args.output_prefix,
-           diffmap_prefix=diffmap_prefix,
            map_peaks_msg=map_peaks_str))
 
 # main()
