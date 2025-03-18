@@ -741,12 +741,16 @@ def read_sequence_file(f):
     # TODO needs improvement
     # return a list of [name, sequence]
     ret = []
-    for l in open(f):
+    for i, l in enumerate(open(f)):
         l = l.strip()
         if l.startswith(">"):
             name = l[1:].strip()
             ret.append([name, ""])
         elif l:
             if not ret: ret.append(["", ""])
-            ret[-1][1] += l.replace("*", "").replace("-", "").upper()
+            tmp = l.replace("*", "").replace("-", "").upper()
+            r = re.search("[^A-Z]", tmp)
+            if r:
+                raise RuntimeError(f"Invalid character in the sequence file: {f}:{i+1}")
+            ret[-1][1] += tmp
     return ret
