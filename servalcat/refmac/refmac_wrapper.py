@@ -224,7 +224,7 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=False, tls_addu=False):
+def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, keep_original_output=False, tls_addu=False):
     st = utils.fileio.read_structure(cifout)
     st.cispeps = cispeps
     if os.path.exists(pdbout):
@@ -258,6 +258,7 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     # add servalcat version
     if len(st.meta.software) > 0 and st.meta.software[-1].name == "refmac":
         st.meta.software[-1].version += f" (refmacat {servalcat.__version__})"
+    st.meta.software = software_items + st.meta.software
     
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
@@ -333,6 +334,11 @@ def main(args):
     # TODO what if restin is given or make cr prepared is given?
     # TODO check make pept/link/suga/ss/conn/symm/chain
 
+    if "hklin" in opts: # for history
+        software_items = utils.fileio.software_items_from_mtz(opts["hklin"])
+    else:
+        software_items = []
+    
     # Process model
     crdout = None
     refmac_fixes = None
@@ -401,7 +407,7 @@ def main(args):
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
             modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps,
-                          args.keep_original_output, args.tls_addu)
+                          software_items, args.keep_original_output, args.tls_addu)
 # main()
 
 def command_line():

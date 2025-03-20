@@ -128,7 +128,7 @@ def main(args):
     elif utils.fileio.is_mmhkl_file(hklin):
         hklin = utils.fileio.read_mmhkl(hklin)
         labin = decide_mtz_labels(hklin)
-        
+    software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
         hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=hklin,
                                                                                  labin=labin,
@@ -236,6 +236,7 @@ def main(args):
                                weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range,
                                stats_json_out=args.output_prefix + "_stats.json")
     update_meta(st, stats[-1], ll)
+    st.meta.software = software_items + st.meta.software
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:

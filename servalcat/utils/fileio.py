@@ -18,6 +18,7 @@ import subprocess
 import gemmi
 import numpy
 import gzip
+import traceback
 
 def splitext(path):
     if path.endswith((".bz2",".gz")):
@@ -266,6 +267,19 @@ def is_mmhkl_file(hklin):
                 return False
     # otherwise cannot decide
 # is_smhkl()
+
+def software_items_from_mtz(hklin):
+    try:
+        if type(hklin) is gemmi.Mtz:
+            mtz = hklin
+        else:
+            mtz = gemmi.read_mtz_file(hklin, with_data=False)
+        return gemmi.get_software_from_mtz_history(mtz.history)
+    except:
+        logger.writeln(f"Failed to read software info from {hklin}")
+        logger.writeln(traceback.format_exc())
+        return []
+# software_items_from_mtz()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
     mtz = read_mmhkl(mtz_in)
