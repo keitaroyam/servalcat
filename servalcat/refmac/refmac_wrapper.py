@@ -33,6 +33,8 @@ def add_arguments(parser):
     parser.add_argument('--keep_original_output', action='store_true', help="with .org extension")
     parser.add_argument("--keep_entities", action='store_true',
                         help="Do not override entities")
+    parser.add_argument("--tls_addu", action='store_true',
+                        help="Write prefix_addu.mmcif where TLS contribution is added to aniso U. Don't use this with 'tlso addu' keyword.")
     parser.add_argument('--prefix', help="output prefix")
     parser.add_argument("-v", "--version", action="version",
                         version=logger.versions_str())
@@ -222,7 +224,7 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=False):
+def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=False, tls_addu=False):
     st = utils.fileio.read_structure(cifout)
     st.cispeps = cispeps
     if os.path.exists(pdbout):
@@ -260,6 +262,24 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, keep_original_output=Fal
     suffix = ".org"
     os.rename(cifout, cifout + suffix)
     utils.fileio.write_mmcif(st, cifout, cifout + suffix)
+
+    if tls_addu:
+        st2 = st.clone()
+        tls_groups = {int(x.id): x for x in st.meta.refinement[0].tls_groups}
+        if tls_groups:
+            for cra in st2[0].all():
+                tlsgr = tls_groups.get(cra.atom.tls_group_id)
+                if cra.atom.tls_group_id > 0 and tlsgr is not None:
+                    if not cra.atom.aniso.nonzero():
+                        u = cra.atom.b_iso * utils.model.b_to_u
+                        cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
+                    u_from_tls = gemmi.calculate_u_from_tls(tlsgr, cra.atom.pos)
+                    cra.atom.aniso += gemmi.SMat33f(*u_from_tls.elements_pdb())
+                    cra.atom.b_iso = cra.atom.aniso.trace() / 3. * utils.model.u_to_b
+            cifout2 = cifout[:cifout.rindex(".")] + "_addu" + cifout[cifout.rindex("."):]
+            utils.fileio.write_mmcif(st2, cifout2, cifout + suffix)
+        else:
+            logger.writeln("Error: --tls_addu requested, but TLS group definition not found in the model.")
 
     if st.has_d_fraction:
         st.store_deuterium_as_fraction(False) # also useful for pdb
@@ -380,7 +400,8 @@ def main(args):
     if xyzin is not None:
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
-            modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps, args.keep_original_output)
+            modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps,
+                          args.keep_original_output, args.tls_addu)
 # main()
 
 def command_line():
