@@ -30,10 +30,14 @@ def add_arguments(parser):
     parser.description = 'Sigma-A parameter estimation for crystallographic data'
     parser.add_argument('--hklin', required=True,
                         help='Input MTZ file')
+    parser.add_argument('--hklin_free',
+                        help='Input MTZ file for test flags')
     parser.add_argument('--spacegroup',
                         help='Override space group')
     parser.add_argument('--labin',
-                        help='MTZ column for F,SIGF,FREE')
+                        help='MTZ columns of --hklin for F,SIGF,FREE')
+    parser.add_argument('--labin_free',
+                        help='MTZ column of --hklin_free')
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
     parser.add_argument('--model', required=True, nargs="+", action="append",
@@ -1161,9 +1165,32 @@ def decide_mtz_labels(mtz, find_free=True, require=None):
     return labin
 # decide_mtz_labels()
 
+def decide_spacegroup(sg_user, sg_st, sg_hkl):
+    assert sg_hkl is not None
+    ret = None
+    if sg_user is not None:
+        ret = sg_user
+        logger.writeln(f"Space group overridden by user. Using {ret.xhm()}")
+    else:
+        ret = sg_hkl
+        if sg_hkl != sg_st:
+            if sg_st and sg_st.laue_str() != sg_hkl.laue_str():
+                raise RuntimeError("Crystal symmetry mismatch between model and data")
+            logger.writeln("Warning: space group mismatch between model and mtz")
+            if sg_st and sg_st.laue_str() == sg_hkl.laue_str():
+                logger.writeln("         using space group from model")
+                ret = sg_st
+            else:
+                logger.writeln("         using space group from mtz")
+            logger.writeln("")
+
+    return ret
+# decide_spacegroup
+
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
                   n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False,
-                  allow_unusual_occupancies=False, space_group=None):
+                  allow_unusual_occupancies=False, space_group=None,
+                  hklin_free=None, labin_free=None):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
 
@@ -1190,8 +1217,11 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     for st in sts:
         utils.model.check_occupancies(st, raise_error=not allow_unusual_occupancies)
         
+    sg_use = decide_spacegroup(sg_user=gemmi.SpaceGroup(space_group) if space_group else None,
+                               sg_st=sts[0].find_spacegroup() if sts else None,
+                               sg_hkl=mtz.spacegroup)
     if not labin:
-        labin = decide_mtz_labels(mtz)
+        labin = decide_mtz_labels(mtz, find_free=hklin_free is None)
     col_types = {x.label:x.type for x in mtz.columns}
     if labin[0] not in col_types:
         raise RuntimeError("MTZ column not found: {}".format(labin[0]))
@@ -1201,10 +1231,30 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
                       "K": ("anomalous intensity", ["I(+)","SIGI(+)", "I(-)", "SIGI(-)"], ["K", "M", "K", "M"])}
     if col_types[labin[0]] not in labs_and_types:
         raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
+    if col_types[labin[0]] == "J": # may be unmerged data
+        ints = gemmi.Intensities()
+        ints.set_data(mtz.cell, sg_use, mtz.make_miller_array(),
+                      mtz.array[:,mtz.column_labels().index(labin[0])],
+                      mtz.array[:,mtz.column_labels().index(labin[1])])
+        dtype = ints.prepare_for_merging(gemmi.DataType.Mean) # do we want Anomalous?
+        ints_bak = ints.clone() # for stats
+        ints.merge_in_place(dtype)
+        if (ints.nobs_array > 1).any():
+            mtz = ints.prepare_merged_mtz(with_nobs=False)
+            labin = mtz.column_labels()[3:]
+            col_types = {x.label:x.type for x in mtz.columns}
+            mult = ints.nobs_array.mean()
+            logger.writeln(f"Input data were merged (multiplicity: {mult:.2f}). Overriding labin={','.join(labin)}")
+        else:
+            ints_bak = None
+    else:
+        ints_bak = None
+        
     name, newlabels, require_types = labs_and_types[col_types[labin[0]]]
     logger.writeln("Observation type: {}".format(name))
     if len(newlabels) < len(labin): newlabels.append("FREE")
     hkldata = utils.hkl.hkldata_from_mtz(mtz, labin, newlabels=newlabels, require_types=require_types)
+    hkldata.sg = sg_use
     hkldata.mask_invalid_obs_values(newlabels)
     if newlabels[0] == "F(+)":
         hkldata.merge_anomalous(newlabels[:4], ["FP", "SIGFP"])
@@ -1215,13 +1265,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 
     if hkldata.df.empty:
         raise RuntimeError("No data in hkl data")
-    
-    if space_group is None:
-        sg_use = None
-    else:
-        sg_use = gemmi.SpaceGroup(space_group)
-        logger.writeln(f"Space group overridden by user. Using {sg_use.xhm()}")
-    
+
     if sts:
         assert source in ["electron", "xray", "neutron"]
         for st in sts:
@@ -1231,23 +1275,8 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             logger.writeln("Warning: unit cell mismatch between model and reflection data")
             logger.writeln("         using unit cell from mtz")
 
-        for st in sts: st.cell = hkldata.cell # mtz cell is used in any case
-
-        sg_st = sts[0].find_spacegroup() # may be None
-        if sg_use is None:
-            sg_use = hkldata.sg
-            if hkldata.sg != sg_st:
-                if st.cell.is_crystal() and sg_st and sg_st.laue_str() != hkldata.sg.laue_str():
-                    raise RuntimeError("Crystal symmetry mismatch between model and data")
-                logger.writeln("Warning: space group mismatch between model and mtz")
-                if sg_st and sg_st.laue_str() == hkldata.sg.laue_str():
-                    logger.writeln("         using space group from model")
-                    sg_use = sg_st
-                else:
-                    logger.writeln("         using space group from mtz")
-                logger.writeln("")
-            
         for st in sts:
+            st.cell = hkldata.cell # mtz cell is used in any case
             st.spacegroup_hm = sg_use.xhm()
             st.setup_cell_images()
 
@@ -1255,19 +1284,36 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             utils.model.remove_charge(sts)
         utils.model.check_atomsf(sts, source)
 
-    if sg_use is not None:
-        hkldata.sg = sg_use
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
     #hkldata.df = hkldata.df.astype({name: 'float64' for name in ["I","SIGI","FP","SIGFP"] if name in hkldata.df})
-    d_min_data = hkldata.d_min_max(newlabels)[0]
-    if d_min is None and hkldata.d_min_max()[0] != d_min_data:
-        d_min = d_min_data
+    d_min_max_data = hkldata.d_min_max(newlabels)
+    if d_min is None and hkldata.d_min_max()[0] != d_min_max_data[0]:
+        d_min = d_min_max_data[0]
         logger.writeln(f"Changing resolution to {d_min:.3f} A")
     if (d_min, d_max).count(None) != 2:
         hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
     if hkldata.df.empty:
         raise RuntimeError("No data left in hkl data")
+
+    if hklin_free is not None:
+        mtz2 = utils.fileio.read_mmhkl(hklin_free)
+        if labin_free and labin_free not in mtz2.column_labels():
+            raise RuntimeError(f"specified label ({labin_free}) not found in {hklin_free}")
+        if not labin_free:
+            tmp = utils.hkl.mtz_find_free_columns(mtz2)
+            if tmp:
+                labin_free = tmp[0]
+            else:
+                raise RuntimeError(f"Test flag label not found in {hklin_free}")
+        tmp = utils.hkl.hkldata_from_mtz(mtz2, [labin_free], newlabels=["FREE"])
+        tmp.sg = sg_use
+        tmp.switch_to_asu()
+        tmp.remove_systematic_absences()
+        tmp = tmp.copy(d_min=d_min_max_data[0], d_max=d_min_max_data[1])
+        hkldata.complete()
+        tmp.complete()
+        hkldata.merge(tmp.df[["H","K","L","FREE"]])
         
     hkldata.complete()
     hkldata.sort_by_resolution()
@@ -1275,7 +1321,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     hkldata.calc_centric()
 
     if "FREE" in hkldata.df and free is None:
-        free = hkldata.guess_free_number(newlabels[0])
+        free = hkldata.guess_free_number(newlabels[0]) # also check NaN
 
     if n_bins is None:
         if n_per_bin is None:
@@ -1301,8 +1347,6 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         logger.writeln("n_per_bin={} requested for {}. n_bins set to {}".format(n_per_bin, use, n_bins))
 
     hkldata.setup_binning(n_bins=n_bins)
-    logger.writeln("Data completeness: {:.2f}%".format(hkldata.completeness()*100.))
-
     fc_labs = ["FC{}".format(i)  for i, _ in enumerate(sts)]
 
     # Create a centric selection table for faster look up
@@ -1352,6 +1396,13 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             stats.loc[i_bin, "n_test"] = n_test
             
     stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
+    logger.writeln("Data completeness: {:.2%}".format(stats["n_obs"].sum() / stats["n_all"].sum()))
+    if ints_bak is not None:
+        binner = gemmi.Binner()
+        binner.setup(n_bins, gemmi.Binner.Method.Dstar2, ints_bak)
+        bin_stats = ints_bak.calculate_merging_stats(binner, use_weights="X")
+        stats["CC1/2"] = [stats.cc_half() for stats in bin_stats]
+    
     logger.writeln(stats.to_string())
     return hkldata, sts, fc_labs, centric_and_selections, free
 # process_input()
@@ -1555,7 +1606,9 @@ def main(args):
                                                                            use=args.use,
                                                                            max_bins=30,
                                                                            keep_charges=args.keep_charges,
-                                                                           space_group=args.spacegroup)
+                                                                           space_group=args.spacegroup,
+                                                                           hklin_free=args.hklin_free,
+                                                                           labin_free=args.labin_free)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
