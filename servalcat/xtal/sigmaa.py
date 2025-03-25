@@ -101,6 +101,8 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     else:
         obs = obs_sqrt = hkldata.df.FP
         calc = calc_sqrt = Fc
+    if "CC*" in stats: # swap the positions
+        stats.insert(len(stats.columns)-1, "CC*", stats.pop("CC*"))
     if has_free:
         for lab in (cclab, rlab):
             for suf in ("work", "free"):
@@ -1402,6 +1404,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         binner.setup(n_bins, gemmi.Binner.Method.Dstar2, ints_bak)
         bin_stats = ints_bak.calculate_merging_stats(binner, use_weights="X")
         stats["CC1/2"] = [stats.cc_half() for stats in bin_stats]
+        hkldata.binned_df["CC*"] = numpy.sqrt(2 * stats["CC1/2"] / (1 + stats["CC1/2"]))
     
     logger.writeln(stats.to_string())
     return hkldata, sts, fc_labs, centric_and_selections, free
