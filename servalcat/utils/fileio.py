@@ -18,6 +18,7 @@ import subprocess
 import gemmi
 import numpy
 import gzip
+import traceback
 
 def splitext(path):
     if path.endswith((".bz2",".gz")):
@@ -66,14 +67,15 @@ def check_model_format(xyzin):
         return ".pdb"
 # check_model_format()
 
-def write_mmcif(st, cif_out, cif_ref=None):
+def write_mmcif(st, cif_out, cif_ref=None, cif_ref_doc=None):
     """
     Refmac fails if _entry.id is longer than 80 chars including quotations
     """
     st_new = st.clone()
     logger.writeln("Writing mmCIF file: {}".format(cif_out))
-    if cif_ref:
-        logger.writeln("  using mmCIF metadata from: {}".format(cif_ref))
+    if cif_ref or cif_ref_doc:
+        if cif_ref:
+            logger.writeln("  using mmCIF metadata from: {}".format(cif_ref))
         groups = gemmi.MmcifOutputGroups(False)
         groups.group_pdb = True
         groups.ncs = True
@@ -88,18 +90,19 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.conn = True
         groups.software = True
         groups.auth_all = True
-        # FIXME is this all? 
-        try:
-            doc = read_cif_safe(cif_ref)
-        except Exception as e:
-            # Sometimes refmac writes a broken mmcif file..
-            logger.error("Error in mmCIF reading: {}".format(e))
-            logger.error("  Give up using cif reference.")
-            return write_mmcif(st, cif_out)
+        # FIXME is this all?
+        if cif_ref:
+            try:
+                cif_ref_doc = read_cif_safe(cif_ref)
+            except Exception as e:
+                # Sometimes refmac writes a broken mmcif file..
+                logger.error("Error in mmCIF reading: {}".format(e))
+                logger.error("  Give up using cif reference.")
+                return write_mmcif(st, cif_out)
             
-        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
+        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), cif_ref_doc))
         if len(blocks) == 0:
-            logger.writeln("No _atom_site found in {}".format(cif_ref))
+            logger.writeln("No _atom_site found in reference")
             logger.writeln("  Give up using cif reference.")
             return write_mmcif(st, cif_out)
         block = blocks[0]
@@ -108,7 +111,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         block.find_mmcif_category("_atom_sites.").erase()
         st_new.update_mmcif_block(block, groups)
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
-        doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
+        cif_ref_doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
@@ -162,17 +165,20 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignore_origin=True):
-    m = gemmi.read_ccp4_map(filename)
-    g = m.grid
+def read_ccp4_map(filename, header_only=False, setup=True, default_value=0., pixel_size=None, ignore_origin=True):
+    if header_only:
+        m = gemmi.read_ccp4_header(filename)
+    else:
+        m = gemmi.read_ccp4_map(filename)
     grid_cell = [m.header_i32(x) for x in (8,9,10)]
     grid_start = [m.header_i32(x) for x in (5,6,7)]
     grid_shape = [m.header_i32(x) for x in (1,2,3)]
     axis_pos = m.axis_positions()
     axis_letters = ["","",""]
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
-    spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
-    voxel_size = [g.unit_cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
+    cell = gemmi.UnitCell(*(m.header_float(x) for x in range(11,17)))
+    spacings = [1./cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
+    voxel_size = [cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
     origin = [m.header_float(x) for x in (50,51,52)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
@@ -181,7 +187,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
     logger.writeln("    Map mode: {}".format(m.header_i32(4)))
     logger.writeln("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.writeln("       Shape: {:4d} {:4d} {:4d}".format(*grid_shape))
-    logger.writeln("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
+    logger.writeln("        Cell: {} {} {} {} {} {}".format(*cell.parameters))
     logger.writeln("  Axis order: {}".format(" ".join(axis_letters)))
     logger.writeln(" Space group: {}".format(m.header_i32(23)))
     logger.writeln("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
@@ -195,9 +201,17 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
     logger.writeln("       Label: {}".format(label))
     logger.writeln("")
 
+    if header_only:
+        grid = gemmi.FloatGrid(*grid_cell if setup else grid_shape) # waste of memory, but unavoidable for now
+        grid.set_unit_cell(cell)
+        grid.spacegroup = gemmi.find_spacegroup_by_number(m.header_i32(23))
+    else:
+        grid = m.grid
+
     if setup:
-        if default_value is None: default_value = float("nan")
-        m.setup(default_value)
+        if not header_only:
+            if default_value is None: default_value = float("nan")
+            m.setup(default_value)
         grid_start = [grid_start[i] for i in axis_pos]
         
     if pixel_size is not None:
@@ -207,13 +221,13 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
             pixel_size = [pixel_size, pixel_size, pixel_size]
             
         logger.writeln("Overriding pixel size with {:.6f} {:.6f} {:.6f}".format(*pixel_size))
-        orgc = m.grid.unit_cell.parameters
+        orgc = grid.unit_cell.parameters
         new_abc = [orgc[i]*pixel_size[i]/voxel_size[i] for i in (0,1,2)]
-        m.grid.unit_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2],
-                                          orgc[3], orgc[4], orgc[5])
-        logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
+        new_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2], orgc[3], orgc[4], orgc[5])
+        grid.set_unit_cell(new_cell)
+        logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*grid.unit_cell.parameters))
 
-    return [m.grid, grid_start, grid_shape]
+    return [grid, grid_start, grid_shape]
 # read_ccp4_map()
 
 def read_halfmaps(files, pixel_size=None, fail=True):
@@ -266,6 +280,19 @@ def is_mmhkl_file(hklin):
                 return False
     # otherwise cannot decide
 # is_smhkl()
+
+def software_items_from_mtz(hklin):
+    try:
+        if type(hklin) is gemmi.Mtz:
+            mtz = hklin
+        else:
+            mtz = gemmi.read_mtz_file(hklin, with_data=False)
+        return gemmi.get_software_from_mtz_history(mtz.history)
+    except:
+        logger.writeln(f"Failed to read software info from {hklin}")
+        logger.writeln(traceback.format_exc())
+        return []
+# software_items_from_mtz()
 
 def read_map_from_mtz(mtz_in, cols, grid_size=None, sample_rate=3):
     mtz = read_mmhkl(mtz_in)

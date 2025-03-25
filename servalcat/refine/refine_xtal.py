@@ -24,11 +24,15 @@ b_to_u = utils.model.b_to_u
 def add_arguments(parser):
     parser.description = "program to refine crystallographic structures"
     parser.add_argument("--hklin", required=True)
+    parser.add_argument('--hklin_free',
+                        help='Input MTZ file for test flags')
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int, 
                         help="Number of bins (default: auto)")
     parser.add_argument("--labin", help="F,SIGF,FREE input")
+    parser.add_argument('--labin_free',
+                        help='MTZ column of --hklin_free')
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
     parser.add_argument('--model', required=True,
@@ -128,7 +132,7 @@ def main(args):
     elif utils.fileio.is_mmhkl_file(hklin):
         hklin = utils.fileio.read_mmhkl(hklin)
         labin = decide_mtz_labels(hklin)
-        
+    software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
         hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=hklin,
                                                                                  labin=labin,
@@ -141,7 +145,10 @@ def main(args):
                                                                                  use="work" if args.use_work_in_est else "test",
                                                                                  max_bins=30,
                                                                                  keep_charges=args.keep_charges,
-                                                                                 allow_unusual_occupancies=args.allow_unusual_occupancies)
+                                                                                 allow_unusual_occupancies=args.allow_unusual_occupancies,
+                                                                                 hklin_free=args.hklin_free,
+                                                                                 labin_free=args.labin_free)
+
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -236,6 +243,7 @@ def main(args):
                                weight_adjust_bond_rmsz_range=args.target_bond_rmsz_range,
                                stats_json_out=args.output_prefix + "_stats.json")
     update_meta(st, stats[-1], ll)
+    st.meta.software = software_items + st.meta.software
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
     if params["write_trajectory"]:
