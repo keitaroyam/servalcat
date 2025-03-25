@@ -39,8 +39,11 @@ def update_ncs_from_args(args, st, map_and_start=None, filter_contacting=False,
     ncsops = ncsops_from_args(args, st.cell, map_and_start=map_and_start, st=st,
                               helical_min_n=helical_min_n, helical_max_n=helical_max_n)
 
-    st.ncs.clear()
-    st.ncs.extend([x for x in ncsops if not x.tr.is_identity()])
+    st.ncs = [x for x in ncsops if not x.tr.is_identity()]
+    # To write identity op to the output model
+    idop_id = next((x.id for x in ncsops if x.tr.is_identity()), None)
+    if idop_id:
+        st.info["_struct_ncs_oper.id"] = idop_id
 
     if filter_contacting:
         model.filter_contacting_ncs(st)
