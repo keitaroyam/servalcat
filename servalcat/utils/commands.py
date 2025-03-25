@@ -330,7 +330,7 @@ def symmodel(args):
     map_and_start = None
     if args.map:
         logger.writeln("Reading cell from map")
-        map_and_start = fileio.read_ccp4_map(args.map)
+        map_and_start = fileio.read_ccp4_map(args.map, header_only=True)
         st.cell = map_and_start[0].unit_cell
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
@@ -388,7 +388,7 @@ def helical_biomt(args):
     map_and_start = None
     if args.map:
         logger.writeln("Reading cell from map")
-        map_and_start = fileio.read_ccp4_map(args.map)
+        map_and_start = fileio.read_ccp4_map(args.map, header_only=True)
         st.cell = map_and_start[0].unit_cell
     elif args.cell:
         st.cell = gemmi.UnitCell(*args.cell)
@@ -1307,7 +1307,7 @@ def mask_from_model(args):
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
     if args.selection:
         gemmi.Selection(args.selection).remove_not_selected(st)
-    gr, grid_start, _ = fileio.read_ccp4_map(args.map)
+    gr, grid_start, _ = fileio.read_ccp4_map(args.map, header_only=True)
     mask = maps.mask_from_model(st, args.radius, soft_edge=args.soft_edge, grid=gr)
     maps.write_ccp4_map(args.output, mask, grid_start=grid_start)
 # mask_from_model()

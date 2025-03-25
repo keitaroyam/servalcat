@@ -163,17 +163,20 @@ def read_shifts_txt(shifts_txt):
     return ret
 # read_shifts_txt()
 
-def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignore_origin=True):
-    m = gemmi.read_ccp4_map(filename)
-    g = m.grid
+def read_ccp4_map(filename, header_only=False, setup=True, default_value=0., pixel_size=None, ignore_origin=True):
+    if header_only:
+        m = gemmi.read_ccp4_header(filename)
+    else:
+        m = gemmi.read_ccp4_map(filename)
     grid_cell = [m.header_i32(x) for x in (8,9,10)]
     grid_start = [m.header_i32(x) for x in (5,6,7)]
     grid_shape = [m.header_i32(x) for x in (1,2,3)]
     axis_pos = m.axis_positions()
     axis_letters = ["","",""]
     for i, l in zip(axis_pos, "XYZ"): axis_letters[i] = l
-    spacings = [1./g.unit_cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
-    voxel_size = [g.unit_cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
+    cell = gemmi.UnitCell(*(m.header_float(x) for x in range(11,17)))
+    spacings = [1./cell.reciprocal().parameters[i]/grid_cell[i] for i in (0,1,2)]
+    voxel_size = [cell.parameters[i]/grid_cell[i] for i in (0,1,2)]
     origin = [m.header_float(x) for x in (50,51,52)]
     label = m.header_str(57, 80)
     label = label[:label.find("\0")]
@@ -182,7 +185,7 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
     logger.writeln("    Map mode: {}".format(m.header_i32(4)))
     logger.writeln("       Start: {:4d} {:4d} {:4d}".format(*grid_start))
     logger.writeln("       Shape: {:4d} {:4d} {:4d}".format(*grid_shape))
-    logger.writeln("        Cell: {} {} {} {} {} {}".format(*g.unit_cell.parameters))
+    logger.writeln("        Cell: {} {} {} {} {} {}".format(*cell.parameters))
     logger.writeln("  Axis order: {}".format(" ".join(axis_letters)))
     logger.writeln(" Space group: {}".format(m.header_i32(23)))
     logger.writeln("     Spacing: {:.6f} {:.6f} {:.6f}".format(*spacings))
@@ -196,9 +199,17 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
     logger.writeln("       Label: {}".format(label))
     logger.writeln("")
 
+    if header_only:
+        grid = gemmi.FloatGrid(*grid_cell if setup else grid_shape) # waste of memory, but unavoidable for now
+        grid.set_unit_cell(cell)
+        grid.spacegroup = gemmi.find_spacegroup_by_number(m.header_i32(23))
+    else:
+        grid = m.grid
+
     if setup:
-        if default_value is None: default_value = float("nan")
-        m.setup(default_value)
+        if not header_only:
+            if default_value is None: default_value = float("nan")
+            m.setup(default_value)
         grid_start = [grid_start[i] for i in axis_pos]
         
     if pixel_size is not None:
@@ -208,13 +219,13 @@ def read_ccp4_map(filename, setup=True, default_value=0., pixel_size=None, ignor
             pixel_size = [pixel_size, pixel_size, pixel_size]
             
         logger.writeln("Overriding pixel size with {:.6f} {:.6f} {:.6f}".format(*pixel_size))
-        orgc = m.grid.unit_cell.parameters
+        orgc = grid.unit_cell.parameters
         new_abc = [orgc[i]*pixel_size[i]/voxel_size[i] for i in (0,1,2)]
-        m.grid.unit_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2],
-                                          orgc[3], orgc[4], orgc[5])
-        logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*m.grid.unit_cell.parameters))
+        new_cell = gemmi.UnitCell(new_abc[0], new_abc[1], new_abc[2], orgc[3], orgc[4], orgc[5])
+        grid.set_unit_cell(new_cell)
+        logger.writeln(" New cell= {:.1f} {:.1f} {:.1f} {:.1f} {:.1f} {:.1f}".format(*grid.unit_cell.parameters))
 
-    return [m.grid, grid_start, grid_shape]
+    return [grid, grid_start, grid_shape]
 # read_ccp4_map()
 
 def read_halfmaps(files, pixel_size=None, fail=True):
