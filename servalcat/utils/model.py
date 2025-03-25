@@ -494,9 +494,10 @@ def filter_contacting_ncs(st, cutoff=5.):
     st.setup_cell_images()
     ns = gemmi.NeighborSearch(st[0], st.cell, cutoff*2).populate() # This is considered crystallographic cell if not 1 1 1. Undesirable result may be seen.
     cs = gemmi.ContactSearch(cutoff)
+    cs.twice = True # since we need all image_idx
     cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
     results = cs.find_contacts(ns)
-    indices = set([r.image_idx for r in results])
+    indices = {r.image_idx for r in results}
     logger.writeln(" contacting copies: {}".format(indices))
     ops = [st.ncs[i-1] for i in indices] # XXX is this correct? maybe yes as long as identity operator is not there
     st.ncs.clear()
