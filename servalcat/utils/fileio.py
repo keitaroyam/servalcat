@@ -67,14 +67,15 @@ def check_model_format(xyzin):
         return ".pdb"
 # check_model_format()
 
-def write_mmcif(st, cif_out, cif_ref=None):
+def write_mmcif(st, cif_out, cif_ref=None, cif_ref_doc=None):
     """
     Refmac fails if _entry.id is longer than 80 chars including quotations
     """
     st_new = st.clone()
     logger.writeln("Writing mmCIF file: {}".format(cif_out))
-    if cif_ref:
-        logger.writeln("  using mmCIF metadata from: {}".format(cif_ref))
+    if cif_ref or cif_ref_doc:
+        if cif_ref:
+            logger.writeln("  using mmCIF metadata from: {}".format(cif_ref))
         groups = gemmi.MmcifOutputGroups(False)
         groups.group_pdb = True
         groups.ncs = True
@@ -89,18 +90,19 @@ def write_mmcif(st, cif_out, cif_ref=None):
         groups.conn = True
         groups.software = True
         groups.auth_all = True
-        # FIXME is this all? 
-        try:
-            doc = read_cif_safe(cif_ref)
-        except Exception as e:
-            # Sometimes refmac writes a broken mmcif file..
-            logger.error("Error in mmCIF reading: {}".format(e))
-            logger.error("  Give up using cif reference.")
-            return write_mmcif(st, cif_out)
+        # FIXME is this all?
+        if cif_ref:
+            try:
+                cif_ref_doc = read_cif_safe(cif_ref)
+            except Exception as e:
+                # Sometimes refmac writes a broken mmcif file..
+                logger.error("Error in mmCIF reading: {}".format(e))
+                logger.error("  Give up using cif reference.")
+                return write_mmcif(st, cif_out)
             
-        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), doc))
+        blocks = list(filter(lambda b: b.find_loop("_atom_site.id"), cif_ref_doc))
         if len(blocks) == 0:
-            logger.writeln("No _atom_site found in {}".format(cif_ref))
+            logger.writeln("No _atom_site found in reference")
             logger.writeln("  Give up using cif reference.")
             return write_mmcif(st, cif_out)
         block = blocks[0]
@@ -109,7 +111,7 @@ def write_mmcif(st, cif_out, cif_ref=None):
         block.find_mmcif_category("_atom_sites.").erase()
         st_new.update_mmcif_block(block, groups)
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
-        doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
+        cif_ref_doc.write_file(cif_out, options=gemmi.cif.Style.Aligned)
     else:
         st_new.name = st_new.name[:78] # this will become _entry.id
         if "_entry.id" in st_new.info: st_new.info["_entry.id"] = st_new.info["_entry.id"][:78]
