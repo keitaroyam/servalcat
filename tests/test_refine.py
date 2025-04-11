@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import sys
 import test_spa
+from servalcat import utils
 from servalcat.__main__ import main
 
 root = os.path.abspath(os.path.dirname(__file__))
@@ -86,6 +87,28 @@ class TestRefine(unittest.TestCase):
         
         stats = json.load(open("refined_stats.json"))
         self.assertGreater(stats[-1]["data"]["summary"]["FSCaverage"], 0.66)
+
+    def test_refine_group_occ(self):
+        mtzin = os.path.join(root, "6mw0", "6mw0-sf.cif.gz")
+        xyzin = os.path.join(root, "6mw0", "6mw0.cif")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", mtzin, "-s", "xray", "--labin", "IMEAN,SIGIMEAN",
+                    "--bfactor", "5", "--keywords",
+                    "occupancy group id 1 chain A alt A",
+                    "occupancy group id 2 chain A alt B",
+                    "occupancy group alts complete 1 2",
+                    "occupancy refine ncycle 5"]
+        main()
+        stats = json.load(open("6mw0_refined_stats.json"))
+        self.assertLess(stats[-1]["data"]["summary"]["R1"], 0.26)
+        st = utils.fileio.read_structure("6mw0_refined.pdb")
+        occ_a = tuple({round(a.occ, 6) for r in st[0]["A"] for a in r if a.altloc == "A"})
+        occ_b = tuple({round(a.occ, 6) for r in st[0]["A"] for a in r if a.altloc == "B"})
+        self.assertEqual(len(occ_a), 1)
+        self.assertEqual(len(occ_b), 1)
+        self.assertGreaterEqual(min(occ_a[0], occ_b[0]), 0.)
+        self.assertLessEqual(max(occ_a[0], occ_b[0]), 1.)
+        self.assertAlmostEqual(occ_a[0] + occ_b[0], 1.)
         
 if __name__ == '__main__':
     unittest.main()
