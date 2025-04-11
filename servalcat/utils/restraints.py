@@ -705,7 +705,8 @@ class MetalCoordination:
         if dbfile is None:
             dbfile = os.path.join(monlib.path(), "metals.json")
         if os.path.exists(dbfile):
-            self.metals = json.load(open(dbfile))["metal_coordination"]
+            with open(dbfile) as f:
+                self.metals = json.load(f)["metal_coordination"]
         else:
             self.metals = {}
             logger.writeln("WARNING: {} not found".format(dbfile))

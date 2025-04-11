@@ -113,9 +113,10 @@ class XtalTests(unittest.TestCase):
         main()
         self.assertTrue(os.path.isfile("refined_2_aniso.mtz"))
         r_factor = None
-        for l in open("refined_2_aniso.log"):
-            if l.startswith("           R factor"):
-                r_factor = float(l.split()[-1])
+        with open("refined_2_aniso.log") as ifs:
+            for l in ifs:
+                if l.startswith("           R factor"):
+                    r_factor = float(l.split()[-1])
         self.assertLess(r_factor, 0.185)
     # test_refine_cx()
     

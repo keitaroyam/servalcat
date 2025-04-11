@@ -159,7 +159,8 @@ class TestSPACommands(unittest.TestCase):
         self.assertTrue(os.path.isfile("shifted_refined.log"))
         self.assertTrue(os.path.isfile("refined_expanded.pdb"))
 
-        fscavgs = [float(l.split()[-1]) for l in open("shifted_refined.log") if l.startswith("Average Fourier shell correlation")]
+        with open("shifted_refined.log") as ifs:
+            fscavgs = [float(l.split()[-1]) for l in ifs if l.startswith("Average Fourier shell correlation")]
         self.assertEqual(len(fscavgs), 6)
         self.assertGreater(fscavgs[-1], 0.6)
         

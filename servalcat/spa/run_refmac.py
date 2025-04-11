@@ -271,9 +271,8 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     logger.writeln("Run loggraph {} to see plots.".format(fsc_logfile))
     
     # write json
-    json.dump(stats.to_dict("records"),
-              open("{}_fsc.json".format(output_prefix), "w"),
-              indent=True)
+    with open("{}_fsc.json".format(output_prefix), "w") as f:
+        json.dump(stats.to_dict("records"), f, indent=True)
     ret["binned"] = stats2.to_dict(orient="records")
     return fscavg_text, ret
 # calc_fsc()

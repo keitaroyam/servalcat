@@ -34,7 +34,8 @@ class TestRefine(unittest.TestCase):
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         sys.argv = ["", "refine_geom", "--model", pdbin, "--rand", "0.5"]
         main()
-        stats = json.load(open("5e5z_refined_stats.json"))
+        with open("5e5z_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond distances, non H"], 0.01)
         
     def test_refine_xtal_int(self):
@@ -43,7 +44,8 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_xtal_norefmac", "--model", pdbin, "--rand", "0.5",
                     "--hklin", mtzin, "-s", "xray", "--labin", "I,SIGI,FREE"]
         main()
-        stats = json.load(open("5e5z_refined_stats.json"))
+        with open("5e5z_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.88)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIworkavg"], 0.92)
 
@@ -53,7 +55,8 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_xtal_norefmac", "--model", pdbin, "--rand", "0.5",
                     "--hklin", mtzin, "-s", "xray", "--labin", "FP,SIGFP,FREE"]
         main()
-        stats = json.load(open("5e5z_refined_stats.json"))
+        with open("5e5z_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertLess(stats[-1]["data"]["summary"]["Rfree"], 0.22)
         self.assertLess(stats[-1]["data"]["summary"]["Rwork"], 0.20)
 
@@ -63,7 +66,8 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
                     "--hklin", hklin, "-s", "electron", "--unrestrained"]
         main()
-        stats = json.load(open("biotin_talos_refined_stats.json"))
+        with open("biotin_talos_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
 
     def test_refine_small_cif(self):
@@ -71,7 +75,8 @@ class TestRefine(unittest.TestCase):
         sys.argv = ["", "refine_xtal_norefmac", "--model", cifin,
                     "--hklin", cifin, "-s", "electron", "--unrestrained"]
         main()
-        stats = json.load(open("biotin_talos_refined_stats.json"))
+        with open("biotin_talos_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
     
     def test_refine_spa(self):
@@ -84,8 +89,8 @@ class TestRefine(unittest.TestCase):
         self.assertTrue(os.path.isfile("refined.mmcif"))
         self.assertTrue(os.path.isfile("refined_maps.mtz"))
         self.assertTrue(os.path.isfile("refined_expanded.pdb"))
-        
-        stats = json.load(open("refined_stats.json"))
+        with open("refined_stats.json") as f:
+            stats = json.load(f)
         self.assertGreater(stats[-1]["data"]["summary"]["FSCaverage"], 0.66)
 
     def test_refine_group_occ(self):
@@ -99,7 +104,8 @@ class TestRefine(unittest.TestCase):
                     "occupancy group alts complete 1 2",
                     "occupancy refine ncycle 5"]
         main()
-        stats = json.load(open("6mw0_refined_stats.json"))
+        with open("6mw0_refined_stats.json") as f:
+            stats = json.load(f)
         self.assertLess(stats[-1]["data"]["summary"]["R1"], 0.26)
         st = utils.fileio.read_structure("6mw0_refined.pdb")
         occ_a = tuple({round(a.occ, 6) for r in st[0]["A"] for a in r if a.altloc == "A"})

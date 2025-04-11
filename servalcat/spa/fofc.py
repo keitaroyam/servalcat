@@ -358,7 +358,9 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         hkldata = hkldata2
         
     dump_to_mtz(hkldata, map_labs, "{}_maps.mtz".format(output_prefix))
-    if stats_str: open("{}_Fstats.log".format(output_prefix), "w").write(stats_str)
+    if stats_str:
+        with open("{}_Fstats.log".format(output_prefix), "w") as f:
+            f.write(stats_str)
 # write_files()
 
 def write_coot_script(py_out, model_file, mtz_file, contour_fo=1.2, contour_fofc=3.0, ncs_ops=None):

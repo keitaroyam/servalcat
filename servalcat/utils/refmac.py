@@ -612,128 +612,128 @@ class Refmac:
         env = os.environ
         if self.monlib_path: env["CLIBD_MON"] = os.path.join(self.monlib_path, "") # should end with /
         
-        p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             universal_newlines=True, env=env)
-        p.stdin.write(stdin)
-        p.stdin.close()
+        with subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              universal_newlines=True, env=env) as p:
+            p.stdin.write(stdin)
+            p.stdin.close()
 
-        log = open(self.prefix+".log", "w")
-        cycle = 0
-        re_cycle_table = re.compile("Cycle *([0-9]+). Rfactor analysis")
-        re_actual_weight = re.compile("Actual weight *([^ ]+) *is applied to the X-ray term")
-        rmsbond = ""
-        rmsangle = ""
-        log_delay = []
-        summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.writeln
-        outlier_flag = False
-        last_table_flag = False
-        last_table_keys = []
-        occ_flag = False
-        occ_cycles = 0
-        ret = {"version":None,
-               "cycles": [{"cycle":i} for i in range(self.ncycle+self.tlscycle+1)],
-               } # metadata
-        
-        for l in iter(p.stdout.readline, ""):
-            log.write(l)
+            log = open(self.prefix+".log", "w")
+            cycle = 0
+            re_cycle_table = re.compile("Cycle *([0-9]+). Rfactor analysis")
+            re_actual_weight = re.compile("Actual weight *([^ ]+) *is applied to the X-ray term")
+            rmsbond = ""
+            rmsangle = ""
+            log_delay = []
+            summary_write = (lambda x: log_delay.append(x)) if self.show_log else logger.writeln
+            outlier_flag = False
+            last_table_flag = False
+            last_table_keys = []
+            occ_flag = False
+            occ_cycles = 0
+            ret = {"version":None,
+                   "cycles": [{"cycle":i} for i in range(self.ncycle+self.tlscycle+1)],
+                   } # metadata
 
-            if self.show_log:
-                print(l, end="")
-            
-            r_ver = re_version.search(l)
-            if r_ver:
-                ret["version"] = r_ver.group(1)
-                summary_write("Starting Refmac {} (PID: {})".format(r_ver.group(1), p.pid))
+            for l in iter(p.stdout.readline, ""):
+                log.write(l)
 
-            # print error/warning
-            r_err = re_error.search(l)
-            if r_err:
-                if self.global_mode == "spa":
-                    if "Figure of merit of phases has not been assigned" in l:
-                        continue
-                    elif "They will be assumed to be equal to 1.0" in l:
-                        continue
-                summary_write(l.rstrip())
+                if self.show_log:
+                    print(l, end="")
 
-            # print outliers
-            r_outl = re_outlier_start.search(l)
-            if r_outl:
-                outlier_flag = True
-                summary_write(l.rstrip())
-            elif outlier_flag:
-                if l.strip() == "" or "monitored" in l or "dev=" in l or "sigma=" in l.lower() or "sigma.=" in l:
+                r_ver = re_version.search(l)
+                if r_ver:
+                    ret["version"] = r_ver.group(1)
+                    summary_write("Starting Refmac {} (PID: {})".format(r_ver.group(1), p.pid))
+
+                # print error/warning
+                r_err = re_error.search(l)
+                if r_err:
+                    if self.global_mode == "spa":
+                        if "Figure of merit of phases has not been assigned" in l:
+                            continue
+                        elif "They will be assumed to be equal to 1.0" in l:
+                            continue
                     summary_write(l.rstrip())
-                else:
-                    outlier_flag = False
 
-            if "TLS refinement cycle" in l:
-                cycle = int(l.split()[-1])
-            elif "----Group occupancy refinement----" in l:
-                occ_flag = True
-                occ_cycles += 1
-                cycle += 1
-            elif "CGMAT cycle number =" in l:
-                cycle = int(l[l.index("=")+1:]) + self.tlscycle + occ_cycles
-                occ_flag = False
-            
-            r_cycle = re_cycle_table.search(l)
-            if r_cycle: cycle = int(r_cycle.group(1))                
+                # print outliers
+                r_outl = re_outlier_start.search(l)
+                if r_outl:
+                    outlier_flag = True
+                    summary_write(l.rstrip())
+                elif outlier_flag:
+                    if l.strip() == "" or "monitored" in l or "dev=" in l or "sigma=" in l.lower() or "sigma.=" in l:
+                        summary_write(l.rstrip())
+                    else:
+                        outlier_flag = False
 
-            for i in range(len(ret["cycles"]), cycle):
-                ret["cycles"].append({"cycle":i})
+                if "TLS refinement cycle" in l:
+                    cycle = int(l.split()[-1])
+                elif "----Group occupancy refinement----" in l:
+                    occ_flag = True
+                    occ_cycles += 1
+                    cycle += 1
+                elif "CGMAT cycle number =" in l:
+                    cycle = int(l[l.index("=")+1:]) + self.tlscycle + occ_cycles
+                    occ_flag = False
 
-            if "Overall R factor                     =" in l and cycle > 0:
-                rfac = l[l.index("=")+1:].strip()
-                if self.global_mode != "spa":
-                    ret["cycles"][cycle-1]["r_factor"] = rfac
-                    summary_write(" cycle= {:3d} R= {}".format(cycle-1, rfac))
-            elif "Average Fourier shell correlation    =" in l and cycle > 0:
-                fsc = l[l.index("=")+1:].strip()
-                if occ_flag:
-                    note = "(occupancy)"
-                elif cycle == 1:
-                    note = "(initial)"
-                elif cycle <= self.tlscycle+1:
-                    note = "(TLS)"
-                elif cycle > self.ncycle + occ_cycles + self.tlscycle:
-                    note = "(final)"
-                else:
-                    note = ""
+                r_cycle = re_cycle_table.search(l)
+                if r_cycle: cycle = int(r_cycle.group(1))
 
-                if self.global_mode == "spa":
-                    ret["cycles"][cycle-1]["fsc_average"] = fsc
-                    summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
-            elif "Rms BondLength" in l:
-                rmsbond = l
-            elif "Rms BondAngle" in l:
-                rmsangle = l
+                for i in range(len(ret["cycles"]), cycle):
+                    ret["cycles"].append({"cycle":i})
 
-            r_actual_weight = re_actual_weight.search(l)
-            if r_actual_weight:
-                ret["cycles"][cycle-1]["actual_weight"] = r_actual_weight.group(1)
+                if "Overall R factor                     =" in l and cycle > 0:
+                    rfac = l[l.index("=")+1:].strip()
+                    if self.global_mode != "spa":
+                        ret["cycles"][cycle-1]["r_factor"] = rfac
+                        summary_write(" cycle= {:3d} R= {}".format(cycle-1, rfac))
+                elif "Average Fourier shell correlation    =" in l and cycle > 0:
+                    fsc = l[l.index("=")+1:].strip()
+                    if occ_flag:
+                        note = "(occupancy)"
+                    elif cycle == 1:
+                        note = "(initial)"
+                    elif cycle <= self.tlscycle+1:
+                        note = "(TLS)"
+                    elif cycle > self.ncycle + occ_cycles + self.tlscycle:
+                        note = "(final)"
+                    else:
+                        note = ""
 
-            # Final table
-            if "    Ncyc    Rfact    Rfree     FOM" in l:
-                last_table_flag = True
-                last_table_keys = l.split()
-                if last_table_keys[-1] == "$$": del last_table_keys[-1]
-            elif last_table_flag:
-                if "$$ Final results $$" in l:
-                    last_table_flag = False
-                    continue
-                sp = l.split()
-                if len(sp) == len(last_table_keys) and sp[0] != "$$":
-                    cyc = int(sp[last_table_keys.index("Ncyc")])
-                    key_name = dict(rmsBOND="rms_bond", zBOND="rmsz_bond",
-                                    rmsANGL="rms_angle", zANGL="rmsz_angle",
-                                    rmsCHIRAL="rms_chiral")
-                    for k in key_name:
-                        if k in last_table_keys:
-                            ret["cycles"][cyc][key_name[k]] = sp[last_table_keys.index(k)]
-                        else:
-                            logger.error("table does not have key {}?".format(k))
-                            
-        retcode = p.wait()
+                    if self.global_mode == "spa":
+                        ret["cycles"][cycle-1]["fsc_average"] = fsc
+                        summary_write(" cycle= {:3d} FSCaverage= {} {}".format(cycle-1, fsc, note))
+                elif "Rms BondLength" in l:
+                    rmsbond = l
+                elif "Rms BondAngle" in l:
+                    rmsangle = l
+
+                r_actual_weight = re_actual_weight.search(l)
+                if r_actual_weight:
+                    ret["cycles"][cycle-1]["actual_weight"] = r_actual_weight.group(1)
+
+                # Final table
+                if "    Ncyc    Rfact    Rfree     FOM" in l:
+                    last_table_flag = True
+                    last_table_keys = l.split()
+                    if last_table_keys[-1] == "$$": del last_table_keys[-1]
+                elif last_table_flag:
+                    if "$$ Final results $$" in l:
+                        last_table_flag = False
+                        continue
+                    sp = l.split()
+                    if len(sp) == len(last_table_keys) and sp[0] != "$$":
+                        cyc = int(sp[last_table_keys.index("Ncyc")])
+                        key_name = dict(rmsBOND="rms_bond", zBOND="rmsz_bond",
+                                        rmsANGL="rms_angle", zANGL="rmsz_angle",
+                                        rmsCHIRAL="rms_chiral")
+                        for k in key_name:
+                            if k in last_table_keys:
+                                ret["cycles"][cyc][key_name[k]] = sp[last_table_keys.index(k)]
+                            else:
+                                logger.error("table does not have key {}?".format(k))
+
+            retcode = p.wait()
         log.close()
         if log_delay:
             logger.writeln("== Summary of Refmac ==")
@@ -747,9 +747,8 @@ class Refmac:
         logger.writeln("REFMAC5 finished with exit code= {}".format(retcode))
 
         if write_summary_json:
-            json.dump(ret,
-                      open("{}_summary.json".format(self.prefix), "w"),
-                      indent=True)
+            with open("{}_summary.json".format(self.prefix), "w") as f:
+                json.dump(ret, f, indent=True)
 
         # TODO check timestamp
         if not os.path.isfile(self.xyzout()) or not os.path.isfile(self.hklout()):

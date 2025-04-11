@@ -155,7 +155,8 @@ def write_model(st, prefix=None, file_name=None, pdb=False, cif=False, cif_ref=N
 
 def read_shifts_txt(shifts_txt):
     ret = {}
-    s = open(shifts_txt).read()
+    with open(shifts_txt) as f:
+        s = f.read()
     s = s.replace("\n"," ").split()
     for i in range(len(s)-3):
         if s[i] in ("pdbin", "pdbout") and s[i+1] in ("cell", "shifts"):
@@ -330,8 +331,8 @@ def read_asu_data_from_mtz(mtz_in, cols):
 # read_asu_data_from_mtz()
 
 def read_cif_safe(cif_in):
-    ifs = gzip.open(cif_in, "rt") if cif_in.endswith(".gz") else open(cif_in)
-    s = ifs.read()
+    with gzip.open(cif_in, "rt") if cif_in.endswith(".gz") else open(cif_in) as ifs:
+        s = ifs.read()
     if "\0" in s: # Refmac occasionally writes \0 in some fields..
         logger.writeln(" WARNING: null character detected. Replacing with '.'")
         s = s.replace("\0", ".")
@@ -508,7 +509,10 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
     # remove comments/blanks and concatenate lines
     lines = []
     concat_flag = False
-    for l in open(ins_in) if ins_in else lines_in:
+    if ins_in:
+        with open(ins_in) as f:
+            lines_in = f.readlines()
+    for l in lines_in:
         l = l.rstrip()
         if l.startswith("REM"): continue
         if l.startswith(";"): continue
@@ -622,7 +626,10 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
 def read_shelx_hkl(cell, sg, hklf, file_in=None, lines_in=None):
     assert (file_in, lines_in).count(None) == 1
     hkls, vals, sigs = [], [], []
-    for l in open(file_in) if file_in else lines_in:
+    if file_in:
+        with open(file_in) as f:
+            lines_in = f.readlines()
+    for l in lines_in:
         if l.startswith(";"): continue
         if not l.strip() or len(l) < 25: continue
         try:
@@ -738,7 +745,8 @@ def read_small_molecule_files(files):
                     b = gemmi.cif.read(filename).sole_block()
                     res_str = b.find_value("_shelx_res_file")
                 else:
-                    res_str = open(filename).read()
+                    with open(filename) as f:
+                        res_str = f.read()
                 if res_str:
                     _, info = read_shelx_ins(lines_in=res_str.splitlines())
                     hklf = info["hklf"]
@@ -768,16 +776,17 @@ def read_sequence_file(f):
     # TODO needs improvement
     # return a list of [name, sequence]
     ret = []
-    for i, l in enumerate(open(f)):
-        l = l.strip()
-        if l.startswith(">"):
-            name = l[1:].strip()
-            ret.append([name, ""])
-        elif l:
-            if not ret: ret.append(["", ""])
-            tmp = l.replace("*", "").replace("-", "").upper()
-            r = re.search("[^A-Z]", tmp)
-            if r:
-                raise RuntimeError(f"Invalid character in the sequence file: {f}:{i+1}")
-            ret[-1][1] += tmp
+    with open(f) as ifs:
+        for i, l in enumerate(ifs):
+            l = l.strip()
+            if l.startswith(">"):
+                name = l[1:].strip()
+                ret.append([name, ""])
+            elif l:
+                if not ret: ret.append(["", ""])
+                tmp = l.replace("*", "").replace("-", "").upper()
+                r = re.search("[^A-Z]", tmp)
+                if r:
+                    raise RuntimeError(f"Invalid character in the sequence file: {f}:{i+1}")
+                ret[-1][1] += tmp
     return ret
