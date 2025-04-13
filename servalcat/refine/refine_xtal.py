@@ -16,7 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
 from servalcat.refine.xtal import LL_Xtal
-from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options
+from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options, load_config
 from servalcat.refmac import refmac_keywords
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -104,6 +104,8 @@ def add_arguments(parser):
                         help="Write all output from cycles")
     parser.add_argument("--vonmises", action='store_true',
                         help="Experimental: von Mises type restraint for angles")
+    parser.add_argument("--config",
+                        help="Config file (.yaml)")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -113,6 +115,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
+    refine_cfg = load_config(args.config)
     if args.source == "neutron": assert not args.refine_h # we need deuterium fraction handling in LL
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
@@ -217,7 +220,7 @@ def main(args):
     refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
                                  adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                                  refine_occ=args.refine_all_occ,
-                                 refine_dfrac=False)
+                                 refine_dfrac=False, cfg=refine_cfg)
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),

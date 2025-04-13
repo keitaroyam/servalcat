@@ -804,6 +804,36 @@ void add_refine(nb::module_& m) {
       gemmi::fail("vec_selection: bad t");
     })
     ;
+  m.def("set_refine_flags", [](gemmi::Model &model,
+                               const std::vector<std::string> &xyz_include, const std::vector<std::string> &xyz_exclude,
+                               const std::vector<std::string> &adp_include, const std::vector<std::string> &adp_exclude,
+                               const std::vector<std::string> &occ_include, const std::vector<std::string> &occ_exclude,
+                               const std::vector<std::string> &dfrac_include, const std::vector<std::string> &dfrac_exclude) {
+    std::vector<std::bitset<RefineParams::N>> flags(gemmi::count_atom_sites(model));
+    const std::vector<const std::vector<std::string>*> includes = {&xyz_include, &adp_include, &occ_include, &dfrac_include};
+    const std::vector<const std::vector<std::string>*> excludes = {&xyz_exclude, &adp_exclude, &occ_exclude, &dfrac_exclude};
+    auto set_sel = [&](const gemmi::Selection &sel, int t, bool incl) {
+      for (auto &chain : sel.chains(model))
+        for (auto &res : sel.residues(chain))
+          for (auto &atom : sel.atoms(res))
+            if (incl)
+              flags[atom.serial-1].set(t);
+            else
+              flags[atom.serial-1].reset(t);
+    };
+    for (int t = 0; t < RefineParams::N; ++t) {
+      if (includes[t]->empty())
+        for (auto &f : flags)
+          f.set(t);
+      else
+        for (const auto &selstr : *includes[t])
+          set_sel(gemmi::Selection(selstr), t, true);
+      for (const auto &selstr : *excludes[t])
+        set_sel(gemmi::Selection(selstr), t, false);
+    }
+    for (auto cra : model.all())
+      cra.atom->flag = flags[cra.atom->serial-1].to_ulong();
+  });
   geomtarget
     .def_ro("target", &GeomTarget::target)
     .def_ro("vn", &GeomTarget::vn)

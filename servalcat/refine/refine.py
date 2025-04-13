@@ -14,6 +14,9 @@ import numpy
 import json
 import pandas
 import scipy.sparse
+from dataclasses import dataclass, field
+from typing import List, Dict
+from omegaconf import DictConfig, OmegaConf
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
@@ -28,12 +31,49 @@ Type = ext.RefineParams.Type
 #profile = line_profiler.LineProfiler()
 #atexit.register(profile.print_stats)
 
+@dataclass
+class SelectionConfig:
+    include: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to include"})
+    exclude: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to exclude"})
+
+@dataclass
+class RefineConfig:
+    atom_selection: Dict[str, SelectionConfig] = field(
+        default_factory=lambda: {
+            "xyz": SelectionConfig(),
+            "adp": SelectionConfig(),
+            "occ": SelectionConfig(),
+            "dfrac": SelectionConfig(),
+        },
+        metadata={"help": "Configuration for atom selection during refinement"}
+    )
+
+def load_config(yaml_file):
+    if not yaml_file:
+        return None
+    schema = OmegaConf.structured(RefineConfig)
+    conf = OmegaConf.load(yaml_file)
+    cfg = OmegaConf.merge(schema, conf.get("refine"))
+    logger.writeln("Config loaded:")
+    logger.writeln(OmegaConf.to_yaml(cfg))
+    return cfg
+# load_config()
+
 def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
-                 refine_dfrac=False, use_q_b_mixed=True):
+                 refine_dfrac=False, use_q_b_mixed=True, cfg=None):
     assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
     ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
     ret.set_model(st[0])
-    ret.set_params_default()
+    if cfg:
+        sele = cfg.atom_selection
+        ext.set_refine_flags(st[0],
+                             sele.xyz.include, sele.xyz.exclude,
+                             sele.adp.include, sele.adp.exclude,
+                             sele.occ.include, sele.occ.exclude,
+                             sele.dfrac.include, sele.dfrac.exclude)
+        ret.set_params_from_flags()
+    else:
+        ret.set_params_default()
     return ret
 
 class Geom:

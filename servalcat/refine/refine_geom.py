@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import RefineParams, Geom, Refine, convert_stats_to_dicts, update_meta, print_h_options
+from servalcat.refine.refine import RefineParams, Geom, Refine, convert_stats_to_dicts, update_meta, print_h_options, load_config
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -46,7 +46,8 @@ def add_arguments(parser):
                         help="Output prefix")
     parser.add_argument("--write_trajectory", action='store_true',
                         help="Write all output from cycles")
-
+    parser.add_argument("--config",
+                        help="Config file (.yaml)")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -148,7 +149,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 # refine_and_update_dictionary()
 
 def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, params,
-                find_links=False, use_ncsr=False):
+                find_links=False, use_ncsr=False, refine_cfg=None):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if not all(op.given for op in st.ncs):
@@ -178,7 +179,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    refine_params = RefineParams(st, refine_xyz=True)
+    refine_params = RefineParams(st, refine_xyz=True, cfg=refine_cfg)
     geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize, params=params, ncslist=ncslist)
     refiner = Refine(st, geom, refine_params, params=params)
     stats = refiner.run_cycles(ncycle,
@@ -191,6 +192,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
 # refine_geom()
 
 def main(args):
+    refine_cfg = load_config(args.config)
     keywords = []
     if args.keywords: keywords = sum(args.keywords, [])
     if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
@@ -215,7 +217,8 @@ def main(args):
                     randomize=args.randomize,
                     params=params,
                     find_links=args.find_links,
-                    use_ncsr=args.ncsr)
+                    use_ncsr=args.ncsr,
+                    refine_cfg=refine_cfg)
     else:
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.update_dictionary)

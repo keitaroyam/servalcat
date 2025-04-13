@@ -14,7 +14,7 @@ from servalcat import utils
 from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
 from servalcat.spa import fofc
 from servalcat.refine import spa
-from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options
+from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options, load_config
 from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
@@ -127,6 +127,8 @@ def add_arguments(parser):
                         help="Do not override entities")
     parser.add_argument("--write_trajectory", action='store_true',
                         help="Write all output from cycles")
+    parser.add_argument("--config",
+                        help="Config file (.yaml)")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -136,6 +138,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
+    refine_cfg = load_config(args.config)
     args.mask = None
     args.invert_mask = False
     args.trim_fofc_mtz = args.mask_for_fofc is not None
@@ -233,7 +236,7 @@ def main(args):
     refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
                                  adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                                  refine_occ=args.refine_all_occ,
-                                 refine_dfrac=False)
+                                 refine_dfrac=False, cfg=refine_cfg)
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,
