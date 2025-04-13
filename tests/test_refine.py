@@ -79,6 +79,33 @@ class TestRefine(unittest.TestCase):
             stats = json.load(f)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
     
+    def test_refine_aniso(self):
+        hklin = os.path.join(root, "biotin", "biotin_talos.hkl")
+        xyzin = os.path.join(root, "biotin", "biotin_talos.ins")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", hklin, "-s", "electron", "--unrestrained",
+                    "--adp", "aniso"]
+        main()
+        with open("biotin_talos_refined_stats.json") as f:
+            stats = json.load(f)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
+        st = utils.fileio.read_structure("biotin_talos_refined.mmcif")
+        self.assertTrue(all(x.atom.aniso.nonzero() for x in st[0].all()))
+
+    def test_refine_aniso_occ(self):
+        hklin = os.path.join(root, "biotin", "biotin_talos.hkl")
+        xyzin = os.path.join(root, "biotin", "biotin_talos.ins")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", hklin, "-s", "electron", "--unrestrained",
+                    "--adp", "aniso", "--refine_all_occ"]
+        main()
+        with open("biotin_talos_refined_stats.json") as f:
+            stats = json.load(f)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIavg"], 0.7)
+        st = utils.fileio.read_structure("biotin_talos_refined.mmcif")
+        self.assertTrue(all(x.atom.aniso.nonzero() for x in st[0].all()))
+        self.assertTrue(sum(x.atom.occ < 1 for x in st[0].all()) > 0.5 * st[0].count_atom_sites())
+        
     def test_refine_spa(self):
         data = test_spa.data
         sys.argv = ["", "refine_spa_norefmac", "--halfmaps", data["half1"], data["half2"],
