@@ -4,7 +4,9 @@
 #ifndef SERVALCAT_REFINE_LL_HPP_
 #define SERVALCAT_REFINE_LL_HPP_
 
+#include "params.hpp"
 #include "geom.hpp"
+#include <memory>
 #include <vector>
 #include <gemmi/grid.hpp>
 #include <gemmi/it92.hpp>
@@ -229,16 +231,12 @@ struct TableS3 {
 };
 
 struct LL{
-  std::vector<const gemmi::Atom*> atoms;
   gemmi::UnitCell cell;
   const gemmi::SpaceGroup *sg;
   std::vector<gemmi::Transform> ncs;
   bool mott_bethe;
-  bool refine_xyz;
-  int adp_mode;
-  bool refine_occ;
   bool refine_h;
-  bool use_q_b_mixed_derivatives = true;
+  std::shared_ptr<RefineParams> params;
   // table (distances x b values)
   std::vector<double> table_bs;
   std::vector<std::vector<double>> pp1; // for x-x diagonal
@@ -249,21 +247,8 @@ struct LL{
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
-  LL(const gemmi::Structure &st, const std::vector<int> &atom_pos,
-     bool mott_bethe, bool refine_xyz, int adp_mode, bool refine_occ, bool refine_h)
-    : cell(st.cell), sg(st.find_spacegroup()), mott_bethe(mott_bethe), refine_xyz(refine_xyz),
-      adp_mode(adp_mode), refine_occ(refine_occ), refine_h(refine_h) {
-    if (adp_mode < 0 || adp_mode > 2) gemmi::fail("bad adp_mode");
-    const auto it = std::max_element(atom_pos.begin(), atom_pos.end());
-    if (it != atom_pos.end() && *it >= 0) {
-      atoms.resize((*it) + 1);
-      for (gemmi::const_CRA cra : st.first_model().all()) {
-        const int i = atom_pos.at(cra.atom->serial-1);
-        if (i >= 0) atoms.at(i) = cra.atom;
-      }
-    }
-    if (std::find(atoms.begin(), atoms.end(), nullptr) != atoms.end())
-      gemmi::fail("bad atom_pos in LL");
+  LL(const gemmi::Structure &st, std::shared_ptr<RefineParams> params, bool mott_bethe, bool refine_h)
+    : cell(st.cell), sg(st.find_spacegroup()), params(params), mott_bethe(mott_bethe), refine_h(refine_h) {
     set_ncs({});
   }
   void set_ncs(const std::vector<gemmi::Transform> &trs) {
@@ -273,54 +258,24 @@ struct LL{
       if (!tr.is_identity())
         ncs.push_back(tr);
   }
-  size_t n_grad() const {
-    size_t np = 0;
-    if (refine_xyz)
-      np += 3;
-    if (adp_mode == 1)
-      np += 1;
-    else if (adp_mode == 2)
-      np += 6;
-    if (refine_occ)
-      np += 1;
-    return np * atoms.size();
-  }
-  size_t n_fisher() const {
-    size_t np = 0;
-    if (refine_xyz)
-      np += 6;
-    if (adp_mode == 1)
-      np += 1;
-    else if (adp_mode == 2)
-      np += 21;
-    if (refine_occ) {
-      np += 1;
-      if (use_q_b_mixed_derivatives) {
-        if (adp_mode == 1)
-          np += 1;
-        else if (adp_mode == 2)
-          np += 6;
-      }
-    }
-    return np * atoms.size();
-  }
   // FFT-based gradient calculation: Murshudov et al. (1997) 10.1107/S0907444996012255
   // if cryo-EM SPA, den is the Fourier transform of (dLL/dAc-i dLL/dBc)*mott_bethe_factor/s^2
   // When b_add is given, den must have been sharpened
   template <typename Table>
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
-    const size_t n_atoms = atoms.size();
-    const size_t n_v = n_grad();
-    vn.assign(n_v, 0.);
-    const int offset = (refine_xyz ? n_atoms * 3 : 0); // for adp
-    const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 6 : 0)); // for occ
+    const size_t n_atoms = params->atoms.size();
+    vn.assign(params->n_params(), 0.);
     for (size_t i = 0; i < n_atoms; ++i) {
-      const gemmi::Atom &atom = *atoms[i];
+      const gemmi::Atom &atom = *params->atoms[i];
       if (!refine_h && atom.is_hydrogen()) continue;
+      if (!params->is_atom_refined(i)) continue;
       const gemmi::Element &el = atom.element;
       const auto coef = Table::get(el, atom.charge);
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
       const bool has_aniso = atom.aniso.nonzero();
+      const bool refine_xyz = params->is_atom_refined(i, RefineParams::Type::X);
+      const int adp_mode = params->is_atom_refined(i, RefineParams::Type::B) ? (params->aniso ? 2 : 1) : 0;
+      const bool refine_occ = params->is_atom_refined(i, RefineParams::Type::Q);
       if (adp_mode == 1 && has_aniso) gemmi::fail("bad adp_mode");
       for (const gemmi::Transform &tr : ncs) { //TODO to use cell images?
         const gemmi::Fractional fpos = cell.fractionalize(gemmi::Position(tr.apply(atom.pos)));
@@ -390,23 +345,26 @@ struct LL{
           for (int i = 0; i < 6; ++i)
             gb_aniso[i] *= atom.occ * 0.25 / gemmi::sq(gemmi::pi());
 
-        if (refine_xyz) {
+        const int pos_x = params->get_pos_vec(i, RefineParams::Type::X);
+        const int pos_b = params->get_pos_vec(i, RefineParams::Type::B);
+        const int pos_q = params->get_pos_vec(i, RefineParams::Type::Q);
+        if (pos_x >= 0) {
           const auto gx2 = tr.mat.transpose().multiply(gx);
-          vn[3*i  ] += gx2.x;
-          vn[3*i+1] += gx2.y;
-          vn[3*i+2] += gx2.z;
+          vn[pos_x  ] += gx2.x;
+          vn[pos_x+1] += gx2.y;
+          vn[pos_x+2] += gx2.z;
         }
         if (adp_mode == 1)
-          vn[offset + i] += gb;
+          vn[pos_b] += gb;
         else if (adp_mode == 2) { // added as B (not U)
           for (int j = 0; j < 6; ++j) {
             const auto m = gemmi::SMat33<double>({double(j==0), double(j==1), double(j==2), double(j==3), double(j==4), double(j==5)}).transformed_by(tr.mat);
-            vn[offset + 6*i+j] += (gb_aniso[0] * m.u11 + gb_aniso[1] * m.u22 + gb_aniso[2] * m.u33 +
-                                   gb_aniso[3] * m.u12 + gb_aniso[4] * m.u13 + gb_aniso[5] * m.u23);
+            vn[pos_b + j] += (gb_aniso[0] * m.u11 + gb_aniso[1] * m.u22 + gb_aniso[2] * m.u33 +
+                              gb_aniso[3] * m.u12 + gb_aniso[4] * m.u13 + gb_aniso[5] * m.u23);
           }
         }
-        if (refine_occ)
-          vn[offset2 + i] += gq;
+        if (pos_q >= 0)
+          vn[pos_q] += gq;
       }
     }
     for (auto &v : vn) // to match scale of hessian
@@ -441,7 +399,7 @@ struct LL{
   double b_sf_max() const {
     double ret = 0.;
     std::set<std::pair<gemmi::Element, signed char>> elems;
-    for (auto atom : atoms)
+    for (auto atom : params->atoms)
       elems.insert({atom->element, atom->charge});
     for (const auto &p : elems) {
       const auto &coef = Table::get(p.first, p.second);
@@ -453,7 +411,7 @@ struct LL{
   }
   std::pair<double, double> b_min_max() const {
     double b_min = INFINITY, b_max = 0;
-    for (const auto atom : atoms) {
+    for (const auto atom : params->atoms) {
       const double b_iso = atom->aniso.nonzero() ? gemmi::u_to_b() * atom->aniso.trace() / 3 : atom->b_iso;
       if (b_iso < b_min) b_min = b_iso;
       if (b_iso > b_max) b_max = b_iso;
@@ -621,16 +579,18 @@ struct LL{
 
   template <typename Table>
   void fisher_diag_from_table() {
-    const size_t n_atoms = atoms.size();
-    const size_t n_a = n_fisher();
+    const size_t n_atoms = params->atoms.size();
+    const size_t n_a = params->n_fisher_ll();
     const int N = Table::Coef::ncoeffs;
     am.assign(n_a, 0.);
-    const int offset = refine_xyz ? n_atoms * 6 : 0; // for adp
-    const int offset2 = offset + (adp_mode == 1 ? n_atoms : (adp_mode == 2 ? n_atoms * 21 : 0));  // for occ
-    const int offset3 = offset2 + n_atoms;  // for occ-B
     for (size_t i = 0; i < n_atoms; ++i) {
-      const gemmi::Atom &atom = *atoms[i];
+      const gemmi::Atom &atom = *params->atoms[i];
+      if (!params->is_atom_refined(i)) continue;
       if (!refine_h && atom.is_hydrogen()) continue;
+      const int pos_x = params->get_pos_mat_ll(i, RefineParams::Type::X);
+      const int pos_b = params->get_pos_mat_ll(i, RefineParams::Type::B);
+      const int pos_q = params->get_pos_mat_ll(i, RefineParams::Type::Q);
+      const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
       const auto coef = Table::get(atom.element, atom.charge);
       const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
@@ -651,31 +611,31 @@ struct LL{
           fac_qb += aj * ak * interp_1d(table_bs, qb[0], b);
         }
 
-      const int ipos = i*6;
-      if (refine_xyz) am[ipos] = am[ipos+1] = am[ipos+2] = w * fac_x;
+      if (pos_x >= 0) am[pos_x] = am[pos_x+1] = am[pos_x+2] = w * fac_x;
       if (adp_mode == 1)
-        am[offset + i] = w * fac_b;
+        am[pos_b] = w * fac_b;
       else if (adp_mode == 2) {
-        for (int j = 0; j < 3; ++j) am[offset + 21*i + j] = w * fac_a;     // 11-11, 22-22, 33-33
-        for (int j = 3; j < 6; ++j) am[offset + 21*i + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
-        am[offset + 21*i + 6] = am[offset + 21*i + 7] = am[offset + 21*i + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
+        for (int j = 0; j < 3; ++j) am[pos_b + j] = w * fac_a;     // 11-11, 22-22, 33-33
+        for (int j = 3; j < 6; ++j) am[pos_b + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
+        am[pos_b + 6] = am[pos_b + 7] = am[pos_b + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
-      if (refine_occ) {
-        am[offset2 + i] = fac_q; // w = q^2 not needed
-        if (use_q_b_mixed_derivatives) {
+      if (pos_q >= 0) {
+        am[pos_q] = fac_q; // w = q^2 not needed
+        const int pos_qb = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::Q);
+        if (pos_qb >= 0) {
           if (adp_mode == 1)
-            am[offset3 + i] = fac_qb * atom.occ;
+            am[pos_qb] = fac_qb * atom.occ;
           else if (adp_mode == 2)
-            am[offset3 + 6 * i] = am[offset3 + 6 * i + 1] = am[offset3 + 6 * i + 2] = fac_qb * atom.occ / 3;
+            am[pos_qb] = am[pos_qb + 1] = am[pos_qb + 2] = fac_qb * atom.occ / 3;
         }
       }
     }
   }
 
   Eigen::SparseMatrix<double> make_spmat() const {
-    const size_t n_atoms = atoms.size();
-    const size_t n_a = n_fisher();
-    const size_t n_v = n_grad();
+    const size_t n_atoms = params->atoms.size();
+    const size_t n_a = params->n_fisher_ll();
+    const size_t n_v = params->n_params();
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     auto add_data = [&data](size_t i, size_t j, double v) {
@@ -684,109 +644,124 @@ struct LL{
       if (i != j)
         data.emplace_back(j, i, v);
     };
-    size_t i = 0, offset = 0, offset_b = 0;
-    if (refine_xyz) {
-      for (size_t j = 0; j < n_atoms; ++j, i+=6) {
-        add_data(3*j,   3*j,   am[i]);
-        add_data(3*j+1, 3*j+1, am[i+1]);
-        add_data(3*j+2, 3*j+2, am[i+2]);
-        add_data(3*j,   3*j+1, am[i+3]);
-        add_data(3*j,   3*j+2, am[i+4]);
-        add_data(3*j+1, 3*j+2, am[i+5]);
-      }
-      offset = offset_b = 3 * n_atoms;
-    }
-    if (adp_mode == 1) {
-      for (size_t j = 0; j < n_atoms; ++j, ++i)
-        add_data(offset + j, offset + j, am[i]);
-      offset += n_atoms;
-    } else if (adp_mode == 2) {
+    size_t i = 0;
+    if (params->is_refined(RefineParams::Type::X))
       for (size_t j = 0; j < n_atoms; ++j) {
-        for (size_t k = 0; k < 6; ++k, ++i)
-          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i]);
-        for (size_t k = 0; k < 6; ++k)
-          for (size_t l = k + 1; l < 6; ++l, ++i)
-            add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
-      }
-      offset += 6 * n_atoms;
-    }
-    if (refine_occ) {
-      for (size_t j = 0; j < n_atoms; ++j, ++i)
-        add_data(offset + j, offset + j, am[i]);
-      if (use_q_b_mixed_derivatives) {
-        if (adp_mode == 1) {
-          for (size_t j = 0; j < n_atoms; ++j, ++i)
-            add_data(offset_b + j, offset + j, am[i]);
-        } else if (adp_mode == 2) {
-          for (size_t j = 0; j < n_atoms; ++j)
-            for (size_t k = 0; k < 6; ++k, ++i)
-              add_data(offset_b + 6 * j + k, offset + j, am[i]);
+        const int pos = params->get_pos_vec(j, RefineParams::Type::X);
+        if (pos >= 0) {
+          add_data(pos,   pos,   am[i++]);
+          add_data(pos+1, pos+1, am[i++]);
+          add_data(pos+2, pos+2, am[i++]);
+          add_data(pos,   pos+1, am[i++]);
+          add_data(pos,   pos+2, am[i++]);
+          add_data(pos+1, pos+2, am[i++]);
         }
       }
+    if (params->is_refined(RefineParams::Type::B))
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::B);
+        if (pos >= 0) {
+          if (params->aniso) {
+            for (size_t k = 0; k < 6; ++k)
+              add_data(pos + k, pos + k, am[i++]);
+            for (size_t k = 0; k < 6; ++k)
+              for (size_t l = k + 1; l < 6; ++l)
+                add_data(pos + k, pos + l, am[i++]);
+          } else
+            add_data(pos, pos, am[i++]);
+        }
+      }
+    if (params->is_refined(RefineParams::Type::Q))
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::Q);
+        if (pos >= 0)
+          add_data(pos, pos, am[i++]);
+      }
+    if (params->is_refined(RefineParams::Type::D))
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::D);
+        if (pos >= 0)
+          add_data(pos, pos, am[i++]);
+      }
+    for (size_t j : params->bq_mix_atoms) {
+      const int pos_b = params->get_pos_vec(j, RefineParams::Type::B);
+      const int pos_q = params->get_pos_vec(j, RefineParams::Type::Q);
+      if (pos_b < 0 || pos_q < 0) continue; // should not happen
+      if (params->aniso)
+        for (size_t k = 0; k < 6; ++k)
+          add_data(pos_b + k, pos_q, am[i++]);
+      else
+        add_data(pos_b, pos_q, am[i++]);
     }
-    if(i != n_a) gemmi::fail("wrong matrix size");
+    if (i != n_a) gemmi::fail("LL::make_spmat: wrong matrix size");
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
   }
 
   void spec_correction(const std::vector<Geometry::Special> &specials, double alpha=1e-3, bool use_rr=true) {
-    const size_t n_atoms = atoms.size();
-    const int offset_v = refine_xyz ? 3 * n_atoms : 0;
-    const int offset_a = refine_xyz ? 6 * n_atoms : 0;
     for (const auto &spec : specials) {
       // TODO inefficient?
-      const auto it = std::find(atoms.begin(), atoms.end(), spec.atom);
-      if (it == atoms.end()) continue;
-      const int idx = std::distance(atoms.begin(), it);
-      if (refine_xyz) {
-        // correct gradient
-        Eigen::Map<Eigen::Vector3d> v(&vn[idx * 3], 3);
-        v = (spec.Rspec_pos.transpose() * v).eval();
-        // correct diagonal block
-        double* a = am.data() + idx * 6;
-        Eigen::Matrix3d m {{a[0], a[3], a[4]},
-                           {a[3], a[1], a[5]},
-                           {a[4], a[5], a[2]}};
-        const double hmax = m.maxCoeff() * spec.n_mult;
-        m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos * spec.n_mult).eval();
-        if (use_rr)
-          m += (hmax * alpha * (Eigen::Matrix3d::Identity()
-                                        - spec.Rspec_pos * spec.Rspec_pos)).eval();
-        else
-          m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
-        a[0] = m(0,0);
-        a[1] = m(1,1);
-        a[2] = m(2,2);
-        a[3] = m(0,1);
-        a[4] = m(0,2);
-        a[5] = m(1,2);
+      const auto it = std::find(params->atoms.begin(), params->atoms.end(), spec.atom);
+      if (it == params->atoms.end()) continue;
+      const int j = std::distance(params->atoms.begin(), it);
+      if (params->is_refined(RefineParams::Type::X)) {
+        const int idx = params->get_pos_vec(j, RefineParams::Type::X);
+        if (idx >= 0) {
+          // correct gradient
+          Eigen::Map<Eigen::Vector3d> v(&vn[idx], 3);
+          v = (spec.Rspec_pos.transpose() * v).eval();
+          // correct diagonal block
+          double* a = am.data() + params->get_pos_mat_ll(j, RefineParams::Type::X);
+          Eigen::Matrix3d m {{a[0], a[3], a[4]},
+                             {a[3], a[1], a[5]},
+                             {a[4], a[5], a[2]}};
+          const double hmax = m.maxCoeff() * spec.n_mult;
+          m = (spec.Rspec_pos.transpose() * m * spec.Rspec_pos * spec.n_mult).eval();
+          if (use_rr)
+            m += (hmax * alpha * (Eigen::Matrix3d::Identity()
+                                  - spec.Rspec_pos * spec.Rspec_pos)).eval();
+          else
+            m += (hmax * alpha * Eigen::Matrix3d::Identity()).eval();
+          a[0] = m(0,0);
+          a[1] = m(1,1);
+          a[2] = m(2,2);
+          a[3] = m(0,1);
+          a[4] = m(0,2);
+          a[5] = m(1,2);
+        }
       }
-      if (adp_mode == 1)
-        am[offset_a + idx] *= spec.n_mult;
-      else if (adp_mode == 2) {
-        // correct gradient
-        Eigen::Map<Eigen::VectorXd> v(&vn[offset_v + idx * 6], 6);
-        v = (spec.Rspec_aniso.transpose() * v).eval();
-        // correct diagonal block
-        double* a = am.data() + offset_a + idx * 21;
-        Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
-                           { a[6],  a[1], a[11], a[12], a[13], a[14]},
-                           { a[7], a[11],  a[2], a[15], a[16], a[17]},
-                           { a[8], a[12], a[15],  a[3], a[18], a[19]},
-                           { a[9], a[13], a[16], a[18],  a[4], a[20]},
-                           {a[10], a[14], a[17], a[19], a[20],  a[5]}};
-        const double hmax = m.maxCoeff() * spec.n_mult;
-        m = (spec.Rspec_aniso.transpose() * m * spec.Rspec_aniso * spec.n_mult).eval();
-        if (use_rr)
-          m += (hmax * alpha * (Eigen::Matrix<double,6,6>::Identity()
-                                        - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
-        else
-          m += (hmax * alpha * Eigen::Matrix<double,6,6>::Identity()).eval();
-        for (int i = 0; i < 6; ++i)
-          a[i] = m(i, i);
-        for (int j = 0, i = 6; j < 6; ++j)
-          for (int k = j + 1; k < 6; ++k, ++i)
-            a[i] = m(j, k);
+      if (params->is_refined(RefineParams::Type::B)) {
+        const int idx = params->get_pos_vec(j, RefineParams::Type::B);
+        const int pos = params->get_pos_mat_ll(j, RefineParams::Type::B);
+        if (idx >= 0) {
+          if (!params->aniso)
+            am[pos] *= spec.n_mult;
+          else {
+            // correct gradient
+            Eigen::Map<Eigen::VectorXd> v(&vn[idx], 6);
+            v = (spec.Rspec_aniso.transpose() * v).eval();
+            // correct diagonal block
+            double* a = am.data() + pos;
+            Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
+                               { a[6],  a[1], a[11], a[12], a[13], a[14]},
+                               { a[7], a[11],  a[2], a[15], a[16], a[17]},
+                               { a[8], a[12], a[15],  a[3], a[18], a[19]},
+                               { a[9], a[13], a[16], a[18],  a[4], a[20]},
+                               {a[10], a[14], a[17], a[19], a[20],  a[5]}};
+            const double hmax = m.maxCoeff() * spec.n_mult;
+            m = (spec.Rspec_aniso.transpose() * m * spec.Rspec_aniso * spec.n_mult).eval();
+            if (use_rr)
+              m += (hmax * alpha * (Eigen::Matrix<double,6,6>::Identity()
+                                    - spec.Rspec_aniso * spec.Rspec_aniso)).eval();
+            else
+              m += (hmax * alpha * Eigen::Matrix<double,6,6>::Identity()).eval();
+            for (int i = 0; i < 6; ++i)
+              a[i] = m(i, i);
+            for (int j = 0, i = 6; j < 6; ++j)
+              for (int k = j + 1; k < 6; ++k, ++i)
+                a[i] = m(j, k);
+          }
+        }
       }
     }
   }

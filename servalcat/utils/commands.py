@@ -14,7 +14,7 @@ from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
 from servalcat.refmac import refmac_keywords
-from servalcat.refine.refine import Geom
+from servalcat.refine.refine import Geom, RefineParams
 from servalcat import ext
 import os
 import gemmi
@@ -862,9 +862,11 @@ def geometry(args):
     else:
         atom_pos = None
 
-    geom = Geom(st, topo, monlib, params=params, atom_pos=atom_pos, use_nucleus=args.nucleus)
+    refine_params = RefineParams(st, refine_xyz=True)
+    geom = Geom(st, topo, monlib, refine_params,
+                params=params, atom_pos=atom_pos, use_nucleus=args.nucleus)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
-    geom.setup_nonbonded(True)
+    geom.setup_nonbonded()
     ret = geom.show_model_stats()
     
     with open(args.output_prefix + "_summary.json", "w") as ofs:

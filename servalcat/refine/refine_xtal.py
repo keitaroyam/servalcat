@@ -16,7 +16,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
 from servalcat.refine.xtal import LL_Xtal
-from servalcat.refine.refine import Geom, Refine, update_meta, print_h_options
+from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 from servalcat import ext
 b_to_u = utils.model.b_to_u
@@ -214,7 +214,12 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
+    refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
+                                 adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+                                 refine_occ=args.refine_all_occ,
+                                 refine_dfrac=False)
+    geom = Geom(st, topo, monlib, refine_params,
+                shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source=="neutron"),
                 ncslist=ncslist)
     geom.geom.angle_von_mises = args.vonmises
@@ -230,13 +235,10 @@ def main(args):
     ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
                  twin=args.twin)
-    refiner = Refine(st, geom, ll=ll,
-                     refine_xyz=not args.fix_xyz,
-                     adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+    refiner = Refine(st, geom, refine_params, ll=ll,
                      refine_h=args.refine_h,
                      unrestrained=args.unrestrained,
-                     params=params,
-                     refine_occ=args.refine_all_occ)
+                     params=params)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
                                weight_adjust=not args.no_weight_adjust,

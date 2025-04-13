@@ -14,7 +14,7 @@ import json
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.refine.refine import Geom, Refine, convert_stats_to_dicts, update_meta, print_h_options
+from servalcat.refine.refine import RefineParams, Geom, Refine, convert_stats_to_dicts, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 
 def add_arguments(parser):
@@ -109,8 +109,9 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
 
-        geom = Geom(st, topo, monlib, shake_rms=randomize)
-        refiner = Refine(st, geom)
+        refine_params = RefineParams(st, refine_xyz=True)
+        geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize)
+        refiner = Refine(st, geom, refine_params)
         logger.writeln("Running {} cycles with wchir=4 wvdw=2 {} hydrogen".format(ncycle1, ["without","with"][i_macro]))
         geom.calc_kwds["wchir"] = 4
         geom.calc_kwds["wvdw"] = 2
@@ -177,8 +178,9 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=randomize, params=params, ncslist=ncslist)
-    refiner = Refine(st, geom, params=params)
+    refine_params = RefineParams(st, refine_xyz=True)
+    geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize, params=params, ncslist=ncslist)
+    refiner = Refine(st, geom, refine_params, params=params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
     update_meta(st, stats[-1])

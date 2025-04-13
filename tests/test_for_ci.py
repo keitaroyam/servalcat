@@ -11,6 +11,7 @@ import json
 import os
 import sys
 from servalcat import utils
+from servalcat.refine.refine import RefineParams
 from servalcat import ext
 root = os.path.abspath(os.path.dirname(__file__))
 
@@ -18,7 +19,8 @@ class TestCI(unittest.TestCase):
     def test_ext(self):
         pdbin = os.path.join(root, "biotin", "biotin_talos.pdb")
         st = utils.fileio.read_structure(pdbin)
-        g = ext.Geometry(st, list(range(st[0].count_atom_sites())))
+        params = RefineParams(st, refine_xyz=True)
+        g = ext.Geometry(st, params)
 
         
 if __name__ == '__main__':

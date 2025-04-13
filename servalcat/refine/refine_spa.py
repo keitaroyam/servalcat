@@ -14,7 +14,7 @@ from servalcat import utils
 from servalcat.spa.run_refmac import check_args, process_input, calc_fsc, calc_fofc
 from servalcat.spa import fofc
 from servalcat.refine import spa
-from servalcat.refine.refine import Geom, Refine, update_meta, print_h_options
+from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options
 from servalcat.refmac import refmac_keywords
 b_to_u = utils.model.b_to_u
 
@@ -230,19 +230,21 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
-    geom = Geom(st, topo, monlib, shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
+    refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
+                                 adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+                                 refine_occ=args.refine_all_occ,
+                                 refine_dfrac=False)
+    geom = Geom(st, topo, monlib, refine_params,
+                shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,
                 ncslist=ncslist)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
-    refiner = Refine(st, geom, ll,
-                     refine_xyz=not args.fix_xyz,
-                     adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
+    refiner = Refine(st, geom, refine_params, ll,
                      refine_h=args.refine_h,
                      unrestrained=args.unrestrained,
-                     params=params,
-                     refine_occ=args.refine_all_occ)
+                     params=params)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power

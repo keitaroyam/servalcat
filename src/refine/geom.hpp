@@ -4,8 +4,10 @@
 #ifndef SERVALCAT_REFINE_GEOM_HPP_
 #define SERVALCAT_REFINE_GEOM_HPP_
 
+#include "params.hpp"
 #include "ncsr.hpp"
 #include <set>
+#include <memory>
 #include <algorithm>
 #include <gemmi/model.hpp>    // for Structure, Atom
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
@@ -188,53 +190,25 @@ struct GeomTarget {
     int imode;
   };
 
-  GeomTarget(gemmi::Model &model, const std::vector<int> &atom_pos) : atom_pos(atom_pos) {
-    // non-negative elements of atom_pos must be unique
-    all_atoms.resize(count_atom_sites(model)); // all atoms in the model
-    const auto it = std::max_element(atom_pos.begin(), atom_pos.end());
-    if (it != atom_pos.end() && *it >= 0)
-      atoms.resize((*it) + 1); // for refinement
-    for (gemmi::CRA cra : model.all()) {
-      all_atoms[cra.atom->serial-1] = cra.atom;
-      const int i = atom_pos.at(cra.atom->serial-1);
-      if (i >= 0) atoms.at(i) = cra.atom;
-    }
-    if (std::find(atoms.begin(), atoms.end(), nullptr) != atoms.end())
-      gemmi::fail("bad atom_pos in GeomTarget");
-  }
+  GeomTarget(std::shared_ptr<RefineParams> params)
+    : params(params) {}
 
-  void setup(bool refine_xyz, int adp_mode,
-             bool refine_occ, bool use_occr) { // call it after setting pairs
-    assert(0 <= adp_mode && adp_mode <= 2);
-    this->refine_xyz = refine_xyz;
-    this->adp_mode = adp_mode;
-    this->refine_occ = refine_occ;
+  void setup(bool use_occr) {
     this->use_occr = use_occr;
-    const size_t n_atoms = atoms.size(); // atoms to be refined
+    const size_t n_atoms = params->atoms.size(); // all atoms
     target = 0.;
     vn.clear();
     am.clear();
     rest_per_atom.clear();
     rest_pos_per_atom.clear();
-    const size_t n_pairs = pairs.size();
-    size_t qqm = 0, qqv = 0;
-    if (refine_xyz) {
-      qqv += 3 * n_atoms;
-      qqm += 6 * n_atoms + 9 * n_pairs;
-    }
-    if (adp_mode == 1) {
-      qqv += n_atoms;
-      qqm += n_atoms + n_pairs;
-    }
-    else if (adp_mode == 2) {
-      qqv += 6 * n_atoms;
-      qqm += 21 * n_atoms + 36 * n_pairs;
-    }
-    if (refine_occ) {
-      qqv += n_atoms;
-      if (use_occr)
-        qqm += n_atoms + n_pairs;
-    }
+    if (params->is_refined(RefineParams::Type::X))
+      params->set_pairs(RefineParams::Type::X, pairs);
+    if (params->is_refined(RefineParams::Type::B))
+      params->set_pairs(RefineParams::Type::B, pairs);
+    if (params->is_refined(RefineParams::Type::Q) && use_occr)
+      params->set_pairs(RefineParams::Type::Q, pairs);
+    const size_t qqv = params->n_params();
+    const size_t qqm = params->n_fisher_geom();
     vn.assign(qqv, 0.);
     am.assign(qqm, 0.);
 
@@ -263,50 +237,19 @@ struct GeomTarget {
         rest_per_atom[ip2] = i;
       }
     }
-    nmpos = 6 * n_atoms;
   }
 
-  //int n_atoms;
-  bool refine_xyz;
-  int adp_mode; // 0: no refine, 1: iso, 2: aniso
-  bool refine_occ;
+  std::shared_ptr<RefineParams> params;
   bool use_occr; // occupancy restraint
-  std::vector<gemmi::Atom*> atoms, all_atoms; // all_atoms include fixed atoms
   double target = 0.; // target function value
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
   std::vector<size_t> rest_per_atom;
   std::vector<size_t> rest_pos_per_atom;
   std::vector<std::pair<int,int>> pairs;
-  std::map<std::pair<int,int>, int> all_pairs; // include fixed atoms. map to nw_uval:
-                                               // minimum of (bond=1, angle=2, torsion=3, chir=4, plane=5, vdw=6, stack=8, ncsr=10)
-  std::vector<int> atom_pos; // atom index in vn. -1 if fixed
-  int nmpos;
-  size_t n_atoms() const { return atoms.size(); }
+  std::vector<int> pairs_kind; // refmac's nw_uval. minimum of (bond=1, angle=2, torsion=3, chir=4, plane=5, vdw=6, stack=8, ncsr=10)
   size_t n_pairs() const { return pairs.size(); }
-  std::pair<int, int> get_offsets(int kind) const {
-    std::pair<int, int> ret = {0, 0}; // first and second derivatives
-    if (kind == 0) // xyz
-      return ret;
-    if (refine_xyz) {
-      ret.first += n_atoms() * 3;
-      ret.second += n_atoms() * 6 + pairs.size() * 9;
-    };
-    if (kind == 1) // adp
-      return ret;
-    if (adp_mode == 1) {
-      ret.first += n_atoms();
-      ret.second += n_atoms() + pairs.size();
-    } else if (adp_mode == 2) {
-      ret.first += n_atoms() * 6;
-      ret.second += n_atoms() * 21 + pairs.size() * 36;
-    }
-    if (kind == 2) // occ
-      return ret;
-    throw std::runtime_error("get_offsets(): bad kind");
-  }
-  MatPos find_restraint(int ia1, int ia2, int kind=0) const {
-    // kind 0: xyz, 1: adp (iso or aniso depending on adp_mode)
+  MatPos find_restraint(int ia1, int ia2, RefineParams::Type type = RefineParams::Type::X) const {
     MatPos matpos;
     int idist = -1;
     for (size_t irest = rest_pos_per_atom[ia1]; irest < rest_pos_per_atom[ia1+1]; ++irest) {
@@ -325,19 +268,7 @@ struct GeomTarget {
       }
     }
     if (idist < 0) gemmi::fail("cannot find atom pair");
-    matpos.ipos = get_offsets(kind).second;
-    if (kind == 0) // xyz
-      matpos.ipos += nmpos + 9 * idist;
-    else if (kind == 1) { // adp
-      if (adp_mode == 1)
-        matpos.ipos += n_atoms() + idist;
-      else if (adp_mode == 2)
-        matpos.ipos += 21 * n_atoms() + 36 * idist;
-    } else if (kind == 2) { // occ
-      matpos.ipos += n_atoms() + idist;
-    } else {
-      gemmi::fail("bad kind in find_restraint");
-    }
+    matpos.ipos = params->get_pos_mat_pair_geom(idist, type);
     return matpos;
   }
   void incr_vn(size_t ipos, double w, const gemmi::Vec3 &deriv) {
@@ -365,6 +296,7 @@ struct GeomTarget {
     am[ipos+4] += w * (deriv1.x * deriv2.z + deriv2.x * deriv1.z);
     am[ipos+5] += w * (deriv1.y * deriv2.z + deriv2.y * deriv1.z);
   }
+  // TODO to take matpos instead of ipos
   void incr_am_ndiag(size_t ipos, double w, const gemmi::Vec3 &deriv1, const gemmi::Vec3 &deriv2) {
     assert(ipos+8 < am.size());
     am[ipos]   += w * deriv1.x * deriv2.x;
@@ -378,7 +310,9 @@ struct GeomTarget {
     am[ipos+8] += w * deriv1.z * deriv2.z;
   }
   Eigen::SparseMatrix<double> make_spmat() const {
-    Eigen::SparseMatrix<double> spmat(vn.size(), vn.size());
+    const size_t n_atoms = params->atoms.size();
+    const size_t n_v = params->n_params();
+    Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
     size_t i = 0, offset = 0;
     auto add_data = [&data](size_t i, size_t j, double v) {
@@ -387,51 +321,70 @@ struct GeomTarget {
       if (i != j)
         data.emplace_back(j, i, v);
     };
-    if (refine_xyz) {
-      for (size_t j = 0; j < n_atoms(); ++j, i+=6) {
-        add_data(3*j,   3*j,   am[i]);
-        add_data(3*j+1, 3*j+1, am[i+1]);
-        add_data(3*j+2, 3*j+2, am[i+2]);
-        add_data(3*j,   3*j+1, am[i+3]);
-        add_data(3*j,   3*j+2, am[i+4]);
-        add_data(3*j+1, 3*j+2, am[i+5]);
+    if (params->is_refined(RefineParams::Type::X)) {
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::X);
+        if (pos >= 0) {
+          add_data(pos,   pos,   am[i++]);
+          add_data(pos+1, pos+1, am[i++]);
+          add_data(pos+2, pos+2, am[i++]);
+          add_data(pos,   pos+1, am[i++]);
+          add_data(pos,   pos+2, am[i++]);
+          add_data(pos+1, pos+2, am[i++]);
+        }
       }
-      for (size_t j = 0; j < pairs.size(); ++j)
-        for (size_t k = 0; k < 3; ++k)
-          for (size_t l = 0; l < 3; ++l, ++i)
-            add_data(3 * pairs[j].second + l, 3 * pairs[j].first + k, am[i]);
-      offset = 3 * n_atoms();
+      for (int j = 0; j < pairs.size(); ++j)
+        if (params->pairs_refine(RefineParams::Type::X)[j] >= 0) {
+          const auto &p = pairs[j]; // assumes sequential order..
+          const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::X);
+          const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::X);
+          for (size_t k = 0; k < 3; ++k)
+            for (size_t l = 0; l < 3; ++l)
+              add_data(pos1 + l, pos2 + k, am[i++]);
+        }
     }
-    if (adp_mode == 1) {
-      for (size_t j = 0; j < n_atoms(); ++j, ++i) {
-        add_data(offset + j, offset + j, am[i]);
+    if (params->is_refined(RefineParams::Type::B)) {
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::B);
+        if (pos >= 0) {
+          if (params->aniso) {
+            for (size_t k = 0; k < 6; ++k)
+              add_data(pos + k, pos + k, am[i++]);
+            for (size_t k = 0; k < 6; ++k)
+              for (size_t l = k + 1; l < 6; ++l)
+                add_data(pos + k, pos + l, am[i++]);
+          } else
+            add_data(pos, pos, am[i++]);
+        }
       }
-      for (size_t j = 0; j < pairs.size(); ++j, ++i)
-        add_data(offset + pairs[j].second, offset + pairs[j].first, am[i]);
-      offset += n_atoms();
-    } else if (adp_mode == 2) {
-      for (size_t j = 0; j < n_atoms(); ++j) {
-        for (size_t k = 0; k < 6; ++k, ++i)
-          add_data(offset + 6 * j + k, offset + 6 * j + k, am[i]);
-        for (size_t k = 0; k < 6; ++k)
-          for (int l = k + 1; l < 6; ++l, ++i)
-            add_data(offset + 6 * j + k, offset + 6 * j + l, am[i]);
-      }
-      for (size_t j = 0; j < pairs.size(); ++j) {
-        for (size_t k = 0; k < 6; ++k)
-          for (size_t l = 0; l < 6; ++l, ++i)
-            add_data(offset + 6 * pairs[j].second + l, offset + 6 * pairs[j].first + k, am[i]);
-      }
-      offset += 6 * n_atoms();
+      for (int j = 0; j < pairs.size(); ++j)
+        if (params->pairs_refine(RefineParams::Type::B)[j] >= 0) {
+          const auto &p = pairs[j];
+          const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::B);
+          const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::B);
+          if (params->aniso) {
+            for (size_t k = 0; k < 6; ++k)
+              for (size_t l = 0; l < 6; ++l)
+                add_data(pos1 + l, pos2 + k, am[i++]);
+          } else
+            add_data(pos1, pos2, am[i++]);
+        }
     }
-    if (refine_occ && use_occr) {
-      for (size_t j = 0; j < n_atoms(); ++j, ++i) {
-        add_data(offset + j, offset + j, am[i]);
+    if (params->is_refined(RefineParams::Type::Q) && use_occr) {
+      for (size_t j = 0; j < n_atoms; ++j) {
+        const int pos = params->get_pos_vec(j, RefineParams::Type::Q);
+        if (pos >=0)
+          add_data(pos, pos, am[i++]);
       }
-      for (size_t j = 0; j < pairs.size(); ++j, ++i)
-        add_data(offset + pairs[j].second, offset + pairs[j].first, am[i]);
+      for (int j = 0; j < pairs.size(); ++j)
+        if (params->pairs_refine(RefineParams::Type::Q)[j] >= 0) {
+          const auto &p = pairs[j];
+          const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::Q);
+          const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::Q);
+          add_data(pos1, pos2, am[i++]);
+        }
     }
-    assert(i == am.size());
+    if (i != am.size()) gemmi::fail("GeomTarget::make_spmat: wrong matrix size ", std::to_string(i), " ", std::to_string(am.size()));
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
   }
@@ -680,8 +633,8 @@ struct Geometry {
     std::vector<adp_reporting_t> adps;
     std::vector<occ_reporting_t> occs;
   };
-  Geometry(gemmi::Structure& s, const std::vector<int> &atom_pos, const gemmi::EnerLib* ener_lib)
-    : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(s.first_model(), atom_pos) {}
+  Geometry(gemmi::Structure& s, std::shared_ptr<RefineParams> params, const gemmi::EnerLib* ener_lib)
+    : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(params) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
   void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes, bool repulse_undefined_angles);
@@ -701,7 +654,7 @@ struct Geometry {
     return cell.orth.combine(ft).combine(cell.frac);
   }
 
-  void setup_target(bool refine_xyz, int adp_mode, bool refine_occ, bool use_occr);
+  void setup_target(bool use_occr);
   void clear_target() {
     target.target = 0.;
     std::fill(target.vn.begin(), target.vn.end(), 0.);
@@ -787,14 +740,6 @@ struct Geometry {
 
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
-
-  template<typename T>
-  bool has_selected(const T &atoms) const {
-    for (const auto &a : atoms)
-      if (target.atom_pos[a->serial - 1] >= 0)
-        return true;
-    return false;
-  }
 };
 
 inline void Geometry::load_topo(const gemmi::Topo& topo) {
@@ -1069,7 +1014,7 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                       const std::vector<int> &group_idxes,
                                       bool repulse_undefined_angles) {
   if (!group_idxes.empty())
-    assert(group_idxes.size() == target.all_atoms.size());
+    assert(group_idxes.size() == target.params->atoms.size());
   if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
   // set hbtypes for hydrogen
   if (!skip_critical_dist && hbtypes.empty()) {
@@ -1210,25 +1155,15 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
   }
 }
 
-inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_occ,
-                                   bool use_occr) {
-  target.pairs.clear();
-  target.all_pairs.clear();
+inline void Geometry::setup_target(bool use_occr) {
+  std::map<std::pair<int,int>, int> all_pairs;
   auto add = [&](gemmi::Atom *a1, gemmi::Atom *a2, int n) {
-    if (a1->serial == a2->serial) return;
     // should be called from smaller n so that smallest restraint kind will be kept
-    if  (a1->serial < a2->serial)
-      target.all_pairs.emplace(std::make_pair(a1->serial - 1, a2->serial - 1), n);
-    else
-      target.all_pairs.emplace(std::make_pair(a2->serial - 1, a1->serial - 1), n);
-    const int i1 = target.atom_pos[a1->serial - 1];
-    const int i2 = target.atom_pos[a2->serial - 1];
-    if (i1 >= 0 && i2 >= 0) {
-      if (i1 < i2)
-        target.pairs.emplace_back(i1, i2);
-      else
-        target.pairs.emplace_back(i2, i1);
-    }
+    const int i1 = a1->serial - 1;
+    const int i2 = a2->serial - 1;
+    if (i1 == i2) return;
+    if (target.params->is_atom_refined(i1) || target.params->is_atom_refined(i2))
+      all_pairs.emplace(std::minmax(i1, i2), n);
   };
   for (const auto &t : bonds)
     add(t.atoms[0], t.atoms[1], 1);
@@ -1273,9 +1208,15 @@ inline void Geometry::setup_target(bool refine_xyz, int adp_mode, bool refine_oc
         add(a1, a2, 10);
 
   // sort_and_compress_distances
-  std::sort(target.pairs.begin(), target.pairs.end());
-  target.pairs.erase(std::unique(target.pairs.begin(), target.pairs.end()), target.pairs.end());
-  target.setup(refine_xyz, adp_mode, refine_occ, use_occr);
+  target.pairs.clear();
+  target.pairs_kind.clear();
+  target.pairs.reserve(all_pairs.size());
+  target.pairs_kind.reserve(all_pairs.size());
+  for (const auto &p : all_pairs) {
+    target.pairs.emplace_back(p.first.first, p.first.second);
+    target.pairs_kind.push_back(p.second);
+  }
+  target.setup(use_occr);
 }
 
 inline double Geometry::calc(bool use_nucleus, bool check_only,
@@ -1285,11 +1226,18 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   if (check_only)
     reporting = {}; // also deletes adp. is it ok?
   else
-    assert(target.refine_xyz); // otherwise vector and matrix not ready
+    assert(target.params->is_refined(RefineParams::Type::X)); // otherwise vector and matrix not ready
 
   auto target_ptr = check_only ? nullptr : &target;
   auto rep_ptr = check_only ? &reporting : nullptr;
   double ret = 0.;
+
+  auto has_selected = [&](const auto &atoms) {
+    for (const auto &a : atoms)
+      if (target.params->is_atom_refined(a->serial - 1, RefineParams::Type::X))
+        return true;
+    return false;
+  };
 
   for (const auto &t : bonds)
     if (has_selected(t.atoms))
@@ -1329,27 +1277,30 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
   if (wbskal <= 0) return 0.;
   if (!check_only)
-    assert(target.adp_mode > 0);
+    assert(target.params->is_refined(RefineParams::Type::B));
   reporting.adps.clear();
-  const int n_pairs = target.pairs.size();
-  const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
-  const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
   double ret = 0.;
   // TODO this misses self-pairs
-  for (const auto &p : target.all_pairs) {
-    const int ia1 = target.atom_pos[p.first.first];
-    const int ia2 = target.atom_pos[p.first.second];
-    const int pair_kind = p.second;
-    if (ia1 < 0 && ia2 < 0) continue; // both atoms fixed
+  const int adp_mode = target.params->is_refined(RefineParams::Type::B) ? (target.params->aniso ? 2 : 1) : 0;
+  const size_t pairs_size = target.pairs.size();
+  for (int i = 0; i < pairs_size; ++i) {
+    const int ia1 = target.pairs[i].first;
+    const int ia2 = target.pairs[i].second;
+    const int pair_kind = target.pairs_kind[i];
+    const int pos1 = target.params->get_pos_vec(ia1, RefineParams::Type::B);
+    const int pos2 = target.params->get_pos_vec(ia2, RefineParams::Type::B);
+    if (pos1 < 0 && pos2 < 0) continue; // both atoms fixed
     if (!adpr_long_range && pair_kind > 4) continue;
     if (pair_kind > 9) continue; // don't use adpr for ncsr
-    const gemmi::Atom* atom1 = target.all_atoms[p.first.first];
-    const gemmi::Atom* atom2 = target.all_atoms[p.first.second];
+    const gemmi::Atom* atom1 = target.params->atoms[ia1];
+    const gemmi::Atom* atom2 = target.params->atoms[ia2];
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
     if (dsq > gemmi::sq(adpr_max_dist)) continue;
     double w = 0;
+    const int apos1 = target.params->get_pos_mat_geom(ia1, RefineParams::Type::B);
+    const int apos2 = target.params->get_pos_mat_geom(ia2, RefineParams::Type::B);
     if (adpr_mode == 0) {
       const float sig = adpr_diff_sigs.at(pair_kind-1);
       const bool bonded = pair_kind < 3; // bond and angle related
@@ -1358,9 +1309,9 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
       const float sig = adpr_kl_sigs.at(pair_kind-1);
       w = gemmi::sq(wbskal / sig) / (std::max(4., dsq) / 4.);
     };
-    if (target.adp_mode == 2) w /= 3;
+    if (adp_mode == 2) w /= 3;
 
-    if (target.adp_mode == 1) {
+    if (adp_mode == 1) {
       const double b_diff = atom1->b_iso - atom2->b_iso;
       double delta = 0;
       if (adpr_mode == 0)
@@ -1380,17 +1331,17 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
           df2 = -(std::sqrt(atom1->b_iso) / std::pow(atom2->b_iso, 1.5) + 1. / std::sqrt(atom1->b_iso * atom2->b_iso)) * 0.5;
         }
         // gradient and diagonal
-        if (ia1 >= 0) {
-          target.vn[offset_v + ia1] += w * delta * df1;
-          target.am[offset_a + ia1] += w * gemmi::sq(df1);
+        if (pos1 >= 0) {
+          target.vn[pos1] += w * delta * df1;
+          target.am[apos1] += w * gemmi::sq(df1);
         }
-        if (ia2 >= 0) {
-          target.vn[offset_v + ia2] += w * delta * df2;
-          target.am[offset_a + ia2] += w * gemmi::sq(df2);
+        if (pos2 >= 0) {
+          target.vn[pos2] += w * delta * df2;
+          target.am[apos2] += w * gemmi::sq(df2);
         }
         // non-diagonal
-        if (ia1 >= 0 && ia2 >= 0) {
-          auto mp = target.find_restraint(ia1, ia2, 1);
+        if (pos1 >= 0 && pos2 >= 0) {
+          auto mp = target.find_restraint(ia1, ia2, RefineParams::Type::B);
           target.am[mp.ipos] += w * df1 * df2;
         }
       } else {
@@ -1402,7 +1353,7 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
                                       report_sigma, b_diff);
         }
       }
-    } else if (target.adp_mode == 2) { // Aniso
+    } else if (adp_mode == 2) { // Aniso
       const gemmi::Transform tr = get_transform(st.cell, im.sym_idx, {0,0,0}); // shift does not matter
       const Eigen::Matrix<double,6,6> R = mat33_as66(tr.mat);
       auto amat_ctor = [](const gemmi::Atom* a) {
@@ -1451,22 +1402,22 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
       if (!check_only) {
         target.target += f;
         for (int j = 0; j < 6; ++j) {
-          if (ia1 >= 0) target.vn[offset_v + 6 * ia1 + j] += der1[j];
-          if (ia2 >= 0) target.vn[offset_v + 6 * ia2 + j] += der2[j];
+          if (pos1 >= 0) target.vn[pos1 + j] += der1[j];
+          if (pos2 >= 0) target.vn[pos2 + j] += der2[j];
         }
         // diagonal blocks (6 x 6 symmetric)
         for (int j = 0; j < 6; ++j) { // diagonals
-          if (ia1 >= 0) target.am[offset_a + 21 * ia1 + j] += am11(j, j);
-          if (ia2 >= 0) target.am[offset_a + 21 * ia2 + j] += am22(j, j);
+          if (pos1 >= 0) target.am[apos1 + j] += am11(j, j);
+          if (pos2 >= 0) target.am[apos2 + j] += am22(j, j);
         }
         for (int j = 0, l = 6; j < 6; ++j) // non-diagonals
           for (int k = j + 1; k < 6; ++k, ++l) {
-            if (ia1 >= 0) target.am[offset_a + 21 * ia1 + l] += am11(j, k);
-            if (ia2 >= 0) target.am[offset_a + 21 * ia2 + l] += am22(j, k);
+            if (pos1 >= 0) target.am[apos1 + l] += am11(j, k);
+            if (pos2 >= 0) target.am[apos2 + l] += am22(j, k);
           }
         // non-diagonal block (6 x 6)
-        if (ia1 >= 0 && ia2 >= 0) {
-          auto mp = target.find_restraint(ia1, ia2, 1);
+        if (pos1 >= 0 && pos2 >= 0) {
+          auto mp = target.find_restraint(ia1, ia2, RefineParams::Type::B);
           for (int j = 0, l = 0; j < 6; ++j)
             for (int k = 0; k < 6; ++k, ++l)
               target.am[mp.ipos + l] += am12(k, j);
@@ -1488,20 +1439,22 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
 inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
   if (wocc <= 0) return 0.;
   if (!check_only)
-    assert(target.refine_occ && target.use_occr);
+    assert(target.params->is_refined(RefineParams::Type::Q) && target.use_occr);
   reporting.occs.clear();
 
-  const auto offsets = target.get_offsets(2);
   double ret = 0.;
-  for (const auto &p : target.all_pairs) {
-    const int ia1 = target.atom_pos[p.first.first];
-    const int ia2 = target.atom_pos[p.first.second];
-    const int pair_kind = p.second;
-    if (ia1 < 0 && ia2 < 0) continue; // both atoms fixed
+  const size_t pairs_size = target.pairs.size();
+  for (int i = 0; i < pairs_size; ++i) {
+    const int ia1 = target.pairs[i].first;
+    const int ia2 = target.pairs[i].second;
+    const int pair_kind = target.pairs_kind[i];
+    const int pos1 = target.params->get_pos_vec(ia1, RefineParams::Type::Q);
+    const int pos2 = target.params->get_pos_vec(ia2, RefineParams::Type::Q);
+    if (pos1 < 0 && pos2 < 0) continue; // both atoms fixed
     if (!occr_long_range && pair_kind > 4) continue;
     if (pair_kind > 9) continue; // don't use occr for ncsr
-    const gemmi::Atom* atom1 = target.all_atoms[p.first.first];
-    const gemmi::Atom* atom2 = target.all_atoms[p.first.second];
+    const gemmi::Atom* atom1 = target.params->atoms[ia1];
+    const gemmi::Atom* atom2 = target.params->atoms[ia2];
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
@@ -1514,18 +1467,20 @@ inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
     ret += f;
     if (!check_only) {
       target.target += f;
+      const int apos1 = target.params->get_pos_mat_geom(ia1, RefineParams::Type::Q);
+      const int apos2 = target.params->get_pos_mat_geom(ia2, RefineParams::Type::Q);
       // gradient and diagonal
       if (ia1 >= 0) {
-        target.vn[offsets.first  + ia1] += w * delta;
-        target.am[offsets.second + ia1] += w;
+        target.vn[pos1] += w * delta;
+        target.am[apos1] += w;
       }
       if (ia2 >= 0) {
-        target.vn[offsets.first  + ia2] += -w * delta;
-        target.am[offsets.second + ia2] += w;
+        target.vn[pos2] += -w * delta;
+        target.am[apos2] += w;
       }
       // non-diagonal
-      if (ia1 >= 0 && ia2 >= 0) {
-        auto mp = target.find_restraint(ia1, ia2, 2);
+      if (pos1 >= 0 && pos2 >= 0) {
+        auto mp = target.find_restraint(ia1, ia2, RefineParams::Type::Q);
         target.am[mp.ipos] += -w;
       }
     } else {
@@ -1552,9 +1507,9 @@ inline void Geometry::calc_jellybody() {
     const gemmi::Atom& atom1 = *t.atoms[0];
     const gemmi::Atom& atom2 = *t.atoms[1];
     if (atom1.is_hydrogen() || atom2.is_hydrogen()) continue;
-    const int ia1 = target.atom_pos[atom1.serial - 1];
-    const int ia2 = target.atom_pos[atom2.serial - 1];
-    if (ia1 < 0 && ia2 < 0) continue; // both fixed
+    const int pos1 = target.params->get_pos_vec(atom1.serial-1, RefineParams::Type::X);
+    const int pos2 = target.params->get_pos_vec(atom2.serial-1, RefineParams::Type::X);
+    if (pos1 < 0 && pos2 < 0) continue; // both fixed
     const gemmi::Transform tr = get_transform(st.cell, t.sym_idx, t.pbc_shift);
     const gemmi::Position& x1 = atom1.pos;
     const gemmi::Position& x2 = t.same_asu() ? atom2.pos : gemmi::Position(tr.apply(atom2.pos));
@@ -1563,17 +1518,20 @@ inline void Geometry::calc_jellybody() {
     if (ridge_exclude_short_dist && b < std::max(2., t.value * 0.95)) continue;
     const gemmi::Position dbdx1 = (x1 - x2) / std::max(b, 0.02);
     const gemmi::Position dbdx2 = t.same_asu() ? -dbdx1 : gemmi::Position(tr.mat.transpose().multiply(-dbdx1));
-    if (ia1 >= 0) target.incr_am_diag(ia1 * 6, weight, dbdx1);
-    if (ia2 >= 0) target.incr_am_diag(ia2 * 6, weight, dbdx2);
-    if (ia1 >= 0 && ia2 >= 0) {
-      if (ia1 != ia2) {
-        auto mp = target.find_restraint(ia1, ia2);
+
+    const int apos1 = target.params->get_pos_mat_geom(atom1.serial-1, RefineParams::Type::X);
+    const int apos2 = target.params->get_pos_mat_geom(atom2.serial-1, RefineParams::Type::X);
+    if (pos1 >= 0) target.incr_am_diag(apos1, weight, dbdx1);
+    if (pos2 >= 0) target.incr_am_diag(apos2, weight, dbdx2);
+    if (pos1 >=0 && pos2 >= 0) {
+      if (pos1 != pos2) {
+        auto mp = target.find_restraint(atom1.serial-1, atom2.serial-1);
         if (mp.imode == 0)
           target.incr_am_ndiag(mp.ipos, weight, dbdx1, dbdx2);
         else
           target.incr_am_ndiag(mp.ipos, weight, dbdx2, dbdx1);
       } else
-        target.incr_am_diag12(ia1*6, weight, dbdx1, dbdx2);
+        target.incr_am_diag12(apos1, weight, dbdx1, dbdx2);
     }
   }
 }
@@ -1599,25 +1557,29 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   if (target != nullptr) {
     const gemmi::Position dydx1 = weight * (x1 - x2) / std::max(b, 0.02);
     const gemmi::Position dydx2 = same_asu() ? -dydx1 : gemmi::Position(tr.mat.transpose().multiply(-dydx1));
-    const int ia1 = target->atom_pos[atom1->serial - 1];
-    const int ia2 = target->atom_pos[atom2->serial - 1];
-    if (ia1 >= 0) {
-      target->incr_vn(ia1 * 3, robustf.dfdy, dydx1);
-      target->incr_am_diag(ia1 * 6, robustf.d2fdy, dydx1);
+    const int ia1 = atom1->serial - 1;
+    const int ia2 = atom2->serial - 1;
+    const int pos1 = target->params->get_pos_vec(ia1, RefineParams::Type::X);
+    const int pos2 = target->params->get_pos_vec(ia2, RefineParams::Type::X);
+    const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+    const int apos2 = target->params->get_pos_mat_geom(ia2, RefineParams::Type::X);
+    if (pos1 >= 0) {
+      target->incr_vn(pos1, robustf.dfdy, dydx1);
+      target->incr_am_diag(apos1, robustf.d2fdy, dydx1);
     }
-    if (ia2 >= 0) {
-      target->incr_vn(ia2 * 3, robustf.dfdy, dydx2);
-      target->incr_am_diag(ia2 * 6, robustf.d2fdy, dydx2);
+    if (pos2 >= 0) {
+      target->incr_vn(pos2, robustf.dfdy, dydx2);
+      target->incr_am_diag(apos2, robustf.d2fdy, dydx2);
     }
-    if (ia1 >= 0 && ia2 >= 0) {
-      if (ia1 != ia2) {
+    if (pos1 >= 0 && pos2 >= 0) {
+      if (pos1 != pos2) {
         auto mp = target->find_restraint(ia1, ia2);
         if (mp.imode == 0)
           target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx1, dydx2);
         else
           target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx2, dydx1);
       } else
-        target->incr_am_diag12(ia1 * 6, robustf.d2fdy, dydx1, dydx2);
+        target->incr_am_diag12(apos1, robustf.d2fdy, dydx1, dydx2);
     }
     target->target += robustf.f;
   }
@@ -1653,8 +1615,12 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   const double weight = gemmi::sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1));
   const double ret = close_to_180 ? (weight * (1. + cosa)) : von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
   if (target != nullptr) {
-    int ia[3];
-    for (int i = 0; i < 3; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
+    int ia[3], pos[3], apos[3];
+    for (int i = 0; i < 3; ++i) {
+      ia[i] = atoms[i]->serial - 1;
+      pos[i] = target->params->get_pos_vec(ia[i], RefineParams::Type::X);
+      apos[i] = target->params->get_pos_mat_geom(ia[i], RefineParams::Type::X);
+    }
     if (close_to_180) { // a special case.
       const gemmi::Vec3 h = v1 / v1n + v2 / v2n;
       gemmi::Vec3 dhdx[9]; // dh/dx11, dx12, dx13, dx21, ...
@@ -1665,26 +1631,26 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
       }
       gemmi::Mat33 trs[3] = {tr1.mat, {}, tr2.mat};
       for(int i = 0; i < 3; ++i)
-        if (ia[i] >= 0) {
+        if (pos[i] >= 0) {
           gemmi::Vec3 v(h.dot(dhdx[3*i]), h.dot(dhdx[3*i+1]), h.dot(dhdx[3*i+2]));
           if (!same_asu(i)) // same_asu(1) will always return true
             v = trs[i].transpose().multiply(v);
-          target->incr_vn(ia[i] * 3, weight, v);
+          target->incr_vn(pos[i], weight, v);
           gemmi::SMat33<double> smat{dhdx[3*i].length_sq(), dhdx[3*i+1].length_sq(), dhdx[3*i+2].length_sq(),
                                      dhdx[3*i].dot(dhdx[3*i+1]), dhdx[3*i].dot(dhdx[3*i+2]), dhdx[3*i+1].dot(dhdx[3*i+2])};
           if (!same_asu(i))
             smat = smat.transformed_by<double>(trs[i].transpose());
           const int ia6 = ia[i] * 6;
-          target->am[ia6]   += weight * smat.u11;
-          target->am[ia6+1] += weight * smat.u22;
-          target->am[ia6+2] += weight * smat.u33;
-          target->am[ia6+3] += weight * smat.u12;
-          target->am[ia6+4] += weight * smat.u13;
-          target->am[ia6+5] += weight * smat.u23;
+          target->am[apos[i]]   += weight * smat.u11;
+          target->am[apos[i]+1] += weight * smat.u22;
+          target->am[apos[i]+2] += weight * smat.u33;
+          target->am[apos[i]+3] += weight * smat.u12;
+          target->am[apos[i]+4] += weight * smat.u13;
+          target->am[apos[i]+5] += weight * smat.u23;
         }
       for (int i = 0; i < 2; ++i)
         for (int j = i+1; j < 3; ++j)
-          if (ia[i] >= 0 && ia[j] >= 0) { // shouldn't we make sure ia[i] != ia[j]?
+          if (pos[i] >= 0 && pos[j] >= 0) { // shouldn't we make sure pos[i] != pos[j]?
             auto mp = target->find_restraint(ia[i], ia[j]);
             gemmi::Mat33 mat;
             for (int k = 0; k < 3; ++k)
@@ -1713,13 +1679,13 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
         ? (weight / gemmi::sq(sina))
         : (weight * gemmi::sq(gemmi::deg(1) / sina));
       for(int i = 0; i < 3; ++i)
-        if (ia[i] >= 0) {
-          target->incr_vn(ia[i] * 3, deriv_fac, dcosadx[i]);
-          target->incr_am_diag(ia[i] * 6, secder_fac, dcosadx[i]);
+        if (pos[i] >= 0) {
+          target->incr_vn(pos[i], deriv_fac, dcosadx[i]);
+          target->incr_am_diag(apos[i], secder_fac, dcosadx[i]);
         }
       for (int i = 0; i < 2; ++i)
         for (int j = i+1; j < 3; ++j)
-          if (ia[i] >= 0 && ia[j] >= 0) {
+          if (pos[i] >= 0 && pos[j] >= 0) {
             auto mp = target->find_restraint(ia[i], ia[j]);
             if (mp.imode == 0) // ia[i] > ia[j]
               target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[i], dcosadx[j]);
@@ -1757,8 +1723,12 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
   const double ret = dtheta * dtheta * weight * 0.5;
 
   if (target != nullptr) {
-    int ia[4];
-    for (int i = 0; i < 4; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
+    int ia[4], pos[4], apos[4];
+    for (int i = 0; i < 4; ++i) {
+      ia[i] = atoms[i]->serial - 1;
+      pos[i] = target->params->get_pos_vec(ia[i], RefineParams::Type::X);
+      apos[i] = target->params->get_pos_mat_geom(ia[i], RefineParams::Type::X);
+    }
     const double denom = gemmi::rad(std::max(0.0001, s * s + t * t));
     gemmi::Vec3 dadx[3][3], dbdx[3][3], dwdx[3][2];
     double dwldx[3][2];
@@ -1803,14 +1773,14 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
     }
 
     for(int i = 0; i < 4; ++i)
-      if (ia[i] >= 0) {
-        target->incr_vn(ia[i] * 3, dtheta * weight, dthdx[i]);
-        target->incr_am_diag(ia[i] * 6, weight, dthdx[i]);
+      if (pos[i] >= 0) {
+        target->incr_vn(pos[i], dtheta * weight, dthdx[i]);
+        target->incr_am_diag(apos[i], weight, dthdx[i]);
       }
 
     for (int i = 0; i < 3; ++i)
       for (int j = i+1; j < 4; ++j)
-        if (ia[i] >= 0 && ia[j] >= 0) {
+        if (pos[i] >= 0 && pos[j] >= 0) {
           auto mp = target->find_restraint(ia[i], ia[j]);
           if (mp.imode == 0)
             target->incr_am_ndiag(mp.ipos, weight, dthdx[i], dthdx[j]);
@@ -1841,8 +1811,12 @@ inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Repo
   const double ret = dv * dv * weight * 0.5;
 
   if (target != nullptr) {
-    int ia[4];
-    for (int i = 0; i < 4; ++i) ia[i] = target->atom_pos[atoms[i]->serial - 1];
+    int ia[4], pos[4], apos[4];
+    for (int i = 0; i < 4; ++i) {
+      ia[i] = atoms[i]->serial - 1;
+      pos[i] = target->params->get_pos_vec(ia[i], RefineParams::Type::X);
+      apos[i] = target->params->get_pos_mat_geom(ia[i], RefineParams::Type::X);
+    }
     gemmi::Vec3 dcdx[4];
     for (int i = 0; i < 3; ++i) {
       gemmi::Vec3 drdx; drdx.at(i) = 1.;
@@ -1853,14 +1827,14 @@ inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Repo
     }
 
     for(int i = 0; i < 4; ++i)
-      if (ia[i] >= 0) {
-        target->incr_vn(ia[i] * 3, dv * weight, dcdx[i]);
-        target->incr_am_diag(ia[i] * 6, weight, dcdx[i]);
+      if (pos[i] >= 0) {
+        target->incr_vn(pos[i], dv * weight, dcdx[i]);
+        target->incr_am_diag(apos[i], weight, dcdx[i]);
       }
 
     for (int i = 0; i < 3; ++i)
       for (int j = i+1; j < 4; ++j)
-        if (ia[i] >= 0 && ia[j] >= 0) {
+        if (pos[i] >= 0 && pos[j] >= 0) {
           auto mp = target->find_restraint(ia[i], ia[j]);
           if (mp.imode == 0)
             target->incr_am_ndiag(mp.ipos, weight, dcdx[i], dcdx[j]);
@@ -1890,22 +1864,25 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
     for (int j = 0; j < natoms; ++j) {
       const gemmi::Position &xj = atoms[j]->pos;
       for (int l = 0; l < natoms; ++l) {
-        const int ial = target->atom_pos[atoms[l]->serial-1];
+        const int ial = atoms[l]->serial-1;
+        const int posl = target->params->get_pos_vec(ial, RefineParams::Type::X);
+        const int aposl = target->params->get_pos_mat_geom(ial, RefineParams::Type::X);
         gemmi::Position dpdx1;
         for (int m = 0; m < 3; ++m)
           dpdx1.at(m) = pder.dDdx[l].at(m) - xj.dot(pder.dvmdx[l][m]) - (j==l ? pder.vm.at(m) : 0);
 
-        if (ial >= 0) target->incr_vn(ial * 3, deltas[j] * weight, dpdx1);
+        if (posl >= 0) target->incr_vn(posl, deltas[j] * weight, dpdx1);
 
         for (int k = l; k < natoms; ++k) {
-          const int iak = target->atom_pos[atoms[k]->serial-1];
+          const int iak = atoms[k]->serial-1;
+          const int posk = target->params->get_pos_vec(iak, RefineParams::Type::X);
           gemmi::Position dpdx2;
           for (int m = 0; m < 3; ++m)
             dpdx2.at(m) = pder.dDdx[k].at(m) - xj.dot(pder.dvmdx[k][m]) - (k==j ? pder.vm.at(m) : 0);
 
-          if (ial >= 0 && iak >= 0) {
+          if (posl >= 0 && posk >= 0) {
             if (k == l)
-              target->incr_am_diag(ial * 6, weight, dpdx1);
+              target->incr_am_diag(aposl, weight, dpdx1);
             else {
               auto mp = target->find_restraint(ial, iak);
               if (mp.imode == 0)
@@ -1927,12 +1904,11 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
 inline void Geometry::Harmonic::calc(GeomTarget* target) const {
   if (target != nullptr) {
     // Refmac style - only affects second derivatives
-    const int ia = target->atom_pos[atom->serial-1];
-    if (ia < 0) return;
+    const int apos = target->params->get_pos_mat_geom(atom->serial-1, RefineParams::Type::X);
+    if (apos < 0) return;
     const double w = 1. / (sigma * sigma);
-    const size_t ipos = ia * 6;
     for (size_t i = 0; i < 3; ++i)
-      target->am[ipos+i] += w;
+      target->am[apos+i] += w;
   }
 }
 
@@ -1958,18 +1934,21 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
     for (size_t i = 0; i < 2; ++i) { // plane index
       dpdx.emplace_back(planes[i].size());
       for (size_t j = 0; j < planes[i].size(); ++j) { // atom index of plane i
-        const int iaij = target->atom_pos[planes[i][j]->serial-1];
+        const int iaij = planes[i][j]->serial-1;
+        const int posij = target->params->get_pos_vec(iaij, RefineParams::Type::X);
+        const int aposij = target->params->get_pos_mat_geom(iaij, RefineParams::Type::X);
         for (size_t m = 0; m < 3; ++m)
           dpdx[i][j].at(m) = -gemmi::deg(1) * pder[i].dvmdx[j][m].dot(pder[1-i].vm) * inv_sina;
-        if (iaij < 0) continue;
-        target->incr_vn(iaij * 3, wa * deltaa, dpdx[i][j]);
+        if (posij < 0) continue;
+        target->incr_vn(posij, wa * deltaa, dpdx[i][j]);
 
         // second derivatives in the same plane
         for (size_t k = 0; k <= j; ++k) {
-          const int iaik = target->atom_pos[planes[i][k]->serial-1];
-          if (iaik < 0) continue;
+          const int iaik = planes[i][k]->serial-1;
+          const int posik = target->params->get_pos_vec(iaik, RefineParams::Type::X);
+          if (posik < 0) continue;
           if (k == j)
-            target->incr_am_diag(iaij * 6, wa, dpdx[i][j]);
+            target->incr_am_diag(aposij, wa, dpdx[i][j]);
           else {
             auto mp = target->find_restraint(iaij, iaik);
             if (mp.imode == 0)
@@ -1983,9 +1962,11 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
     // second derivatives between two planes
     for (size_t j = 0; j < planes[0].size(); ++j)
       for (size_t k = 0; k < planes[1].size(); ++k) {
-        const int ia0j = target->atom_pos[planes[0][j]->serial-1];
-        const int ia1k = target->atom_pos[planes[1][k]->serial-1];
-        if (ia0j >= 0 && ia1k >= 0) {
+        const int ia0j = planes[0][j]->serial-1;
+        const int ia1k = planes[1][k]->serial-1;
+        const int pos0j = target->params->get_pos_vec(ia0j, RefineParams::Type::X);
+        const int pos1k = target->params->get_pos_vec(ia1k, RefineParams::Type::X);
+        if (pos0j >= 0 && pos1k >= 0) {
           auto mp = target->find_restraint(ia0j, ia1k);
           if (mp.imode == 0)
             target->incr_am_ndiag(mp.ipos, wa, dpdx[0][j], dpdx[1][k]);
@@ -2016,16 +1997,19 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
       for (size_t i = 0; i < 2; ++i) {
         // for the atoms of this plane
         for (size_t j = 0; j < planes[i].size(); ++j) {
-          const int iaij = target->atom_pos[planes[i][j]->serial-1];
+          const int iaij = planes[i][j]->serial-1;
+          const int posij = target->params->get_pos_vec(iaij, RefineParams::Type::X);
+          const int aposij = target->params->get_pos_mat_geom(iaij, RefineParams::Type::X);
           dpdx[i][j] = pder[1-i].vm / planes[i].size();
-          if (iaij < 0) continue;
-          target->incr_vn(iaij * 3, wd * deltad[i], dpdx[i][j]);
+          if (posij < 0) continue;
+          target->incr_vn(posij, wd * deltad[i], dpdx[i][j]);
           // second derivatives
           for (size_t k = 0; k <= j; ++k) {
-            const int iaik = target->atom_pos[planes[i][k]->serial-1];
-            if (iaik < 0) continue;
+            const int iaik = planes[i][k]->serial-1;
+            const int posik = target->params->get_pos_vec(iaik, RefineParams::Type::X);
+            if (posik < 0) continue;
             if (k == j)
-              target->incr_am_diag(iaij * 6, wd, dpdx[i][j]);
+              target->incr_am_diag(aposij, wd, dpdx[i][j]);
             else {
               auto mp = target->find_restraint(iaij, iaik);
               if (mp.imode == 0)
@@ -2037,17 +2021,20 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
         }
         // for the atoms of the other plane
         for (size_t j = 0; j < planes[1-i].size(); ++j) {
-          const int iaj = target->atom_pos[planes[1-i][j]->serial-1];
+          const int iaj = planes[1-i][j]->serial-1;
+          const int posj = target->params->get_pos_vec(iaj, RefineParams::Type::X);
+          const int aposj = target->params->get_pos_mat_geom(iaj, RefineParams::Type::X);
           for (size_t m = 0; m < 3; ++m)
             dpdx[1-i][j].at(m) = pder[1-i].dvmdx[j][m].dot(pder[i].xs) - pder[1-i].dDdx[j].at(m);
-          if (iaj < 0) continue;
-          target->incr_vn(iaj * 3, wd * deltad[i], dpdx[1-i][j]);
+          if (posj < 0) continue;
+          target->incr_vn(posj, wd * deltad[i], dpdx[1-i][j]);
           // second derivatives
           for (size_t k = 0; k <= j; ++k) {
-            const int iak = target->atom_pos[planes[1-i][k]->serial-1];
-            if (iak < 0) continue;
+            const int iak = planes[1-i][k]->serial-1;
+            const int posk = target->params->get_pos_vec(iak, RefineParams::Type::X);
+            if (posk < 0) continue;
             if (k == j)
-              target->incr_am_diag(iaj * 6, wd, dpdx[1-i][j]);
+              target->incr_am_diag(aposj, wd, dpdx[1-i][j]);
             else {
               auto mp = target->find_restraint(iaj, iak);
               if (mp.imode == 0)
@@ -2060,9 +2047,11 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
         // second derivatives between two planes
         for (size_t j = 0; j < planes[0].size(); ++j)
           for (size_t k = 0; k < planes[1].size(); ++k) {
-            const int ia0j = target->atom_pos[planes[0][j]->serial-1];
-            const int ia1k = target->atom_pos[planes[1][k]->serial-1];
-            if (ia0j >= 0 && ia1k >= 0) {
+            const int ia0j = planes[0][j]->serial-1;
+            const int ia1k = planes[1][k]->serial-1;
+            const int pos0j = target->params->get_pos_vec(ia0j, RefineParams::Type::X);
+            const int pos1k = target->params->get_pos_vec(ia1k, RefineParams::Type::X);
+            if (pos0j >= 0 && pos1k >= 0) {
               auto mp = target->find_restraint(ia0j, ia1k);
               if (mp.imode == 0)
                 target->incr_am_ndiag(mp.ipos, wd, dpdx[0][j], dpdx[1][k]);
@@ -2097,19 +2086,23 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
 
   const double ret = db * db * weight * 0.5;
   if (target != nullptr) {
-    const int ia1 = target->atom_pos[atom1.serial - 1];
-    const int ia2 = target->atom_pos[atom2.serial - 1];
+    const int ia1 = atom1.serial - 1;
+    const int ia2 = atom2.serial - 1;
+    const int pos1 = target->params->get_pos_vec(ia1, RefineParams::Type::X);
+    const int pos2 = target->params->get_pos_vec(ia2, RefineParams::Type::X);
+    const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+    const int apos2 = target->params->get_pos_mat_geom(ia2, RefineParams::Type::X);
     const gemmi::Position dbdx1 = (x1 - x2) / std::max(b, 0.02);
     const gemmi::Position dbdx2 = same_asu() ? -dbdx1 : gemmi::Position(tr.mat.transpose().multiply(-dbdx1));
-    if (ia1 >= 0) {
-      target->incr_vn(ia1 * 3, weight * db, dbdx1);
-      target->incr_am_diag(ia1 * 6, weight, dbdx1);
+    if (pos1 >= 0) {
+      target->incr_vn(pos1, weight * db, dbdx1);
+      target->incr_am_diag(apos1, weight, dbdx1);
     }
-    if (ia2 >= 0) {
-      target->incr_vn(ia2 * 3, weight * db, dbdx2);
-      target->incr_am_diag(ia2 * 6, weight, dbdx2);
+    if (pos2 >= 0) {
+      target->incr_vn(pos2, weight * db, dbdx2);
+      target->incr_am_diag(apos2, weight, dbdx2);
     }
-    if (ia1 >= 0 && ia2 >= 0) {
+    if (pos1 >= 0 && pos2 >= 0) {
       if (ia1 != ia2) {
         auto mp = target->find_restraint(ia1, ia2);
         if (mp.imode == 0)
@@ -2117,7 +2110,7 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
         else
           target->incr_am_ndiag(mp.ipos, weight, dbdx2, dbdx1);
       } else
-        target->incr_am_diag12(ia1*6, weight, dbdx1, dbdx2);
+        target->incr_am_diag12(apos1, weight, dbdx1, dbdx2);
     }
     target->target += ret;
   }
@@ -2153,13 +2146,16 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
     dydx[2] = -weight * (x3 - x4) / std::max(b2, 0.02);
     dydx[3] = vdw2.same_asu() ? -dydx[2] : gemmi::Position(tr2.mat.transpose().multiply(-dydx[2]));
     for (int i = 0; i < 4; ++i) {
-      const int iai = target->atom_pos[atoms[i]->serial-1];
-      if (iai < 0) continue;
-      target->incr_vn(iai * 3, robustf.dfdy, dydx[i]);
-      target->incr_am_diag(iai * 6, robustf.d2fdy, dydx[i]);
+      const int iai = atoms[i]->serial-1;
+      const int posi = target->params->get_pos_vec(iai, RefineParams::Type::X);
+      const int aposi = target->params->get_pos_mat_geom(iai, RefineParams::Type::X);
+      if (posi < 0) continue;
+      target->incr_vn(posi, robustf.dfdy, dydx[i]);
+      target->incr_am_diag(aposi, robustf.d2fdy, dydx[i]);
       for (int j = 0; j < i; ++j) {
-        const int iaj = target->atom_pos[atoms[j]->serial-1];
-        if (iaj < 0) continue;
+        const int iaj = atoms[j]->serial-1;
+        const int posj = target->params->get_pos_vec(iaj, RefineParams::Type::X);
+        if (posj < 0) continue;
         auto mp = target->find_restraint(iai, iaj);
         if (mp.imode == 0)
           target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx[i], dydx[j]);
@@ -2177,17 +2173,17 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
 
 void Geometry::spec_correction(double alpha, bool use_rr) {
   const int n_pairs = target.pairs.size();
-  const int offset_v = target.refine_xyz ? target.n_atoms() * 3 : 0;
-  const int offset_a = target.refine_xyz ? target.n_atoms() * 6 + n_pairs * 9 : 0;
   for (const auto &spec : specials) {
-    const int idx = target.atom_pos[spec.atom->serial - 1];
-    if (idx < 0) continue;
-    if (target.refine_xyz) {
+    const int idx = spec.atom->serial - 1;
+    if (target.params->is_refined(RefineParams::Type::X)) {
+      const int pos = target.params->get_pos_vec(idx, RefineParams::Type::X);
+      if (pos < 0) continue;
       // correct gradient
-      Eigen::Map<Eigen::Vector3d> v(&target.vn[idx * 3], 3);
+      Eigen::Map<Eigen::Vector3d> v(&target.vn[pos], 3);
       v = (spec.Rspec_pos.transpose() * v).eval();
       // correct diagonal block
-      double* a = target.am.data() + idx * 6;
+      const int apos = target.params->get_pos_mat_geom(idx, RefineParams::Type::X);
+      double* a = target.am.data() + apos;
       Eigen::Matrix3d m {{a[0], a[3], a[4]},
                          {a[3], a[1], a[5]},
                          {a[4], a[5], a[2]}};
@@ -2207,7 +2203,9 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       // correct non-diagonal block
       for (int i = 0; i < n_pairs; ++i) {
         if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
-          Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> m(&target.am[target.nmpos + 9 * i]);
+          const int mpos = target.params->get_pos_mat_pair_geom(i, RefineParams::Type::X);
+          if (mpos < 0) continue;
+          Eigen::Map<Eigen::Matrix<double, 3, 3, Eigen::RowMajor>> m(&target.am[mpos]);
           if (target.pairs[i].first == idx)
             m = (spec.Rspec_pos.transpose() * m).eval();
           else
@@ -2215,12 +2213,15 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
         }
       }
     }
-    if (target.adp_mode == 2) {
+    if (target.params->is_refined(RefineParams::Type::B) && target.params->aniso) {
+      const int pos = target.params->get_pos_vec(idx, RefineParams::Type::B);
+      if (pos < 0) continue;
       // correct gradient
-      Eigen::Map<Eigen::VectorXd> v(&target.vn[offset_v + idx * 6], 6);
+      Eigen::Map<Eigen::VectorXd> v(&target.vn[pos], 6);
       v = (spec.Rspec_aniso.transpose() * v).eval();
       // correct diagonal block
-      double* a = target.am.data() + offset_a + idx * 21;
+      const int apos = target.params->get_pos_mat_geom(idx, RefineParams::Type::B);
+      double* a = target.am.data() + apos;
       Eigen::MatrixXd m {{ a[0],  a[6],  a[7],  a[8],  a[9], a[10]},
                          { a[6],  a[1], a[11], a[12], a[13], a[14]},
                          { a[7], a[11],  a[2], a[15], a[16], a[17]},
@@ -2243,7 +2244,9 @@ void Geometry::spec_correction(double alpha, bool use_rr) {
       // correct non-diagonal block
       for (int i = 0; i < n_pairs; ++i) {
         if (target.pairs[i].first == idx || target.pairs[i].second == idx) {
-          Eigen::Map<Eigen::Matrix<double,6,6, Eigen::RowMajor>> m(&target.am[offset_a + 21 * target.n_atoms() + 36 * i]);
+          const int mpos = target.params->get_pos_mat_pair_geom(i, RefineParams::Type::B);
+          if (mpos < 0) continue;
+          Eigen::Map<Eigen::Matrix<double,6,6, Eigen::RowMajor>> m(&target.am[mpos]);
           if (target.pairs[i].first == idx)
             m = (spec.Rspec_aniso.transpose() * m).eval();
           else

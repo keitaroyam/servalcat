@@ -1,6 +1,7 @@
 // Author: "Keitaro Yamashita, Garib N. Murshudov"
 // MRC Laboratory of Molecular Biology
 
+#include "refine/params.hpp"  // for RefineParams
 #include "refine/geom.hpp"    // for Geometry
 #include "refine/ll.hpp"      // for LL
 #include "refine/cgsolve.hpp" // for CgSolve
@@ -12,6 +13,7 @@
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
 
+#include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/string.h>
@@ -88,6 +90,7 @@ nb::tuple precondition_eigen_coo(np_array<double> am, np_array<int> rows,
 void add_refine(nb::module_& m) {
   nb::class_<GeomTarget> geomtarget(m, "GeomTarget");
   nb::class_<Geometry> geom(m, "Geometry");
+  nb::class_<RefineParams> params(m, "RefineParams");
 
   nb::class_<Geometry::Bond> bond(geom, "Bond");
   nb::class_<Geometry::Angle> angle(geom, "Angle");
@@ -758,17 +761,59 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Angle::Value>, rv_ri>(angle, "Values");
   nb::bind_vector<std::vector<Geometry::Torsion::Value>, rv_ri>(torsion, "Values");
 
+  nb::enum_<RefineParams::Type>(params, "Type")
+    .value("X", RefineParams::Type::X)
+    .value("B", RefineParams::Type::B)
+    .value("Q", RefineParams::Type::Q)
+    .value("D", RefineParams::Type::D)
+    ;
+  params
+    .def(nb::init<bool, int, bool, bool, bool>(),
+         nb::arg("refine_xyz")=false, nb::arg("adp_mode")=false,  nb::arg("refine_occ")=false,
+         nb::arg("refine_dfrac")=false, nb::arg("use_q_b_mixed")=true)
+    .def_ro("aniso", &RefineParams::aniso)
+    .def_ro("use_q_b_mixed_derivatives", &RefineParams::use_q_b_mixed_derivatives)
+    .def_ro("atoms", &RefineParams::atoms)
+    .def_prop_ro("flag_global", [](const RefineParams &self){
+      return self.flag_global.to_ulong();
+    })
+    .def("atom_to_param", [](const RefineParams &self, RefineParams::Type t) {
+      return self.atom_to_param(t);})
+    .def("param_to_atom", [](const RefineParams &self, RefineParams::Type t) {
+      return self.param_to_atom(t);})
+    .def("n_refined_atoms", &RefineParams::n_refined_atoms)
+    .def("n_refined_pairs", &RefineParams::n_refined_pairs)
+    .def("n_params", &RefineParams::n_params)
+    .def("is_refined", &RefineParams::is_refined)
+    .def("set_model", &RefineParams::set_model)
+    .def("set_params_default", &RefineParams::set_params_default)
+    .def("set_params_selected", &RefineParams::set_params_selected)
+    .def("set_params_from_flags", &RefineParams::set_params_from_flags)
+    .def("get_x", &RefineParams::get_x)
+    .def("set_x", &RefineParams::set_x, nb::arg("x"), nb::arg("min_b")=0.5)
+    .def("vec_selection", [](const RefineParams &self, RefineParams::Type t) {
+      if (!self.is_refined(t))
+        return nb::slice(0);
+      size_t start = 0, end = 0;
+      for (RefineParams::Type tt : self.Types) {
+        end += self.n_refined_atoms(tt) * self.npar_per_atom(tt);
+        if (tt == t)
+          return nb::slice(start, end);
+        start = end;
+      }
+      gemmi::fail("vec_selection: bad t");
+    })
+    ;
   geomtarget
     .def_ro("target", &GeomTarget::target)
     .def_ro("vn", &GeomTarget::vn)
     .def_ro("am", &GeomTarget::am)
     .def_prop_ro("am_spmat", &GeomTarget::make_spmat)
-    .def("n_atoms", &GeomTarget::n_atoms)
     .def("n_pairs", &GeomTarget::n_pairs)
   ;
   geom
-    .def(nb::init<gemmi::Structure&, const std::vector<int> &, const gemmi::EnerLib*>(),
-         nb::arg("st"), nb::arg("atom_pos"), nb::arg("ener_lib")=nb::none())
+    .def(nb::init<gemmi::Structure&, std::shared_ptr<RefineParams>, const gemmi::EnerLib*>(),
+         nb::arg("st"), nb::arg("params"), nb::arg("ener_lib")=nb::none())
     .def_ro("bonds", &Geometry::bonds)
     .def_ro("angles", &Geometry::angles)
     .def_ro("chirs", &Geometry::chirs)
@@ -867,9 +912,8 @@ void add_refine(nb::module_& m) {
     .def_rw("maxbin", &TableS3::maxbin)
     ;
   nb::class_<LL>(m, "LL")
-    .def(nb::init<const gemmi::Structure &, const std::vector<int> &, bool, bool, int, bool, bool>(),
-         nb::arg("st"), nb::arg("atom_pos"), nb::arg("mott_bethe"),
-         nb::arg("refine_xyz"), nb::arg("adp_mode"), nb::arg("refine_occ"), nb::arg("refine_h"))
+    .def(nb::init<const gemmi::Structure &, std::shared_ptr<RefineParams>, bool, bool>(),
+         nb::arg("st"), nb::arg("params"), nb::arg("mott_bethe"), nb::arg("refine_h"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)
@@ -888,7 +932,6 @@ void add_refine(nb::module_& m) {
     .def_ro("aa", &LL::aa)
     .def_ro("vn", &LL::vn)
     .def_ro("am", &LL::am)
-    .def_rw("use_q_b_mixed_derivatives", &LL::use_q_b_mixed_derivatives)
     ;
   m.def("precondition_eigen_coo", &precondition_eigen_coo);
   nb::class_<CgSolve>(m, "CgSolve")

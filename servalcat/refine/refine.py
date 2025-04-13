@@ -22,27 +22,29 @@ from servalcat import ext
 from . import cgsolve
 u_to_b = utils.model.u_to_b
 b_to_u = utils.model.b_to_u
-
+Type = ext.RefineParams.Type
 #import line_profiler
 #import atexit
 #profile = line_profiler.LineProfiler()
 #atexit.register(profile.print_stats)
 
+def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
+                 refine_dfrac=False, use_q_b_mixed=True):
+    assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
+    ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
+    ret.set_model(st[0])
+    ret.set_params_default()
+    return ret
+
 class Geom:
-    def __init__(self, st, topo, monlib, adpr_w=1, occr_w=1, shake_rms=0,
+    def __init__(self, st, topo, monlib, refine_params, adpr_w=1, occr_w=1, shake_rms=0,
                  params=None, unrestrained=False, use_nucleus=False,
                  ncslist=None, atom_pos=None):
         self.st = st
-        self.atoms = [None for _ in range(self.st[0].count_atom_sites())]
-        for cra in self.st[0].all(): self.atoms[cra.atom.serial-1] = cra.atom
-        if atom_pos is not None:
-            self.atom_pos = atom_pos
-        else:
-            self.atom_pos = list(range(len(self.atoms)))
-        self.n_refine_atoms = max(self.atom_pos) + 1
+        self.params = refine_params
         self.lookup = {x.atom: x for x in self.st[0].all()}
         try:
-            self.geom = ext.Geometry(self.st, self.atom_pos, monlib.ener_lib)
+            self.geom = ext.Geometry(self.st, self.params, monlib.ener_lib)
         except TypeError as e:
             raise SystemExit(f"An error occurred while creating the Geometry object:\n{e}\n\n"
                              "This likely indicates an installation issue. "
@@ -90,22 +92,31 @@ class Geom:
             elif bond.atoms[1].is_hydrogen():
                 self.parents[bond.atoms[1]] = bond.atoms[0]
     # set_h_parents()
-    def setup_nonbonded(self, refine_xyz):
-        skip_critical_dist = not refine_xyz or self.unrestrained
+
+    def setup_target(self):
+        self.geom.setup_target(self.params.is_refined(Type.Q) and self.occr_w > 0)
+    def setup_nonbonded(self):
+        skip_critical_dist = not self.params.is_refined(Type.X) or self.unrestrained
         self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist, group_idxes=self.group_occ.group_idxes)
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
     def calc(self, target_only):
-        return self.geom.calc(check_only=target_only, **self.calc_kwds)
+        if self.params.is_refined(Type.X) and not self.unrestrained:
+            return self.geom.calc(check_only=target_only, **self.calc_kwds)
+        return 0
     def calc_adp_restraint(self, target_only):
-        return self.geom.calc_adp_restraint(target_only, self.adpr_w)
+        if self.params.is_refined(Type.B):
+            return self.geom.calc_adp_restraint(target_only, self.adpr_w)
+        return 0
     def calc_occ_restraint(self, target_only):
-        return self.geom.calc_occ_restraint(target_only, self.occr_w)
-    def calc_target(self, target_only, refine_xyz, adp_mode, use_occr):
+        if self.params.is_refined(Type.Q):
+            return self.geom.calc_occ_restraint(target_only, self.occr_w)
+        return 0
+    def calc_target(self, target_only):
         self.geom.clear_target()
-        geom_x = self.calc(target_only) if refine_xyz else 0
-        geom_a = self.calc_adp_restraint(target_only) if adp_mode > 0 else 0
-        geom_q = self.calc_occ_restraint(target_only) if use_occr > 0 else 0
+        geom_x = self.calc(target_only) 
+        geom_a = self.calc_adp_restraint(target_only)
+        geom_q = self.calc_occ_restraint(target_only)
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         logger.writeln(" geom_q = {}".format(geom_q))
@@ -114,13 +125,10 @@ class Geom:
             self.geom.spec_correction()
         return geom
         
-    def show_model_stats(self, refine_xyz=True, adp_mode=1, use_occr=False, show_outliers=True):
-        if refine_xyz:
-            self.calc(True)
-        if adp_mode > 0:
-            self.calc_adp_restraint(True)
-        if use_occr:
-            self.calc_occ_restraint(True)
+    def show_model_stats(self, show_outliers=True):
+        self.calc(True)
+        self.calc_adp_restraint(True)
+        self.calc_occ_restraint(True)
         ret = {"outliers": {}}
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
@@ -265,11 +273,10 @@ class GroupOccupancy:
         if not params or not params.get("groups"):
             return
         logger.writeln("Occupancy groups:")
-        self.atom_pos = [-1 for _ in range(st[0].count_atom_sites())]
-        count = 0
+        atom_idxes = []
         for igr in params["groups"]:
-            self.groups.append([[], []]) # list of [indexes, atoms]
-            n_curr = count
+            self.groups.append([]) # list of atoms
+            n_curr = len(atom_idxes)
             for sel in params["groups"][igr]:
                 sel_chains = sel.get("chains")
                 sel_from = sel.get("resi_from")
@@ -293,19 +300,20 @@ class GroupOccupancy:
                                 continue
                             if sel_alt and atom.altloc != sel_alt:
                                 continue
-                            self.atom_pos[atom.serial-1] = count
-                            self.groups[-1][0].append(count)
-                            self.groups[-1][1].append(atom)
+                            atom_idxes.append(atom.serial-1)
+                            self.groups[-1].append(atom)
                             self.group_idxes[atom.serial-1] = len(self.groups)
-                            count += 1
                         if sel_to and res.seqid == sel_to:
                             flag = False
-            logger.writeln(" id= {} atoms= {}".format(igr, count - n_curr))
+            logger.writeln(" id= {} atoms= {}".format(igr, len(atom_idxes) - n_curr))
 
         igr_idxes = {igr:i for i, igr in enumerate(params["groups"])}
         self.consts = [(is_comp, [igr_idxes[g] for g in gids])
                        for is_comp, gids in params["const"]]
         self.ncycle = params.get("ncycle", 5)
+        self.params = ext.RefineParams(refine_occ=True)
+        self.params.set_model(st[0])
+        self.params.set_params_selected(atom_idxes)
     # __init__()
     
     def constraint(self, x):
@@ -321,7 +329,7 @@ class GroupOccupancy:
         
     def ensure_constraints(self):
         vals = []
-        for _, atoms in self.groups:
+        for atoms in self.groups:
             occ = numpy.mean([a.occ for a in atoms])
             occ = min(1, max(1e-3, occ))
             vals.append(occ)
@@ -332,14 +340,14 @@ class GroupOccupancy:
             for i in idxes:
                 #logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
                 vals[i] /= sum_occ
-        for occ, (_, atoms) in zip(vals, self.groups):
+        for occ, atoms in zip(vals, self.groups):
             for a in atoms: a.occ = occ
         
     def get_x(self):
-        return numpy.array([atoms[0].occ for _, atoms in self.groups])
+        return numpy.array([atoms[0].occ for atoms in self.groups])
 
     def set_x(self, x):
-        for p, (_, atoms) in zip(x, self.groups):
+        for p, atoms in zip(x, self.groups):
             for a in atoms:
                 a.occ = p
                 #a.occ = max(1, min(1e-3, p))
@@ -353,15 +361,15 @@ class GroupOccupancy:
     
     def grad(self, x, ll, ls, u, refine_h):
         c = self.constraint(x)
-        ll.calc_grad(self.atom_pos, refine_xyz=False, adp_mode=0, refine_occ=True, refine_h=refine_h, specs=None)
+        ll.calc_grad(self.params, refine_h=refine_h, specs=None)
         #print("grad=", ll.ll.vn)
         #print("diag=", ll.ll.am)
         assert len(ll.ll.vn) == len(ll.ll.am)
         vn = []
         diag = []
-        for idxes, atoms in self.groups:
-            if not refine_h:
-                idxes = [i for i, a in zip(idxes, atoms) if not a.is_hydrogen()]
+        atom_to_param = self.params.atom_to_param(Type.Q)
+        for atoms in self.groups: # idxes
+            idxes = [atom_to_param[a.serial-1] for a in atoms if refine_h or not a.is_hydrogen()]
             vn.append(numpy.sum(numpy.array(ll.ll.vn)[idxes]))
             diag.append(numpy.sum(numpy.array(ll.ll.am)[idxes]))
         vn, diag = numpy.array(vn), numpy.array(diag)
@@ -436,35 +444,30 @@ class GroupOccupancy:
 
 
 class Refine:
-    def __init__(self, st, geom, ll=None, refine_xyz=True, adp_mode=1, refine_h=False, refine_occ=False,
+    def __init__(self, st, geom, refine_params, ll=None, refine_h=False, #refine_xyz=True, adp_mode=1, , refine_occ=False,
                  unrestrained=False, params=None):
-        assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
         assert geom is not None
         self.st = st # clone()?
         self.st_traj = None
-        self.atoms = geom.atoms # not a copy
+        self.params = refine_params
         self.geom = geom
         self.ll = ll
         self.gamma = 0
-        self.adp_mode = 0 if self.ll is None else adp_mode
-        self.refine_xyz = refine_xyz
-        self.refine_occ = refine_occ
-        self.use_occr = self.refine_occ # for now?
         self.unrestrained = unrestrained
         self.refine_h = refine_h
-        self.h_inherit_parent_adp = self.adp_mode > 0 and not self.refine_h and self.st[0].has_hydrogen()
+        self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
         if self.h_inherit_parent_adp:
             self.geom.set_h_parents()
         if params and params.get("write_trajectory"):
             self.st_traj = self.st.clone()
             self.st_traj[-1].num = 0
-        assert self.geom.group_occ.groups or self.n_params() > 0
+        assert self.geom.group_occ.groups or self.params.n_params() > 0
     # __init__()
     
     def print_weights(self): # TODO unfinished
         logger.writeln("Geometry weights")
         g = self.geom.geom
-        if self.adp_mode > 0:
+        if self.params.is_refined(Type.B):
             logger.writeln(" ADP restraints")
             logger.writeln("  weight: {}".format(self.geom.adpr_w))
             logger.writeln("  mode: {}".format(g.adpr_mode))
@@ -474,15 +477,11 @@ class Refine:
                 logger.writeln("  sigmas: {}".format(" ".join("{:.2f}".format(x) for x in g.adpr_kl_sigs)))
             else:
                 raise LookupError("unknown adpr_mode")
-        if self.refine_occ:
+        if self.params.is_refined(Type.Q):
             logger.writeln(" Occupancy restraints")
             logger.writeln("  weight: {}".format(self.geom.occr_w))
 
     def scale_shifts(self, dx, scale):
-        n_atoms = self.geom.n_refine_atoms
-        #ave_shift = numpy.mean(dx)
-        #max_shift = numpy.maximum(dx)
-        #rms_shift = numpy.std(dx)
         shift_allow_high =  1.0
         shift_allow_low  = -1.0
         shift_max_allow_B = 30.0
@@ -490,40 +489,36 @@ class Refine:
         shift_max_allow_q = 0.5
         shift_min_allow_q = -0.5
         dx = scale * dx
-        offset_b = n_atoms * 3 if self.refine_xyz else 0
-        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
-        if self.refine_xyz:
-            dxx = dx[:offset_b]
+        if self.params.is_refined(Type.X):
+            dxx = dx[self.params.vec_selection(Type.X)]
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
-        if self.adp_mode == 1:
-            dxb = dx[offset_b:offset_q]
+        if self.params.is_refined(Type.B):
+            dxb = dx[self.params.vec_selection(Type.B)]
+            # TODO this is misleading in anisotropic case
             logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
             logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
             logger.writeln("mean(dB)= {}".format(numpy.mean(dxb)))
-            dxb[dxb > shift_max_allow_B] = shift_max_allow_B
-            dxb[dxb < shift_min_allow_B] = shift_min_allow_B
-        elif self.adp_mode == 2:
-            dxb = dx[offset_b:offset_q]
-            # TODO this is misleading
-            logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
-            logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
-            logger.writeln("mean(dB)= {}".format(numpy.mean(dxb)))
-            for i in range(len(dxb)//6):
-                j = i * 6
-                a = numpy.array([[dxb[j],   dxb[j+3], dxb[j+4]],
-                                 [dxb[j+3], dxb[j+1], dxb[j+5]],
-                                 [dxb[j+4], dxb[j+5], dxb[j+2]]])
-                v, Q = numpy.linalg.eigh(a)
-                v[v > shift_max_allow_B] = shift_max_allow_B
-                v[v < shift_min_allow_B] = shift_min_allow_B
-                a = Q.dot(numpy.diag(v)).dot(Q.T)
-                dxb[j:j+6] = a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2]
-        if self.refine_occ:
-            dxq = dx[offset_q:]
+            # FIXME we should'nt apply eigen decomp to dxb
+            if self.params.aniso:
+                for i in range(len(dxb)//6):
+                    j = i * 6
+                    a = numpy.array([[dxb[j],   dxb[j+3], dxb[j+4]],
+                                     [dxb[j+3], dxb[j+1], dxb[j+5]],
+                                     [dxb[j+4], dxb[j+5], dxb[j+2]]])
+                    v, Q = numpy.linalg.eigh(a)
+                    v[v > shift_max_allow_B] = shift_max_allow_B
+                    v[v < shift_min_allow_B] = shift_min_allow_B
+                    a = Q.dot(numpy.diag(v)).dot(Q.T)
+                    dxb[j:j+6] = a[0,0], a[1,1], a[2,2], a[0,1], a[0,2], a[1,2]
+            else:
+                dxb[dxb > shift_max_allow_B] = shift_max_allow_B
+                dxb[dxb < shift_min_allow_B] = shift_min_allow_B
+        if self.params.is_refined(Type.Q):
+            dxq = dx[self.params.vec_selection(Type.Q)]
             logger.writeln("min(dq) = {}".format(numpy.min(dxq)))
             logger.writeln("max(dq) = {}".format(numpy.max(dxq)))
             logger.writeln("mean(dq)= {}".format(numpy.mean(dxq)))
@@ -532,44 +527,13 @@ class Refine:
 
         return dx
 
-    def n_params(self):
-        n_atoms = self.geom.n_refine_atoms
-        n_params = 0
-        if self.refine_xyz: n_params += 3 * n_atoms
-        if self.adp_mode == 1:
-            n_params += n_atoms
-        elif self.adp_mode == 2:
-            n_params += 6 * n_atoms
-        if self.refine_occ:
-            n_params += n_atoms
-        return n_params
-
     def set_x(self, x):
-        n_atoms = self.geom.n_refine_atoms
-        offset_b = n_atoms * 3 if self.refine_xyz else 0
-        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
+        self.params.set_x(x, min_b=0.5)
         max_occ = {}
-        if self.refine_occ and self.geom.specs:
+        if self.params.is_refined(Type.Q) and self.geom.specs:
             max_occ = {atom: 1./(len(images)+1) for atom, images, _, _ in self.geom.specs}
-        for i, j in enumerate(self.geom.atom_pos):
-            if j < 0: continue
-            if self.refine_xyz:
-                self.atoms[i].pos.fromlist(x[3*j:3*j+3]) # faster than substituting pos.x,pos.y,pos.z
-            if self.adp_mode == 1:
-                self.atoms[i].b_iso = max(0.5, x[offset_b + j]) # minimum B = 0.5
-            elif self.adp_mode == 2:
-                a = x[offset_b + 6 * j: offset_b + 6 * (j+1)]
-                a = gemmi.SMat33d(*a)
-                M = a.as_mat33().array
-                v, Q = numpy.linalg.eigh(M) # eig() may return complex due to numerical precision?
-                v = numpy.maximum(v, 0.5) # avoid NPD with minimum B = 0.5
-                M2 = Q.dot(numpy.diag(v)).dot(Q.T)
-                self.atoms[i].b_iso = M2.trace() / 3
-                M2 *= b_to_u
-                self.atoms[i].aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
-            if self.refine_occ:
-                self.atoms[i].occ = min(max_occ.get(self.atoms[i], 1), max(1e-3, x[offset_q + j]))
-
+        for a in self.params.atoms:
+            a.occ = min(max_occ.get(a, 1), max(1e-3, a.occ))
         # Copy B of hydrogen from parent
         if self.h_inherit_parent_adp:
             for h in self.geom.parents:
@@ -580,43 +544,23 @@ class Refine:
         if self.ll is not None:
             self.ll.update_fc()
         
-        self.geom.setup_nonbonded(self.refine_xyz) # if refine_xyz=False, no need to do it every time
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
+        self.geom.setup_nonbonded() # if refine_xyz=False, no need to do it every time
+        self.geom.setup_target()
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
-        logger.writeln(f"atoms = {self.geom.geom.target.n_atoms()}")
+        logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
 
     def get_x(self):
-        n_atoms = self.geom.n_refine_atoms
-        offset_b = n_atoms * 3 if self.refine_xyz else 0
-        offset_q = offset_b + n_atoms * {0: 0, 1: 1, 2: 6}[self.adp_mode]
-        x = numpy.zeros(self.n_params())
-        for i, j in enumerate(self.geom.atom_pos):
-            if j < 0: continue
-            a = self.atoms[i]
-            if self.refine_xyz:
-                x[3*j:3*(j+1)] = a.pos.tolist()
-            if self.adp_mode == 1:
-                x[offset_b + j] = self.atoms[i].b_iso
-            elif self.adp_mode == 2:
-                x[offset_b + 6*j : offset_b + 6*(j+1)] = self.atoms[i].aniso.elements_pdb()
-                x[offset_b + 6*j : offset_b + 6*(j+1)] *= u_to_b
-            if self.refine_occ:
-                x[offset_q + j] = a.occ
-
-        return x
+        return numpy.array(self.params.get_x())
+    
     #@profile
     def calc_target(self, w=1, target_only=False):
-        N = self.n_params()
-        geom = self.geom.calc_target(target_only,
-                                     not self.unrestrained and self.refine_xyz,
-                                     self.adp_mode, self.use_occr)
+        geom = self.geom.calc_target(target_only)
         if self.ll is not None:
             ll = self.ll.calc_target()
             logger.writeln(" ll= {}".format(ll))
             if not target_only:
-                self.ll.calc_grad(self.geom.atom_pos, self.refine_xyz, self.adp_mode, self.refine_occ,
-                                  self.refine_h, self.geom.geom.specials)
+                self.ll.calc_grad(self.params, self.refine_h, self.geom.geom.specials)
         else:
             ll = 0
 
@@ -701,15 +645,12 @@ class Refine:
                    weight_adjust_bond_rmsz_range=(0.5, 1.), stats_json_out=None):
         self.print_weights()
         stats = [{"Ncyc": 0}]
-        self.geom.setup_nonbonded(self.refine_xyz)
-        self.geom.geom.setup_target(self.refine_xyz, self.adp_mode, self.refine_occ, self.use_occr)
+        self.geom.setup_nonbonded()
+        self.geom.setup_target()
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
-        logger.writeln(f"atoms = {self.geom.geom.target.n_atoms()}")
+        logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
-        stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
-                                                       adp_mode=self.adp_mode,
-                                                       use_occr=self.refine_occ,
-                                                       show_outliers=True)
+        stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -721,7 +662,7 @@ class Refine:
             if "twin_alpha" in llstats:
                 stats[-1]["twin_alpha"] = llstats["twin_alpha"]
             show_binstats(llstats["bin_stats"], 0)
-        if self.adp_mode > 0:
+        if self.params.is_refined(Type.B):
             utils.model.adp_analysis(self.st)
         if stats_json_out:
             write_stats_json_safe(stats, stats_json_out)
@@ -730,7 +671,7 @@ class Refine:
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             logger.writeln(f" weight = {weight:.4e}")
-            if self.refine_xyz or self.adp_mode > 0 or self.refine_occ:
+            if self.params.flag_global:
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
                 stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok,
                               "weight": weight})
@@ -739,10 +680,7 @@ class Refine:
             if occ_refine_flag:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll, self.refine_h)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
-            stats[-1]["geom"] = self.geom.show_model_stats(refine_xyz=self.refine_xyz and not self.unrestrained,
-                                                           adp_mode=self.adp_mode,
-                                                           use_occr=self.refine_occ,
-                                                           show_outliers=(i==ncycles-1))
+            stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
             if self.ll is not None:
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()
@@ -757,9 +695,9 @@ class Refine:
                 if "twin_alpha" in llstats:
                     stats[-1]["twin_alpha"] = llstats["twin_alpha"]
                 show_binstats(llstats["bin_stats"], i+1)
-            if self.adp_mode > 0:
+            if self.params.is_refined(Type.B):
                 utils.model.adp_analysis(self.st)
-            if (weight_adjust and self.refine_xyz and not self.unrestrained and self.ll is not None and
+            if (weight_adjust and self.params.is_refined(Type.X) and not self.unrestrained and self.ll is not None and
                 len(stats) > 2 and "Bond distances, non H" in stats[-1]["geom"]["summary"].index):
                 rmsz = stats[-1]["geom"]["summary"]["r.m.s.Z"]["Bond distances, non H"]
                 rmsz0 = stats[-2]["geom"]["summary"]["r.m.s.Z"]["Bond distances, non H"]
