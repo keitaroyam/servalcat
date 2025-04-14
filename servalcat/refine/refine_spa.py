@@ -236,7 +236,8 @@ def main(args):
     refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
                                  adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                                  refine_occ=args.refine_all_occ,
-                                 refine_dfrac=False, cfg=refine_cfg)
+                                 refine_dfrac=False, cfg=refine_cfg,
+                                 exclude_h_ll=not args.refine_h)
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,
@@ -245,7 +246,6 @@ def main(args):
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
     refiner = Refine(st, geom, refine_params, ll,
-                     refine_h=args.refine_h,
                      unrestrained=args.unrestrained,
                      params=params)
 

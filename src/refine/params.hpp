@@ -5,6 +5,7 @@
 #define SERVALCAT_REFINE_PARAMS_HPP_
 
 #include <bitset>
+#include <set>
 #include <vector>
 #include <gemmi/model.hpp>     // for Atom
 #include <gemmi/calculate.hpp> // for count_atom_sites
@@ -40,11 +41,11 @@ struct RefineParams {
   std::array<std::vector<int>, N> atom_to_param_; // atom index to parameter index (-1 indicates fixed atoms)
   std::array<std::vector<int>, N> param_to_atom_; // parameter index to atom index
   std::array<std::vector<int>, N> pairs_refine_; // should we have param_to_atom equivalent for this?
-  std::vector<bool> ll_exclusion; // TODO. should be Type dependent?
   std::array<size_t, N> npairs_refine_{};
   std::vector<int> bq_mix_atoms; // B-Q
   std::vector<int> bd_mix_atoms; // B-D
   std::vector<int> qd_mix_atoms; // Q-D
+  std::array<std::set<int>, N> ll_exclusion; // set of atom indices
   RefineParams(bool refine_xyz, int adp_mode, bool refine_occ, bool refine_dfrac, bool use_q_b_mixed)
     : use_q_b_mixed_derivatives(use_q_b_mixed) {
     // decide which parameters are refined
@@ -149,6 +150,23 @@ struct RefineParams {
       if (is_refined(t) && atom_to_param(t)[idx] >= 0)
         return true;
     return false;
+  }
+  bool is_excluded_ll(size_t idx, Type t) const {
+    return ll_exclusion[type2num(t)].count(idx) > 0;
+  }
+  bool is_atom_excluded_ll(size_t idx) const { // for all t
+    for (Type t : Types)
+      if (is_refined(t) && !is_excluded_ll(idx, t))
+        return false;
+    return true;
+  }
+  void add_ll_exclusion(size_t idx, Type t) {
+    ll_exclusion[type2num(t)].insert(idx);
+  }
+  void add_ll_exclusion(size_t idx) {
+    for (Type t : Types)
+      if (is_refined(t))
+        add_ll_exclusion(idx, t);
   }
   void set_pairs(Type t, const std::vector<std::pair<int,int>> &pairs) {
     if (!is_refined(t))

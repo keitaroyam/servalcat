@@ -785,6 +785,19 @@ void add_refine(nb::module_& m) {
     .def("n_refined_pairs", &RefineParams::n_refined_pairs)
     .def("n_params", &RefineParams::n_params)
     .def("is_refined", &RefineParams::is_refined)
+    .def("is_excluded_ll", &RefineParams::is_excluded_ll)
+    .def("add_ll_exclusion", nb::overload_cast<size_t>(&RefineParams::add_ll_exclusion))
+    .def("add_ll_exclusion", nb::overload_cast<size_t, RefineParams::Type>(&RefineParams::add_ll_exclusion))
+    .def("exclude_h_ll", [](RefineParams &self, RefineParams::Type t) {
+      for (const auto a : self.atoms)
+        if (a->is_hydrogen())
+            self.add_ll_exclusion(a->serial - 1, t);
+    }, nb::arg("t"))
+    .def("exclude_h_ll", [](RefineParams &self) {
+      for (const auto a : self.atoms)
+        if (a->is_hydrogen())
+            self.add_ll_exclusion(a->serial - 1);
+    })
     .def("set_model", &RefineParams::set_model)
     .def("set_params_default", &RefineParams::set_params_default)
     .def("set_params_selected", &RefineParams::set_params_selected)
@@ -942,8 +955,8 @@ void add_refine(nb::module_& m) {
     .def_rw("maxbin", &TableS3::maxbin)
     ;
   nb::class_<LL>(m, "LL")
-    .def(nb::init<const gemmi::Structure &, std::shared_ptr<RefineParams>, bool, bool>(),
-         nb::arg("st"), nb::arg("params"), nb::arg("mott_bethe"), nb::arg("refine_h"))
+    .def(nb::init<const gemmi::Structure &, std::shared_ptr<RefineParams>, bool>(),
+         nb::arg("st"), nb::arg("params"), nb::arg("mott_bethe"))
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>>)

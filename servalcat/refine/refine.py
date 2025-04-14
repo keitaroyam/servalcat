@@ -60,7 +60,8 @@ def load_config(yaml_file):
 # load_config()
 
 def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
-                 refine_dfrac=False, use_q_b_mixed=True, cfg=None):
+                 refine_dfrac=False, use_q_b_mixed=True, cfg=None,
+                 exclude_h_ll=True):
     assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
     ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
     ret.set_model(st[0])
@@ -74,6 +75,8 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
         ret.set_params_from_flags()
     else:
         ret.set_params_default()
+    if exclude_h_ll:
+        ret.exclude_h_ll()
     return ret
 
 class Geom:
@@ -354,6 +357,7 @@ class GroupOccupancy:
         self.params = ext.RefineParams(refine_occ=True)
         self.params.set_model(st[0])
         self.params.set_params_selected(atom_idxes)
+        self.params.exclude_h_ll() # should be reasonable
     # __init__()
     
     def constraint(self, x):
@@ -399,9 +403,9 @@ class GroupOccupancy:
         f = ll.calc_target() - numpy.dot(ls, c) + 0.5 * u * numpy.sum(c**2)
         return f
     
-    def grad(self, x, ll, ls, u, refine_h):
+    def grad(self, x, ll, ls, u):
         c = self.constraint(x)
-        ll.calc_grad(self.params, refine_h=refine_h, specs=None)
+        ll.calc_grad(self.params, specs=None)
         #print("grad=", ll.ll.vn)
         #print("diag=", ll.ll.am)
         assert len(ll.ll.vn) == len(ll.ll.am)
@@ -409,7 +413,7 @@ class GroupOccupancy:
         diag = []
         atom_to_param = self.params.atom_to_param(Type.Q)
         for atoms in self.groups: # idxes
-            idxes = [atom_to_param[a.serial-1] for a in atoms if refine_h or not a.is_hydrogen()]
+            idxes = [atom_to_param[a.serial-1] for a in atoms if not self.params.is_excluded_ll(a.serial-1, Type.Q)]
             vn.append(numpy.sum(numpy.array(ll.ll.vn)[idxes]))
             diag.append(numpy.sum(numpy.array(ll.ll.am)[idxes]))
         vn, diag = numpy.array(vn), numpy.array(diag)
@@ -422,7 +426,7 @@ class GroupOccupancy:
 
         return vn, diag
         
-    def refine(self, ll, refine_h, alpha=1.1):
+    def refine(self, ll, alpha=1.1):
         # Refinement of grouped occupancies using augmented Lagrangian
         # f(x) = LL(x) - sum_j (lambda_j c_j(x)) + u/2 sum_j (c_j(x))^2
         # with c_j(x) = 0 constraints
@@ -439,7 +443,7 @@ class GroupOccupancy:
         for cyc in range(self.ncycle):
             ret.append({"Ncyc": cyc+1, "f0": f0})
             logger.writeln("occ_{}_f0= {:.4e}".format(cyc, f0))
-            vn, diag = self.grad(x0, ll, ls, u, refine_h)
+            vn, diag = self.grad(x0, ll, ls, u)
             diag[diag < 1e-6] = 1.
             dx = -vn / diag
             if 0:
@@ -453,7 +457,7 @@ class GroupOccupancy:
                 ofs.close()
                 import scipy.optimize
                 print(scipy.optimize.line_search(f=lambda x: self.target(x, ll, ls, u),
-                                                 myfprime= lambda x: self.grad(ll, ls, u, refine_h)[0],
+                                                 myfprime= lambda x: self.grad(ll, ls, u)[0],
                                                  xk= x0,
                                                  pk= dx))
                 quit()
@@ -484,8 +488,7 @@ class GroupOccupancy:
 
 
 class Refine:
-    def __init__(self, st, geom, refine_params, ll=None, refine_h=False, #refine_xyz=True, adp_mode=1, , refine_occ=False,
-                 unrestrained=False, params=None):
+    def __init__(self, st, geom, refine_params, ll=None, unrestrained=False, params=None):
         assert geom is not None
         self.st = st # clone()?
         self.st_traj = None
@@ -494,10 +497,9 @@ class Refine:
         self.ll = ll
         self.gamma = 0
         self.unrestrained = unrestrained
-        self.refine_h = refine_h
-        self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
-        if self.h_inherit_parent_adp:
-            self.geom.set_h_parents()
+        #self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
+        #if self.h_inherit_parent_adp:
+        #    self.geom.set_h_parents()
         if params and params.get("write_trajectory"):
             self.st_traj = self.st.clone()
             self.st_traj[-1].num = 0
@@ -575,11 +577,11 @@ class Refine:
         for a in self.params.atoms:
             a.occ = min(max_occ.get(a, 1), max(1e-3, a.occ))
         # Copy B of hydrogen from parent
-        if self.h_inherit_parent_adp:
-            for h in self.geom.parents:
-                p = self.geom.parents[h]
-                h.b_iso = p.b_iso
-                h.aniso = p.aniso
+        #if self.h_inherit_parent_adp:
+        #    for h in self.geom.parents:
+        #        p = self.geom.parents[h]
+        #        h.b_iso = p.b_iso
+        #        h.aniso = p.aniso
 
         if self.ll is not None:
             self.ll.update_fc()
@@ -600,7 +602,7 @@ class Refine:
             ll = self.ll.calc_target()
             logger.writeln(" ll= {}".format(ll))
             if not target_only:
-                self.ll.calc_grad(self.params, self.refine_h, self.geom.geom.specials)
+                self.ll.calc_grad(self.params, self.geom.geom.specials)
         else:
             ll = 0
 
@@ -718,7 +720,7 @@ class Refine:
             elif occ_refine_flag:
                 stats.append({"Ncyc": len(stats)})
             if occ_refine_flag:
-                stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll, self.refine_h)
+                stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
             if self.ll is not None:

@@ -105,7 +105,7 @@ class LL_SPA:
         ret["bin_stats"] = stats
         return ret
 
-    def calc_grad(self, refine_params, refine_h, specs):
+    def calc_grad(self, refine_params, specs):
         dll_dab = numpy.empty_like(self.hkldata.df[self.lab_obs])
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
@@ -126,7 +126,7 @@ class LL_SPA:
         d2ll_dab2 *= self.hkldata.cell.volume
         dll_dab_den = self.hkldata.fft_map(data=dll_dab * self.hkldata.debye_waller_factors(b_iso=-blur))
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
-        self.ll = ext.LL(self.st, refine_params, self.mott_bethe, refine_h)
+        self.ll = ext.LL(self.st, refine_params, self.mott_bethe)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         self.ll.calc_grad_it92(dll_dab_den, blur)
 

@@ -179,7 +179,7 @@ class LL_Xtal:
             logger.writeln("R1 is calculated for reflections with I/sigma>2.")
         return ret
 
-    def calc_grad(self, refine_params, refine_h, specs=None):
+    def calc_grad(self, refine_params, specs=None):
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         if self.twin_data:
@@ -253,7 +253,7 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        self.ll = ext.LL(self.st, refine_params, self.mott_bethe, refine_h)
+        self.ll = ext.LL(self.st, refine_params, self.mott_bethe)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         if self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)

@@ -235,7 +235,6 @@ struct LL{
   const gemmi::SpaceGroup *sg;
   std::vector<gemmi::Transform> ncs;
   bool mott_bethe;
-  bool refine_h;
   std::shared_ptr<RefineParams> params;
   // table (distances x b values)
   std::vector<double> table_bs;
@@ -247,8 +246,8 @@ struct LL{
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
-  LL(const gemmi::Structure &st, std::shared_ptr<RefineParams> params, bool mott_bethe, bool refine_h)
-    : cell(st.cell), sg(st.find_spacegroup()), params(params), mott_bethe(mott_bethe), refine_h(refine_h) {
+  LL(const gemmi::Structure &st, std::shared_ptr<RefineParams> params, bool mott_bethe)
+    : cell(st.cell), sg(st.find_spacegroup()), params(params), mott_bethe(mott_bethe) {
     set_ncs({});
   }
   void set_ncs(const std::vector<gemmi::Transform> &trs) {
@@ -265,17 +264,23 @@ struct LL{
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = params->atoms.size();
     vn.assign(params->n_params(), 0.);
+    auto get_pos = [&](size_t idx, RefineParams::Type t) {
+      if (params->is_excluded_ll(idx, t))
+        return -1;
+      return params->get_pos_vec(idx, t);
+    };
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *params->atoms[i];
-      if (!refine_h && atom.is_hydrogen()) continue;
       if (!params->is_atom_refined(i)) continue;
+      if (params->is_atom_excluded_ll(i)) continue;
       const gemmi::Element &el = atom.element;
       const auto coef = Table::get(el, atom.charge);
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
+      const int pos_x = get_pos(i, RefineParams::Type::X);
+      const int pos_b = get_pos(i, RefineParams::Type::B);
+      const int pos_q = get_pos(i, RefineParams::Type::Q);
       const bool has_aniso = atom.aniso.nonzero();
-      const bool refine_xyz = params->is_atom_refined(i, RefineParams::Type::X);
-      const int adp_mode = params->is_atom_refined(i, RefineParams::Type::B) ? (params->aniso ? 2 : 1) : 0;
-      const bool refine_occ = params->is_atom_refined(i, RefineParams::Type::Q);
+      const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
       if (adp_mode == 1 && has_aniso) gemmi::fail("bad adp_mode");
       for (const gemmi::Transform &tr : ncs) { //TODO to use cell images?
         const gemmi::Fractional fpos = cell.fractionalize(gemmi::Position(tr.apply(atom.pos)));
@@ -308,14 +313,14 @@ struct LL{
                                                  double for_x = 0., for_b = 0., for_q = 0.;
                                                  for (int j = 0; j < N; ++j) {
                                                    double tmp = precal.a[j] * std::exp(precal.b[j] * r2);
-                                                   if (refine_occ) for_q += tmp;
+                                                   if (pos_q >= 0) for_q += tmp;
                                                    tmp *= precal.b[j];
                                                    for_x += tmp;
                                                    if (adp_mode == 1) for_b += tmp * (1.5 + r2 * precal.b[j]);
                                                  }
                                                  gx += for_x * 2 * delta * point;
                                                  if (adp_mode == 1) gb += for_b * point;
-                                                 if (refine_occ) gq += for_q * point;
+                                                 if (pos_q >= 0) gq += for_q * point;
                                                } else { // anisotropic
                                                  for (int j = 0; j < N; ++j) {
                                                    const double tmp = precal_aniso.a[j] * std::exp(precal_aniso.b[j].r_u_r(delta));
@@ -332,7 +337,7 @@ struct LL{
                                                      gb_aniso[4] += 2 * tmp3[4] + 2 * tmp2.x * tmp2.z * tmp * point;
                                                      gb_aniso[5] += 2 * tmp3[5] + 2 * tmp2.y * tmp2.z * tmp * point;
                                                    }
-                                                   if (refine_occ)
+                                                   if (pos_q >= 0)
                                                      gq += tmp * point;
                                                  }
                                                }
@@ -345,9 +350,6 @@ struct LL{
           for (int i = 0; i < 6; ++i)
             gb_aniso[i] *= atom.occ * 0.25 / gemmi::sq(gemmi::pi());
 
-        const int pos_x = params->get_pos_vec(i, RefineParams::Type::X);
-        const int pos_b = params->get_pos_vec(i, RefineParams::Type::B);
-        const int pos_q = params->get_pos_vec(i, RefineParams::Type::Q);
         if (pos_x >= 0) {
           const auto gx2 = tr.mat.transpose().multiply(gx);
           vn[pos_x  ] += gx2.x;
@@ -583,13 +585,17 @@ struct LL{
     const size_t n_a = params->n_fisher_ll();
     const int N = Table::Coef::ncoeffs;
     am.assign(n_a, 0.);
+    auto get_pos = [&](size_t idx, RefineParams::Type t) {
+      if (params->is_excluded_ll(idx, t))
+        return -1;
+      return params->get_pos_mat_ll(idx, t);
+    };
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *params->atoms[i];
       if (!params->is_atom_refined(i)) continue;
-      if (!refine_h && atom.is_hydrogen()) continue;
-      const int pos_x = params->get_pos_mat_ll(i, RefineParams::Type::X);
-      const int pos_b = params->get_pos_mat_ll(i, RefineParams::Type::B);
-      const int pos_q = params->get_pos_mat_ll(i, RefineParams::Type::Q);
+      const int pos_x = get_pos(i, RefineParams::Type::X);
+      const int pos_b = get_pos(i, RefineParams::Type::B);
+      const int pos_q = get_pos(i, RefineParams::Type::Q);
       const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
       const auto coef = Table::get(atom.element, atom.charge);
       const double w = atom.occ * atom.occ;
