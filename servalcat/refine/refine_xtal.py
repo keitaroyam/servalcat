@@ -88,6 +88,7 @@ def add_arguments(parser):
     parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="kldiv")
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
+    parser.add_argument('--refine_dfrac', action="store_true", help="Refine deuterium fraction (neutron only)")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument('--no_solvent',  action='store_true',
@@ -116,7 +117,8 @@ def parse_args(arg_list):
 
 def main(args):
     refine_cfg = load_config(args.config)
-    if args.source == "neutron": assert not args.refine_h # we need deuterium fraction handling in LL
+    if args.refine_dfrac and args.source != "neutron":
+        raise SystemExit("--refine_dfrac can only be used for the neutron source")
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
@@ -217,10 +219,13 @@ def main(args):
         ncslist = utils.restraints.prepare_ncs_restraints(st)
     else:
         ncslist = False
+    if args.refine_dfrac:
+        # needed to make Fc calculation expand H/D (ugh)
+        st.has_d_fraction = True
     refine_params = RefineParams(st, refine_xyz=not args.fix_xyz,
                                  adp_mode=dict(fix=0, iso=1, aniso=2)[args.adp],
                                  refine_occ=args.refine_all_occ,
-                                 refine_dfrac=False, cfg=refine_cfg,
+                                 refine_dfrac=args.refine_dfrac, cfg=refine_cfg,
                                  exclude_h_ll=not args.refine_h)
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
@@ -251,6 +256,10 @@ def main(args):
     st.meta.software = software_items + st.meta.software
     refiner.st.name = args.output_prefix
     utils.fileio.write_model(refiner.st, args.output_prefix, pdb=True, cif=True, hout=args.hout)
+    if st.has_d_fraction: # XXX make hout when neutron
+        st_hd_expand = refiner.st.clone()
+        st_hd_expand.store_deuterium_as_fraction(False)
+        utils.fileio.write_model(st_hd_expand, args.output_prefix + "_hd_expand", pdb=True, cif=True, hout=True)
     if params["write_trajectory"]:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
 

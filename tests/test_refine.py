@@ -12,6 +12,7 @@ import os
 import shutil
 import tempfile
 import sys
+import numpy
 import test_spa
 from servalcat import utils
 from servalcat.__main__ import main
@@ -142,7 +143,20 @@ class TestRefine(unittest.TestCase):
         self.assertGreaterEqual(min(occ_a[0], occ_b[0]), 0.)
         self.assertLessEqual(max(occ_a[0], occ_b[0]), 1.)
         self.assertAlmostEqual(occ_a[0] + occ_b[0], 1.)
-        
+
+    def test_refine_dfrac(self):
+        hklin = os.path.join(root, "1v9g", "1v9g-sf.cif.gz")
+        xyzin = os.path.join(root, "1v9g", "1v9g-spk.cif.gz")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", hklin, "-s", "neutron",
+                    "--hydr", "yes", "--hout", "--refine_dfrac"]
+        main()
+        with open("1v9g-spk_refined_stats.json") as f:
+            stats = json.load(f)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCFfreeavg"], 0.64)
+        st = utils.fileio.read_structure("1v9g-spk_refined.mmcif")
+        self.assertGreater(numpy.std([x.atom.fraction for x in st[0].all() if x.atom.is_hydrogen()]), 0.3)
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -76,7 +76,12 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
     else:
         ret.set_params_default()
     if exclude_h_ll:
-        ret.exclude_h_ll()
+        if refine_dfrac:
+            for t in (Type.X, Type.B, Type.Q):
+                if ret.is_refined(t):
+                    ret.exclude_h_ll(t)
+        else:
+            ret.exclude_h_ll()
     return ret
 
 class Geom:
@@ -530,6 +535,8 @@ class Refine:
         shift_min_allow_B = -30.0
         shift_max_allow_q = 0.5
         shift_min_allow_q = -0.5
+        shift_max_allow_d = 0.5
+        shift_min_allow_d = -0.5
         dx = scale * dx
         if self.params.is_refined(Type.X):
             dxx = dx[self.params.vec_selection(Type.X)]
@@ -566,6 +573,13 @@ class Refine:
             logger.writeln("mean(dq)= {}".format(numpy.mean(dxq)))
             dxq[dxq > shift_max_allow_q] = shift_max_allow_q
             dxq[dxq < shift_min_allow_q] = shift_min_allow_q
+        if self.params.is_refined(Type.D):
+            dxd = dx[self.params.vec_selection(Type.D)]
+            logger.writeln("min(dd) = {}".format(numpy.min(dxd)))
+            logger.writeln("max(dd) = {}".format(numpy.max(dxd)))
+            logger.writeln("mean(dd)= {}".format(numpy.mean(dxd)))
+            dxd[dxd > shift_max_allow_d] = shift_max_allow_d
+            dxd[dxd < shift_min_allow_d] = shift_min_allow_d
 
         return dx
 

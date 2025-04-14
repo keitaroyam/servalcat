@@ -82,7 +82,7 @@ struct RefineParams {
     case Type::X: return 6;
     case Type::B: return aniso ? 21 : 1;
     case Type::Q: return 1;
-    case Type::D: return 1;
+    case Type::D: return 0; // no restraints for deuterium fractions
     default: gemmi::fail("nfisher_geom_per_atom: bad t");
     }
   }
@@ -100,7 +100,7 @@ struct RefineParams {
     case Type::X: return 9;
     case Type::B: return aniso ? 36 : 1;
     case Type::Q: return 1;
-    case Type::D: return 1;
+    case Type::D: return 0; // no restraints for deuterium fractions
     default: gemmi::fail("nfisher_geom_per_pair: bad t");
     }
   }
@@ -301,10 +301,10 @@ struct RefineParams {
         flag.test(type2num(Type::B)) && flag.test(type2num(Type::Q)))
       bq_mix_atoms.push_back(idx);
     if (use_q_b_mixed_derivatives && is_refined(Type::B) && is_refined(Type::D) &&
-        flag.test(type2num(Type::B)) && flag.test(type2num(Type::D)))
+        flag.test(type2num(Type::B)) && flag.test(type2num(Type::D)) && atom->is_hydrogen())
       bd_mix_atoms.push_back(idx);
     if (is_refined(Type::Q) && is_refined(Type::D) &&
-        flag.test(type2num(Type::Q)) && flag.test(type2num(Type::D)))
+        flag.test(type2num(Type::Q)) && flag.test(type2num(Type::D)) && atom->is_hydrogen())
       qd_mix_atoms.push_back(idx);
   }
   void set_params_default() {
@@ -348,7 +348,8 @@ struct RefineParams {
     return x;
   }
   void set_x(const std::vector<double>& x, double min_b = 0.5) {
-    assert(x.size() == n_params());
+    if (x.size() != n_params())
+      gemmi::fail("RefineParams::set_x: wrong x size ", std::to_string(x.size()), " ", std::to_string(n_params()));
     int k = 0;
     // xyz
     for (int i : param_to_atom(Type::X))
@@ -377,9 +378,10 @@ struct RefineParams {
 
     // dfrac
     for (int i : param_to_atom(Type::D))
-      atoms[i]->fraction = gemmi::clamp(x[k++], 1e-3, 1.);
+      atoms[i]->fraction = gemmi::clamp(x[k++], 0., 1.);
 
-    assert(k == n_params());
+    if (k != n_params())
+      gemmi::fail("RefineParams::set_x: wrong k ", std::to_string(k), " ", std::to_string(n_params()));
   }
 };
 

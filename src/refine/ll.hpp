@@ -10,6 +10,7 @@
 #include <vector>
 #include <gemmi/grid.hpp>
 #include <gemmi/it92.hpp>
+#include <gemmi/neutron92.hpp>
 #include <gemmi/dencalc.hpp>
 #include <Eigen/Sparse>
 
@@ -263,6 +264,15 @@ struct LL{
   template <typename Table>
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = params->atoms.size();
+    using CoefType = typename Table::Coef;
+    constexpr bool is_neutron = std::is_same_v<Table, gemmi::Neutron92<typename CoefType::coef_type>>;
+    if (params->is_refined(RefineParams::Type::D) && !is_neutron)
+      gemmi::fail("Deuterium fraction refinement only works for neutron data.");
+    const double d_minus_h = [&]() {
+      if constexpr (is_neutron)
+        return Table::get_(gemmi::El::D) - Table::get_(gemmi::El::H);
+      return 1.; // never used
+    }();
     vn.assign(params->n_params(), 0.);
     auto get_pos = [&](size_t idx, RefineParams::Type t) {
       if (params->is_excluded_ll(idx, t))
@@ -274,11 +284,23 @@ struct LL{
       if (!params->is_atom_refined(i)) continue;
       if (params->is_atom_excluded_ll(i)) continue;
       const gemmi::Element &el = atom.element;
-      const auto coef = Table::get(el, atom.charge);
+      const double neutron_h_f = [&](){
+        if constexpr (is_neutron)
+          if (atom.is_hydrogen())
+            return atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H);
+        return 1.; // never used
+      }();
+      const auto coef = [&](){
+        if constexpr (is_neutron)
+          if (atom.is_hydrogen())
+            return CoefType{{neutron_h_f}};
+        return Table::get(el, atom.charge);
+      }();
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
       const int pos_x = get_pos(i, RefineParams::Type::X);
       const int pos_b = get_pos(i, RefineParams::Type::B);
       const int pos_q = get_pos(i, RefineParams::Type::Q);
+      const int pos_d = get_pos(i, RefineParams::Type::D);
       const bool has_aniso = atom.aniso.nonzero();
       const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
       if (adp_mode == 1 && has_aniso) gemmi::fail("bad adp_mode");
@@ -296,8 +318,10 @@ struct LL{
                                                                                           mott_bethe ? -el.atomic_number() : 0.)
           : precal_aniso_t();
 
-        const double radius = gemmi::determine_cutoff_radius(gemmi::it92_radius_approx(b_max),
-                                                      precal, 1e-7); // TODO cutoff?
+        // DensityCalculator::estimate_radius() in gemmi/dencalc.hpp
+        const double radius = is_neutron ? std::sqrt(std::log(1e-7 / std::abs(precal.a[0])) / precal.b[0])
+                                         : gemmi::determine_cutoff_radius(gemmi::it92_radius_approx(b_max),
+                                                                          precal, 1e-7); // TODO cutoff?
         const int N = sizeof(precal.a) / sizeof(precal.a[0]);
         const int du = (int) std::ceil(radius / den.spacing[0]);
         const int dv = (int) std::ceil(radius / den.spacing[1]);
@@ -313,14 +337,14 @@ struct LL{
                                                  double for_x = 0., for_b = 0., for_q = 0.;
                                                  for (int j = 0; j < N; ++j) {
                                                    double tmp = precal.a[j] * std::exp(precal.b[j] * r2);
-                                                   if (pos_q >= 0) for_q += tmp;
+                                                   if (pos_q >= 0 || pos_d >= 0) for_q += tmp;
                                                    tmp *= precal.b[j];
                                                    for_x += tmp;
                                                    if (adp_mode == 1) for_b += tmp * (1.5 + r2 * precal.b[j]);
                                                  }
                                                  gx += for_x * 2 * delta * point;
                                                  if (adp_mode == 1) gb += for_b * point;
-                                                 if (pos_q >= 0) gq += for_q * point;
+                                                 if (pos_q >= 0 || pos_d >= 0) gq += for_q * point;
                                                } else { // anisotropic
                                                  for (int j = 0; j < N; ++j) {
                                                    const double tmp = precal_aniso.a[j] * std::exp(precal_aniso.b[j].r_u_r(delta));
@@ -337,7 +361,7 @@ struct LL{
                                                      gb_aniso[4] += 2 * tmp3[4] + 2 * tmp2.x * tmp2.z * tmp * point;
                                                      gb_aniso[5] += 2 * tmp3[5] + 2 * tmp2.y * tmp2.z * tmp * point;
                                                    }
-                                                   if (pos_q >= 0)
+                                                   if (pos_q >= 0 || pos_d >= 0)
                                                      gq += tmp * point;
                                                  }
                                                }
@@ -367,6 +391,8 @@ struct LL{
         }
         if (pos_q >= 0)
           vn[pos_q] += gq;
+        if (pos_d >= 0)
+          vn[pos_d] += gq / neutron_h_f * d_minus_h * atom.occ;
       }
     }
     for (auto &v : vn) // to match scale of hessian
@@ -581,6 +607,15 @@ struct LL{
 
   template <typename Table>
   void fisher_diag_from_table() {
+    using CoefType = typename Table::Coef;
+    constexpr bool is_neutron = std::is_same_v<Table, gemmi::Neutron92<typename CoefType::coef_type>>;
+    if (params->is_refined(RefineParams::Type::D) && !is_neutron)
+      gemmi::fail("Deuterium fraction refinement only works for neutron data.");
+    const double d_minus_h = [&]() {
+      if constexpr (is_neutron)
+        return Table::get_(gemmi::El::D) - Table::get_(gemmi::El::H);
+      return 1.; // never used
+    }();
     const size_t n_atoms = params->atoms.size();
     const size_t n_a = params->n_fisher_ll();
     const int N = Table::Coef::ncoeffs;
@@ -593,12 +628,25 @@ struct LL{
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *params->atoms[i];
       if (!params->is_atom_refined(i)) continue;
+      if (params->is_atom_excluded_ll(i)) continue;
+      const double neutron_h_f = [&](){
+        if constexpr (is_neutron)
+          if (atom.is_hydrogen())
+            return atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H);
+        return 1.; // never used
+      }();
       const int pos_x = get_pos(i, RefineParams::Type::X);
       const int pos_b = get_pos(i, RefineParams::Type::B);
       const int pos_q = get_pos(i, RefineParams::Type::Q);
+      const int pos_d = get_pos(i, RefineParams::Type::D);
       const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
-      const auto coef = Table::get(atom.element, atom.charge);
-      const double w = atom.occ * atom.occ;
+      const auto coef = [&](){
+        if constexpr (is_neutron)
+          if (atom.is_hydrogen())
+            return CoefType{{neutron_h_f}};
+        return Table::get(atom.element, atom.charge);
+      }();
+     const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
       double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
@@ -634,6 +682,20 @@ struct LL{
           else if (adp_mode == 2)
             am[pos_qb] = am[pos_qb + 1] = am[pos_qb + 2] = fac_qb * atom.occ / 3;
         }
+      }
+      if (pos_d >= 0) {
+        am[pos_d] = fac_q * gemmi::sq(atom.occ * d_minus_h / neutron_h_f);
+        const int pos_bd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::D);
+        const int pos_qd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::Q, RefineParams::Type::D);
+        if (pos_bd >= 0) {
+          if (adp_mode == 1)
+            am[pos_bd] = fac_qb * atom.occ * d_minus_h / neutron_h_f;
+          else if (adp_mode == 2) {
+            am[pos_bd] = am[pos_bd+1] = am[pos_bd+2] = fac_qb * atom.occ * d_minus_h / neutron_h_f / 3;
+          }
+        }
+        if (pos_qd >= 0)
+          am[pos_qd] = fac_q * atom.occ * d_minus_h / neutron_h_f;
       }
     }
   }
@@ -689,17 +751,22 @@ struct LL{
         if (pos >= 0)
           add_data(pos, pos, am[i++]);
       }
-    for (size_t j : params->bq_mix_atoms) {
-      const int pos_b = params->get_pos_vec(j, RefineParams::Type::B);
-      const int pos_q = params->get_pos_vec(j, RefineParams::Type::Q);
-      if (pos_b < 0 || pos_q < 0) continue; // should not happen
-      if (params->aniso)
-        for (size_t k = 0; k < 6; ++k)
-          add_data(pos_b + k, pos_q, am[i++]);
-      else
-        add_data(pos_b, pos_q, am[i++]);
-    }
-    if (i != n_a) gemmi::fail("LL::make_spmat: wrong matrix size");
+    const std::vector<std::tuple<RefineParams::Type, RefineParams::Type, const std::vector<int> &>> mixvecs = {
+      {RefineParams::Type::B, RefineParams::Type::Q, params->bq_mix_atoms},
+      {RefineParams::Type::B, RefineParams::Type::D, params->bd_mix_atoms},
+      {RefineParams::Type::Q, RefineParams::Type::D, params->qd_mix_atoms}};
+    for (const auto &ttvec : mixvecs)
+      for (size_t j : std::get<2>(ttvec)) {
+        const int pos1 = params->get_pos_vec(j, std::get<0>(ttvec));
+        const int pos2 = params->get_pos_vec(j, std::get<1>(ttvec));
+        if (pos1 < 0 || pos2 < 0) continue; // should not happen
+        if (std::get<0>(ttvec) == RefineParams::Type::B && params->aniso)
+          for (size_t k = 0; k < 6; ++k)
+            add_data(pos1 + k, pos2, am[i++]);
+        else
+          add_data(pos1, pos2, am[i++]);
+      }
+    if (i != n_a) gemmi::fail("LL::make_spmat: wrong matrix size ", std::to_string(i), " ", std::to_string(n_a));
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
   }
