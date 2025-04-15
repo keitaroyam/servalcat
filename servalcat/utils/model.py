@@ -576,6 +576,21 @@ def shift_b(model, b):
             cra.atom.aniso.u33 += u
 # shift_b()
 
+def initialize_values(model, params):
+    for k in params:
+        if k not in ("adp", "occ", "dfrac"):
+            continue
+        for selstr, value in params[k].items():
+            sel = gemmi.Selection(selstr)
+            for chain in sel.chains(model):
+                for residue in sel.residues(chain):
+                    for atom in sel.atoms(residue):
+                        setattr(atom, {"adp":"b_iso", "occ": "occ", "dfrac": "fraction"}[k], value)
+                        if k == "adp" and atom.aniso.nonzero():
+                            u = atom.b_iso * b_to_u
+                            atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
+# initialize_values()
+
 def all_chain_ids(st):
     return [chain.name for model in st for chain in model]
 # all_chain_ids()

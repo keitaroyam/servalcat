@@ -205,8 +205,9 @@ def main(args):
 
     print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
 
-    # initialize ADP
+    # initialize values
     utils.model.reset_adp(st[0], args.bfactor, args.adp)
+    utils.model.initialize_values(st[0], refine_cfg.initialisation)
 
     # auto weight
     if args.weight is None:

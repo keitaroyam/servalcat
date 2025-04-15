@@ -31,6 +31,29 @@ Type = ext.RefineParams.Type
 #profile = line_profiler.LineProfiler()
 #atexit.register(profile.print_stats)
 
+"""
+atom_selection:
+  xyz:
+    include: []
+    exclude: []
+  adp:
+    include: []
+    exclude: []
+  occ:
+    include: []
+    exclude: []
+  dfrac:
+    include: []
+    exclude: []
+
+initialisation:
+  adp:
+    '*': 50
+  occ: {}
+  dfrac:
+    '[H]': 1.0
+"""
+
 @dataclass
 class SelectionConfig:
     include: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to include"})
@@ -47,11 +70,19 @@ class RefineConfig:
         },
         metadata={"help": "Configuration for atom selection during refinement"}
     )
+    initialisation: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "adp": {},
+            "occ": {},
+            "dfrac": {}
+        },
+        metadata={"help": ""}
+    )
 
 def load_config(yaml_file):
-    if not yaml_file:
-        return None
     schema = OmegaConf.structured(RefineConfig)
+    if not yaml_file:
+        return schema
     conf = OmegaConf.load(yaml_file)
     cfg = OmegaConf.merge(schema, conf.get("refine"))
     logger.writeln("Config loaded:")
