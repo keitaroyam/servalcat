@@ -261,11 +261,10 @@ struct LL{
   // FFT-based gradient calculation: Murshudov et al. (1997) 10.1107/S0907444996012255
   // if cryo-EM SPA, den is the Fourier transform of (dLL/dAc-i dLL/dBc)*mott_bethe_factor/s^2
   // When b_add is given, den must have been sharpened
-  template <typename Table>
+  template <typename Table, bool is_neutron=false>
   void calc_grad(gemmi::Grid<float> &den, double b_add) { // needs <double>?
     const size_t n_atoms = params->atoms.size();
     using CoefType = typename Table::Coef;
-    constexpr bool is_neutron = std::is_same_v<Table, gemmi::Neutron92<typename CoefType::coef_type>>;
     if (params->is_refined(RefineParams::Type::D) && !is_neutron)
       gemmi::fail("Deuterium fraction refinement only works for neutron data.");
     const double d_minus_h = [&]() {
@@ -605,10 +604,9 @@ struct LL{
     return a * dx + y_points[k1-1];
   }
 
-  template <typename Table>
+  template <typename Table, bool is_neutron=false>
   void fisher_diag_from_table() {
     using CoefType = typename Table::Coef;
-    constexpr bool is_neutron = std::is_same_v<Table, gemmi::Neutron92<typename CoefType::coef_type>>;
     if (params->is_refined(RefineParams::Type::D) && !is_neutron)
       gemmi::fail("Deuterium fraction refinement only works for neutron data.");
     const double d_minus_h = [&]() {
