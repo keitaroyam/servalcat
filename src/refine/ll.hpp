@@ -284,16 +284,16 @@ struct LL{
       if (!params->is_atom_refined(i)) continue;
       if (params->is_atom_excluded_ll(i)) continue;
       const gemmi::Element &el = atom.element;
-      const double neutron_h_f = [&](){
+      const double neutron_h_f_correction = [&](){
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
-            return atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H);
-        return 1.; // never used
+            return (atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H)) / d_minus_h;
+        return 1.;
       }();
       const auto coef = [&](){
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
-            return CoefType{{neutron_h_f}};
+            return CoefType{{d_minus_h}}; // corrected later
         return Table::get(el, atom.charge);
       }();
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
@@ -367,12 +367,12 @@ struct LL{
                                                }
                                              }, false /* fail_on_too_large_radius */,
                                              radius);
-        gx *= atom.occ;
+        gx *= atom.occ * neutron_h_f_correction;
         if (adp_mode == 1)
-          gb *= atom.occ * 0.25 / gemmi::sq(gemmi::pi());
+          gb *= atom.occ * 0.25 / gemmi::sq(gemmi::pi()) * neutron_h_f_correction;
         else if (adp_mode == 2)
           for (int i = 0; i < 6; ++i)
-            gb_aniso[i] *= atom.occ * 0.25 / gemmi::sq(gemmi::pi());
+            gb_aniso[i] *= atom.occ * 0.25 / gemmi::sq(gemmi::pi()) * neutron_h_f_correction;
 
         if (pos_x >= 0) {
           const auto gx2 = tr.mat.transpose().multiply(gx);
@@ -390,9 +390,9 @@ struct LL{
           }
         }
         if (pos_q >= 0)
-          vn[pos_q] += gq;
+          vn[pos_q] += gq * neutron_h_f_correction;
         if (pos_d >= 0)
-          vn[pos_d] += gq / neutron_h_f * d_minus_h * atom.occ;
+          vn[pos_d] += gq * atom.occ;
       }
     }
     for (auto &v : vn) // to match scale of hessian
@@ -629,10 +629,10 @@ struct LL{
       const gemmi::Atom &atom = *params->atoms[i];
       if (!params->is_atom_refined(i)) continue;
       if (params->is_atom_excluded_ll(i)) continue;
-      const double neutron_h_f = [&](){
+      const double neutron_h_f_correction = [&](){
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
-            return atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H);
+            return (atom.fraction * Table::get_(gemmi::El::D) + (1 - atom.fraction) * Table::get_(gemmi::El::H)) / d_minus_h;
         return 1.; // never used
       }();
       const int pos_x = get_pos(i, RefineParams::Type::X);
@@ -643,10 +643,10 @@ struct LL{
       const auto coef = [&](){
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
-            return CoefType{{neutron_h_f}};
+            return CoefType{{d_minus_h}}; // corrected later
         return Table::get(atom.element, atom.charge);
       }();
-     const double w = atom.occ * atom.occ;
+      const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
       double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
@@ -664,7 +664,8 @@ struct LL{
           fac_q += aj * ak * interp_1d(table_bs, qq[0], b);
           fac_qb += aj * ak * interp_1d(table_bs, qb[0], b);
         }
-
+      fac_x *= gemmi::sq(neutron_h_f_correction);
+      fac_a *= gemmi::sq(neutron_h_f_correction);
       if (pos_x >= 0) am[pos_x] = am[pos_x+1] = am[pos_x+2] = w * fac_x;
       if (adp_mode == 1)
         am[pos_b] = w * fac_b;
@@ -674,28 +675,28 @@ struct LL{
         am[pos_b + 6] = am[pos_b + 7] = am[pos_b + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
       }
       if (pos_q >= 0) {
-        am[pos_q] = fac_q; // w = q^2 not needed
+        am[pos_q] = fac_q * gemmi::sq(neutron_h_f_correction); // w = q^2 not needed
         const int pos_qb = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::Q);
         if (pos_qb >= 0) {
           if (adp_mode == 1)
-            am[pos_qb] = fac_qb * atom.occ;
+            am[pos_qb] = fac_qb * atom.occ * gemmi::sq(neutron_h_f_correction);
           else if (adp_mode == 2)
-            am[pos_qb] = am[pos_qb + 1] = am[pos_qb + 2] = fac_qb * atom.occ / 3;
+            am[pos_qb] = am[pos_qb + 1] = am[pos_qb + 2] = fac_qb * atom.occ / 3 * gemmi::sq(neutron_h_f_correction);
         }
       }
       if (pos_d >= 0) {
-        am[pos_d] = fac_q * gemmi::sq(atom.occ * d_minus_h / neutron_h_f);
+        am[pos_d] = w * fac_q;
         const int pos_bd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::D);
         const int pos_qd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::Q, RefineParams::Type::D);
         if (pos_bd >= 0) {
           if (adp_mode == 1)
-            am[pos_bd] = fac_qb * atom.occ * d_minus_h / neutron_h_f;
+            am[pos_bd] = w * fac_qb * neutron_h_f_correction;
           else if (adp_mode == 2) {
-            am[pos_bd] = am[pos_bd+1] = am[pos_bd+2] = fac_qb * atom.occ * d_minus_h / neutron_h_f / 3;
+            am[pos_bd] = am[pos_bd+1] = am[pos_bd+2] = w * fac_qb * neutron_h_f_correction / 3;
           }
         }
         if (pos_qd >= 0)
-          am[pos_qd] = fac_q * atom.occ * d_minus_h / neutron_h_f;
+          am[pos_qd] = fac_q * atom.occ * neutron_h_f_correction;
       }
     }
   }

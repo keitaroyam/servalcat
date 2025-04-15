@@ -63,6 +63,8 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                  refine_dfrac=False, use_q_b_mixed=True, cfg=None,
                  exclude_h_ll=True):
     assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
+    if refine_dfrac and not st[0].has_hydrogen():
+        raise RuntimeError("Hydrogen must be present when deuterium fraction refinement is requested")
     ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
     ret.set_model(st[0])
     if cfg:

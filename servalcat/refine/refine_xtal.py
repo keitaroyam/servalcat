@@ -203,6 +203,10 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
 
+        if h_change == gemmi.HydrogenChange.ReAddKnown and args.source == "neutron":
+            topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
+                                           default_scale=utils.restraints.default_proton_scale)
+
     print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
     
     # initialize ADP
