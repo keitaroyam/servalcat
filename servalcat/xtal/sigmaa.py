@@ -82,12 +82,16 @@ def nanaverage(cc, w):
 def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
+    rlab = "R1" if has_int else "R"
+    cclab = "CCI" if has_int else "CCF"
+    olab = "Io" if has_int else "Fo"
+    clab = "Ic" if has_int else "Fc"
     stats = hkldata.binned_df.copy()
+    stats[[f"Mn({olab})", f"Mn({clab})"]] = numpy.nan
     stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
-    rlab = "R1" if has_int else "R"
-    cclab = "CCI" if has_int else "CCF"
+    stats["Cmpl"] = 0.
     if twin_data:
         Fc = numpy.sqrt(twin_data.i_calc_twin())
     else:
@@ -114,6 +118,9 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     for i_bin, idxes in hkldata.binned():
         stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
         stats.loc[i_bin, "n_all"] = len(idxes)
+        stats.loc[i_bin, "Cmpl"] = stats.loc[i_bin, "n_obs"] / stats.loc[i_bin, "n_all"] * 100.
+        stats.loc[i_bin, f"Mn({olab})"] = numpy.nanmean(obs[idxes])
+        stats.loc[i_bin, f"Mn({clab})"] = numpy.nanmean(calc[idxes])
         if has_free:
             for j, suf in ((1, "work"), (2, "free")):
                 idxes2 = numpy.concatenate([sel[j] for sel in centric_and_selections[i_bin]])

@@ -276,16 +276,19 @@ class Geom:
 
 def show_binstats(df, cycle_number):
     forplot = []
+    datalabs = [x for x in ("Mn(Io)", "Mn(Ic)", "Mn(Fo)", "Mn(Fc)") if x in df]
     rlabs = [x for x in df if x.startswith("R")]
     fsclabs = [x for x in df if x.startswith("fsc")]
     cclabs = [x for x in df if x.startswith("CC")]
     dlabs = [x for x in df if re.search("^D[0-9]*", x)]
+    if datalabs: forplot.append(["Mean I/F vs. Resolution", datalabs])
     if "fsc_model" in df: forplot.append(["FSC", ["fsc_model"]])
     if rlabs: forplot.append(["R", rlabs])
     if fsclabs: forplot.append(["FSC", fsclabs])
     if cclabs: forplot.append(["CC", cclabs])
     if dlabs: forplot.append(["ML parameters - D", dlabs])
     if "S" in df: forplot.append(["ML parameters - Sigma", ["S"]])
+    if "Cmpl" in df: forplot.append(["Data completeness", ["Cmpl"]])
     lstr = utils.make_loggraph_str(df, "Data stats in cycle {}".format(cycle_number), forplot,
                                    s2=1/df["d_min"]**2,
                                    float_format="{:.4f}".format)
