@@ -367,7 +367,7 @@ struct RefineParams {
           eig[j] = std::max(eig[j], min_b);
         const gemmi::SMat33<double> m2 = {eig[0], eig[1], eig[2], 0, 0, 0};
         atoms[i]->aniso = m2.transformed_by<float>(V).scaled<float>(1. / gemmi::u_to_b());
-        atoms[i]->b_iso = atoms[i]->aniso.trace() / 3.;
+        atoms[i]->b_iso = atoms[i]->aniso.trace() / 3. * gemmi::u_to_b();
         k+= 6;
       } else
         atoms[i]->b_iso = std::max(x[k++], min_b);
