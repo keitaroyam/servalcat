@@ -103,6 +103,7 @@ def add_arguments(p):
     # add_op3
     parser = subparsers.add_parser("add_op3", description = "Add OP3 atoms to 5' ends")
     parser.add_argument('model')
+    parser.add_argument('--chains', nargs="*", action="append", help="For selected chains only")
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
@@ -511,6 +512,7 @@ def h_add(args):
 # h_add()
 
 def add_op3(args):
+    if args.chains: args.chains = sum(args.chains, [])
     st = fileio.read_structure(args.model)
     model_format = fileio.check_model_format(args.model)
     
@@ -526,6 +528,7 @@ def add_op3(args):
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
 
     for chain in st[0]:
+        if args.chains and chain.name not in args.chains: continue
         p = chain.get_polymer()
         if not p: continue
         p_type = p.check_polymer_type()
