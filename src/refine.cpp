@@ -207,9 +207,11 @@ void add_refine(nb::module_& m) {
         delsq[0].push_back(da2);
         zsq[0].push_back(za2);
         sigmas[0].push_back(restr->sd_angle);
-        delsq[1].push_back(dd2);
-        zsq[1].push_back(zd2);
-        sigmas[1].push_back(restr->sd_dist);
+        if (!std::isnan(dd2)) {
+          delsq[1].push_back(dd2);
+          zsq[1].push_back(zd2);
+          sigmas[1].push_back(restr->sd_dist);
+        }
       }
       if (!delsq[0].empty())
         append("Stacking angles", delsq[0], zsq[0], sigmas[0]);
@@ -476,6 +478,8 @@ void add_refine(nb::module_& m) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.stackings) {
+        if (std::isnan(std::get<2>(t)))
+          continue;
         const auto& restr = std::get<0>(t);
         const double zd1 = std::get<2>(t) / restr->sd_dist;
         const double zd2 = std::get<3>(t) / restr->sd_dist;
@@ -944,6 +948,8 @@ void add_refine(nb::module_& m) {
     .def_rw("ncsr_sigma", &Geometry::ncsr_sigma)
     .def_rw("ncsr_diff_cutoff", &Geometry::ncsr_diff_cutoff)
     .def_rw("ncsr_max_dist", &Geometry::ncsr_max_dist)
+    // stac
+    .def_rw("use_stack_dist", &Geometry::use_stack_dist)
     ;
 
   nb::class_<TableS3>(m, "TableS3")

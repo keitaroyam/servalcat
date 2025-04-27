@@ -572,7 +572,7 @@ struct Geometry {
   };
   struct Stacking {
     Stacking(std::vector<gemmi::Atom*> plane1, std::vector<gemmi::Atom*> plane2) : planes({plane1, plane2}) {}
-    double calc(double wstack, GeomTarget* target, Reporting *reporting) const;
+    double calc(double wstack, bool use_dist, GeomTarget* target, Reporting *reporting) const;
     double dist;
     double sd_dist;
     double angle;
@@ -738,9 +738,11 @@ struct Geometry {
   double ncsr_diff_cutoff = 10.0;
   float ncsr_max_dist = 4.2;
 
+  bool use_stack_dist = false;
+
 private:
   void set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const;
-};
+}; // struct Geometry
 
 inline void Geometry::load_topo(const gemmi::Topo& topo) {
   auto add = [&](const gemmi::Topo::Rule& rule, gemmi::Asu asu = gemmi::Asu::Same) {
@@ -1258,7 +1260,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
     t.calc(target_ptr);
   for (const auto &t : stackings)
     if (has_selected(t.planes[0]) || has_selected(t.planes[1]))
-      ret += t.calc(wstack, target_ptr, rep_ptr);
+      ret += t.calc(wstack, use_stack_dist, target_ptr, rep_ptr);
   for (const auto &t : vdws)
     if (has_selected(t.atoms))
       ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
@@ -1912,7 +1914,7 @@ inline void Geometry::Harmonic::calc(GeomTarget* target) const {
   }
 }
 
-inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Reporting *reporting) const {
+inline double Geometry::Stacking::calc(double wstack, bool use_dist, GeomTarget* target, Reporting *reporting) const {
   double ret = 0;
   PlaneDeriv pder[2] = {planes[0], planes[1]};
   double vm1vm2 = pder[0].vm.dot(pder[1].vm);
@@ -1977,8 +1979,8 @@ inline double Geometry::Stacking::calc(double wstack, GeomTarget* target, Report
   }
 
   // distance; turned off by default in Refmac
-  double deltad[2] = {0, 0};
-  if (dist > 0) { // skip if ideal dist < 0
+  double deltad[2] = {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()};
+  if (use_dist && dist > 0) { // skip if ideal dist < 0
     const double wd = wstack * wstack / (sd_dist * sd_dist);
     for (size_t i = 0; i < 2; ++i) {
       double d = pder[i].xs.dot(pder[1-i].vm) - pder[1-i].D; // distance from i to the other
