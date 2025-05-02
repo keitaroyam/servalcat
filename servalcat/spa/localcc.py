@@ -10,6 +10,7 @@ import gemmi
 import numpy
 import pandas
 import os
+import json
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
@@ -104,7 +105,7 @@ def add_coeffs_for_model_cc(hkldata, st):
     hkldata.df["FCw"] = FCw
 # add_coeffs_for_model_cc()
 
-def model_stats(st, modelcc_map, halfcc_map, loggraph_out=None):
+def model_stats(st, modelcc_map, halfcc_map, loggraph_out=None, json_out=None):
     tmp = dict(chain=[], seqid=[], resn=[], CC_mapmodel=[], CC_halfmap=[])
     for chain in st[0]:
         for res in chain:
@@ -132,6 +133,8 @@ $$
 """)
                 ofs.write(g.to_string(header=False, index=False))
                 ofs.write("\n\n")
+    if json_out is not None:
+        df.to_json(json_out, orient="records", indent=2)
     return df
 # model_stats()
 
@@ -179,7 +182,7 @@ def main(args):
         logger.writeln("Model-map CC: min/max= {:.4f} {:.4f}".format(numpy.min(modelcc_map_in_mask), numpy.max(modelcc_map_in_mask)))
         utils.maps.write_ccp4_map(prefix+"_model.mrc", modelcc_map, hkldata.cell, hkldata.sg,
                                   mask_for_extent=mask if args.trim else None)
-        model_stats(st, modelcc_map, halfcc_map, loggraph_out=prefix+"_byresidue.log")
+        model_stats(st, modelcc_map, halfcc_map, loggraph_out=prefix+"_byresidue.log", json_out=prefix+"_byresidue.json")
 # main()
 
 if __name__ == "__main__":
