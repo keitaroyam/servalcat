@@ -545,12 +545,39 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
     logger.writeln("Finding new links (will be added if marked by *)")
     ns = gemmi.NeighborSearch(st[0], st.cell, 5.).populate()
     cs = gemmi.ContactSearch(4.)
-    cs.ignore = gemmi.ContactSearch.Ignore.AdjacentResidues # may miss polymer links not contiguous in a chain?
+    cs.ignore = gemmi.ContactSearch.Ignore.SameResidue
     results = cs.find_contacts(ns)
     onsb = set(gemmi.Element(x) for x in "ONSB")
     n_found = 0
+
+    # st.find_connection_by_cra is quite slow (spent ~12 sec for 7k00, 6301 connections)
+    # now it's ~6 times faster
+    connections = {tuple((p.chain_name, p.res_id.seqid, p.res_id.name, p.atom_name, p.altloc) for p in (c.partner1, c.partner2))
+                   for c in st.connections if c.type != gemmi.ConnectionType.Hydrog}
+    def find_connection(cra1, cra2):
+        key = lambda cra: (cra.chain.name, cra.residue.seqid, cra.residue.name, cra.atom.name, cra.atom.altloc)
+        return (key(cra1), key(cra2)) in connections or (key(cra2), key(cra1)) in connections
+    
     for r in results:
-        if st.find_connection_by_cra(r.partner1, r.partner2, ignore_segment=True): continue
+        # skip adjacent residues in a polymer entity
+        if (r.partner1.chain == r.partner2.chain and
+            r.partner1.residue.entity_type == r.partner2.residue.entity_type == gemmi.EntityType.Polymer and
+            r.partner1.residue.entity_id == r.partner2.residue.entity_id):
+            if r.partner1.chain.next_residue(r.partner1.residue) == r.partner2.residue:
+                atom1, atom2 = r.partner1.atom.name, r.partner2.atom.name
+            elif r.partner1.chain.next_residue(r.partner2.residue) == r.partner1.residue:
+                atom1, atom2 = r.partner2.atom.name, r.partner1.atom.name
+            else:
+                atom1, atom2 = None, None
+            if atom1 is not None:
+                ent = st.get_entity(r.partner1.residue.entity_id)
+                if (ent.polymer_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD) and
+                    atom1 == "C" and atom2 == "N"):
+                    continue
+                if (ent.polymer_type in (gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid) and
+                    atom1 == "O3'" and atom2 == "P"):
+                    continue
+        if find_connection(r.partner1, r.partner2): continue
         link, inv, _, _ = monlib.match_link(r.partner1.residue, r.partner1.atom.name, r.partner1.atom.altloc,
                                             r.partner2.residue, r.partner2.atom.name, r.partner2.atom.altloc,
                                             (r.dist / 1.4)**2)
