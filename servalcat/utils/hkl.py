@@ -73,12 +73,15 @@ def mtz_find_data_columns(mtz, require_sigma=True):
 
 def mtz_find_free_columns(mtz):
     col_types = {x.label:x.type for x in mtz.columns}
-    free_names = ("FREE", "RFREE", "FREER", "FreeR_flag", "R-free-flags", "FreeRflag")
+    free_names = ("FREE", "RFREE", "FREER", "FreeR_flag", "R-free-flags", "FreeRflag",
+                  "R_FREE_FLAGS")
     ret = []
-    for col in col_types:
-        typ = col_types[col]
-        if typ == "I" and col in free_names:
-            ret.append(col)
+    for col in mtz.columns:
+        if col.type == "I" and col.label in free_names:
+            if len(numpy.unique(col.array.astype(int))) > 1:
+                ret.append(col.label)
+            else:
+                logger.writeln(f"INFO: {col.label} is not a test flag because all its values are identical.")
     return ret
 # mtz_find_free_columns()
 
