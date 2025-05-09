@@ -1166,7 +1166,7 @@ def decide_mtz_labels(mtz, find_free=True, require=None):
             labin = dlabs[typ][0]
             break
     else:
-        raise RuntimeError("Data not found from mtz")
+        raise RuntimeError(f"Error: Observation or sigma not found in MTZ")
     if find_free:
         flabs = utils.hkl.mtz_find_free_columns(mtz)
         if flabs:
