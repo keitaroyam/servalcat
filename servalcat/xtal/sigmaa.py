@@ -704,7 +704,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                         twin_data=None):
     assert use in ("all", "work", "test")
     assert smoothing in (None, "gauss")
-    logger.writeln("Estimating sigma-A parameters using {}..".format(("intensities" if use_int else "amplitudes") + " (twin)" if twin_data else ""))
+    logger.write(f"Estimating sigma-A parameters from {'intensities' if use_int else 'amplitudes'} using {use} reflections")
+    logger.writeln(f"{' (twin)' if twin_data else ''}")
     trans = VarTrans(D_trans, S_trans)
     lab_obs = "I" if use_int else "FP"
     def get_idxes(i_bin):
