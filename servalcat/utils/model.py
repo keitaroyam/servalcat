@@ -566,14 +566,18 @@ def reset_adp(model, bfactor=None, adp_mode="iso"):
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
 # reset_adp()
 
-def shift_b(model, b):
-    u = b * b_to_u
+def shift_b(model, delta_b, min_b=0.01):
+    delta_u = delta_b * b_to_u
+    min_u = min_b * b_to_u
     for cra in model.all():
-        cra.atom.b_iso += b
+        cra.atom.b_iso = max(cra.atom.b_iso + delta_b, min_b)
         if cra.atom.aniso.nonzero():
-            cra.atom.aniso.u11 += u
-            cra.atom.aniso.u22 += u
-            cra.atom.aniso.u33 += u
+            M = cra.atom.aniso.as_mat33().array
+            v, Q = numpy.linalg.eigh(M)
+            v = numpy.maximum(v + delta_u, min_u)
+            M2 = Q.dot(numpy.diag(v)).dot(Q.T)
+            cra.atom.aniso = gemmi.SMat33f(M2[0,0], M2[1,1], M2[2,2], M2[0,1], M2[0,2], M2[1,2])
+            cra.atom.b_iso = cra.atom.aniso.trace() / 3 * u_to_b
 # shift_b()
 
 def initialize_values(model, params):

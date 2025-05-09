@@ -625,7 +625,7 @@ class Refine:
         if self.params.is_refined(Type.Q) and self.geom.specs:
             max_occ = {atom: 1./(len(images)+1) for atom, images, _, _ in self.geom.specs}
         for a in self.params.atoms:
-            a.occ = min(max_occ.get(a, 1), max(1e-3, a.occ))
+            a.occ = min(max_occ.get(a, 1), max(0, a.occ))
         # Copy B of hydrogen from parent
         #if self.h_inherit_parent_adp:
         #    for h in self.geom.parents:
@@ -801,7 +801,7 @@ class Refine:
                     weight /= 1.1
             if self.st_traj is not None:
                 self.st_traj.add_model(self.st[0])
-                self.st_traj[-1].num = len(self.st_traj)
+                self.st_traj[-1].num = len(self.st_traj) - 1
             if stats_json_out:
                 write_stats_json_safe(stats, stats_json_out)
 
