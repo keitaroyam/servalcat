@@ -139,32 +139,28 @@ def main(args):
         labin = decide_mtz_labels(hklin)
     software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
-        hkldata, sts, fc_labs, centric_and_selections, args.free = process_input(hklin=hklin,
-                                                                                 labin=labin,
-                                                                                 n_bins=args.nbins,
-                                                                                 free=args.free,
-                                                                                 xyzins=[args.model],
-                                                                                 source=args.source,
-                                                                                 d_max=args.d_max,
-                                                                                 d_min=args.d_min,
-                                                                                 use="work" if args.use_work_in_est else "test",
-                                                                                 max_bins=30,
-                                                                                 keep_charges=args.keep_charges,
-                                                                                 allow_unusual_occupancies=args.allow_unusual_occupancies,
-                                                                                 hklin_free=args.hklin_free,
-                                                                                 labin_free=args.labin_free)
+        hkldata, sts, fc_labs, centric_and_selections, args.free, use_in_est = process_input(
+            hklin=hklin,
+            labin=labin,
+            n_bins=args.nbins,
+            free=args.free,
+            xyzins=[args.model],
+            source=args.source,
+            d_max=args.d_max,
+            d_min=args.d_min,
+            use="work" if args.use_work_in_est else "test",
+            max_bins=30,
+            keep_charges=args.keep_charges,
+            allow_unusual_occupancies=args.allow_unusual_occupancies,
+            hklin_free=args.hklin_free,
+            labin_free=args.labin_free)
 
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
     if "FREE" in hkldata.df:
         use_in_target = "work"
-        if args.use_work_in_est:
-            use_in_est = "work"
-        else:
-            use_in_est = "test"
     else:
-        use_in_est = "all"
         use_in_target = "all"
 
     is_int = "I" in hkldata.df

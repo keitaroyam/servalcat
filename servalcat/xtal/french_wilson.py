@@ -224,16 +224,16 @@ def main(args):
     else:
         labin = args.labin.split(",")
     try:
-        hkldata, _, _, _, _ = sigmaa.process_input(hklin=mtz,
-                                                   labin=labin,
-                                                   n_bins=args.nbins,
-                                                   free=None,
-                                                   xyzins=[],
-                                                   source=None,
-                                                   d_min=args.d_min,
-                                                   n_per_bin=500,
-                                                   max_bins=30,
-                                                   cif_index=args.hklin_index)
+        hkldata, _, _, _, _, _ = sigmaa.process_input(hklin=mtz,
+                                                      labin=labin,
+                                                      n_bins=args.nbins,
+                                                      free=None,
+                                                      xyzins=[],
+                                                      source=None,
+                                                      d_min=args.d_min,
+                                                      n_per_bin=500,
+                                                      max_bins=30,
+                                                      cif_index=args.hklin_index)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     

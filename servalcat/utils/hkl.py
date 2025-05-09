@@ -184,6 +184,33 @@ def mtz_selected(mtz, columns):
     return mtz2
 # mtz_selected()
 
+def decide_ml_binning(hkldata, data_label, free_label, free, use, n_per_bin, max_bins):
+    assert use in ("all", "work", "test")
+    if n_per_bin is None:
+        if use == "all" or free_label not in hkldata.df:
+            n_per_bin = 100
+            use = "all"
+        elif use == "work":
+            n_per_bin = 100
+        elif use == "test":
+            n_per_bin = 50
+        else:
+            raise RuntimeError(f"should not happen: {use=}")
+
+    sel = hkldata.df[data_label].notna()
+    if use == "work":
+        sel &= hkldata.df[free_label] != free
+    elif use == "test":
+        sel &= hkldata.df[free_label] == free
+    s_array = 1/hkldata.d_spacings()[sel]
+    if len(s_array) == 0:
+        raise RuntimeError(f"no reflections in {use} set")
+
+    n_bins = decide_n_bins(n_per_bin, s_array, max_bins=max_bins)
+    logger.writeln(f"{n_per_bin=} requested for {use}. n_bins set to {n_bins}")
+    return n_bins, use
+# decide_ml_binning()
+
 def decide_n_bins(n_per_bin, s_array, power=2, min_bins=1, max_bins=50):
     sp = numpy.sort(s_array)**power
     spmin, spmax = numpy.min(sp), numpy.max(sp)

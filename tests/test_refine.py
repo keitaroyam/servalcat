@@ -47,8 +47,8 @@ class TestRefine(unittest.TestCase):
         main()
         with open("5e5z_refined_stats.json") as f:
             stats = json.load(f)
-        self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.88)
-        self.assertGreater(stats[-1]["data"]["summary"]["CCIworkavg"], 0.92)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.63)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIworkavg"], 0.94)
 
     def test_refine_xtal(self):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")

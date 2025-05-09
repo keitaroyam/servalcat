@@ -1334,27 +1334,18 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         free = hkldata.guess_free_number(newlabels[0]) # also check NaN
 
     if n_bins is None:
-        if n_per_bin is None:
-            if use == "all" or "FREE" not in hkldata.df:
-                n_per_bin = 100
-                use = "all"
-            elif use == "work":
-                n_per_bin = 100
-            elif use == "test":
-                n_per_bin = 50
-            else:
-                raise RuntimeError(f"should not happen: {use=}")
-        
-        sel = hkldata.df[newlabels[0]].notna()
-        if use == "work":
-            sel &= hkldata.df.FREE != free
-        elif use == "test":
-            sel &= hkldata.df.FREE == free
-        s_array = 1/hkldata.d_spacings()[sel]
-        if len(s_array) == 0:
-            raise RuntimeError("no reflections in {} set".format(use))
-        n_bins = utils.hkl.decide_n_bins(n_per_bin, s_array, max_bins=max_bins)
-        logger.writeln("n_per_bin={} requested for {}. n_bins set to {}".format(n_per_bin, use, n_bins))
+        n_bins, use = utils.hkl.decide_ml_binning(hkldata, data_label=newlabels[0],
+                                                  free_label="FREE", free=free,
+                                                  use=use, n_per_bin=n_per_bin,
+                                                  max_bins=max_bins)
+        if n_bins == 1 and use == "test":
+            logger.writeln("Warning: Not enough reflections for ML parameters.")
+            logger.writeln("Switching to use=work, i.e. use working reflections for ML estimation")
+            use = "work"
+            n_bins, use = utils.hkl.decide_ml_binning(hkldata, data_label=newlabels[0],
+                                                      free_label="FREE", free=free,
+                                                      use=use, n_per_bin=n_per_bin,
+                                                      max_bins=max_bins)
 
     hkldata.setup_binning(n_bins=n_bins)
     fc_labs = ["FC{}".format(i)  for i, _ in enumerate(sts)]
@@ -1415,7 +1406,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         hkldata.binned_df["CC*"] = numpy.sqrt(2 * stats["CC1/2"] / (1 + stats["CC1/2"]))
     
     logger.writeln(stats.to_string())
-    return hkldata, sts, fc_labs, centric_and_selections, free
+    return hkldata, sts, fc_labs, centric_and_selections, free, use
 # process_input()
 
 def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None):
@@ -1606,20 +1597,21 @@ def calculate_maps(hkldata, b_aniso, centric_and_selections, fc_labs, D_labs, lo
 
 def main(args):
     try:
-        hkldata, sts, fc_labs, centric_and_selections,free = process_input(hklin=args.hklin,
-                                                                           labin=args.labin.split(",") if args.labin else None,
-                                                                           n_bins=args.nbins,
-                                                                           free=args.free,
-                                                                           xyzins=sum(args.model, []),
-                                                                           source=args.source,
-                                                                           d_max=args.d_max,
-                                                                           d_min=args.d_min,
-                                                                           use=args.use,
-                                                                           max_bins=30,
-                                                                           keep_charges=args.keep_charges,
-                                                                           space_group=args.spacegroup,
-                                                                           hklin_free=args.hklin_free,
-                                                                           labin_free=args.labin_free)
+        hkldata, sts, fc_labs, centric_and_selections, free, args.use = process_input(
+            hklin=args.hklin,
+            labin=args.labin.split(",") if args.labin else None,
+            n_bins=args.nbins,
+            free=args.free,
+            xyzins=sum(args.model, []),
+            source=args.source,
+            d_max=args.d_max,
+            d_min=args.d_min,
+            use=args.use,
+            max_bins=30,
+            keep_charges=args.keep_charges,
+            space_group=args.spacegroup,
+            hklin_free=args.hklin_free,
+            labin_free=args.labin_free)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
