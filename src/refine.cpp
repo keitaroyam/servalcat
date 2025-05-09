@@ -128,11 +128,12 @@ void add_refine(nb::module_& m) {
         const auto& restr = std::get<0>(b);
         const auto& val = std::get<1>(b);
         const double sigma = use_nucleus ? val->sigma_nucleus : val->sigma;
-        const double d2 = gemmi::sq(std::get<2>(b)), z2 = gemmi::sq(std::get<2>(b) / sigma);
+        const double db = std::get<2>(b);
+        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
         const int k = (restr->type == 2 ? 2 :
                        (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen()) ? 1 : 0);
-        delsq[k].push_back(d2);
-        zsq[k].push_back(z2);
+        delsq[k].push_back(gemmi::sq(db));
+        zsq[k].push_back(gemmi::sq(robustf.dfdy));
         sigmas[k].push_back(sigma);
       }
       for (const auto& p : delsq)
@@ -309,11 +310,13 @@ void add_refine(nb::module_& m) {
         const auto& val = std::get<1>(b);
         const double ideal = use_nucleus ? val->value_nucleus : val->value;
         const double sigma = use_nucleus ? val->sigma_nucleus : val->sigma;
-        const double z = std::get<2>(b) / sigma; // value - ideal
+        const double db = std::get<2>(b);
+        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
+        const double z = robustf.dfdy;
         if (std::abs(z) >= min_z) {
           atom1.push_back(restr->atoms[0]);
           atom2.push_back(restr->atoms[1]);
-          values.push_back(std::get<2>(b) + ideal);
+          values.push_back(db + ideal);
           ideals.push_back(ideal);
           sigmas.push_back(sigma);
           zs.push_back(z);
