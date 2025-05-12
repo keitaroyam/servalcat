@@ -78,7 +78,8 @@ def mtz_find_free_columns(mtz):
     ret = []
     for col in mtz.columns:
         if col.type == "I" and col.label in free_names:
-            if len(numpy.unique(col.array.astype(int))) > 1:
+            vals = col.array[numpy.isfinite(col.array)].astype(int)
+            if len(numpy.unique(vals)) > 1:
                 ret.append(col.label)
             else:
                 logger.writeln(f"INFO: {col.label} is not a test flag because all its values are identical.")
@@ -193,7 +194,7 @@ def decide_ml_binning(hkldata, data_label, free_label, free, use, n_per_bin, max
         elif use == "work":
             n_per_bin = 100
         elif use == "test":
-            n_per_bin = 50
+            n_per_bin = 20
         else:
             raise RuntimeError(f"should not happen: {use=}")
 
