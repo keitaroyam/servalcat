@@ -626,6 +626,7 @@ void add_twin(nb::module_& m) {
       self.setup(hkls, bin, sg, cell, operators);
     })
     .def("pairs", [](const TwinData &self, int i_op, int i_bin) {
+      // i_op = 0 is the first twin operator (not identity)
       if (i_op < 0 || i_op >= self.alphas.size())
         throw std::runtime_error("bad i_op");
       std::vector<std::array<size_t, 2>> idxes;
@@ -633,14 +634,56 @@ void add_twin(nb::module_& m) {
       for (int ib = 0; ib < self.rb2o.size(); ++ib) {
         if (i_bin >= 0 && self.rbin[ib] != i_bin)
           continue;
-        for (int io = 0; io < self.rb2o[ib].size(); ++io)
+        for (int io = 0; io < self.rb2o[ib].size(); ++io) {
+          const int tofind = [&]()->int{
+            for (int ic = 0; ic < self.rbo2c[ib][io].size(); ++ic)
+              if (self.rbo2c[ib][io][ic] == i_op + 1)
+                return self.rbo2a[ib][io][ic];
+            return -1;
+          }();
+          if (tofind < 0)
+            continue;
+          // look for obs data indices corresponding to the twin operator
           for (int io2 = io+1; io2 < self.rb2o[ib].size(); ++io2)
-            if (self.rbo2a[ib][io2][0] == self.rbo2a[ib][io][i_op+1] &&
-                self.rb2o[ib][io] != self.rb2o[ib][io2])
+            if (!self.rbo2a[ib][io2].empty() && self.rbo2c[ib][io2][0] == 0 &&
+                self.rbo2a[ib][io2][0] == tofind)
               idxes.push_back({self.rb2o[ib][io], self.rb2o[ib][io2]});
+        }
       }
       return idxes;
     }, nb::arg("i_op"), nb::arg("i_bin")=-1)
+    // note: this may lead to higher cc, as each pair may include the same indices
+    .def("twin_related_obs", [](const TwinData &self, int i_bin) {
+      const size_t n_ops = self.n_ops(); // include identity
+      const size_t n_obs = [&]() {
+        if (i_bin < 0)
+          return self.n_obs();
+        size_t n = 0;
+        for (int ib = 0; ib < self.rb2o.size(); ++ib)
+          if (self.rbin[ib] == i_bin)
+            n += self.rb2o[ib].size();
+        return n;
+      }();
+      auto ret = make_numpy_array<int>({n_obs, n_ops});
+      int *ptr = ret.data();
+      for (int i = 0; i < ret.size(); ++i)
+        ptr[i] = -1;
+      for (int ib = 0; ib < self.rb2o.size(); ++ib)
+        if (i_bin < 0 || self.rbin[ib] == i_bin)
+          for (int io = 0; io < self.rb2o[ib].size(); ++io) {
+            for (int ic = 0; ic < self.rbo2c[ib][io].size(); ++ic) {
+              // look for obs data indices corresponding to twin operators
+              // XXX not properly tested
+              for (int io2 = 0; io2 < self.rb2o[ib].size(); ++io2)
+                if (!self.rbo2a[ib][io2].empty() && self.rbo2a[ib][io2][0] == self.rbo2a[ib][io][ic]) {
+                  ptr[self.rbo2c[ib][io][ic]] = self.rb2o[ib][io2];
+                  break;
+                }
+            }
+            ptr += n_ops;
+          }
+      return ret;
+    })
     .def("obs_related_asu", [](const TwinData &self) {
       const size_t n_ops = self.n_ops(); // include identity
       auto ret = make_numpy_array<int>({self.n_obs(), n_ops});
