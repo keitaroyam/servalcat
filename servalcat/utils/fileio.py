@@ -286,6 +286,8 @@ def software_items_from_mtz(hklin):
     try:
         if type(hklin) is gemmi.Mtz:
             mtz = hklin
+        elif splitext(hklin)[1].lower() != ".mtz":
+            return []
         else:
             mtz = gemmi.read_mtz_file(hklin, with_data=False)
         return gemmi.get_software_from_mtz_history(mtz.history)
