@@ -153,7 +153,7 @@ def operators_from_symbol(op, axis1=None, axis2=None):
 def show_operators_axis_angle(ops):
     for i, op in enumerate(ops):
         ax, ang = generate_operators.Rotation2AxisAngle_general(op)
-        logger.writeln(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), list(ax)))
+        logger.writeln(" operator {:3d} angle= {:7.3f} deg axis= {}".format(i+1, numpy.rad2deg(ang), numpy.array_str(ax)))
 # show_operators_axis_angle()
 
 def show_ncs_operators_axis_angle(ops):

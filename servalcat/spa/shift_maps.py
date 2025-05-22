@@ -115,9 +115,9 @@ def determine_shape_and_shift(mask, grid_start, padding, sts=None, mask_cutoff=1
         tmp = numpy.where(mask.array>mask_cutoff) - grid_start[:,None]
     
     tmp += (grid_shape[:,None]*numpy.floor(1-tmp/grid_shape[:,None])).astype(int) + grid_start[:,None]
-    limits = [(min(x), max(x)) for x in tmp]
+    limits = [(min(x), max(x)) for x in tmp.tolist()]
 
-    p = numpy.ceil(padding / spacing).astype(int)
+    p = numpy.ceil(padding / spacing).astype(int).tolist()
     logger.writeln("Limits: {} {} {}".format(*limits))
     logger.writeln("Padding: {} {} {}".format(*p))
     slices = [0, 0, 0]

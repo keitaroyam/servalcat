@@ -998,7 +998,7 @@ def compare_conf(args):
                 resn = resn_lookup[(c1, s1)]
                 for t in conf1:
                     if t in conf2:
-                        d = angle_abs_diff(conf1[t], conf2[t], fulls.get((resn, t), 360.))
+                        d = float(angle_abs_diff(conf1[t], conf2[t], fulls.get((resn, t), 360.)))
                         ret.append((c1, s1, c2, s2, resn, t, conf1[t], conf2[t], d))
                         if d > args.min_diff:
                             for_coot.append((c1, s1.num, c2, s2.num, resn, t, d))
