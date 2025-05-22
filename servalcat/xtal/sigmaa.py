@@ -699,7 +699,7 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, centric_and_selectio
         if hkldata.binned_df[D_lab].min() <= 0:
             min_D = hkldata.binned_df[D_lab][hkldata.binned_df[D_lab] > 0].min() * 0.1
             logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
-            hkldata.binned_df[D_lab].where(hkldata.binned_df[D_lab] > 0, min_D, inplace=True) # arbitrary
+            hkldata.binned_df.loc[hkldata.binned_df[D_lab] <= 0, D_lab] = min_D # arbitrary
 
     if twin_data:
         twin_data.ml_scale[:] = hkldata.binned_df.loc[:, D_labs]
