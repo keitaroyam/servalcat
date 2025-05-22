@@ -91,6 +91,12 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
+    if rlab == "R1":
+        if has_free:
+            for suf in ("work", "free"):
+                stats["n_R1"+suf] = 0
+        else:
+            stats["n_R1"] = 0
     stats["Cmpl"] = 0.
     if twin_data:
         Fc = numpy.sqrt(twin_data.i_calc_twin())
@@ -127,9 +133,13 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
                 stats.loc[i_bin, "n_"+suf] = numpy.sum(numpy.isfinite(obs[idxes2]))
                 stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes2], calc[idxes2])
                 stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes2], calc_sqrt[idxes2])
+                if rlab == "R1":
+                    stats.loc[i_bin, "n_"+rlab+suf] = numpy.sum(numpy.isfinite(obs_sqrt[idxes2]))
         else:
             stats.loc[i_bin, cclab] = utils.hkl.correlation(obs[idxes], calc[idxes])
             stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
+            if rlab == "R1":
+                stats.loc[i_bin, "n_"+rlab] = numpy.sum(numpy.isfinite(obs_sqrt[idxes]))
 
     # Overall
     ret = {}
