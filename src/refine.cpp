@@ -9,6 +9,7 @@
 #include "array.h"
 #include <gemmi/it92.hpp>
 #include <gemmi/neutron92.hpp>
+#include <gemmi/c4322.hpp> // CustomCoef
 #include <gemmi/monlib.hpp>
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
@@ -969,12 +970,16 @@ void add_refine(nb::module_& m) {
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>, true>)
+    .def("calc_grad_custom", &LL::calc_grad<gemmi::CustomCoef<double>>)
     .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
     .def("make_fisher_table_diag_fast_n92", &LL::make_fisher_table_diag_fast<gemmi::Neutron92<double>>)
+    .def("make_fisher_table_diag_fast_custom", &LL::make_fisher_table_diag_fast<gemmi::CustomCoef<double>>)
     .def("make_fisher_table_diag_direct_it92", &LL::make_fisher_table_diag_direct<gemmi::IT92<double>>)
     .def("make_fisher_table_diag_direct_n92", &LL::make_fisher_table_diag_direct<gemmi::Neutron92<double>>)
+    .def("make_fisher_table_diag_direct_custom", &LL::make_fisher_table_diag_direct<gemmi::CustomCoef<double>>)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_n92", &LL::fisher_diag_from_table<gemmi::Neutron92<double>, true>)
+    .def("fisher_diag_from_table_custom", &LL::fisher_diag_from_table<gemmi::CustomCoef<double>>)
     .def("spec_correction", &LL::spec_correction,
          nb::arg("specials"), nb::arg("alpha")=1e-3, nb::arg("use_rr")=true)
     .def_prop_ro("fisher_spmat", &LL::make_spmat)

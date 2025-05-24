@@ -14,6 +14,7 @@ import os
 import time
 import itertools
 import string
+from servalcat import ext
 
 gemmi.IT92_normalize()
 gemmi.IT92_set_ignore_charge(False)
@@ -70,6 +71,60 @@ def remove_charge(sts):
         logger.writeln("Warning: all atomic charges were set to zero.")
 # remove_charge()
 
+class CustomCoefUtil:
+    def __init__(self):
+        self.scat_lookup = {}
+        self.coeffs = {}
+
+    def cra2key(self, cra):
+        return (cra.chain.name, cra.residue.seqid,
+                cra.atom.name, cra.atom.altloc)
+        
+    def read_from_cif(self, st, cif_in):
+        doc = gemmi.cif.read(cif_in)
+        # gemmi reads structure from the first block
+        block = doc[0]
+        
+        # _atom_site.id is read as atom.serial
+        # it is mmcif writer's responsibility to ensure unique serials
+        serial2key = {x.atom.serial: self.cra2key(x) for x in st[0].all()}
+        self.scat_lookup = {}
+        for r in block.find("_atom_site.", ["id", "scat_id"]):
+            atom_id = gemmi.cif.as_int(r[0])
+            scat_id = gemmi.cif.as_int(r[1])
+            self.scat_lookup[serial2key[atom_id]] = scat_id
+
+        # read coeffs
+        self.coeffs = {gemmi.cif.as_int(r[0]): [gemmi.cif.as_number(r[i]) for i in range(1, 11)]
+                       for r in block.find("_lmb_scat_coef.", ["scat_id",
+                                                               "coef_a1", "coef_a2", "coef_a3", "coef_a4", "coef_a5",
+                                                               "coef_b1", "coef_b2", "coef_b3", "coef_b4", "coef_b5"])}
+    # read_from_cif()
+
+    def set_coeffs(self, st):
+        logger.writeln("debug: using c4322")
+        max_serial = max(cra.atom.serial for cra in st[0].all())
+        pp = [[0.]*10 for _ in range(max_serial+1)]
+        for cra in st[0].all():
+            scat_id = self.scat_lookup.get(self.cra2key(cra))
+            if scat_id is None:
+                raise RuntimeError(f"scat_id unknown {cra}")
+            pp[cra.atom.serial] = self.coeffs[scat_id]
+            #pp[cra.atom.serial] = cra.atom.element.c4322.get_coefs() # test
+        gemmi.set_custom_form_factors(pp)
+        ext.set_custom_form_factors(pp)
+    # set_coeffs()
+
+    def show_info(self):
+        logger.writeln("Custom atomic scattering factors will be used")
+        df = pandas.DataFrame([[k]+v for k, v in self.coeffs.items()],
+                              columns=["scat_id"] +[f"{k}{i+1}" for k in ("a", "b") for i in range(5)])
+        df["count"] = [list(self.scat_lookup.values()).count(i) for i in df["scat_id"]]
+        logger.writeln(df.to_string(index=False))
+        logger.writeln("")
+    # show_info()
+# class CustomCoefUtil
+
 def check_atomsf(sts, source, mott_bethe=True):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": mott_bethe = False
@@ -115,7 +170,7 @@ def calc_sum_ab(st):
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
                 omit_proton=False, omit_h_electron=False, miller_array=None):
-    assert source in ("xray", "electron", "neutron")
+    assert source in ("xray", "electron", "neutron", "custom")
     if source != "electron": mott_bethe = False
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
@@ -148,6 +203,8 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         dc = gemmi.DensityCalculatorE()
     elif source == "neutron":
         dc = gemmi.DensityCalculatorN()
+    elif source == "custom":
+        dc = gemmi.DensityCalculatorC()        
     else:
         raise RuntimeError("unknown source")
 

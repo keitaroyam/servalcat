@@ -31,7 +31,7 @@ def calc_D_and_S(hkldata, lab_obs): # simplified version of fofc.calc_D_and_S()
 
 class LL_SPA:
     def __init__(self, hkldata, st, monlib, lab_obs, source="electron", mott_bethe=True):
-        assert source in ("electron", "xray")
+        assert source in ("electron", "xray", "custom")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
@@ -43,7 +43,8 @@ class LL_SPA:
         self.b_aniso = None
 
     def refine_id(self):
-        if self.source == "electron":
+        if self.source in ("electron", "custom"):
+            # XXX when custom, it's actually unknown..
             return "ELECTRON MICROSCOPY"
         return "NON-EM SPA" # does not happen, I guess
 
@@ -128,13 +129,20 @@ class LL_SPA:
         dll_dab_den.array[:] *= self.hkldata.cell.volume**2 / dll_dab_den.point_count
         self.ll = ext.LL(self.st, refine_params, self.mott_bethe)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        self.ll.calc_grad_it92(dll_dab_den, blur)
+        if self.source == "custom":
+            self.ll.calc_grad_custom(dll_dab_den, blur)
+        else:
+            self.ll.calc_grad_it92(dll_dab_den, blur)
 
         # second derivative
         d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
-        self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
-        self.ll.fisher_diag_from_table_it92()
+        if self.source == "custom":
+            self.ll.make_fisher_table_diag_fast_custom(d2dfw_table)
+            self.ll.fisher_diag_from_table_custom()
+        else:
+            self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
+            self.ll.fisher_diag_from_table_it92()
         #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()

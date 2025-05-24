@@ -11,6 +11,7 @@
 #include <gemmi/grid.hpp>
 #include <gemmi/it92.hpp>
 #include <gemmi/neutron92.hpp>
+#include <gemmi/c4322.hpp> // CustomCoef
 #include <gemmi/dencalc.hpp>
 #include <Eigen/Sparse>
 
@@ -293,7 +294,7 @@ struct LL{
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
             return CoefType{{d_minus_h}}; // corrected later
-        return Table::get(el, atom.charge);
+        return Table::get(el, atom.charge, atom.serial);
       }();
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
       const int pos_x = get_pos(i, RefineParams::Type::X);
@@ -425,11 +426,8 @@ struct LL{
   template <typename Table>
   double b_sf_max() const {
     double ret = 0.;
-    std::set<std::pair<gemmi::Element, signed char>> elems;
-    for (auto atom : params->atoms)
-      elems.insert({atom->element, atom->charge});
-    for (const auto &p : elems) {
-      const auto &coef = Table::get(p.first, p.second);
+    for (auto atom : params->atoms) {
+      const auto &coef = Table::get(atom->element, atom->charge, atom->serial);
       for (int i = 0; i < Table::Coef::ncoeffs; ++i)
         if (coef.b(i) > ret)
           ret = coef.b(i);
@@ -642,7 +640,7 @@ struct LL{
         if constexpr (is_neutron)
           if (atom.is_hydrogen())
             return CoefType{{d_minus_h}}; // corrected later
-        return Table::get(atom.element, atom.charge);
+        return Table::get(atom.element, atom.charge, atom.serial);
       }();
       const double w = atom.occ * atom.occ;
       const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();

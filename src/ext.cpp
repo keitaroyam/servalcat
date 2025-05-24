@@ -2,11 +2,14 @@
 // MRC Laboratory of Molecular Biology
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/array.h>
+#include <nanobind/stl/vector.h>
 #include <nanobind/stl/tuple.h>
 #include <gemmi/grid.hpp>
 #include <gemmi/fourier.hpp>
 #include <gemmi/neighbor.hpp>
 #include <gemmi/solmask.hpp>
+#include <gemmi/c4322.hpp> // CustomCoef
 
 namespace nb = nanobind;
 void add_refine(nb::module_& m); // refine.cpp
@@ -72,4 +75,14 @@ NB_MODULE(ext, m) {
   add_twin(m);
   m.def("hard_sphere_kernel_recgrid", hard_sphere_kernel_recgrid<float>);
   m.def("soft_mask_from_model", soft_mask_from_model<float>);
+  // gemmi/python/elem.cpp
+  using CustomCoef = gemmi::CustomCoef<double>;
+  m.def("set_custom_form_factors", [](const std::vector<decltype(CustomCoef::Coef::coefs)>& pp) {
+      CustomCoef::data.clear();
+      CustomCoef::Coef item;
+      for (const auto& p : pp) {
+        item.set_coefs(p);
+        CustomCoef::data.push_back(item);
+      }
+  });
 }

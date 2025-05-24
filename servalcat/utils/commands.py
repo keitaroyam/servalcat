@@ -216,7 +216,7 @@ def add_arguments(p):
     parser.add_argument('--model', required=True)
     parser.add_argument("--no_expand_ncs", action='store_true', help="Do not expand strict NCS in MTRIX or _struct_ncs_oper")
     parser.add_argument("--method", choices=["fft", "direct"], default="fft")
-    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument("--source", choices=["electron", "xray", "neutron", "custom"], default="electron")
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
@@ -1193,9 +1193,15 @@ def fcalc(args):
     if not args.output_prefix: args.output_prefix = "{}_fcalc_{}".format(fileio.splitext(os.path.basename(args.model))[0], args.source)
 
     st = fileio.read_structure(args.model)
+    ccu = model.CustomCoefUtil()
     if not args.keep_charges:
         model.remove_charge([st])
-    model.check_atomsf([st], args.source)
+    if args.source == "custom":
+        ccu.read_from_cif(st, args.model)
+        ccu.show_info()
+        ccu.set_coeffs(st)
+    else:
+        model.check_atomsf([st], args.source)
     if not args.no_expand_ncs:
         model.expand_ncs(st)    
 

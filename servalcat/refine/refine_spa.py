@@ -112,7 +112,7 @@ def add_arguments(parser):
     parser.add_argument('--adp_restraint_mode', choices=["diff", "kldiv"], default="diff")
     parser.add_argument('--unrestrained',  action='store_true', help="No positional restraints")
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen against data (default: only restraints apply)")
-    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron", "custom"], default="electron")
     parser.add_argument('-o','--output_prefix', default="refined")
     parser.add_argument('--cross_validation', action='store_true',
                         help='Run cross validation. Only "throughout" mode is available (no "shake" mode)')
@@ -148,6 +148,9 @@ def main(args):
     params["write_trajectory"] = args.write_trajectory
 
     st = utils.fileio.read_structure(args.model)
+    ccu = utils.model.CustomCoefUtil()
+    if args.source == "custom":
+        ccu.read_from_cif(st, args.model)
     if args.unrestrained:
         monlib = gemmi.MonLib()
         topo = None
@@ -169,7 +172,10 @@ def main(args):
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if not args.keep_charges:
         utils.model.remove_charge([st])
-    utils.model.check_atomsf([st], args.source)
+    if args.source == "custom":
+        ccu.show_info()
+    else:
+        utils.model.check_atomsf([st], args.source)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)
@@ -243,6 +249,8 @@ def main(args):
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,
                 ncslist=ncslist)
+    if args.source == "custom":
+        ccu.set_coeffs(st)
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
