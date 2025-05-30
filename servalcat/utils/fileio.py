@@ -16,6 +16,7 @@ import glob
 import re
 import subprocess
 import gemmi
+import math
 import numpy
 import gzip
 import traceback
@@ -536,6 +537,8 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
     # parse lines
     sfacs = []
     latt, symms = 1, []
+    fvar = []
+    prev_free_u_iso = -1
     info = dict(hklf=0)
     cif2cart = None
     for l in lines:
@@ -562,6 +565,8 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
                     sfacs.extend([gemmi.Element(x) for x in sp[2:]])
         elif ins == "HKLF":
             info["hklf"] = int(sp[1])
+        elif ins == "FVAR":
+            fvar = list(map(float, sp[1:]))
         elif not re_kwd.search(ins):
             if not 4 < len(sp) < 13:
                 logger.writeln("cannot parse this line: {}".format(l))
@@ -580,9 +585,27 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
             
             site.fract.fromlist(list(map(float, sp[2:5])))
             if len(sp) > 5:
-                q = abs(float(sp[5]))
-                if q > 10: q = q % 10 # FIXME proper handling
-                site.occ = q
+                q_code = float(sp[5])
+                # decompose q_code = 10 * m + p, where -5 < p <= 5 and m is an integer.
+                m, p = divmod(q_code, 10.0)
+                m = int(m)
+                if p > 5.0:
+                    p -= 10.0
+                    m += 1
+                if abs(m) > 1: # reference to an FVAR
+                    if abs(m) > len(fvar):
+                        logger.error("this line references an undefined FVAR: {}".format(l))
+                    if m < 0:
+                        # Here the SHELXL manual contradicts itself.
+                        # It says -20.25 is m = -2, p = -0.25 but interprets it as 0.25 * (1 - fv2).
+                        occ = (1 - fvar[-m - 1]) * -p
+                    else:
+                        occ = fvar[m - 1] * p
+                else:
+                    occ = p
+
+                site.occ = occ
+
             if len(sp) > 11:
                 u = list(map(float, sp[6:12]))
                 site.aniso = gemmi.SMat33d(u[0], u[1], u[2], u[5], u[4], u[3])
@@ -591,15 +614,23 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
                     site.u_iso = sum(u[:3]) / 3.
                 else:
                     site.u_iso = site.aniso.transformed_by(cif2cart).trace() / 3
+
+                prev_free_u_iso = site.u_iso
+                print(f"updated prev_free_u_iso to {site.u_iso} at {site.label}")
             else:
-                site.u_iso = float(sp[6])
-                if site.u_iso < 0:
-                    # most recently defined non-hydrogen atom
-                    u_p = next((s.u_iso for s in reversed(ss.sites) if not s.element.is_hydrogen), None)
-                    if u_p is not None:
-                        site.u_iso *= -u_p
+                u_iso_code = float(sp[6])
+                if -5 < u_iso_code and u_iso_code < -0.5:
+                    if prev_free_u_iso > 0:
+                        site.u_iso = -u_iso_code * prev_free_u_iso
+#                        print(f"{prev_free_u_iso} * {-u_iso_code} = {site.u_iso} at {site.label}")
                     else:
                         logger.writeln(f"WARNING: parent atom not found for {site.label}")
+                elif u_iso_code > 0:
+                    site.u_iso = u_iso_code
+                    prev_free_u_iso = site.u_iso
+#                    print(f"updated prev_free_u_iso at {site.label}")
+                else:
+                    logger.writeln(f"WARNING: negative Ueq outside the (-0.5, -5) range for {site.label}")
 
             ss.add_site(site)
 
