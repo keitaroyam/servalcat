@@ -537,6 +537,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
     sfacs = []
     latt, symms = 1, []
     info = dict(hklf=0)
+    cif2cart = None
     for l in lines:
         sp = l.split()
         ins = sp[0].upper()
@@ -547,6 +548,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         elif ins == "CELL":
             #ss.wavelength = float(sp[1]) # next gemmi ver.
             ss.cell.set(*map(float, sp[2:]))
+            cif2cart = model.cif2cart_matrix(ss.cell)
         elif ins == "LATT":
             latt = int(sp[1])
         elif ins == "SYMM":
@@ -584,7 +586,11 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
             if len(sp) > 11:
                 u = list(map(float, sp[6:12]))
                 site.aniso = gemmi.SMat33d(u[0], u[1], u[2], u[5], u[4], u[3])
-                site.u_iso = sum(u[:3]) / 3.
+                if cif2cart is None:
+                    logger.writeln("WARNING: cannot calculate u_eq")
+                    site.u_iso = sum(u[:3]) / 3.
+                else:
+                    site.u_iso = site.aniso.transformed_by(cif2cart).trace() / 3
             else:
                 site.u_iso = float(sp[6])
                 if site.u_iso < 0:

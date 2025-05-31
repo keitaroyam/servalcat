@@ -560,7 +560,10 @@ def reset_adp(model, bfactor=None, adp_mode="iso"):
             cra.atom.aniso = gemmi.SMat33f(0,0,0,0,0,0)
         elif adp_mode == "aniso":
             if cra.atom.aniso.nonzero() and bfactor is None: # just in case
-                cra.atom.b_iso = numpy.mean(cra.atom.aniso.calculate_eigenvalues()) * u_to_b
+                b_iso = cra.atom.aniso.trace() / 3 * u_to_b
+                if abs(cra.atom.b_iso - b_iso) > 1e-2:
+                    logger.writeln(f"WARNING: {cra} B_iso={cra.atom.b_iso:.3f} and tr(B_aniso)/3={b_iso:.3f} are different. Resetting B_iso from B_aniso")
+                cra.atom.b_iso = b_iso
             else:
                 u = cra.atom.b_iso * b_to_u
                 cra.atom.aniso = gemmi.SMat33f(u, u, u, 0, 0, 0)
@@ -765,6 +768,13 @@ def invert_model(st):
     # invert peptides
 # invert_model()
 
+def cif2cart_matrix(cell):
+    # transformation matrix from U_cif to U_cart
+    ruc = cell.reciprocal()
+    ret = cell.orth.mat.multiply_by_diagonal(gemmi.Vec3(ruc.a, ruc.b, ruc.c))
+    return ret
+# cif2cart_matrix()
+
 def cx_to_mx(ss): #SmallStructure to Structure
     st = gemmi.Structure()
     st.spacegroup_hm = ss.spacegroup.xhm()
@@ -774,16 +784,13 @@ def cx_to_mx(ss): #SmallStructure to Structure
     st[-1][-1].add_residue(gemmi.Residue())
     st[-1][-1][-1].seqid.num = 1
     st[-1][-1][-1].name = "00"
-
-    ruc = ss.cell.reciprocal()
-    cif2cart = ss.cell.orth.mat.multiply_by_diagonal(gemmi.Vec3(ruc.a, ruc.b, ruc.c))
-    as_smat33f = lambda x: gemmi.SMat33f(x.u11, x.u22, x.u33, x.u12, x.u13, x.u23)
+    cif2cart = cif2cart_matrix(ss.cell)
     
     for site in ss.sites:
         st[-1][-1][-1].add_atom(gemmi.Atom())
         a = st[-1][-1][-1][-1]
         a.name = site.label
-        a.aniso = as_smat33f(site.aniso.transformed_by(cif2cart))
+        a.aniso = gemmi.SMat33f(*site.aniso.transformed_by(cif2cart).elements_pdb())
         a.b_iso = site.u_iso * u_to_b
         #a.charge = ?
         a.element = site.element
