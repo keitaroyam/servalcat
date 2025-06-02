@@ -1254,7 +1254,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     if col_types[labin[0]] == "J": # may be unmerged data
         if (d_min, d_max).count(None) != 2:
             d_array = mtz.make_d_array()
-            sel = ((0 if d_min is None else d_min) < d_array) & (d_array < (numpy.Inf if d_max is None else d_max))
+            sel = ((0 if d_min is None else d_min) < d_array) & (d_array < (numpy.inf if d_max is None else d_max))
         else:
             sel = ...
         ints = gemmi.Intensities()
