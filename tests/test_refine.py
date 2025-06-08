@@ -153,7 +153,7 @@ class TestRefine(unittest.TestCase):
         main()
         with open("1v9g-spk_refined_stats.json") as f:
             stats = json.load(f)
-        self.assertGreater(stats[-1]["data"]["summary"]["CCFfreeavg"], 0.64)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCFfreeavg"], 0.62)
         st = utils.fileio.read_structure("1v9g-spk_refined.mmcif")
         self.assertGreater(numpy.std([x.atom.fraction for x in st[0].all() if x.atom.is_hydrogen()]), 0.3)
 

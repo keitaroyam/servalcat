@@ -495,8 +495,9 @@ class HklData:
         sel = ~self.df[obs].isna()
         free = self.df.loc[sel, "FREE"]
         threshold = len(free.index) / 2
-        if free.isna().any():
-            raise RuntimeError("missing or invalid test flag")
+        free_na = free.isna()
+        if free_na.any():
+            raise RuntimeError(f"{free_na.sum()} missing test flags")
         counts = self.df.loc[sel, "FREE"].value_counts().sort_index()
         logger.writeln(counts.to_string(header=False))
         if len(counts.index) < 2:

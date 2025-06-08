@@ -1252,10 +1252,15 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
     if col_types[labin[0]] not in labs_and_types:
         raise RuntimeError("MTZ column {} is neither amplitude nor intensity".format(labin[0]))
     if col_types[labin[0]] == "J": # may be unmerged data
+        if (d_min, d_max).count(None) != 2:
+            d_array = mtz.make_d_array()
+            sel = ((0 if d_min is None else d_min) < d_array) & (d_array < (numpy.inf if d_max is None else d_max))
+        else:
+            sel = ...
         ints = gemmi.Intensities()
-        ints.set_data(mtz.cell, sg_use, mtz.make_miller_array(),
-                      mtz.array[:,mtz.column_labels().index(labin[0])],
-                      mtz.array[:,mtz.column_labels().index(labin[1])])
+        ints.set_data(mtz.cell, sg_use, mtz.make_miller_array()[sel],
+                      mtz.array[sel,mtz.column_labels().index(labin[0])],
+                      mtz.array[sel,mtz.column_labels().index(labin[1])])
         dtype = ints.prepare_for_merging(gemmi.DataType.Mean) # do we want Anomalous?
         ints_bak = ints.clone() # for stats
         ints.merge_in_place(dtype)
@@ -1313,6 +1318,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
         logger.writeln(f"Changing resolution to {d_min:.3f} A")
     if (d_min, d_max).count(None) != 2:
         hkldata = hkldata.copy(d_min=d_min, d_max=d_max)
+        d_min_max_data = hkldata.d_min_max(newlabels)
     if hkldata.df.empty:
         raise RuntimeError("No data left in hkl data")
 
@@ -1408,7 +1414,7 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
             
     stats["completeness"] = stats["n_obs"] / stats["n_all"] * 100
     logger.writeln("Data completeness: {:.2%}".format(stats["n_obs"].sum() / stats["n_all"].sum()))
-    if ints_bak is not None:
+    if ints_bak is not None: # TODO ensure the same binning (use hkldata's binning)
         binner = gemmi.Binner()
         binner.setup(n_bins, gemmi.Binner.Method.Dstar2, ints_bak)
         bin_stats = ints_bak.calculate_merging_stats(binner, use_weights="X")
