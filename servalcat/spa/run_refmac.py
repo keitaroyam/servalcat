@@ -138,7 +138,8 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_before_mask, no_sharpen_before_mask, make_hydrogen, monlib,
-             blur=0, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None):
+             blur=0, d_min_fsc=None, cross_validation=False, cross_validation_method=None, st_sr=None,
+             source="electron"):
     # st_sr: shaken-and-refined st in case of cross_validation_method=="shake"
     if cross_validation:
         assert len(maps) == 2
@@ -174,13 +175,13 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
             maps = utils.maps.sharpen_mask_unsharpen(maps, mask, d_min_fsc, b=b_before_mask)
         
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min_fsc)
-    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, monlib=monlib, source="electron",
+    hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min_fsc - 1e-6, monlib=monlib, source=source,
                                                miller_array=hkldata.miller_array())
     # XXX didn't apply mask to FC!!
     labs_fc = ["FC"]
 
     if st_sr is not None:
-        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, monlib=monlib, source="electron",
+        hkldata.df["FC_sr"] = utils.model.calc_fc_fft(st_sr, d_min_fsc - 1e-6, monlib=monlib, source=source,
                                                       miller_array=hkldata.miller_array())
         labs_fc.append("FC_sr")
 
@@ -277,7 +278,7 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
     return fscavg_text, ret
 # calc_fsc()
 
-def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix="diffmap"):
+def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix="diffmap", source="electron"):
     logger.writeln("Starting Fo-Fc calculation..")
     if not args.halfmaps: logger.writeln(" with limited functionality because half maps were not provided")
     logger.writeln(" model: {}".format(args.output_prefix+model_format))
@@ -303,7 +304,8 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
         
     hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
                                                       half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
-                                                      sharpening_b=None if args.halfmaps else 0.) # assume already sharpened if fullmap is given
+                                                      sharpening_b=None if args.halfmaps else 0., # assume already sharpened if fullmap is given
+                                                      source=source)
     spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
                          mask=mask, output_prefix=diffmap_prefix,
                          trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)

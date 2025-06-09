@@ -49,6 +49,7 @@ def add_arguments(parser):
                         help='Default: Nyquist')
     parser.add_argument('--random_seed', type=float, default=1234,
                         help="random seed for phase randomized FSC")
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron", "custom"], default="electron")
     parser.add_argument('-o', '--fsc_out',
                         default="fsc.dat",
                         help='')
@@ -277,8 +278,13 @@ def main(args):
         st = utils.fileio.read_structure(args.model)
         st.cell = unit_cell
         st.spacegroup_hm = "P1"
+        ccu = utils.model.CustomCoefUtil()
         if not args.keep_charges:
             utils.model.remove_charge([st])
+        if args.source == "custom":
+            ccu.read_from_cif(st, args.model)
+            ccu.show_info()
+            ccu.set_coeffs(st)
         utils.symmetry.update_ncs_from_args(args, st, map_and_start=maps[0])
         st_expanded = st.clone()
         if len(st.ncs) > 0:
@@ -338,7 +344,7 @@ def main(args):
     labs_fc = []
     if st_expanded is not None:
         labs_fc.append("FC")
-        hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st_expanded, args.resolution - 1e-6, source="electron",
+        hkldata.df[labs_fc[-1]] = utils.model.calc_fc_fft(st_expanded, args.resolution - 1e-6, source=args.source,
                                                           miller_array=hkldata.miller_array())
         if args.mask_model and mask is not None:
             if args.b_before_mask is None:

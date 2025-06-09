@@ -32,6 +32,7 @@ def add_arguments(parser):
                         help='Input atomic model file')
     parser.add_argument('--resolution', type=float,
                         help='default: nyquist resolution')
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron", "custom"], default="electron")
     parser.add_argument("--trim", action='store_true', help="Write trimmed map")
     parser.add_argument('-o', '--output_prefix', default="ccmap",
                         help="default: %(default)s")
@@ -74,9 +75,9 @@ def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
     return hkldata
 # setup_coeffs_for_halfmap_cc()
 
-def add_coeffs_for_model_cc(hkldata, st):
+def add_coeffs_for_model_cc(hkldata, st, source="electron"):
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min=hkldata.d_min_max()[0]-1e-6,
-                                               source="electron", miller_array=hkldata.miller_array())
+                                               source=source, miller_array=hkldata.miller_array())
     nref = len(hkldata.df.index)
     FCw = numpy.zeros(nref, dtype=complex)
     FPw = numpy.zeros(nref, dtype=complex)
@@ -171,10 +172,15 @@ def main(args):
     if args.model:
         st = utils.fileio.read_structure(args.model)
         utils.model.remove_charge([st])
+        ccu = utils.model.CustomCoefUtil()
+        if args.source == "custom":
+            ccu.read_from_cif(st, args.model)
+            ccu.show_info()
+            ccu.set_coeffs(st)
         utils.model.expand_ncs(st)
         st.cell = hkldata.cell
         st.spacegroup_hm = hkldata.sg.xhm()
-        add_coeffs_for_model_cc(hkldata, st)
+        add_coeffs_for_model_cc(hkldata, st, args.source)
         modelcc_map = utils.maps.local_cc(hkldata.fft_map("FPw", grid_size=grid_shape),
                                           hkldata.fft_map("FCw", grid_size=grid_shape),
                                           knl, method="simple" if args.kernel is None else "scipy")

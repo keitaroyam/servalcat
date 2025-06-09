@@ -301,7 +301,8 @@ def main(args):
                                        blur=args.blur,
                                        d_min_fsc=args.fsc_resolution,
                                        cross_validation=args.cross_validation,
-                                       cross_validation_method=args.cross_validation_method
+                                       cross_validation_method=args.cross_validation_method,
+                                       source=args.source
                                        )
         stats_for_meta = {"geom": stats[-1]["geom"], "data": stats2}
     update_meta(refiner.st, stats_for_meta, ll)
@@ -314,7 +315,7 @@ def main(args):
     if args.hklin:
         return
     # Calc Fo-Fc (and updated) maps
-    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=args.output_prefix)
+    calc_fofc(refiner.st, st_expanded, maps, monlib, ".mmcif", args, diffmap_prefix=args.output_prefix, source=args.source)
     
     # Final summary
     adpstats_txt = ""

@@ -73,8 +73,9 @@ def remove_charge(sts):
 
 class CustomCoefUtil:
     def __init__(self):
-        self.scat_lookup = {}
-        self.coeffs = {}
+        self.scat_lookup = {} # atom_key: scat_id
+        self.elem_lookup = {} # scat_id: set of element_name; there should be a single element for each id though
+        self.coeffs = {} # scat_id: coeffs
 
     def cra2key(self, cra):
         return (cra.chain.name, cra.residue.seqid,
@@ -87,12 +88,14 @@ class CustomCoefUtil:
         
         # _atom_site.id is read as atom.serial
         # it is mmcif writer's responsibility to ensure unique serials
-        serial2key = {x.atom.serial: self.cra2key(x) for x in st[0].all()}
+        serial2cra = {x.atom.serial: x for x in st[0].all()}
         self.scat_lookup = {}
         for r in block.find("_atom_site.", ["id", "scat_id"]):
             atom_id = gemmi.cif.as_int(r[0])
             scat_id = gemmi.cif.as_int(r[1])
-            self.scat_lookup[serial2key[atom_id]] = scat_id
+            cra = serial2cra[atom_id]
+            self.scat_lookup[self.cra2key(cra)] = scat_id
+            self.elem_lookup.setdefault(scat_id, set()).add(cra.atom.element.name)
 
         # read coeffs
         self.coeffs = {gemmi.cif.as_int(r[0]): [gemmi.cif.as_number(r[i]) for i in range(1, 11)]
@@ -102,7 +105,7 @@ class CustomCoefUtil:
     # read_from_cif()
 
     def set_coeffs(self, st):
-        logger.writeln("debug: using c4322")
+        #logger.writeln("debug: using c4322")
         max_serial = max(cra.atom.serial for cra in st[0].all())
         pp = [[0.]*10 for _ in range(max_serial+1)]
         for cra in st[0].all():
@@ -120,6 +123,7 @@ class CustomCoefUtil:
         df = pandas.DataFrame([[k]+v for k, v in self.coeffs.items()],
                               columns=["scat_id"] +[f"{k}{i+1}" for k in ("a", "b") for i in range(5)])
         df["count"] = [list(self.scat_lookup.values()).count(i) for i in df["scat_id"]]
+        df["elem"] = [" ".join(self.elem_lookup[i]) for i in df["scat_id"]]
         logger.writeln(df.to_string(index=False))
         logger.writeln("")
     # show_info()
@@ -172,9 +176,6 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
                 omit_proton=False, omit_h_electron=False, miller_array=None):
     assert source in ("xray", "electron", "neutron", "custom")
     if source != "electron": mott_bethe = False
-    if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
-    #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
-    logger.writeln("Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
     topo = None
     if st[0].has_hydrogen():
         st = st.clone()
@@ -197,6 +198,27 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         logger.writeln("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
         omit_proton = omit_h_electron = False
         
+    # for printing
+    method_str = ""
+    if mott_bethe:
+        if omit_proton:
+            method_str += "proton-omit "
+        elif omit_h_electron:
+            if topo is None:
+                method_str += "hydrogen electron-omit "
+            else:
+                method_str += "hydrogen electron-omit, proton-shifted "
+        elif topo is not None:
+            method_str += "proton-shifted "
+    method_str += f"Fc with {source} scattering factors"
+    if mott_bethe:
+        method_str += " through Mott-Bethe formula from X-ray sf"
+    logger.writeln(f"Calculating {method_str}..")
+    
+    if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
+    #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
+    logger.writeln(" Setting blur= {:.2f} in density calculation (unblurred later)".format(blur))
+    
     if source == "xray" or mott_bethe:
         dc = gemmi.DensityCalculatorX()
     elif source == "electron":
@@ -216,20 +238,6 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
 
     t_start = time.time()
     if mott_bethe:
-        if omit_proton:
-            method_str = "proton-omit Fc"
-        elif omit_h_electron:
-            if topo is None:
-                method_str = "hydrogen electron-omit Fc"
-            else:
-                method_str = "hydrogen electron-omit, proton-shifted Fc"
-        elif topo is not None:
-            method_str = "proton-shifted Fc"
-        else:
-            method_str = "Fc"
-
-        logger.writeln("Calculating {} using Mott-Bethe formula".format(method_str))
-        
         dc.initialize_grid()
         dc.addends.subtract_z(except_hydrogen=True)
 
@@ -254,7 +262,6 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
         mb_000 = sum_ab * gemmi.mott_bethe_const() / 4
     else:
-        logger.writeln("Calculating Fc")
         dc.put_model_density_on_grid(st[0])
         mb_000 = 0
 

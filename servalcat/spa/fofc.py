@@ -49,7 +49,7 @@ def add_arguments(parser):
     parser.add_argument("--omit_h_electron", action='store_true',
                         #help="Omit hydrogen electrons (leaving protons) from model in map calculation")
                         help=argparse.SUPPRESS)
-    parser.add_argument("--source", choices=["electron", "xray", "neutron"], default="electron")
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron", "custom"], default="electron")
     parser.add_argument('-o','--output_prefix', default="diffmap",
                         help='output file name prefix (default: %(default)s)')
     parser.add_argument('--keep_charges',  action='store_true',
@@ -411,8 +411,15 @@ def main(args):
         logger.error("Warning: using --halfmaps is strongly recommended!")
 
     st = utils.fileio.read_structure(args.model)
+    ccu = utils.model.CustomCoefUtil()
     if not args.keep_charges:
         utils.model.remove_charge([st])
+    if args.source == "custom":
+        ccu.read_from_cif(st, args.model)
+        ccu.show_info()
+        ccu.set_coeffs(st)
+    else:
+        utils.model.check_atomsf([st], args.source)
     ncs_org = gemmi.NcsOpList(st.ncs)
     utils.model.expand_ncs(st)
 
