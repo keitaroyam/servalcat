@@ -33,6 +33,8 @@ def add_arguments(parser):
     parser.add_argument("--labin", help="F,SIGF,FREE input")
     parser.add_argument('--labin_free',
                         help='MTZ column of --hklin_free')
+    parser.add_argument('--labin_llweight',
+                        help=argparse.SUPPRESS) # testing
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
     parser.add_argument('--model', required=True,
@@ -153,7 +155,8 @@ def main(args):
             keep_charges=args.keep_charges,
             allow_unusual_occupancies=args.allow_unusual_occupancies,
             hklin_free=args.hklin_free,
-            labin_free=args.labin_free)
+            labin_free=args.labin_free,
+            labin_llweight=args.labin_llweight)
 
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
@@ -289,9 +292,11 @@ def main(args):
         labs.append("FCbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    if args.labin_llweight:
+        labs.append("llweight")
     labs += ll.D_labs + ["S"] # for debugging, for now
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F", "llweight": "R"})
 
 # main()
 

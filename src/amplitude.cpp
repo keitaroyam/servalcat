@@ -28,13 +28,14 @@ double ll_amp(double Fo, double sigFo, double k_ani, double S, double Fc, int c)
 auto
 ll_amp_der1_params_py(np_array<double> Fo, np_array<double> sigFo, np_array<double> k_ani,
                       double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                      np_array<int> c, np_array<int> eps) {
+                      np_array<int> c, np_array<int> eps, np_array<double> w) {
   auto Fo_ = Fo.view();
   auto sigFo_ = sigFo.view();
   auto k_ani_ = k_ani.view();
   auto Fcs_ = Fcs.view();
   auto c_ = c.view();
   auto eps_ = eps.view();
+  auto w_ = w.view();
   if (Ds.size() != Fcs_.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
   const size_t n_models = Fcs_.shape(1);
   const size_t n_ref = Fcs_.shape(0);
@@ -64,11 +65,11 @@ ll_amp_der1_params_py(np_array<double> Fo, np_array<double> sigFo, np_array<doub
       for (size_t j = 0; j < n_models; ++j) {
         const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
         // wrt Dj
-        ptr[i*n_cols + j] = 2 * r_fcj_fc / (Sigma * c_(i)) * (1. - m * Fo_iso / Fc_abs);
+        ptr[i*n_cols + j] = w_(i) * 2 * r_fcj_fc / (Sigma * c_(i)) * (1. - m * Fo_iso / Fc_abs);
       }
       // wrt S
       const double tmp = (sq(Fo_iso) + sq(Fc_abs)) / c_(i) - m * (3 - c_(i)) * Fo_iso * Fc_abs;
-      ptr[i*n_cols + n_models] = eps_(i) * (1. / (c_(i) * Sigma) - tmp / sq(Sigma));
+      ptr[i*n_cols + n_models] = w_(i) * eps_(i) * (1. / (c_(i) * Sigma) - tmp / sq(Sigma));
     }
     else {
       // k_aniso * d/dk_aniso -log p(Io; Fc)
@@ -81,24 +82,25 @@ ll_amp_der1_params_py(np_array<double> Fo, np_array<double> sigFo, np_array<doub
 
 void add_amplitude(nb::module_& m) {
   m.def("ll_amp", [](np_array<double> Fo, np_array<double> sigFo, np_array<double> k_ani,
-                     np_array<double> S, np_array<double> Fc, np_array<int> c) {
+                     np_array<double> S, np_array<double> Fc, np_array<int> c, np_array<double> w) {
     auto Fo_ = Fo.view();
     auto sigFo_ = sigFo.view();
     auto k_ani_ = k_ani.view();
     auto S_ = S.view();
     auto Fc_ = Fc.view();
     auto c_ = c.view();
+    auto w_ = w.view();
     size_t len = Fo_.shape(0);
     if (len != sigFo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) ||
-        len != Fc_.shape(0) || len != c_.shape(0))
+        len != Fc_.shape(0) || len != c_.shape(0) || len != w_.shape(0))
       throw std::runtime_error("ll_amp: shape mismatch");
     auto ret = make_numpy_array<double>({len});
     double* retp = ret.data();
     for (size_t i = 0; i < len; ++i)
-      retp[i] = ll_amp(Fo_(i), sigFo_(i), k_ani_(i), S_(i), Fc_(i), c_(i));
+      retp[i] = w_(i) * ll_amp(Fo_(i), sigFo_(i), k_ani_(i), S_(i), Fc_(i), c_(i));
     return ret;
   },
-    nb::arg("Fo"), nb::arg("sigFo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"));
+        nb::arg("Fo"), nb::arg("sigFo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"), nb::arg("w"));
   m.def("ll_amp_der1_DS", &ll_amp_der1_params_py);
   //m.def("ll_int_der1_ani", &ll_int_der1_params_py<false>);
 }

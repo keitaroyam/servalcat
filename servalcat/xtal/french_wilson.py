@@ -101,14 +101,17 @@ def determine_Sigma_and_aniso(hkldata):
                 S = hkldata.binned_df.loc[i_bin, "S"]
                 f0 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                 S * hkldata.df.epsilon.to_numpy()[idxes],
-                                                numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
+                                                numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
+                                                hkldata.df.llweight.to_numpy()[idxes]))
                 shift = numpy.exp(ll_shift_bin_S(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                                 S, hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes]))
+                                                 S, hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes],
+                                                 hkldata.df.llweight.to_numpy()[idxes]))
                 for k in range(3):
                     ss = shift**(1. / 2**k)
                     f1 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                     S * ss * hkldata.df.epsilon.to_numpy()[idxes],
-                                                    numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
+                                                    numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
+                                                    hkldata.df.llweight.to_numpy()[idxes]))
                     #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
                     if f1 < f0:
                         hkldata.binned_df.loc[i_bin, "S"] = S * ss
@@ -145,11 +148,12 @@ def ll_all_B(x, ssqmat, hkldata, adpdirs):
     for i_bin, idxes in hkldata.binned():
         ret += numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                           hkldata.binned_df.S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
-                                          numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1))
+                                          numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
+                                          hkldata.df.llweight.to_numpy()[idxes]))
     return ret
 
-def ll_shift_bin_S(Io, sigIo, k_ani, S, c, eps, exp_trans=True):
-    tmp = integr.ll_int_fw_der1_S(Io, sigIo, k_ani, S, c, eps)
+def ll_shift_bin_S(Io, sigIo, k_ani, S, c, eps, llw, exp_trans=True):
+    tmp = integr.ll_int_fw_der1_S(Io, sigIo, k_ani, S, c, eps, llw)
     g = numpy.nansum(tmp)
     H = numpy.nansum(tmp**2)
     if exp_trans:
@@ -164,11 +168,12 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
     sigIo = hkldata.df.SIGI.to_numpy()
     c = hkldata.df.centric.to_numpy() + 1
     epsilon = hkldata.df.epsilon.to_numpy()
+    llw = hkldata.df.llweight.to_numpy()
     r = numpy.empty(len(Io)) * numpy.nan
     for i_bin, idxes in hkldata.binned():
         r[idxes] = integr.ll_int_fw_der1_ani(Io[idxes], sigIo[idxes],
                                              k_ani[idxes], hkldata.binned_df.S[i_bin],
-                                             c[idxes], epsilon[idxes])
+                                             c[idxes], epsilon[idxes], llw[idxes])
     g = -numpy.nansum(ssqmat * r, axis=1)
     H = numpy.nansum(numpy.matmul(ssqmat[None,:].T, ssqmat.T[:,None]) * (r**2)[:,None,None], axis=0)
     g, H = numpy.dot(g, adpdirs.T), numpy.dot(adpdirs, numpy.dot(H, adpdirs.T))

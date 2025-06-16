@@ -466,7 +466,8 @@ def mlf(df, fc_labs, Ds, S, k_ani, idxes):
     DFc = (Ds * Fcs).sum(axis=1)
     ll = numpy.nansum(ext.ll_amp(df.FP.to_numpy()[idxes], df.SIGFP.to_numpy()[idxes],
                                  k_ani[idxes], S * df.epsilon.to_numpy()[idxes],
-                                 numpy.abs(DFc), df.centric.to_numpy()[idxes]+1))
+                                 numpy.abs(DFc), df.centric.to_numpy()[idxes]+1,
+                                 df.llweight.to_numpy()[idxes]))
     return numpy.nansum(ll)
 # mlf()
 
@@ -475,7 +476,8 @@ def deriv_mlf_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = [df[lab].to_numpy()[idxes] for lab in fc_labs]
     r = ext.ll_amp_der1_DS(df.FP.to_numpy()[idxes], df.SIGFP.to_numpy()[idxes], k_ani[idxes], S,
                            numpy.vstack(Fcs).T, Ds,
-                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes],
+                           df.llweight.to_numpy()[idxes])
     g = numpy.zeros(len(fc_labs)+1)
     g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
     g[-1] = numpy.nansum(r[:,-1]) # S
@@ -487,7 +489,8 @@ def mlf_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = [df[lab].to_numpy()[idxes] for lab in fc_labs]
     r = ext.ll_amp_der1_DS(df.FP.to_numpy()[idxes], df.SIGFP.to_numpy()[idxes], k_ani[idxes], S,
                            numpy.vstack(Fcs).T, Ds,
-                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+                           df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes],
+                           df.llweight.to_numpy()[idxes])
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -498,7 +501,8 @@ def mli(df, fc_labs, Ds, S, k_ani, idxes):
     DFc = (Ds * Fcs).sum(axis=1)
     ll = integr.ll_int(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes],
                        k_ani[idxes], S * df.epsilon.to_numpy()[idxes],
-                       numpy.abs(DFc), df.centric.to_numpy()[idxes]+1)
+                       numpy.abs(DFc), df.centric.to_numpy()[idxes]+1,
+                       df.llweight.to_numpy()[idxes])
     return numpy.nansum(ll)
 # mli()
 
@@ -506,7 +510,8 @@ def deriv_mli_wrt_D_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
                               Fcs, Ds,
-                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes],
+                              df.llweight.to_numpy()[idxes])
     g = numpy.zeros(len(fc_labs)+1)
     g[:len(fc_labs)] = numpy.nansum(r[:,:len(fc_labs)], axis=0) # D
     g[-1] = numpy.nansum(r[:,-1]) # S
@@ -517,7 +522,8 @@ def mli_shift_D(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
                               Fcs, Ds,
-                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])[:,:len(fc_labs)]
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes],
+                              df.llweight.to_numpy()[idxes])[:,:len(fc_labs)]
     g = numpy.nansum(r, axis=0)# * trans.D_deriv(x[:len(fc_labs)]) # D
     #tmp = numpy.hstack([r[:,:len(fc_labs)] #* trans.D_deriv(x[:len(fc_labs)]),
     #                    r[:,-1,None] * trans.S_deriv(x[-1])])
@@ -529,7 +535,8 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     Fcs = numpy.vstack([df[lab].to_numpy()[idxes] for lab in fc_labs]).T
     r = integr.ll_int_der1_DS(df.I.to_numpy()[idxes], df.SIGI.to_numpy()[idxes], k_ani[idxes], S,
                               Fcs, Ds,
-                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes])
+                              df.centric.to_numpy()[idxes]+1, df.epsilon.to_numpy()[idxes],
+                              df.llweight.to_numpy()[idxes])
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -967,7 +974,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
                                            k_ani[idxes], hkldata.binned_df.loc[i_bin, "S"],
                                            hkldata.df[fc_labs].to_numpy()[idxes], hkldata.binned_df.loc[i_bin, D_labs],
-                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes],
+                                           hkldata.df.llweight.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
             return numpy.dot(g, adpdirs.T)
@@ -981,7 +989,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso, centric_and_
                 r = integr.ll_int_der1_ani(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes],
                                            k_ani[idxes], hkldata.binned_df.loc[i_bin, "S"],
                                            hkldata.df[fc_labs].to_numpy()[idxes], list(hkldata.binned_df.loc[i_bin, D_labs]),
-                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes])
+                                           hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes],
+                                           hkldata.df.llweight.to_numpy()[idxes])
                 S2 = S2mat[:,idxes]
                 g += -numpy.nansum(S2 * r[:,0], axis=1) # k_ani is already multiplied in r
                 H += numpy.nansum(numpy.matmul(S2[None,:].T, S2.T[:,None]) * (r[:,0]**2)[:,None,None], axis=0)
@@ -1210,7 +1219,7 @@ def decide_spacegroup(sg_user, sg_st, sg_hkl):
 def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=None,
                   n_per_bin=None, use="all", max_bins=None, cif_index=0, keep_charges=False,
                   allow_unusual_occupancies=False, space_group=None,
-                  hklin_free=None, labin_free=None):
+                  hklin_free=None, labin_free=None, labin_llweight=None):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
 
@@ -1324,27 +1333,36 @@ def process_input(hklin, labin, n_bins, free, xyzins, source, d_max=None, d_min=
 
     if hklin_free is not None:
         mtz2 = utils.fileio.read_mmhkl(hklin_free)
-        if labin_free and labin_free not in mtz2.column_labels():
-            raise RuntimeError(f"specified label ({labin_free}) not found in {hklin_free}")
+        for lab in (labin_free, labin_llweight):
+            if lab and lab not in mtz2.column_labels():
+                raise RuntimeError(f"specified label ({labin_free}) not found in {hklin_free}")
         if not labin_free:
             tmp = utils.hkl.mtz_find_free_columns(mtz2)
             if tmp:
                 labin_free = tmp[0]
-            else:
+            elif not labin_llweight:
                 raise RuntimeError(f"Test flag label not found in {hklin_free}")
-        tmp = utils.hkl.hkldata_from_mtz(mtz2, [labin_free], newlabels=["FREE"])
+        labs, newlabs = [], []
+        for lab, newlab in ((labin_free, "FREE"), (labin_llweight, "llweight")):
+            if lab:
+                labs.append(lab)
+                newlabs.append(newlab)
+        tmp = utils.hkl.hkldata_from_mtz(mtz2, labs, newlabels=newlabs)
         tmp.sg = sg_use
         tmp.switch_to_asu()
         tmp.remove_systematic_absences()
         tmp = tmp.copy(d_min=d_min_max_data[0], d_max=d_min_max_data[1])
         hkldata.complete()
         tmp.complete()
-        hkldata.merge(tmp.df[["H","K","L","FREE"]])
+        hkldata.merge(tmp.df[["H","K","L"] + newlabs])
         
     hkldata.complete()
     hkldata.sort_by_resolution()
     hkldata.calc_epsilon()
     hkldata.calc_centric()
+
+    if "llweight" not in hkldata.df:
+        hkldata.df["llweight"] = 1.
 
     if "FREE" in hkldata.df and free is None:
         free = hkldata.guess_free_number(newlabels[0]) # also check NaN
