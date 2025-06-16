@@ -28,7 +28,9 @@ def add_arguments(parser):
     parser.add_argument('--ligand', nargs="*", action="append",
                         help="restraint dictionary cif file(s)")
     parser.add_argument('--ncycle', type=int, default=10,
-                        help="number of CG cycles (default: %(default)d)")
+                        help="(when --model is used) number of CG cycles (default: %(default)d)")
+    parser.add_argument('--ncycle_update', type=int, nargs=2, default=[10,30], metavar=("NCYCLE_1", "NCYCLE_2"),
+                        help="(when --update_dictionary is used) number of cycles for the first and second steps (default: %(default)s)")
     parser.add_argument('--hydrogen', default="all", choices=["all", "yes", "no"],
                         help="all: add riding hydrogen atoms, yes: use hydrogen atoms if present, no: remove hydrogen atoms in input. "
                         "Default: %(default)s")
@@ -229,7 +231,10 @@ def main(args):
         refine_and_update_dictionary(cif_in=args.update_dictionary,
                                      monomer_dir=args.monlib,
                                      output_prefix=args.output_prefix,
-                                     randomize=args.randomize)
+                                     randomize=args.randomize,
+                                     ncycle1=args.ncycle_update[0],
+                                     ncycle2=args.ncycle_update[1],
+                                     )
 # main()
 
 if __name__ == "__main__":
