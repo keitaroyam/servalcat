@@ -16,7 +16,6 @@ import glob
 import re
 import subprocess
 import gemmi
-import math
 import numpy
 import gzip
 import traceback
@@ -616,7 +615,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
                     site.u_iso = site.aniso.transformed_by(cif2cart).trace() / 3
 
                 prev_free_u_iso = site.u_iso
-                print(f"updated prev_free_u_iso to {site.u_iso} at {site.label}")
+                logger.write(f"updated prev_free_u_iso to {site.u_iso} at {site.label}")
             else:
                 u_iso_code = float(sp[6])
                 if -5 < u_iso_code and u_iso_code < -0.5:
