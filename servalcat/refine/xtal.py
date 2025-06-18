@@ -38,7 +38,7 @@ class LL_Xtal:
             self.hkldata.df["FCbulk"] = 0j
         self.D_labs = ["D{}".format(i) for i in range(len(self.fc_labs))]
         self.k_overall = numpy.ones(len(self.hkldata.df.index))
-        self.b_aniso = None
+        self.b_aniso = gemmi.SMat33d(0,0,0,0,0,0)
         self.hkldata.df["k_aniso"] = 1.
         self.use_in_est = use_in_est
         self.use_in_target = use_in_target
@@ -65,6 +65,9 @@ class LL_Xtal:
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs,
         #                             self.centric_and_selections)
     def update_fc(self):
+        # modify st before fc calculation
+        b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
+        self.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb()) # needed for target calculation
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
                          d_min=self.d_min_max[0], monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,

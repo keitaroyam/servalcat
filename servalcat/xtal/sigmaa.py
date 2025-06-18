@@ -156,6 +156,30 @@ def calc_r_and_cc(hkldata, centric_and_selections, twin_data=None):
     return stats, ret
 # calc_r_and_cc()
 
+def subtract_common_aniso_from_model(sts):
+    adpdirs = utils.model.adp_constraints(sts[0].find_spacegroup().operations(), sts[0].cell, tr0=True)
+    aniso_all = [cra.atom.aniso.added_kI(-cra.atom.aniso.trace()/3).elements_pdb() for st in sts for cra in st[0].all() if cra.atom.aniso.nonzero()]
+    if not aniso_all: # no atoms with aniso ADP
+        return gemmi.SMat33f(0,0,0,0,0,0)
+
+    aniso_mean = numpy.mean(aniso_all, axis=0)
+    aniso_mean = adpdirs.dot(aniso_mean).dot(adpdirs)
+
+    if not numpy.any(aniso_mean):
+        return gemmi.SMat33f(0,0,0,0,0,0)
+
+    # correct atoms
+    smat_sub = gemmi.SMat33f(*aniso_mean)
+    for st in sts:
+        for cra in st[0].all():
+            if cra.atom.aniso.nonzero():
+                cra.atom.aniso -= smat_sub
+
+    b_aniso = smat_sub.scaled(utils.model.u_to_b)
+    logger.writeln(f"Subtracting common anisotropic component from model: B= {b_aniso}")
+    return b_aniso
+# subtract_common_aniso_from_model()
+
 class VarTrans:
     def __init__(self, D_trans, S_trans):
         # splus (softplus) appears to be better than exp
@@ -1656,6 +1680,7 @@ def main(args):
     if twin_data:
         twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
 
+    subtract_common_aniso_from_model(sts)
     update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
               source=args.source, mott_bethe=(args.source=="electron"),
               hkldata=hkldata, twin_data=twin_data)
