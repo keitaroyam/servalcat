@@ -62,7 +62,7 @@ def read_external_restraints(params, st, geom):
                     for res in chain:
                         if spec["ifirst"] is not None and res.seqid.num < spec["ifirst"]: continue
                         if spec["ilast"] is not None and res.seqid.num > spec["ilast"]: continue
-                        atoms.extend([a for a in res if spec["atom"] == "*" or a.name == spec["atom"]])
+                        atoms.extend([a for a in res if spec.get("atom", "*") == "*" or a.name == spec["atom"]])
             else:
                 for name in spec["names"]: # only same altloc allowed?
                     key = (spec["chain"], spec["resi"], spec.get("icode", " "),
