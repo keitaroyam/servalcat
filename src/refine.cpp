@@ -49,6 +49,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
+NB_MAKE_OPAQUE(std::vector<std::pair<bool, std::vector<size_t>>>)
 
 nb::tuple precondition_eigen_coo(np_array<double> am, np_array<int> rows,
                                  np_array<int> cols, int N, double cutoff) {
@@ -767,6 +768,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Bond::Value>, rv_ri>(bond, "Values");
   nb::bind_vector<std::vector<Geometry::Angle::Value>, rv_ri>(angle, "Values");
   nb::bind_vector<std::vector<Geometry::Torsion::Value>, rv_ri>(torsion, "Values");
+  nb::bind_vector<std::vector<std::pair<bool, std::vector<size_t>>> , rv_ri>(params, "OccGroupConsts");
 
   nb::enum_<RefineParams::Type>(params, "Type")
     .value("X", RefineParams::Type::X)
@@ -823,6 +825,17 @@ void add_refine(nb::module_& m) {
       }
       gemmi::fail("vec_selection: bad t");
     })
+    .def("set_occ_groups", [](RefineParams &self, const std::vector<std::vector<const gemmi::Atom *>> &groups) {
+      self.occ_groups.clear();
+      for (const auto &v : groups) {
+        self.occ_groups.emplace_back();
+        for (const auto &a : v)
+          self.occ_groups.back().push_back(a->serial - 1);
+      }
+    })
+    .def_ro("occ_group_constraints", &RefineParams::occ_group_constraints)
+    .def("occ_constraints", &RefineParams::occ_constraints)
+    .def("ensure_occ_constraints", &RefineParams::ensure_occ_constraints)
     ;
   m.def("set_refine_flags", [](gemmi::Model &model,
                                const std::vector<std::string> &xyz_include, const std::vector<std::string> &xyz_exclude,
@@ -892,6 +905,7 @@ void add_refine(nb::module_& m) {
          nb::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("calc_occ_restraint", &Geometry::calc_occ_restraint)
+    .def("calc_occ_constraint", &Geometry::calc_occ_constraint)
     .def("spec_correction", &Geometry::spec_correction, nb::arg("alpha")=1e-3, nb::arg("use_rr")=true)
     .def_ro("bondindex", &Geometry::bondindex)
     // vdw parameters

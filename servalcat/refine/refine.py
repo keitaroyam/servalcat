@@ -46,6 +46,15 @@ atom_selection:
     include: []
     exclude: []
 
+occ_groups:
+  - id: 1
+    selections:
+      - sel_1
+      - sel_2
+occ_group_constraints:
+  - ids: [1, 2]
+    complete: true
+
 initialisation:
   adp:
     '*': 50
@@ -60,6 +69,16 @@ class SelectionConfig:
     exclude: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to exclude"})
 
 @dataclass
+class OccGroupItem:
+    id: int
+    selections: List[str] = field(default_factory=list)
+    
+@dataclass
+class OccGroupConstItem:
+    ids: List[int] = field(default_factory=list)
+    complete: bool = True
+    
+@dataclass
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
         default_factory=lambda: {
@@ -70,6 +89,8 @@ class RefineConfig:
         },
         metadata={"help": "Configuration for atom selection during refinement"}
     )
+    occ_groups: List[OccGroupItem] = field(default_factory=list)
+    occ_group_constraints: List[OccGroupConstItem] = field(default_factory=list)
     initialisation: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
             "adp": {},
@@ -99,6 +120,24 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
     ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
     ret.set_model(st[0])
     if cfg:
+        # occupancy groups
+        occ_groups = []
+        group_ids = {}
+        for occ_gr in cfg.occ_groups:
+            occ_groups.append([])
+            group_ids[occ_gr.id] = len(occ_groups) - 1
+            for s in occ_gr.selections:
+                sel = gemmi.Selection(s)
+                for model in sel.models(st):
+                    for chain in sel.chains(model):
+                        for residue in sel.residues(chain):
+                            for atom in sel.atoms(residue):
+                                occ_groups[-1].append(atom)
+        ret.set_occ_groups(occ_groups)
+        for o in cfg.occ_group_constraints:
+            ret.occ_group_constraints.append((o.complete, [group_ids[x] for x in o.ids]))
+
+        # selections
         sele = cfg.atom_selection
         ext.set_refine_flags(st[0],
                              sele.xyz.include, sele.xyz.exclude,
@@ -163,6 +202,7 @@ class Geom:
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
         self.ncslist = ncslist
+        self.const_ls, self.const_u = [], 0.
     # __init__()
 
     def set_h_parents(self):
@@ -175,12 +215,15 @@ class Geom:
     # set_h_parents()
 
     def setup_target(self):
-        self.geom.setup_target(self.params.is_refined(Type.Q) and self.occr_w > 0)
+        self.geom.setup_target(self.params.is_refined(Type.Q))
     def setup_nonbonded(self):
         skip_critical_dist = not self.params.is_refined(Type.X) or self.unrestrained
         self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist, group_idxes=self.group_occ.group_idxes)
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
+    def setup_occ_constraint(self, lambda_ini=0., u_ini=100.):
+        self.const_ls = [lambda_ini for _ in self.params.occ_constraints()]
+        self.const_u = u_ini
     def calc(self, target_only):
         if self.params.is_refined(Type.X) and not self.unrestrained:
             return self.geom.calc(check_only=target_only, **self.calc_kwds)
@@ -193,15 +236,25 @@ class Geom:
         if self.params.is_refined(Type.Q):
             return self.geom.calc_occ_restraint(target_only, self.occr_w)
         return 0
+    def update_occ_consts(self, alpha=1.1):
+        consts = self.params.occ_constraints()
+        self.const_ls = [l - self.const_u * c for l, c in zip(self.const_ls, consts)]
+        self.const_u *= alpha
+        if consts:
+            logger.writeln("Occupancy constraint violations")
+            logger.writeln(f" {consts}")
+            logger.writeln(f" lamdba= {self.const_ls} u= {self.const_u}")
     def calc_target(self, target_only):
         self.geom.clear_target()
         geom_x = self.calc(target_only) 
         geom_a = self.calc_adp_restraint(target_only)
         geom_q = self.calc_occ_restraint(target_only)
+        geom_c = self.geom.calc_occ_constraint(target_only, self.const_ls, self.const_u)
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         logger.writeln(" geom_q = {}".format(geom_q))
-        geom = geom_x + geom_a + geom_q
+        logger.writeln(" geom_c = {}".format(geom_c))
+        geom = geom_x + geom_a + geom_q + geom_c
         if not target_only:
             self.geom.spec_correction()
         return geom
@@ -423,7 +476,7 @@ class GroupOccupancy:
             if not is_comp and sum_occ < 1:
                 sum_occ = 1. # do nothing
             for i in idxes:
-                #logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
+                logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
                 vals[i] /= sum_occ
         for occ, atoms in zip(vals, self.groups):
             for a in atoms: a.occ = occ
@@ -485,8 +538,10 @@ class GroupOccupancy:
             ret.append({"Ncyc": cyc+1, "f0": f0})
             logger.writeln("occ_{}_f0= {:.4e}".format(cyc, f0))
             vn, diag = self.grad(x0, ll, ls, u)
+            #diag0 = diag.copy()
             diag[diag < 1e-6] = 1.
             dx = -vn / diag
+            #logger.writeln(f"debug {cyc=} {dx=} {vn=} {diag=} {diag0=}")
             if 0:
                 ofs = open("debug.dat", "w")
                 for scale in (-1, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2):
@@ -739,6 +794,7 @@ class Refine:
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded()
         self.geom.setup_target()
+        self.geom.setup_occ_constraint()
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
@@ -773,7 +829,10 @@ class Refine:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
+            self.geom.update_occ_consts()
             if self.ll is not None:
+                if i == ncycles - 1: # last cycle
+                    self.params.ensure_occ_constraints()
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()
                 self.ll.update_ml_params()

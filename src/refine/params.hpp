@@ -46,6 +46,8 @@ struct RefineParams {
   std::vector<int> bd_mix_atoms; // B-D
   std::vector<int> qd_mix_atoms; // Q-D
   std::array<std::set<int>, N> ll_exclusion; // set of atom indices
+  std::vector<std::vector<int>> occ_groups;  // vector of vector of atom indices
+  std::vector<std::pair<bool, std::vector<size_t>>> occ_group_constraints; // vector of pair(is_complete, group_indices)
   RefineParams(bool refine_xyz, int adp_mode, bool refine_occ, bool refine_dfrac, bool use_q_b_mixed)
     : use_q_b_mixed_derivatives(use_q_b_mixed) {
     // decide which parameters are refined
@@ -290,11 +292,41 @@ struct RefineParams {
   }
   void add_atom_to_params(const gemmi::Atom *atom, std::bitset<N> flag = {~0ULL}) {
     const int idx = atom->serial - 1;
+    const int group_idx = [&]() {
+      if (!is_refined(Type::Q))
+        return -1;
+      for (int i = 0; i < occ_groups.size(); ++i) {
+        const auto it = std::find(occ_groups[i].begin(), occ_groups[i].end(), idx);
+        if (it != occ_groups[i].end())
+          return i;
+      }
+      return -1;
+    }();
     for (Type t : Types) {
       if (is_refined(t) && flag.test(type2num(t)) &&
           (t != Type::D || atom->is_hydrogen())) {
-        atom_to_param(t)[idx] = param_to_atom(t).size();
-        param_to_atom(t).push_back(idx);
+        if (t == Type::Q && group_idx >= 0) {
+          // if the atom belongs to the occupancy group,
+          // atom_to_param should point the same indexes
+          // and param_to_atom should point the first atom of the group
+          // so the occ_groups should be vector<vector<int>>
+
+          // check if any atom of the group is registered
+          const int found = [&](){
+            for (int i = 0; i < occ_groups[group_idx].size(); ++i)
+              if (atom_to_param(t)[occ_groups[group_idx][i]] >= 0)
+                return occ_groups[group_idx][i]; // return atom index
+            return -1;
+          }();
+          if (found < 0) { // this is the first atom to be registered
+            atom_to_param(t)[idx] = param_to_atom(t).size();
+            param_to_atom(t).push_back(idx);
+          } else
+            atom_to_param(t)[idx] = atom_to_param(t)[found];
+        } else {
+          atom_to_param(t)[idx] = param_to_atom(t).size();
+          param_to_atom(t).push_back(idx);
+        }
       }
     }
     if (use_q_b_mixed_derivatives && is_refined(Type::B) && is_refined(Type::Q) &&
@@ -373,8 +405,15 @@ struct RefineParams {
         atoms[i]->b_iso = std::max(x[k++], min_b);
 
     // occ
-    for (int i : param_to_atom(Type::Q))
-      atoms[i]->occ = gemmi::clamp(x[k++], 1e-3, 1.); // max occ depends!
+    for (int i : param_to_atom(Type::Q)) {
+      const double occ = gemmi::clamp(x[k++], 1e-3, 1.); // max occ depends!
+      // check groups
+      for (const auto &gr : occ_groups)
+        if (std::find(gr.begin(), gr.end(), i) != gr.end())
+          for (const auto j : gr)
+            atoms[j]->occ = occ;
+      atoms[i]->occ = occ;
+    }
 
     // dfrac
     for (int i : param_to_atom(Type::D))
@@ -382,6 +421,40 @@ struct RefineParams {
 
     if (k != n_params())
       gemmi::fail("RefineParams::set_x: wrong k ", std::to_string(k), " ", std::to_string(n_params()));
+  }
+  std::vector<double> occ_constraints() const { // constraint violations
+    const size_t n_consts = occ_group_constraints.size();
+    std::vector<double> ret(n_consts, 0.);
+    for (int i = 0; i < n_consts; ++i) {
+      const bool is_comp = occ_group_constraints[i].first;
+      const auto &group_idxes = occ_group_constraints[i].second;
+      double sum_occ = 0.;
+      for (size_t j : group_idxes)
+        if (!occ_groups[j].empty()) {
+          const int atom_idx = occ_groups[j].front();
+          sum_occ += atoms[atom_idx]->occ;
+        }
+      if (is_comp || sum_occ > 1)
+        ret[i] = sum_occ - 1;
+    }
+    return ret;
+  }
+  void ensure_occ_constraints() {
+    const size_t n_consts = occ_group_constraints.size();
+    for (int i = 0; i < n_consts; ++i) {
+      const bool is_comp = occ_group_constraints[i].first;
+      const auto &group_idxes = occ_group_constraints[i].second;
+      double sum_occ = 0.;
+      for (size_t j : group_idxes)
+        if (!occ_groups[j].empty()) {
+          const int atom_idx = occ_groups[j].front();
+          sum_occ += atoms[atom_idx]->occ;
+        }
+      const double fac = (is_comp || sum_occ > 1) ? 1./sum_occ : 1.;
+      for (size_t j : group_idxes)
+        for (int ia : occ_groups[j])
+          atoms[ia]->occ *= fac;
+    }
   }
 };
 
