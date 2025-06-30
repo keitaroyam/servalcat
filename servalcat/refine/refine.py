@@ -16,7 +16,7 @@ import pandas
 import scipy.sparse
 from dataclasses import dataclass, field
 from typing import List, Dict
-from omegaconf import DictConfig, OmegaConf
+import omegaconf
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
@@ -46,6 +46,15 @@ atom_selection:
     include: []
     exclude: []
 
+occ_groups:
+  - id: 1
+    selections:
+      - sel_1
+      - sel_2
+occ_group_constraints:
+  - ids: [1, 2]
+    complete: true
+
 initialisation:
   adp:
     '*': 50
@@ -60,16 +69,32 @@ class SelectionConfig:
     exclude: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to exclude"})
 
 @dataclass
+class OccGroupItem:
+    id: int
+    selections: List[str] = field(default_factory=list)
+    
+@dataclass
+class OccGroupConstItem:
+    ids: List[int] = field(default_factory=list)
+    complete: bool = True
+    
+@dataclass
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
         default_factory=lambda: {
-            "xyz": SelectionConfig(),
-            "adp": SelectionConfig(),
+            "xyz": SelectionConfig(include=["*"]),
+            "adp": SelectionConfig(include=["*"]),
             "occ": SelectionConfig(),
             "dfrac": SelectionConfig(),
         },
         metadata={"help": "Configuration for atom selection during refinement"}
     )
+    occ_groups: List[OccGroupItem] = field(default_factory=list)
+    occ_group_constraints: List[OccGroupConstItem] = field(default_factory=list)
+    occ_group_const_mu: float = 10
+    occ_group_const_mu_update_factor: float = 1.1
+    occ_group_const_mu_update_tol_rel: float = 0.25
+    occ_group_const_mu_update_tol_abs: float = 0.01
     initialisation: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
             "adp": {},
@@ -78,27 +103,68 @@ class RefineConfig:
         },
         metadata={"help": ""}
     )
+    write_trajectory: bool = False
 
-def load_config(yaml_file):
-    schema = OmegaConf.structured(RefineConfig)
-    if not yaml_file:
-        return schema
-    conf = OmegaConf.load(yaml_file)
-    cfg = OmegaConf.merge(schema, conf.get("refine"))
-    logger.writeln("Config loaded:")
-    logger.writeln(OmegaConf.to_yaml(cfg))
-    return cfg
+def load_config(yaml_file, args):
+    cfg = omegaconf.OmegaConf.create({"refine": RefineConfig()})
+    if yaml_file:
+        conf = omegaconf.OmegaConf.load(yaml_file)
+        try:
+            cfg = omegaconf.OmegaConf.merge(cfg, conf)
+        except omegaconf.errors.ValidationError as e:
+            raise SystemExit(f"Error while parsing {yaml_file}.\n{e.msg}")
+            
+    # load from args
+    rcfg = cfg.refine
+    if getattr(args, "write_trajectory", False):
+        rcfg.write_trajectory = True
+    if getattr(args, "fix_xyz", False):
+        rcfg.atom_selection.xyz.include = []
+        rcfg.atom_selection.xyz.exclude = []
+    if getattr(args, "adp", None) == "fix":
+        rcfg.atom_selection.adp.include = []
+        rcfg.atom_selection.adp.exclude = []
+    if getattr(args, "refine_all_occ", False):
+        rcfg.atom_selection.occ.include = ["*"]
+        rcfg.atom_selection.occ.exclude = []
+    if getattr(args, "refine_dfrac", False):
+        rcfg.atom_selection.dfrac.include = ["*"] # or H?
+        rcfg.atom_selection.dfrac.exclude = []
+
+    logger.writeln("Config loaded")
+    logger.writeln("--")
+    logger.write(omegaconf.OmegaConf.to_yaml(cfg))
+    logger.writeln("--")
+    return cfg.refine
 # load_config()
 
 def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                  refine_dfrac=False, use_q_b_mixed=True, cfg=None,
-                 exclude_h_ll=True):
+                 exclude_h_ll=True): # FIXME refine_dfrac/exclude_h_ll and cfg
     assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
     if refine_dfrac and not st[0].has_hydrogen():
         raise RuntimeError("Hydrogen must be present when deuterium fraction refinement is requested")
-    ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
+    ret = ext.RefineParams(use_aniso=(adp_mode == 2), use_q_b_mixed=use_q_b_mixed)
     ret.set_model(st[0])
     if cfg:
+        # occupancy groups
+        occ_groups = []
+        group_ids = {}
+        for occ_gr in cfg.occ_groups:
+            occ_groups.append([])
+            group_ids[occ_gr.id] = len(occ_groups) - 1
+            for s in occ_gr.selections:
+                sel = gemmi.Selection(s)
+                for model in sel.models(st):
+                    for chain in sel.chains(model):
+                        for residue in sel.residues(chain):
+                            for atom in sel.atoms(residue):
+                                occ_groups[-1].append(atom)
+        ret.set_occ_groups(occ_groups)
+        for o in cfg.occ_group_constraints:
+            ret.occ_group_constraints.append((o.complete, [group_ids[x] for x in o.ids]))
+
+        # selections
         sele = cfg.atom_selection
         ext.set_refine_flags(st[0],
                              sele.xyz.include, sele.xyz.exclude,
@@ -107,7 +173,8 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                              sele.dfrac.include, sele.dfrac.exclude)
         ret.set_params_from_flags()
     else:
-        ret.set_params_default()
+        ret.set_params(refine_xyz=refine_xyz, refine_adp=adp_mode > 0,
+                       refine_occ=refine_occ, refine_dfrac=refine_dfrac)
     if exclude_h_ll:
         if refine_dfrac:
             for t in (Type.X, Type.B, Type.Q):
@@ -115,6 +182,10 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                     ret.exclude_h_ll(t)
         else:
             ret.exclude_h_ll()
+
+    logger.writeln("Number of refinement parameters:")
+    df = pandas.DataFrame(ret.params_summary())
+    logger.writeln(df.to_string() + "\n")
     return ret
 
 class Geom:
@@ -163,6 +234,7 @@ class Geom:
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
         self.ncslist = ncslist
+        self.const_ls, self.const_u = [], []
     # __init__()
 
     def set_h_parents(self):
@@ -175,12 +247,15 @@ class Geom:
     # set_h_parents()
 
     def setup_target(self):
-        self.geom.setup_target(self.params.is_refined(Type.Q) and self.occr_w > 0)
+        self.geom.setup_target(self.params.is_refined(Type.Q))
     def setup_nonbonded(self):
         skip_critical_dist = not self.params.is_refined(Type.X) or self.unrestrained
         self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist, group_idxes=self.group_occ.group_idxes)
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
+    def setup_occ_constraint(self, lambda_ini=0., u_ini=100.):
+        self.const_ls = [lambda_ini for _ in self.params.occ_group_constraints]
+        self.const_u = [u_ini for _ in self.params.occ_group_constraints]
     def calc(self, target_only):
         if self.params.is_refined(Type.X) and not self.unrestrained:
             return self.geom.calc(check_only=target_only, **self.calc_kwds)
@@ -193,15 +268,24 @@ class Geom:
         if self.params.is_refined(Type.Q):
             return self.geom.calc_occ_restraint(target_only, self.occr_w)
         return 0
+    def update_occ_consts(self, consts_prev, alpha=1.1, eta=0.25, tol=0.01):
+        consts = self.params.occ_constraints()
+        self.const_ls = [self.const_ls[i] - self.const_u[i] * consts[i]
+                         for i in range(len(consts))]
+        self.const_u = [u * (1 if abs(c) < max(tol, eta * abs(c_prev)) else alpha)
+                        for u, c, c_prev in zip(self.const_u, consts, consts_prev)]
+        return consts
     def calc_target(self, target_only):
         self.geom.clear_target()
         geom_x = self.calc(target_only) 
         geom_a = self.calc_adp_restraint(target_only)
         geom_q = self.calc_occ_restraint(target_only)
+        geom_c = self.geom.calc_occ_constraint(target_only, self.const_ls, self.const_u)
         logger.writeln(" geom_x = {}".format(geom_x))
         logger.writeln(" geom_a = {}".format(geom_a))
         logger.writeln(" geom_q = {}".format(geom_q))
-        geom = geom_x + geom_a + geom_q
+        logger.writeln(" geom_c = {}".format(geom_c))
+        geom = geom_x + geom_a + geom_q + geom_c
         if not target_only:
             self.geom.spec_correction()
         return geom
@@ -395,9 +479,9 @@ class GroupOccupancy:
         self.consts = [(is_comp, [igr_idxes[g] for g in gids])
                        for is_comp, gids in params["const"]]
         self.ncycle = params.get("ncycle", 5)
-        self.params = ext.RefineParams(refine_occ=True)
+        self.params = ext.RefineParams()
         self.params.set_model(st[0])
-        self.params.set_params_selected(atom_idxes)
+        self.params.set_params_selected(atom_idxes, refine_occ=True)
         self.params.exclude_h_ll() # should be reasonable
     # __init__()
     
@@ -423,7 +507,7 @@ class GroupOccupancy:
             if not is_comp and sum_occ < 1:
                 sum_occ = 1. # do nothing
             for i in idxes:
-                #logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
+                logger.writeln("Imposing constraints: {} {}".format(vals[i], vals[i]/sum_occ))
                 vals[i] /= sum_occ
         for occ, atoms in zip(vals, self.groups):
             for a in atoms: a.occ = occ
@@ -485,8 +569,10 @@ class GroupOccupancy:
             ret.append({"Ncyc": cyc+1, "f0": f0})
             logger.writeln("occ_{}_f0= {:.4e}".format(cyc, f0))
             vn, diag = self.grad(x0, ll, ls, u)
+            #diag0 = diag.copy()
             diag[diag < 1e-6] = 1.
             dx = -vn / diag
+            #logger.writeln(f"debug {cyc=} {dx=} {vn=} {diag=} {diag0=}")
             if 0:
                 ofs = open("debug.dat", "w")
                 for scale in (-1, -0.5, 0, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2):
@@ -529,7 +615,7 @@ class GroupOccupancy:
 
 
 class Refine:
-    def __init__(self, st, geom, refine_params, ll=None, unrestrained=False, params=None):
+    def __init__(self, st, geom, cfg, refine_params, ll=None, unrestrained=False):
         assert geom is not None
         self.st = st # clone()?
         self.st_traj = None
@@ -541,7 +627,8 @@ class Refine:
         #self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
         #if self.h_inherit_parent_adp:
         #    self.geom.set_h_parents()
-        if params and params.get("write_trajectory"):
+        self.cfg = cfg
+        if self.cfg.write_trajectory:
             self.st_traj = self.st.clone()
             self.st_traj[-1].num = 0
         assert self.geom.group_occ.groups or self.params.n_params() > 0
@@ -574,15 +661,17 @@ class Refine:
         shift_max_allow_d = 0.5
         shift_min_allow_d = -0.5
         dx = scale * dx
-        if self.params.is_refined(Type.X):
-            dxx = dx[self.params.vec_selection(Type.X)]
+        dxx = dx[self.params.vec_selection(Type.X)]
+        dxb = dx[self.params.vec_selection(Type.B)]
+        dxq = dx[self.params.vec_selection(Type.Q)]
+        dxd = dx[self.params.vec_selection(Type.D)]
+        if len(dxx) > 0:
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
-        if self.params.is_refined(Type.B):
-            dxb = dx[self.params.vec_selection(Type.B)]
+        if len(dxb) > 0:
             # TODO this is misleading in anisotropic case
             logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
             logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
@@ -602,15 +691,13 @@ class Refine:
             else:
                 dxb[dxb > shift_max_allow_B] = shift_max_allow_B
                 dxb[dxb < shift_min_allow_B] = shift_min_allow_B
-        if self.params.is_refined(Type.Q):
-            dxq = dx[self.params.vec_selection(Type.Q)]
+        if len(dxq) > 0:
             logger.writeln("min(dq) = {}".format(numpy.min(dxq)))
             logger.writeln("max(dq) = {}".format(numpy.max(dxq)))
             logger.writeln("mean(dq)= {}".format(numpy.mean(dxq)))
             dxq[dxq > shift_max_allow_q] = shift_max_allow_q
             dxq[dxq < shift_min_allow_q] = shift_min_allow_q
-        if self.params.is_refined(Type.D):
-            dxd = dx[self.params.vec_selection(Type.D)]
+        if len(dxd) > 0:
             logger.writeln("min(dd) = {}".format(numpy.min(dxd)))
             logger.writeln("max(dd) = {}".format(numpy.max(dxd)))
             logger.writeln("mean(dd)= {}".format(numpy.mean(dxd)))
@@ -682,6 +769,11 @@ class Refine:
         f0 = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
+        if 0:
+            logger.writeln(f"geom_vec=\n{self.geom.geom.target.vn}")
+            logger.writeln(f"geom_mat=\n{self.geom.geom.target.am_spmat}")
+            logger.writeln(f"  ll_vec=\n{self.ll.ll.vn}")
+            logger.writeln(f"  ll_mat=\n{self.ll.ll.fisher_spmat}")
         if 1:
             use_ic = False # incomplete cholesky. problematic at least in geometry optimisation case
             logger.writeln("using cgsolve in c++, ic={}".format(use_ic))
@@ -713,7 +805,7 @@ class Refine:
                 for s in numpy.arange(-2, 2, 0.1):
                     dx2 = self.scale_shifts(dx, s)
                     self.set_x(x0 + dx2)
-                    fval = self.calc_target(weight, target_only=True)[0]
+                    fval = self.calc_target(weight, target_only=True)
                     ofs.write("{} {}\n".format(s, fval))
             quit()
 
@@ -739,10 +831,17 @@ class Refine:
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded()
         self.geom.setup_target()
+        self.geom.setup_occ_constraint(u_ini=self.cfg.occ_group_const_mu)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
         stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)
+        if self.params.occ_group_constraints:
+            stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
+                                      "mu": self.geom.const_u,
+                                      "violation": self.params.occ_constraints(),
+                                      "occ": self.params.constrained_occ_values()
+                                      }
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -763,7 +862,7 @@ class Refine:
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             logger.writeln(f" weight = {weight:.4e}")
-            if self.params.flag_global:
+            if self.params.is_refined_any():
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
                 stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok,
                               "weight": weight})
@@ -773,7 +872,20 @@ class Refine:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
+            if self.params.occ_group_constraints:
+                viols = self.geom.update_occ_consts(consts_prev=stats[-2]["occ_const"]["violation"],
+                                                    alpha=self.cfg.occ_group_const_mu_update_factor,
+                                                    eta=self.cfg.occ_group_const_mu_update_tol_rel,
+                                                    tol=self.cfg.occ_group_const_mu_update_tol_abs)
+                stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
+                                          "mu": self.geom.const_u,
+                                          "violation": viols,
+                                          "occ": self.params.constrained_occ_values()
+                                          }
+            # TODO add stats[-1]["occ_constraints"] and hide stdout
             if self.ll is not None:
+                if i == ncycles - 1: # last cycle
+                    self.params.ensure_occ_constraints()
                 self.ll.overall_scale()
                 f0 = self.ll.calc_target()
                 self.ll.update_ml_params()
@@ -807,7 +919,33 @@ class Refine:
 
             logger.writeln("")
 
-        # Make table
+        # Make tables
+        if self.params.occ_group_constraints:
+            tmp = []
+            for icyc, s in enumerate(stats):
+                con = s["occ_const"]
+                d = {"Ncyc": icyc}
+                d.update({f"lambda_{i+1}":l for i,l in enumerate(con["lambda"])})
+                d.update({f"mu_{i+1}":l for i,l in enumerate(con["mu"])})
+                d.update({f"violation_{i+1}":l for i,l in enumerate(con["violation"])})
+                d.update({f"occ_{i+1}_{j+1}":q for i, l in enumerate(con["occ"])
+                          for j, q in enumerate(l)})
+                tmp.append(d)
+            df = pandas.DataFrame(tmp)
+            forplot = [
+                ["Lagrange multiplier", 
+                 ["Ncyc"] + [x for x in df if x.startswith("lambda_")]],
+                ["Penalty parameter mu",
+                 ["Ncyc"] + [x for x in df if x.startswith("mu")]],
+                ["Group constrained occupancies",
+                 ["Ncyc"] + [x for x in df if x.startswith("occ_")]],
+                ["Constraint violations",
+                 ["Ncyc"] + [x for x in df if x.startswith("violation_")]],
+            ]
+            lstr = utils.make_loggraph_str(df, "group occupancies vs cycle", forplot,
+                                           float_format="{:.4f}".format)
+            logger.writeln(lstr)
+            
         data_keys, geom_keys = set(), set()
         tmp = []
         for d in stats:

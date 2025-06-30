@@ -31,9 +31,9 @@ We will need the pdb (or mmcif) file, half maps, and mask:
 ::
 
     wget https://files.rcsb.org/download/6k7k.pdb
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-9937/other/emd_9937_half_map_1.map.gz
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-9937/other/emd_9937_half_map_2.map.gz
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-9937/masks/emd_9937_msk_1.map
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-9937/other/emd_9937_half_map_1.map.gz
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-9937/other/emd_9937_half_map_2.map.gz
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-9937/masks/emd_9937_msk_1.map
 
 First, refine the model.
 

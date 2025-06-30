@@ -242,13 +242,14 @@ struct IntensityIntegrator {
   nb::ndarray<nb::numpy, double>
   ll_int_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
                         double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                        np_array<int> c, np_array<int> eps) const {
+                        np_array<int> c, np_array<int> eps, np_array<double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
     auto Fcs_ = Fcs.view();
     auto c_ = c.view();
     auto eps_ = eps.view();
+    auto w_ = w.view();
     const size_t n_models = Fcs_.shape(1);
     const size_t n_ref = Fcs_.shape(0);
     const size_t n_cols = for_DS ? n_models + 1 : 1;
@@ -287,16 +288,16 @@ struct IntensityIntegrator {
         const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
         for (size_t j = 0; j < n_models; ++j) {
           const double r_fcj_fc = (Fcs_(i, j) * Fc_total_conj).real();
-          ptr[i*n_cols + j] = tmp * r_fcj_fc;
+          ptr[i*n_cols + j] = w_(i) * tmp * r_fcj_fc;
         }
-        ptr[i*n_cols + n_models] = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+        ptr[i*n_cols + n_models] = w_(i) * ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
       }
       else {
         // k_aniso * d/dk_aniso -log p(Io; Fc)
         // note k_aniso is multiplied to the derivative
         const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
         const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax); // * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
-        ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+        ptr[i] = w_(i) * (2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1);
       }
     }
     return ret;
@@ -305,13 +306,14 @@ struct IntensityIntegrator {
   // an attempt to fast update of Sigma, but it does look good.
   double find_ll_int_S_from_current_estimates_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
                                                  double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                                                 np_array<int> c, np_array<int> eps) const {
+                                                 np_array<int> c, np_array<int> eps, np_array<double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
     auto Fcs_ = Fcs.view();
     auto c_ = c.view();
     auto eps_ = eps.view();
+    auto w_ = w.view();
     const size_t n_models = Fcs_.shape(1);
     const size_t n_ref = Fcs_.shape(0);
     if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
@@ -322,10 +324,10 @@ struct IntensityIntegrator {
         s += Fcs_(i, j) * Ds[j];
       return s;
     };
-    int count = 0;
+    double count = 0;
     double ret = 0;
     for (size_t i = 0; i < n_ref; ++i) {
-      if (S <= 0 || std::isnan(Io_(i)))
+      if (S <= 0 || std::isnan(Io_(i)) || std::isnan(w_(i)))
         continue;
       const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i));
       const double Fc_abs = std::abs(Fc_total_conj);
@@ -343,10 +345,10 @@ struct IntensityIntegrator {
                                              exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
       const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
       if (c_(i) == 1) // acentrics
-        ret += (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
+        ret += w_(i) * (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
       else
-        ret += (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2)) / eps_(i);
-      ++count;
+        ret += w_(i) * (sq(Fc_abs) + 2 * (j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2)) / eps_(i);
+      count += w_(i);
     }
     if (count == 0) return NAN;
     return ret / count;
@@ -356,12 +358,13 @@ struct IntensityIntegrator {
   template<bool for_S>
   nb::ndarray<nb::numpy, double>
   ll_int_fw_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                           double S, np_array<int> c, np_array<int> eps) const {
+                           double S, np_array<int> c, np_array<int> eps, np_array<double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
     auto c_ = c.view();
     auto eps_ = eps.view();
+    auto w_ = w.view();
     size_t n_ref = Io.shape(0);
 
     // der1 wrt S or k_ani
@@ -377,13 +380,13 @@ struct IntensityIntegrator {
       double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
       if (for_S) {
         j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
-        ptr[i] = ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
+        ptr[i] = w_(i) * ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
       }
       else {
         // note k_aniso is multiplied to the derivative
         const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
         const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
-        ptr[i] = 2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1;
+        ptr[i] = w_(i) * (2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1);
       }
     }
     return ret;
@@ -435,23 +438,25 @@ void add_intensity(nb::module_& m) {
     .def_rw("ewmax", &IntensityIntegrator::ewmax)
     .def_rw("exp2_threshold", &IntensityIntegrator::exp2_threshold)
     .def("ll_int", [](const IntensityIntegrator& self, np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                      np_array<double> S, np_array<double> Fc, np_array<int> c) {
+                      np_array<double> S, np_array<double> Fc, np_array<int> c, np_array<double> w) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       auto k_ani_ = k_ani.view();
       auto S_ = S.view();
       auto Fc_ = Fc.view();
       auto c_ = c.view();
+      auto w_ = w.view();
       size_t len = Io_.shape(0);
-      if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) || len != Fc_.shape(0) || len != c_.shape(0))
+      if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) || len != Fc_.shape(0) || len != c_.shape(0)
+          || len != w_.shape(0))
         throw std::runtime_error("ll_int: shape mismatch");
       auto ret = make_numpy_array<double>({len});
       double* retp = ret.data();
       for (size_t i = 0; i < len; ++i)
-        retp[i] = self.ll_int(Io_(i), sigIo_(i), k_ani_(i), S_(i), Fc_(i), c_(i));
+        retp[i] = w_(i) * self.ll_int(Io_(i), sigIo_(i), k_ani_(i), S_(i), Fc_(i), c_(i));
       return ret;
     },
-         nb::arg("Io"), nb::arg("sigIo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"))
+         nb::arg("Io"), nb::arg("sigIo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"), nb::arg("w"))
     .def("ll_int_der1_DS", &IntensityIntegrator::ll_int_der1_params_py<true>)
     .def("ll_int_der1_ani", &IntensityIntegrator::ll_int_der1_params_py<false>)
     .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)

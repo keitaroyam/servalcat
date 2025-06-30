@@ -6,9 +6,9 @@ We need the pdb (or mmcif) file, half maps and mask:
 ::
 
     wget https://files.rcsb.org/download/7w9w.pdb
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-32377/other/emd_32377_half_map_1.map.gz
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-32377/other/emd_32377_half_map_2.map.gz
-    wget https://ftp.wwpdb.org/pub/emdb/structures/EMD-32377/masks/emd_32377_msk_1.map
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-32377/other/emd_32377_half_map_1.map.gz
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-32377/other/emd_32377_half_map_2.map.gz
+    wget https://files.wwpdb.org/pub/emdb/structures/EMD-32377/masks/emd_32377_msk_1.map
 
 .. note::
     Half maps should be unsharpened and unweighted. In this example, the half maps are from a RELION Refine3D job. The mask file is only used for map calculation after the refinement and does not affect the refinement itself.

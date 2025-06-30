@@ -50,6 +50,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
+NB_MAKE_OPAQUE(std::vector<std::pair<bool, std::vector<size_t>>>)
 
 nb::tuple precondition_eigen_coo(np_array<double> am, np_array<int> rows,
                                  np_array<int> cols, int N, double cutoff) {
@@ -768,6 +769,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Bond::Value>, rv_ri>(bond, "Values");
   nb::bind_vector<std::vector<Geometry::Angle::Value>, rv_ri>(angle, "Values");
   nb::bind_vector<std::vector<Geometry::Torsion::Value>, rv_ri>(torsion, "Values");
+  nb::bind_vector<std::vector<std::pair<bool, std::vector<size_t>>> , rv_ri>(params, "OccGroupConsts");
 
   nb::enum_<RefineParams::Type>(params, "Type")
     .value("X", RefineParams::Type::X)
@@ -776,15 +778,11 @@ void add_refine(nb::module_& m) {
     .value("D", RefineParams::Type::D)
     ;
   params
-    .def(nb::init<bool, int, bool, bool, bool>(),
-         nb::arg("refine_xyz")=false, nb::arg("adp_mode")=false,  nb::arg("refine_occ")=false,
-         nb::arg("refine_dfrac")=false, nb::arg("use_q_b_mixed")=true)
+    .def(nb::init<bool, bool>(),
+         nb::arg("use_aniso")=false, nb::arg("use_q_b_mixed")=true)
     .def_ro("aniso", &RefineParams::aniso)
     .def_ro("use_q_b_mixed_derivatives", &RefineParams::use_q_b_mixed_derivatives)
     .def_ro("atoms", &RefineParams::atoms)
-    .def_prop_ro("flag_global", [](const RefineParams &self){
-      return self.flag_global.to_ulong();
-    })
     .def("atom_to_param", [](const RefineParams &self, RefineParams::Type t) {
       return self.atom_to_param(t);})
     .def("param_to_atom", [](const RefineParams &self, RefineParams::Type t) {
@@ -792,7 +790,8 @@ void add_refine(nb::module_& m) {
     .def("n_refined_atoms", &RefineParams::n_refined_atoms)
     .def("n_refined_pairs", &RefineParams::n_refined_pairs)
     .def("n_params", &RefineParams::n_params)
-    .def("is_refined", &RefineParams::is_refined)
+    .def("is_refined", &RefineParams::is_refined, nb::arg("t"))
+    .def("is_refined_any", &RefineParams::is_refined_any)
     .def("is_excluded_ll", &RefineParams::is_excluded_ll)
     .def("add_ll_exclusion", nb::overload_cast<size_t>(&RefineParams::add_ll_exclusion))
     .def("add_ll_exclusion", nb::overload_cast<size_t, RefineParams::Type>(&RefineParams::add_ll_exclusion))
@@ -807,8 +806,13 @@ void add_refine(nb::module_& m) {
             self.add_ll_exclusion(a->serial - 1);
     })
     .def("set_model", &RefineParams::set_model)
-    .def("set_params_default", &RefineParams::set_params_default)
-    .def("set_params_selected", &RefineParams::set_params_selected)
+    .def("set_params", &RefineParams::set_params,
+         nb::arg("refine_xyz")=false, nb::arg("refine_adp")=false,
+         nb::arg("refine_occ")=false, nb::arg("refine_dfrac")=false)
+    .def("set_params_selected", &RefineParams::set_params_selected,
+         nb::arg("indices"),
+         nb::arg("refine_xyz")=false, nb::arg("refine_adp")=false,
+         nb::arg("refine_occ")=false, nb::arg("refine_dfrac")=false)
     .def("set_params_from_flags", &RefineParams::set_params_from_flags)
     .def("get_x", &RefineParams::get_x)
     .def("set_x", &RefineParams::set_x, nb::arg("x"), nb::arg("min_b")=0.5)
@@ -823,6 +827,32 @@ void add_refine(nb::module_& m) {
         start = end;
       }
       gemmi::fail("vec_selection: bad t");
+    })
+    .def("set_occ_groups", [](RefineParams &self, const std::vector<std::vector<const gemmi::Atom *>> &groups) {
+      self.occ_groups.clear();
+      for (const auto &v : groups) {
+        self.occ_groups.emplace_back();
+        for (const auto &a : v)
+          self.occ_groups.back().push_back(a->serial - 1);
+      }
+    })
+    .def_ro("occ_group_constraints", &RefineParams::occ_group_constraints)
+    .def("constrained_occ_values", &RefineParams::constrained_occ_values)
+    .def("occ_constraints", &RefineParams::occ_constraints)
+    .def("ensure_occ_constraints", &RefineParams::ensure_occ_constraints)
+    .def("params_summary", [](const RefineParams &self) {
+      nb::dict ret, n_atoms, n_params, n_excl;
+      for (RefineParams::Type tt : self.Types) {
+        const std::string lab = self.type2str(tt);
+        const auto &vec = self.atom_to_param(tt);
+        n_atoms[lab.c_str()] = std::count_if(vec.begin(), vec.end(), [](int n) { return n >= 0; });
+        n_params[lab.c_str()] = self.n_refined_atoms(tt);
+        n_excl[lab.c_str()] = self.ll_exclusion[self.type2num(tt)].size();
+      }
+      ret["n_params"] = n_params;
+      ret["n_atoms"] = n_atoms;
+      ret["n_atoms_geom_only"] = n_excl;
+      return ret;
     })
     ;
   m.def("set_refine_flags", [](gemmi::Model &model,
@@ -843,12 +873,8 @@ void add_refine(nb::module_& m) {
               flags[atom.serial-1].reset(t);
     };
     for (int t = 0; t < RefineParams::N; ++t) {
-      if (includes[t]->empty())
-        for (auto &f : flags)
-          f.set(t);
-      else
-        for (const auto &selstr : *includes[t])
-          set_sel(gemmi::Selection(selstr), t, true);
+      for (const auto &selstr : *includes[t])
+        set_sel(gemmi::Selection(selstr), t, true);
       for (const auto &selstr : *excludes[t])
         set_sel(gemmi::Selection(selstr), t, false);
     }
@@ -893,6 +919,7 @@ void add_refine(nb::module_& m) {
          nb::arg("wncs")=1)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("calc_occ_restraint", &Geometry::calc_occ_restraint)
+    .def("calc_occ_constraint", &Geometry::calc_occ_constraint)
     .def("spec_correction", &Geometry::spec_correction, nb::arg("alpha")=1e-3, nb::arg("use_rr")=true)
     .def_ro("bondindex", &Geometry::bondindex)
     // vdw parameters

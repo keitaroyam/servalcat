@@ -33,6 +33,8 @@ def add_arguments(parser):
     parser.add_argument("--labin", help="F,SIGF,FREE input")
     parser.add_argument('--labin_free',
                         help='MTZ column of --hklin_free')
+    parser.add_argument('--labin_llweight',
+                        help=argparse.SUPPRESS) # testing
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
     parser.add_argument('--model', required=True,
@@ -74,7 +76,7 @@ def add_arguments(parser):
                         help='Use local NCS restraints')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight (default: %(default)f)")
-    parser.add_argument('--occr_weight', type=float, default=1.,
+    parser.add_argument('--occr_weight', type=float, default=0.,
                         help="Occupancy restraint weight (default: %(default)f)")
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
@@ -116,8 +118,8 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    refine_cfg = load_config(args.config)
-    if args.refine_dfrac and args.source != "neutron":
+    refine_cfg = load_config(args.config, args)
+    if args.refine_dfrac and args.source != "neutron": # TODO should check params.is_refined()
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
@@ -128,7 +130,6 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     params = refmac_keywords.parse_keywords(keywords)
-    params["write_trajectory"] = args.write_trajectory
     
     hklin = args.hklin
     labin = args.labin
@@ -153,7 +154,8 @@ def main(args):
             keep_charges=args.keep_charges,
             allow_unusual_occupancies=args.allow_unusual_occupancies,
             hklin_free=args.hklin_free,
-            labin_free=args.labin_free)
+            labin_free=args.labin_free,
+            labin_llweight=args.labin_llweight)
 
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
@@ -245,9 +247,8 @@ def main(args):
     ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
                  twin=args.twin)
-    refiner = Refine(st, geom, refine_params, ll=ll,
-                     unrestrained=args.unrestrained,
-                     params=params)
+    refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
+                     unrestrained=args.unrestrained)
 
     stats = refiner.run_cycles(args.ncycle, weight=args.weight,
                                weight_adjust=not args.no_weight_adjust,
@@ -261,7 +262,7 @@ def main(args):
         st_hd_expand = refiner.st.clone()
         st_hd_expand.store_deuterium_as_fraction(False)
         utils.fileio.write_model(st_hd_expand, args.output_prefix + "_hd_expand", pdb=True, cif=True, hout=True)
-    if params["write_trajectory"]:
+    if refine_cfg.write_trajectory:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
 
     if ll.twin_data:
@@ -289,9 +290,11 @@ def main(args):
         labs.append("FCbulk")
     if "FREE" in hkldata.df:
         labs.append("FREE")
+    if args.labin_llweight:
+        labs.append("llweight")
     labs += ll.D_labs + ["S"] # for debugging, for now
     mtz_out = args.output_prefix+".mtz"
-    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F"})
+    hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F", "llweight": "R"})
 
 # main()
 

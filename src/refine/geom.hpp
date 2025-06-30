@@ -205,7 +205,8 @@ struct GeomTarget {
       params->set_pairs(RefineParams::Type::X, pairs);
     if (params->is_refined(RefineParams::Type::B))
       params->set_pairs(RefineParams::Type::B, pairs);
-    if (params->is_refined(RefineParams::Type::Q) && use_occr)
+    if (params->is_refined(RefineParams::Type::Q) &&
+        (use_occr || !params->occ_group_constraints.empty()))
       params->set_pairs(RefineParams::Type::Q, pairs);
     const size_t qqv = params->n_params();
     const size_t qqm = params->n_fisher_geom();
@@ -314,77 +315,86 @@ struct GeomTarget {
     const size_t n_v = params->n_params();
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
-    size_t i = 0, offset = 0;
-    auto add_data = [&data](size_t i, size_t j, double v) {
+    std::vector<bool> am_flag(am.size());
+    auto add_data = [&](size_t i, size_t j, size_t apos) {
+      if (am_flag[apos]) return; // avoid overwriting
+      am_flag[apos] = true;
+      const double v = am[apos];
       if (i != j && v == 0.) return; // we need all diagonals
       data.emplace_back(i, j, v);
       if (i != j)
         data.emplace_back(j, i, v);
     };
-    if (params->is_refined(RefineParams::Type::X)) {
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::X);
-        if (pos >= 0) {
-          add_data(pos,   pos,   am[i++]);
-          add_data(pos+1, pos+1, am[i++]);
-          add_data(pos+2, pos+2, am[i++]);
-          add_data(pos,   pos+1, am[i++]);
-          add_data(pos,   pos+2, am[i++]);
-          add_data(pos+1, pos+2, am[i++]);
-        }
+    for (int j : params->param_to_atom(RefineParams::Type::X)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::X);
+      const int apos = params->get_pos_mat_geom(j, RefineParams::Type::X);
+      if (pos >= 0 && apos >= 0) { // should be always ok
+        add_data(pos,   pos,   apos);
+        add_data(pos+1, pos+1, apos+1);
+        add_data(pos+2, pos+2, apos+2);
+        add_data(pos,   pos+1, apos+3);
+        add_data(pos,   pos+2, apos+4);
+        add_data(pos+1, pos+2, apos+5);
       }
+    }
+    if (params->is_refined(RefineParams::Type::X)) {
       for (int j = 0; j < pairs.size(); ++j)
         if (params->pairs_refine(RefineParams::Type::X)[j] >= 0) {
           const auto &p = pairs[j]; // assumes sequential order..
           const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::X);
           const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::X);
+          int apos = params->get_pos_mat_pair_geom(j, RefineParams::Type::X);
           for (size_t k = 0; k < 3; ++k)
             for (size_t l = 0; l < 3; ++l)
-              add_data(pos1 + l, pos2 + k, am[i++]);
+              add_data(pos1 + l, pos2 + k, apos++);
         }
     }
-    if (params->is_refined(RefineParams::Type::B)) {
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::B);
-        if (pos >= 0) {
-          if (params->aniso) {
-            for (size_t k = 0; k < 6; ++k)
-              add_data(pos + k, pos + k, am[i++]);
-            for (size_t k = 0; k < 6; ++k)
-              for (size_t l = k + 1; l < 6; ++l)
-                add_data(pos + k, pos + l, am[i++]);
-          } else
-            add_data(pos, pos, am[i++]);
-        }
+    for (int j : params->param_to_atom(RefineParams::Type::B)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::B);
+      int apos = params->get_pos_mat_geom(j, RefineParams::Type::B);
+      if (pos >= 0 && apos >= 0) { // should be always ok
+        if (params->aniso) {
+          for (size_t k = 0; k < 6; ++k)
+            add_data(pos + k, pos + k, apos++);
+          for (size_t k = 0; k < 6; ++k)
+            for (size_t l = k + 1; l < 6; ++l)
+              add_data(pos + k, pos + l, apos++);
+        } else
+          add_data(pos, pos, apos);
       }
+    }
+    if (params->is_refined(RefineParams::Type::B)) {
       for (int j = 0; j < pairs.size(); ++j)
         if (params->pairs_refine(RefineParams::Type::B)[j] >= 0) {
           const auto &p = pairs[j];
           const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::B);
           const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::B);
+          int apos = params->get_pos_mat_pair_geom(j, RefineParams::Type::B);
           if (params->aniso) {
             for (size_t k = 0; k < 6; ++k)
               for (size_t l = 0; l < 6; ++l)
-                add_data(pos1 + l, pos2 + k, am[i++]);
+                add_data(pos1 + l, pos2 + k, apos++);
           } else
-            add_data(pos1, pos2, am[i++]);
+            add_data(pos1, pos2, apos);
         }
     }
-    if (params->is_refined(RefineParams::Type::Q) && use_occr) {
-      for (size_t j = 0; j < n_atoms; ++j) {
+    if (params->is_refined(RefineParams::Type::Q)) {
+      for (int j : params->param_to_atom(RefineParams::Type::Q)) {
         const int pos = params->get_pos_vec(j, RefineParams::Type::Q);
-        if (pos >=0)
-          add_data(pos, pos, am[i++]);
+        const int apos = params->get_pos_mat_geom(j, RefineParams::Type::Q);
+        if (pos >= 0 && apos >= 0)
+          add_data(pos, pos, apos);
       }
       for (int j = 0; j < pairs.size(); ++j)
         if (params->pairs_refine(RefineParams::Type::Q)[j] >= 0) {
           const auto &p = pairs[j];
           const int pos1 = params->get_pos_vec(p.second, RefineParams::Type::Q);
           const int pos2 = params->get_pos_vec(p.first, RefineParams::Type::Q);
-          add_data(pos1, pos2, am[i++]);
+          const int apos = params->get_pos_mat_pair_geom(j, RefineParams::Type::Q);
+          if (pos1 >= 0 && pos2 >= 0 && apos >= 0)
+            add_data(pos1, pos2, apos);
         }
     }
-    if (i != am.size()) gemmi::fail("GeomTarget::make_spmat: wrong matrix size ", std::to_string(i), " ", std::to_string(am.size()));
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
   }
@@ -663,6 +673,7 @@ struct Geometry {
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
               double wchir, double wplane, double wstack, double wvdw, double wncs);
   double calc_adp_restraint(bool check_only, double wbskal);
+  double calc_occ_constraint(bool check_only, const std::vector<double> &ls, const std::vector<double> & u);
   double calc_occ_restraint(bool check_only, double wocc);
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
@@ -1045,6 +1056,24 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
     };
     return std::binary_search(angles.begin(), angles.end(), key, cmp());
   };
+  auto test_occ_group_excl = [&](const gemmi::Atom *a1, const gemmi::Atom *a2) {
+    const int idx_1 = a1->serial - 1, idx_2 = a2->serial - 1;
+    int gr_1 = -1, gr_2 = -1;
+    for (int i = 0; i < target.params->occ_groups.size(); ++i) {
+      const auto &gr = target.params->occ_groups[i];
+      if (std::find(gr.begin(), gr.end(), idx_1) != gr.end())
+        gr_1 = i;
+      if (std::find(gr.begin(), gr.end(), idx_2) != gr.end())
+        gr_2 = i;
+    }
+    const bool ret1 = gr_1 >= 0 && gr_2 >= 0 && gr_1 == gr_2;
+    if (gr_1 >= 0 && gr_2 >= 0)
+      for (const auto &gc : target.params->occ_group_constraints)
+        if (std::find(gc.second.begin(), gc.second.end(), gr_1) != gc.second.end() &&
+            std::find(gc.second.begin(), gc.second.end(), gr_2) != gc.second.end())
+          return std::make_pair(ret1, true);
+    return std::make_pair(ret1, false);
+  };
 
   vdws.clear();
 
@@ -1086,10 +1115,12 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                //  if symmetry related, only check the sum of occupancies.
                                const bool same_res_conf = &res == cra2.residue && gemmi::is_same_conformer(atom.altloc, cra2.atom->altloc);
                                const bool sum_q_le1 = atom.occ + cra2.atom->occ < 1.0001;
-                               const bool same_group = (!group_idxes.empty() &&
-                                                        group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
-                                                        group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]);
-                               if (m.image_idx != 0 ? sum_q_le1 : (!same_res_conf && !same_group && sum_q_le1))
+                               const auto test_consts = test_occ_group_excl(&atom, cra2.atom);
+                               const bool same_group = ((!group_idxes.empty() &&
+                                                         group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
+                                                         group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]) ||
+                                                        test_consts.first);
+                               if ((m.image_idx != 0 ? sum_q_le1 : (!same_res_conf && !same_group && sum_q_le1)) || test_consts.second)
                                  continue;
                                vdws.emplace_back(&atom, cra2.atom);
                                if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
@@ -1208,6 +1239,23 @@ inline void Geometry::setup_target(bool use_occr) {
     for (const auto &a1 : t.pairs[0]->atoms)
       for (const auto &a2 : t.pairs[1]->atoms)
         add(a1, a2, 10);
+
+  for (int i = 0; i < target.params->occ_group_constraints.size(); ++i) {
+    const auto &group_idxes = target.params->occ_group_constraints[i].second;
+    for (size_t j = 0; j < group_idxes.size(); ++j) {
+      for (int ia1 : target.params->occ_groups[group_idxes[j]])
+        if (target.params->is_atom_refined(ia1, RefineParams::Type::Q)) {
+          for (size_t k = j + 1; k < group_idxes.size(); ++k) {
+            for (int ia2 : target.params->occ_groups[group_idxes[k]])
+              if (target.params->is_atom_refined(ia2, RefineParams::Type::Q)) {
+                add(target.params->atoms[ia1], target.params->atoms[ia2], 11);
+                break;
+              }
+          }
+          break;
+        }
+    }
+  }
 
   // sort_and_compress_distances
   target.pairs.clear();
@@ -1437,7 +1485,48 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
   }
   return ret;
 }
+inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<double> &ls, const std::vector<double> &u) {
+  if (target.params->occ_group_constraints.size() != ls.size())
+    gemmi::fail("calc_occ_constraint: size mismatch");
+  double ret = 0.;
+  const std::vector<double> consts = target.params->occ_constraints();
+  for (int i = 0; i < target.params->occ_group_constraints.size(); ++i) {
+    const auto &group_idxes = target.params->occ_group_constraints[i].second;
+    double sum_occ = 0.;
+    const double c = consts[i];
+    if (c == 0) // otherwise gradient will be affected - should be?
+      continue;
+    ret += 0.5 * u[i] * gemmi::sq(c) - ls[i] * c;
+    if (!check_only) {
+      for (size_t j = 0; j < group_idxes.size(); ++j) {
+        for (int ia : target.params->occ_groups[group_idxes[j]])
+          if (target.params->is_atom_refined(ia, RefineParams::Type::Q)) {
+            const int vpos = target.params->get_pos_vec(ia, RefineParams::Type::Q);
+            const int apos = target.params->get_pos_mat_geom(ia, RefineParams::Type::Q);
+            if (vpos >= 0)
+              target.vn[vpos] += u[i] * c - ls[i];
+            if (apos >= 0)
+              target.am[apos] += u[i];
 
+            // non-diagonal
+            for (size_t k = j + 1; k < group_idxes.size(); ++k) {
+              for (int ia2 : target.params->occ_groups[group_idxes[k]])
+                if (target.params->is_atom_refined(ia2, RefineParams::Type::Q)) {
+                  const int vpos2 = target.params->get_pos_vec(ia2, RefineParams::Type::Q);
+                  if (vpos >= 0 && vpos2 >= 0) {
+                    auto mp = target.find_restraint(ia, ia2, RefineParams::Type::Q);
+                    target.am[mp.ipos] += u[i];
+                  }
+                  break;
+                }
+            }
+            break; // parameter is common
+          }
+      }
+    }
+  }
+  return ret;
+}
 inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
   if (wocc <= 0) return 0.;
   if (!check_only)

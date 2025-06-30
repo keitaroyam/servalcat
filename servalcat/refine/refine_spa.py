@@ -94,7 +94,7 @@ def add_arguments(parser):
                         help='Bond rmsz range for weight adjustment (default: %(default)s)')
     parser.add_argument('--adpr_weight', type=float, default=1.,
                         help="ADP restraint weight (default: %(default)f)")
-    parser.add_argument('--occr_weight', type=float, default=1.,
+    parser.add_argument('--occr_weight', type=float, default=0.,
                         help="Occupancy restraint weight (default: %(default)f)")
     parser.add_argument('--ncsr', action='store_true', 
                         help='Use local NCS restraints')
@@ -138,14 +138,13 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    refine_cfg = load_config(args.config)
+    refine_cfg = load_config(args.config, args)
     args.mask = None
     args.invert_mask = False
     args.trim_fofc_mtz = args.mask_for_fofc is not None
     args.cross_validation_method = "throughout"
     check_args(args)
     params = refmac_keywords.parse_keywords(args.keywords + [l for f in args.keyword_file for l in open(f)])
-    params["write_trajectory"] = args.write_trajectory
 
     st = utils.fileio.read_structure(args.model)
     ccu = utils.model.CustomCoefUtil()
@@ -254,9 +253,8 @@ def main(args):
     ll = spa.LL_SPA(hkldata, st, monlib,
                     lab_obs="F_map1" if args.cross_validation else "FP",
                     source=args.source)
-    refiner = Refine(st, geom, refine_params, ll,
-                     unrestrained=args.unrestrained,
-                     params=params)
+    refiner = Refine(st, geom, refine_cfg, refine_params, ll,
+                     unrestrained=args.unrestrained)
 
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint
     if args.adp_restraint_power is not None: geom.geom.adpr_d_power = args.adp_restraint_power
@@ -278,7 +276,7 @@ def main(args):
         refiner.st.cell = maps[0][0].unit_cell
         refiner.st.setup_cell_images()
 
-    if params["write_trajectory"]:
+    if refine_cfg.write_trajectory:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
         
     # Expand sym here

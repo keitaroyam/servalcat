@@ -662,37 +662,41 @@ struct LL{
         }
       fac_x *= gemmi::sq(neutron_h_f_correction);
       fac_a *= gemmi::sq(neutron_h_f_correction);
-      if (pos_x >= 0) am[pos_x] = am[pos_x+1] = am[pos_x+2] = w * fac_x;
+      if (pos_x >= 0)
+        for (int j = 0; j < 3; ++j)
+          am[pos_x + j] += w * fac_x;
       if (adp_mode == 1)
-        am[pos_b] = w * fac_b;
+        am[pos_b] += w * fac_b;
       else if (adp_mode == 2) {
-        for (int j = 0; j < 3; ++j) am[pos_b + j] = w * fac_a;     // 11-11, 22-22, 33-33
-        for (int j = 3; j < 6; ++j) am[pos_b + j] = w * fac_a * 4; // 12-12, 13-13, 23-23
-        am[pos_b + 6] = am[pos_b + 7] = am[pos_b + 11] = w * fac_a / 3; // 11-22, 11-33, 22-33
+        for (int j = 0; j < 3; ++j) am[pos_b + j] += w * fac_a;     // 11-11, 22-22, 33-33
+        for (int j = 3; j < 6; ++j) am[pos_b + j] += w * fac_a * 4; // 12-12, 13-13, 23-23
+        for (int j : {6, 7, 11})    am[pos_b + j] += w * fac_a / 3; // 11-22, 11-33, 22-33
       }
       if (pos_q >= 0) {
-        am[pos_q] = fac_q * gemmi::sq(neutron_h_f_correction); // w = q^2 not needed
+        am[pos_q] += fac_q * gemmi::sq(neutron_h_f_correction); // w = q^2 not needed
         const int pos_qb = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::Q);
         if (pos_qb >= 0) {
           if (adp_mode == 1)
-            am[pos_qb] = fac_qb * atom.occ * gemmi::sq(neutron_h_f_correction);
+            am[pos_qb] += fac_qb * atom.occ * gemmi::sq(neutron_h_f_correction);
           else if (adp_mode == 2)
-            am[pos_qb] = am[pos_qb + 1] = am[pos_qb + 2] = fac_qb * atom.occ / 3 * gemmi::sq(neutron_h_f_correction);
+            for (int j = 0; j < 3; ++j)
+              am[pos_qb + j] += fac_qb * atom.occ / 3 * gemmi::sq(neutron_h_f_correction);
         }
       }
       if (pos_d >= 0) {
-        am[pos_d] = w * fac_q;
+        am[pos_d] += w * fac_q;
         const int pos_bd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::D);
         const int pos_qd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::Q, RefineParams::Type::D);
         if (pos_bd >= 0) {
           if (adp_mode == 1)
-            am[pos_bd] = w * fac_qb * neutron_h_f_correction;
+            am[pos_bd] += w * fac_qb * neutron_h_f_correction;
           else if (adp_mode == 2) {
-            am[pos_bd] = am[pos_bd+1] = am[pos_bd+2] = w * fac_qb * neutron_h_f_correction / 3;
+            for (int j = 0; j < 3; ++j)
+              am[pos_bd + j] += w * fac_qb * neutron_h_f_correction / 3;
           }
         }
         if (pos_qd >= 0)
-          am[pos_qd] = fac_q * atom.occ * neutron_h_f_correction;
+          am[pos_qd] += fac_q * atom.occ * neutron_h_f_correction;
       }
     }
   }
@@ -703,51 +707,54 @@ struct LL{
     const size_t n_v = params->n_params();
     Eigen::SparseMatrix<double> spmat(n_v, n_v);
     std::vector<Eigen::Triplet<double>> data;
-    auto add_data = [&data](size_t i, size_t j, double v) {
+    std::vector<bool> am_flag(am.size());
+    auto add_data = [&](size_t i, size_t j, size_t apos) {
+      if (am_flag[apos]) return; // avoid overwriting
+      am_flag[apos] = true;
+      const double v = am[apos];
       if (i != j && v == 0) return; // we need all diagonals
       data.emplace_back(i, j, v);
       if (i != j)
         data.emplace_back(j, i, v);
     };
-    size_t i = 0;
-    if (params->is_refined(RefineParams::Type::X))
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::X);
-        if (pos >= 0) {
-          add_data(pos,   pos,   am[i++]);
-          add_data(pos+1, pos+1, am[i++]);
-          add_data(pos+2, pos+2, am[i++]);
-          add_data(pos,   pos+1, am[i++]);
-          add_data(pos,   pos+2, am[i++]);
-          add_data(pos+1, pos+2, am[i++]);
-        }
+    for (int j : params->param_to_atom(RefineParams::Type::X)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::X);
+      const int apos = params->get_pos_mat_ll(j, RefineParams::Type::X);
+      if (pos >= 0 && apos >= 0) { // should be always ok
+        add_data(pos,   pos,   apos);
+        add_data(pos+1, pos+1, apos+1);
+        add_data(pos+2, pos+2, apos+2);
+        add_data(pos,   pos+1, apos+3);
+        add_data(pos,   pos+2, apos+4);
+        add_data(pos+1, pos+2, apos+5);
       }
-    if (params->is_refined(RefineParams::Type::B))
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::B);
-        if (pos >= 0) {
-          if (params->aniso) {
-            for (size_t k = 0; k < 6; ++k)
-              add_data(pos + k, pos + k, am[i++]);
-            for (size_t k = 0; k < 6; ++k)
-              for (size_t l = k + 1; l < 6; ++l)
-                add_data(pos + k, pos + l, am[i++]);
-          } else
-            add_data(pos, pos, am[i++]);
-        }
+    }
+    for (int j : params->param_to_atom(RefineParams::Type::B)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::B);
+      int apos = params->get_pos_mat_ll(j, RefineParams::Type::B);
+      if (pos >= 0 && apos >= 0) { // should be always ok
+        if (params->aniso) {
+          for (size_t k = 0; k < 6; ++k)
+            add_data(pos + k, pos + k, apos++);
+          for (size_t k = 0; k < 6; ++k)
+            for (size_t l = k + 1; l < 6; ++l)
+              add_data(pos + k, pos + l, apos++);
+        } else
+          add_data(pos, pos, apos);
       }
-    if (params->is_refined(RefineParams::Type::Q))
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::Q);
-        if (pos >= 0)
-          add_data(pos, pos, am[i++]);
-      }
-    if (params->is_refined(RefineParams::Type::D))
-      for (size_t j = 0; j < n_atoms; ++j) {
-        const int pos = params->get_pos_vec(j, RefineParams::Type::D);
-        if (pos >= 0)
-          add_data(pos, pos, am[i++]);
-      }
+    }
+    for (int j : params->param_to_atom(RefineParams::Type::Q)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::Q);
+      const int apos = params->get_pos_mat_ll(j, RefineParams::Type::Q);
+      if (pos >= 0 && apos >= 0) // should be always ok
+        add_data(pos, pos, apos);
+    }
+    for (int j : params->param_to_atom(RefineParams::Type::D)) {
+      const int pos = params->get_pos_vec(j, RefineParams::Type::D);
+      const int apos = params->get_pos_mat_ll(j, RefineParams::Type::D);
+      if (pos >= 0 && apos >= 0) // should be always ok
+        add_data(pos, pos, apos);
+    }
     const std::vector<std::tuple<RefineParams::Type, RefineParams::Type, const std::vector<int> &>> mixvecs = {
       {RefineParams::Type::B, RefineParams::Type::Q, params->bq_mix_atoms},
       {RefineParams::Type::B, RefineParams::Type::D, params->bd_mix_atoms},
@@ -756,14 +763,14 @@ struct LL{
       for (size_t j : std::get<2>(ttvec)) {
         const int pos1 = params->get_pos_vec(j, std::get<0>(ttvec));
         const int pos2 = params->get_pos_vec(j, std::get<1>(ttvec));
-        if (pos1 < 0 || pos2 < 0) continue; // should not happen
+        const int apos = params->get_pos_mat_mixed_ll(j, std::get<0>(ttvec), std::get<1>(ttvec));
+        if (pos1 < 0 || pos2 < 0 || apos < 0) continue; // should not happen
         if (std::get<0>(ttvec) == RefineParams::Type::B && params->aniso)
           for (size_t k = 0; k < 6; ++k)
-            add_data(pos1 + k, pos2, am[i++]);
+            add_data(pos1 + k, pos2, apos + k);
         else
-          add_data(pos1, pos2, am[i++]);
+          add_data(pos1, pos2, apos);
       }
-    if (i != n_a) gemmi::fail("LL::make_spmat: wrong matrix size ", std::to_string(i), " ", std::to_string(n_a));
     spmat.setFromTriplets(data.begin(), data.end());
     return spmat;
   }
