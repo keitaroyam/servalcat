@@ -16,7 +16,7 @@ import pandas
 import scipy.sparse
 from dataclasses import dataclass, field
 from typing import List, Dict
-from omegaconf import DictConfig, OmegaConf
+import omegaconf
 import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
@@ -82,8 +82,8 @@ class OccGroupConstItem:
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
         default_factory=lambda: {
-            "xyz": SelectionConfig(),
-            "adp": SelectionConfig(),
+            "xyz": SelectionConfig(include=["*"]),
+            "adp": SelectionConfig(include=["*"]),
             "occ": SelectionConfig(),
             "dfrac": SelectionConfig(),
         },
@@ -91,6 +91,9 @@ class RefineConfig:
     )
     occ_groups: List[OccGroupItem] = field(default_factory=list)
     occ_group_constraints: List[OccGroupConstItem] = field(default_factory=list)
+    occ_group_const_mu: float = 10
+    occ_group_const_mu_update_factor: float = 1.1
+    #occ_group_const_mu_update_tol: float = 0.01
     initialisation: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
             "adp": {},
@@ -99,25 +102,48 @@ class RefineConfig:
         },
         metadata={"help": ""}
     )
+    write_trajectory: bool = False
 
-def load_config(yaml_file):
-    schema = OmegaConf.structured(RefineConfig)
-    if not yaml_file:
-        return schema
-    conf = OmegaConf.load(yaml_file)
-    cfg = OmegaConf.merge(schema, conf.get("refine"))
-    logger.writeln("Config loaded:")
-    logger.writeln(OmegaConf.to_yaml(cfg))
-    return cfg
+def load_config(yaml_file, args):
+    cfg = omegaconf.OmegaConf.create({"refine": RefineConfig()})
+    if yaml_file:
+        conf = omegaconf.OmegaConf.load(yaml_file)
+        try:
+            cfg = omegaconf.OmegaConf.merge(cfg, conf)
+        except omegaconf.errors.ValidationError as e:
+            raise SystemExit(f"Error while parsing {yaml_file}.\n{e.msg}")
+            
+    # load from args
+    rcfg = cfg.refine
+    if getattr(args, "write_trajectory", False):
+        rcfg.write_trajectory = True
+    if getattr(args, "fix_xyz", False):
+        rcfg.atom_selection.xyz.include = []
+        rcfg.atom_selection.xyz.exclude = []
+    if getattr(args, "adp", None) == "fix":
+        rcfg.atom_selection.adp.include = []
+        rcfg.atom_selection.adp.exclude = []
+    if getattr(args, "refine_all_occ", False):
+        rcfg.atom_selection.occ.include = ["*"]
+        rcfg.atom_selection.occ.exclude = []
+    if getattr(args, "refine_dfrac", False):
+        rcfg.atom_selection.dfrac.include = ["*"] # or H?
+        rcfg.atom_selection.dfrac.exclude = []
+
+    logger.writeln("Config loaded")
+    logger.writeln("--")
+    logger.write(omegaconf.OmegaConf.to_yaml(cfg))
+    logger.writeln("--")
+    return cfg.refine
 # load_config()
 
 def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                  refine_dfrac=False, use_q_b_mixed=True, cfg=None,
-                 exclude_h_ll=True):
+                 exclude_h_ll=True): # FIXME refine_dfrac/exclude_h_ll and cfg
     assert adp_mode in (0, 1, 2) # 0=fix, 1=iso, 2=aniso
     if refine_dfrac and not st[0].has_hydrogen():
         raise RuntimeError("Hydrogen must be present when deuterium fraction refinement is requested")
-    ret = ext.RefineParams(refine_xyz, adp_mode, refine_occ, refine_dfrac, use_q_b_mixed)
+    ret = ext.RefineParams(use_aniso=(adp_mode == 2), use_q_b_mixed=use_q_b_mixed)
     ret.set_model(st[0])
     if cfg:
         # occupancy groups
@@ -146,7 +172,8 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                              sele.dfrac.include, sele.dfrac.exclude)
         ret.set_params_from_flags()
     else:
-        ret.set_params_default()
+        ret.set_params(refine_xyz=refine_xyz, refine_adp=adp_mode > 0,
+                       refine_occ=refine_occ, refine_dfrac=refine_dfrac)
     if exclude_h_ll:
         if refine_dfrac:
             for t in (Type.X, Type.B, Type.Q):
@@ -154,6 +181,10 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                     ret.exclude_h_ll(t)
         else:
             ret.exclude_h_ll()
+
+    logger.writeln("Number of refinement parameters:")
+    df = pandas.DataFrame(ret.params_summary())
+    logger.writeln(df.to_string() + "\n")
     return ret
 
 class Geom:
@@ -448,9 +479,9 @@ class GroupOccupancy:
         self.consts = [(is_comp, [igr_idxes[g] for g in gids])
                        for is_comp, gids in params["const"]]
         self.ncycle = params.get("ncycle", 5)
-        self.params = ext.RefineParams(refine_occ=True)
+        self.params = ext.RefineParams()
         self.params.set_model(st[0])
-        self.params.set_params_selected(atom_idxes)
+        self.params.set_params_selected(atom_idxes, refine_occ=True)
         self.params.exclude_h_ll() # should be reasonable
     # __init__()
     
@@ -584,7 +615,7 @@ class GroupOccupancy:
 
 
 class Refine:
-    def __init__(self, st, geom, refine_params, ll=None, unrestrained=False, params=None):
+    def __init__(self, st, geom, cfg, refine_params, ll=None, unrestrained=False):
         assert geom is not None
         self.st = st # clone()?
         self.st_traj = None
@@ -596,7 +627,8 @@ class Refine:
         #self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
         #if self.h_inherit_parent_adp:
         #    self.geom.set_h_parents()
-        if params and params.get("write_trajectory"):
+        self.cfg = cfg
+        if self.cfg.write_trajectory:
             self.st_traj = self.st.clone()
             self.st_traj[-1].num = 0
         assert self.geom.group_occ.groups or self.params.n_params() > 0
@@ -629,15 +661,17 @@ class Refine:
         shift_max_allow_d = 0.5
         shift_min_allow_d = -0.5
         dx = scale * dx
-        if self.params.is_refined(Type.X):
-            dxx = dx[self.params.vec_selection(Type.X)]
+        dxx = dx[self.params.vec_selection(Type.X)]
+        dxb = dx[self.params.vec_selection(Type.B)]
+        dxq = dx[self.params.vec_selection(Type.Q)]
+        dxd = dx[self.params.vec_selection(Type.D)]
+        if len(dxx) > 0:
             logger.writeln("min(dx) = {}".format(numpy.min(dxx)))
             logger.writeln("max(dx) = {}".format(numpy.max(dxx)))
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
-        if self.params.is_refined(Type.B):
-            dxb = dx[self.params.vec_selection(Type.B)]
+        if len(dxb) > 0:
             # TODO this is misleading in anisotropic case
             logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
             logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
@@ -657,15 +691,13 @@ class Refine:
             else:
                 dxb[dxb > shift_max_allow_B] = shift_max_allow_B
                 dxb[dxb < shift_min_allow_B] = shift_min_allow_B
-        if self.params.is_refined(Type.Q):
-            dxq = dx[self.params.vec_selection(Type.Q)]
+        if len(dxq) > 0:
             logger.writeln("min(dq) = {}".format(numpy.min(dxq)))
             logger.writeln("max(dq) = {}".format(numpy.max(dxq)))
             logger.writeln("mean(dq)= {}".format(numpy.mean(dxq)))
             dxq[dxq > shift_max_allow_q] = shift_max_allow_q
             dxq[dxq < shift_min_allow_q] = shift_min_allow_q
-        if self.params.is_refined(Type.D):
-            dxd = dx[self.params.vec_selection(Type.D)]
+        if len(dxd) > 0:
             logger.writeln("min(dd) = {}".format(numpy.min(dxd)))
             logger.writeln("max(dd) = {}".format(numpy.max(dxd)))
             logger.writeln("mean(dd)= {}".format(numpy.mean(dxd)))
@@ -794,7 +826,7 @@ class Refine:
         stats = [{"Ncyc": 0}]
         self.geom.setup_nonbonded()
         self.geom.setup_target()
-        self.geom.setup_occ_constraint()
+        self.geom.setup_occ_constraint(u_ini=self.cfg.occ_group_const_mu)
         logger.writeln("vdws = {}".format(len(self.geom.geom.vdws)))
         logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
@@ -819,7 +851,7 @@ class Refine:
         for i in range(ncycles):
             logger.writeln("\n====== CYCLE {:2d} ======\n".format(i+1))
             logger.writeln(f" weight = {weight:.4e}")
-            if self.params.flag_global:
+            if self.params.is_refined_any():
                 is_ok, shift_scale, fval = self.run_cycle(weight=weight)
                 stats.append({"Ncyc": len(stats), "shift_scale": shift_scale, "fval": fval, "fval_decreased": is_ok,
                               "weight": weight})
@@ -829,7 +861,8 @@ class Refine:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
-            self.geom.update_occ_consts()
+            self.geom.update_occ_consts(alpha=self.cfg.occ_group_const_mu_update_factor)
+            # TODO add stats[-1]["occ_constraints"] and hide stdout
             if self.ll is not None:
                 if i == ncycles - 1: # last cycle
                     self.params.ensure_occ_constraints()

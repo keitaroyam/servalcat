@@ -31,10 +31,30 @@ struct RefineParams {
   enum class Type : unsigned char { X=0, B, Q, D, END }; // pos, adp, occ, dfrac
   static Type num2type(unsigned char x) { return static_cast<Type>(x); }
   static unsigned char type2num(Type t) { return static_cast<unsigned char>(t); }
+  static std::string type2str(Type t) {
+    switch (t) {
+    case Type::X: return "xyz";
+    case Type::B: return "adp";
+    case Type::Q: return "occ";
+    case Type::D: return "dfrac";
+    default: gemmi::fail("type2str: bad t");
+    }
+  }
   static constexpr size_t N = static_cast<size_t>(Type::END);
   static constexpr std::array<Type, N> Types = {Type::X, Type::B, Type::Q, Type::D};
+  static std::bitset<N> make_flag(bool refine_xyz, bool refine_adp, bool refine_occ, bool refine_dfrac) {
+    std::bitset<N> flag;
+    if (refine_xyz)
+      flag.set(type2num(Type::X));
+    if (refine_adp)
+      flag.set(type2num(Type::B));
+    if (refine_occ)
+      flag.set(type2num(Type::Q));
+    if (refine_dfrac)
+      flag.set(type2num(Type::D));
+    return flag;
+  }
 
-  std::bitset<N> flag_global; // what parameters to be refined
   bool aniso;
   bool use_q_b_mixed_derivatives;
   std::vector<gemmi::Atom*> atoms;
@@ -48,20 +68,8 @@ struct RefineParams {
   std::array<std::set<int>, N> ll_exclusion; // set of atom indices
   std::vector<std::vector<int>> occ_groups;  // vector of vector of atom indices
   std::vector<std::pair<bool, std::vector<size_t>>> occ_group_constraints; // vector of pair(is_complete, group_indices)
-  RefineParams(bool refine_xyz, int adp_mode, bool refine_occ, bool refine_dfrac, bool use_q_b_mixed)
-    : use_q_b_mixed_derivatives(use_q_b_mixed) {
-    // decide which parameters are refined
-    if (refine_xyz)
-      flag_global.set(type2num(Type::X));
-    if (adp_mode > 0) {
-      flag_global.set(type2num(Type::B));
-      aniso = (adp_mode == 2);
-    }
-    if (refine_occ)
-      flag_global.set(type2num(Type::Q));
-    if (refine_dfrac)
-      flag_global.set(type2num(Type::D));
-  }
+  RefineParams(bool use_aniso, bool use_q_b_mixed)
+    : aniso(use_aniso), use_q_b_mixed_derivatives(use_q_b_mixed) { }
   std::vector<int> &atom_to_param(Type t) { return atom_to_param_[type2num(t)]; }
   const std::vector<int> &atom_to_param(Type t) const { return const_cast<RefineParams*>(this)->atom_to_param(t); }
   std::vector<int> &param_to_atom(Type t) { return param_to_atom_[type2num(t)]; }
@@ -106,7 +114,7 @@ struct RefineParams {
     default: gemmi::fail("nfisher_geom_per_pair: bad t");
     }
   }
-  size_t n_refined_atoms(Type t) const {
+  size_t n_refined_atoms(Type t) const { // not atoms, params actually
     if (t == Type::END) return 0;
     return param_to_atom(t).size();
   }
@@ -141,15 +149,23 @@ struct RefineParams {
     return ret;
   }
   bool is_refined(Type t) const {
-    return t != Type::END && flag_global.test(type2num(t));
+    for (const int i : atom_to_param(t))
+      if (i >= 0)
+        return true;
+    return false;
+  }
+  bool is_refined_any() const { // will any parameter be refined
+    for (Type t : Types)
+      if (is_refined(t))
+        return true;
+    return false;
   }
   bool is_atom_refined(size_t idx, Type t) const {
-    if (!is_refined(t)) return false;
     return atom_to_param(t)[idx] >= 0;
   }
   bool is_atom_refined(size_t idx) const { // for any t
     for (Type t : Types)
-      if (is_refined(t) && atom_to_param(t)[idx] >= 0)
+      if (atom_to_param(t)[idx] >= 0)
         return true;
     return false;
   }
@@ -158,7 +174,7 @@ struct RefineParams {
   }
   bool is_atom_excluded_ll(size_t idx) const { // for all t
     for (Type t : Types)
-      if (is_refined(t) && !is_excluded_ll(idx, t))
+      if (!is_excluded_ll(idx, t))
         return false;
     return true;
   }
@@ -167,7 +183,7 @@ struct RefineParams {
   }
   void add_ll_exclusion(size_t idx) {
     for (Type t : Types)
-      if (is_refined(t))
+      if (is_atom_refined(idx, t))
         add_ll_exclusion(idx, t);
   }
   void set_pairs(Type t, const std::vector<std::pair<int,int>> &pairs) {
@@ -186,8 +202,6 @@ struct RefineParams {
     npairs_refine(t) = count;
   }
   int get_pos_vec(int atom_idx, Type t) const {
-    if (!is_refined(t))
-      return -1;
     int ret = atom_to_param(t)[atom_idx] * npar_per_atom(t);
     if (ret < 0)
       return -1; //gemmi::fail("unrefined atom");
@@ -199,8 +213,6 @@ struct RefineParams {
     gemmi::fail("get_pos_vec: bad t");
   }
   int get_pos_mat_geom(int atom_idx, Type t) const {
-    if (!is_refined(t))
-      return -1;
     int ret = atom_to_param(t)[atom_idx] * nfisher_geom_per_atom(t);
     if (ret < 0)
       return -1;
@@ -213,8 +225,6 @@ struct RefineParams {
     gemmi::fail("get_pos_mat_geom: bad t");
   }
   int get_pos_mat_ll(int idx, Type t) const {
-    if (!is_refined(t))
-      return -1;
     int ret = atom_to_param(t)[idx] * nfisher_ll_per_atom(t);
     if (ret < 0)
       return -1;
@@ -286,15 +296,12 @@ struct RefineParams {
       param_to_atom(t).clear();
       pairs_refine(t).clear();
       npairs_refine(t) = 0;
-      if (is_refined(t))
-        atom_to_param(t).assign(atoms.size(), -1);
+      atom_to_param(t).assign(atoms.size(), -1);
     }
   }
   void add_atom_to_params(const gemmi::Atom *atom, std::bitset<N> flag = {~0ULL}) {
     const int idx = atom->serial - 1;
     const int group_idx = [&]() {
-      if (!is_refined(Type::Q))
-        return -1;
       for (int i = 0; i < occ_groups.size(); ++i) {
         const auto it = std::find(occ_groups[i].begin(), occ_groups[i].end(), idx);
         if (it != occ_groups[i].end())
@@ -303,7 +310,7 @@ struct RefineParams {
       return -1;
     }();
     for (Type t : Types) {
-      if (is_refined(t) && flag.test(type2num(t)) &&
+      if (flag.test(type2num(t)) &&
           (t != Type::D || atom->is_hydrogen())) {
         if (t == Type::Q && group_idx >= 0) {
           // if the atom belongs to the occupancy group,
@@ -329,25 +336,26 @@ struct RefineParams {
         }
       }
     }
-    if (use_q_b_mixed_derivatives && is_refined(Type::B) && is_refined(Type::Q) &&
-        flag.test(type2num(Type::B)) && flag.test(type2num(Type::Q)))
+    if (use_q_b_mixed_derivatives && flag.test(type2num(Type::B)) && flag.test(type2num(Type::Q)))
       bq_mix_atoms.push_back(idx);
-    if (use_q_b_mixed_derivatives && is_refined(Type::B) && is_refined(Type::D) &&
-        flag.test(type2num(Type::B)) && flag.test(type2num(Type::D)) && atom->is_hydrogen())
+    if (use_q_b_mixed_derivatives && flag.test(type2num(Type::B)) && flag.test(type2num(Type::D))
+        && atom->is_hydrogen())
       bd_mix_atoms.push_back(idx);
-    if (is_refined(Type::Q) && is_refined(Type::D) &&
-        flag.test(type2num(Type::Q)) && flag.test(type2num(Type::D)) && atom->is_hydrogen())
+    if (flag.test(type2num(Type::Q)) && flag.test(type2num(Type::D)) && atom->is_hydrogen())
       qd_mix_atoms.push_back(idx);
   }
-  void set_params_default() {
+  void set_params(bool refine_xyz, bool refine_adp, bool refine_occ, bool refine_dfrac) {
     clear_params();
+    const auto flag = make_flag(refine_xyz, refine_adp, refine_occ, refine_dfrac);
     for (const auto atom : atoms)
-      add_atom_to_params(atom);
+      add_atom_to_params(atom, flag);
   }
-  void set_params_selected(const std::vector<int> &indices) {
+  void set_params_selected(const std::vector<int> &indices,
+                           bool refine_xyz, bool refine_adp, bool refine_occ, bool refine_dfrac) {
     clear_params();
+    const auto flag = make_flag(refine_xyz, refine_adp, refine_occ, refine_dfrac);
     for (int j : indices)
-      add_atom_to_params(atoms[j]);
+      add_atom_to_params(atoms[j], flag);
   }
   void set_params_from_flags() {
     clear_params();

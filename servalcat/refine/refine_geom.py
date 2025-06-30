@@ -89,7 +89,7 @@ def add_program_info_to_dictionary(block, comp_id, program_name="servalcat", des
     loop.add_row(gemmi.cif.quote_list(row))
 # add_program_info_to_dictionary()
 
-def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0, ncycle1=10, ncycle2=30):
+def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, refine_cfg, randomize=0, ncycle1=10, ncycle2=30):
     doc = gemmi.cif.read(cif_in)
     for block in doc: # this block will be reused below
         st = gemmi.make_structure_from_chemcomp_block(block)
@@ -114,7 +114,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 
         refine_params = RefineParams(st, refine_xyz=True)
         geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize)
-        refiner = Refine(st, geom, refine_params)
+        refiner = Refine(st, geom, refine_cfg, refine_params)
         logger.writeln("Running {} cycles with wchir=4 wvdw=2 {} hydrogen".format(ncycle1, ["without","with"][i_macro]))
         geom.calc_kwds["wchir"] = 4
         geom.calc_kwds["wvdw"] = 2
@@ -151,7 +151,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, randomize=0
 # refine_and_update_dictionary()
 
 def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, params,
-                find_links=False, use_ncsr=False, refine_cfg=None):
+                refine_cfg, find_links=False, use_ncsr=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     if not all(op.given for op in st.ncs):
@@ -183,25 +183,24 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         ncslist = False
     refine_params = RefineParams(st, refine_xyz=True, cfg=refine_cfg)
     geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize, params=params, ncslist=ncslist)
-    refiner = Refine(st, geom, refine_params, params=params)
+    refiner = Refine(st, geom, refine_cfg, refine_params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
     update_meta(st, stats[-1])
     refiner.st.name = output_prefix
     utils.fileio.write_model(refiner.st, output_prefix, pdb=True, cif=True)
-    if params["write_trajectory"]:
+    if refine_cfg.write_trajectory:
         utils.fileio.write_model(refiner.st_traj, output_prefix + "_traj", cif=True)
 # refine_geom()
 
 def main(args):
-    refine_cfg = load_config(args.config)
+    refine_cfg = load_config(args.config, args)
     keywords = []
     if args.keywords: keywords = sum(args.keywords, [])
     if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     decide_prefix = lambda f: utils.fileio.splitext(os.path.basename(f))[0] + "_refined"
     if args.model:
         params = refmac_keywords.parse_keywords(keywords)
-        params["write_trajectory"] = args.write_trajectory
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.model)
         if args.ligand:
@@ -218,9 +217,9 @@ def main(args):
                     output_prefix=args.output_prefix,
                     randomize=args.randomize,
                     params=params,
+                    refine_cfg=refine_cfg,
                     find_links=args.find_links,
-                    use_ncsr=args.ncsr,
-                    refine_cfg=refine_cfg)
+                    use_ncsr=args.ncsr)
     else:
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.update_dictionary)
@@ -231,10 +230,11 @@ def main(args):
         refine_and_update_dictionary(cif_in=args.update_dictionary,
                                      monomer_dir=args.monlib,
                                      output_prefix=args.output_prefix,
+                                     refine_cfg=refine_cfg,
                                      randomize=args.randomize,
                                      ncycle1=args.ncycle_update[0],
-                                     ncycle2=args.ncycle_update[1],
-                                     )
+                                     ncycle2=args.ncycle_update[1])
+
 # main()
 
 if __name__ == "__main__":
