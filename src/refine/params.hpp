@@ -430,6 +430,16 @@ struct RefineParams {
     if (k != n_params())
       gemmi::fail("RefineParams::set_x: wrong k ", std::to_string(k), " ", std::to_string(n_params()));
   }
+  std::vector<std::vector<double>> constrained_occ_values() const {
+    std::vector<std::vector<double>> ret;
+    for (auto const &con : occ_group_constraints) {
+      ret.emplace_back();
+      for (size_t j : con.second)
+        if (!occ_groups[j].empty())
+          ret.back().push_back(atoms[occ_groups[j].front()]->occ);
+    }
+    return ret;
+  }
   std::vector<double> occ_constraints() const { // constraint violations
     const size_t n_consts = occ_group_constraints.size();
     std::vector<double> ret(n_consts, 0.);

@@ -836,6 +836,7 @@ void add_refine(nb::module_& m) {
       }
     })
     .def_ro("occ_group_constraints", &RefineParams::occ_group_constraints)
+    .def("constrained_occ_values", &RefineParams::constrained_occ_values)
     .def("occ_constraints", &RefineParams::occ_constraints)
     .def("ensure_occ_constraints", &RefineParams::ensure_occ_constraints)
     .def("params_summary", [](const RefineParams &self) {

@@ -831,6 +831,12 @@ class Refine:
         logger.writeln(f"atoms = {len(self.params.atoms)}")
         logger.writeln(f"pairs = {self.geom.geom.target.n_pairs()}")
         stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=True)
+        if self.params.occ_group_constraints:
+            stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
+                                      "mu": self.geom.const_u,
+                                      "violation": self.params.occ_constraints(),
+                                      "occ": self.params.constrained_occ_values()
+                                      }
         if self.ll is not None:
             self.ll.update_fc()
             self.ll.overall_scale()
@@ -862,6 +868,12 @@ class Refine:
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
             self.geom.update_occ_consts(alpha=self.cfg.occ_group_const_mu_update_factor)
+            if self.params.occ_group_constraints:
+                stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
+                                          "mu": self.geom.const_u,
+                                          "violation": self.params.occ_constraints(),
+                                          "occ": self.params.constrained_occ_values()
+                                          }
             # TODO add stats[-1]["occ_constraints"] and hide stdout
             if self.ll is not None:
                 if i == ncycles - 1: # last cycle
@@ -899,7 +911,33 @@ class Refine:
 
             logger.writeln("")
 
-        # Make table
+        # Make tables
+        if self.params.occ_group_constraints:
+            tmp = []
+            for icyc, s in enumerate(stats):
+                con = s["occ_const"]
+                d = {"Ncyc": icyc}
+                d.update({f"lambda_{i+1}":l for i,l in enumerate(con["lambda"])})
+                d["mu"] = con["mu"]
+                d.update({f"violation_{i+1}":l for i,l in enumerate(con["violation"])})
+                d.update({f"occ_{i+1}_{j+1}":q for i, l in enumerate(con["occ"])
+                          for j, q in enumerate(l)})
+                tmp.append(d)
+            df = pandas.DataFrame(tmp)
+            forplot = [
+                ["Lagrange multiplier", 
+                 ["Ncyc"] + [x for x in df if x.startswith("lambda_")]],
+                ["Penalty parameter mu",
+                 ["Ncyc"] + [x for x in df if x.startswith("mu")]],
+                ["Group constrained occupancies",
+                 ["Ncyc"] + [x for x in df if x.startswith("occ_")]],
+                ["Constraint violations",
+                 ["Ncyc"] + [x for x in df if x.startswith("violation_")]],
+            ]
+            lstr = utils.make_loggraph_str(df, "group occupancies vs cycle", forplot,
+                                           float_format="{:.4f}".format)
+            logger.writeln(lstr)
+            
         data_keys, geom_keys = set(), set()
         tmp = []
         for d in stats:
