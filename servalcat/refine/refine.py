@@ -93,7 +93,8 @@ class RefineConfig:
     occ_group_constraints: List[OccGroupConstItem] = field(default_factory=list)
     occ_group_const_mu: float = 10
     occ_group_const_mu_update_factor: float = 1.1
-    #occ_group_const_mu_update_tol: float = 0.01
+    occ_group_const_mu_update_tol_rel: float = 0.25
+    occ_group_const_mu_update_tol_abs: float = 0.01
     initialisation: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
             "adp": {},
@@ -233,7 +234,7 @@ class Geom:
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
         self.parents = {}
         self.ncslist = ncslist
-        self.const_ls, self.const_u = [], 0.
+        self.const_ls, self.const_u = [], []
     # __init__()
 
     def set_h_parents(self):
@@ -253,8 +254,8 @@ class Geom:
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
     def setup_occ_constraint(self, lambda_ini=0., u_ini=100.):
-        self.const_ls = [lambda_ini for _ in self.params.occ_constraints()]
-        self.const_u = u_ini
+        self.const_ls = [lambda_ini for _ in self.params.occ_group_constraints]
+        self.const_u = [u_ini for _ in self.params.occ_group_constraints]
     def calc(self, target_only):
         if self.params.is_refined(Type.X) and not self.unrestrained:
             return self.geom.calc(check_only=target_only, **self.calc_kwds)
@@ -267,14 +268,13 @@ class Geom:
         if self.params.is_refined(Type.Q):
             return self.geom.calc_occ_restraint(target_only, self.occr_w)
         return 0
-    def update_occ_consts(self, alpha=1.1):
+    def update_occ_consts(self, consts_prev, alpha=1.1, eta=0.25, tol=0.01):
         consts = self.params.occ_constraints()
-        self.const_ls = [l - self.const_u * c for l, c in zip(self.const_ls, consts)]
-        self.const_u *= alpha
-        if consts:
-            logger.writeln("Occupancy constraint violations")
-            logger.writeln(f" {consts}")
-            logger.writeln(f" lamdba= {self.const_ls} u= {self.const_u}")
+        self.const_ls = [self.const_ls[i] - self.const_u[i] * consts[i]
+                         for i in range(len(consts))]
+        self.const_u = [u * (1 if abs(c) < max(tol, eta * abs(c_prev)) else alpha)
+                        for u, c, c_prev in zip(self.const_u, consts, consts_prev)]
+        return consts
     def calc_target(self, target_only):
         self.geom.clear_target()
         geom_x = self.calc(target_only) 
@@ -867,11 +867,14 @@ class Refine:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
-            self.geom.update_occ_consts(alpha=self.cfg.occ_group_const_mu_update_factor)
+            viols = self.geom.update_occ_consts(consts_prev=stats[-2]["occ_const"]["violation"],
+                                                alpha=self.cfg.occ_group_const_mu_update_factor,
+                                                eta=self.cfg.occ_group_const_mu_update_tol_rel,
+                                                tol=self.cfg.occ_group_const_mu_update_tol_abs)
             if self.params.occ_group_constraints:
                 stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
                                           "mu": self.geom.const_u,
-                                          "violation": self.params.occ_constraints(),
+                                          "violation": viols,
                                           "occ": self.params.constrained_occ_values()
                                           }
             # TODO add stats[-1]["occ_constraints"] and hide stdout
@@ -918,7 +921,7 @@ class Refine:
                 con = s["occ_const"]
                 d = {"Ncyc": icyc}
                 d.update({f"lambda_{i+1}":l for i,l in enumerate(con["lambda"])})
-                d["mu"] = con["mu"]
+                d.update({f"mu_{i+1}":l for i,l in enumerate(con["mu"])})
                 d.update({f"violation_{i+1}":l for i,l in enumerate(con["violation"])})
                 d.update({f"occ_{i+1}_{j+1}":q for i, l in enumerate(con["occ"])
                           for j, q in enumerate(l)})

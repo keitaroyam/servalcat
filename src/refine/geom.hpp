@@ -672,7 +672,7 @@ struct Geometry {
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
               double wchir, double wplane, double wstack, double wvdw, double wncs);
   double calc_adp_restraint(bool check_only, double wbskal);
-  double calc_occ_constraint(bool check_only, const std::vector<double> &ls, double u);
+  double calc_occ_constraint(bool check_only, const std::vector<double> &ls, const std::vector<double> & u);
   double calc_occ_restraint(bool check_only, double wocc);
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
@@ -1467,7 +1467,7 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
   }
   return ret;
 }
-inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<double> &ls, double u) {
+inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<double> &ls, const std::vector<double> &u) {
   if (target.params->occ_group_constraints.size() != ls.size())
     gemmi::fail("calc_occ_constraint: size mismatch");
   double ret = 0.;
@@ -1478,7 +1478,7 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
     const double c = consts[i];
     if (c == 0) // otherwise gradient will be affected - should be?
       continue;
-    ret += 0.5 * u * gemmi::sq(c) - ls[i] * c;
+    ret += 0.5 * u[i] * gemmi::sq(c) - ls[i] * c;
     if (!check_only) {
       for (size_t j : group_idxes) {
         for (int ia : target.params->occ_groups[j])
@@ -1486,9 +1486,9 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
             const int vpos = target.params->get_pos_vec(ia, RefineParams::Type::Q);
             const int apos = target.params->get_pos_mat_geom(ia, RefineParams::Type::Q);
             if (vpos >= 0)
-              target.vn[vpos] += u * c - ls[i];
+              target.vn[vpos] += u[i] * c - ls[i];
             if (apos >= 0)
-              target.am[apos] += u;
+              target.am[apos] += u[i];
             break; // parameter is common
           }
       }
