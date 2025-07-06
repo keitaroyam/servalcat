@@ -769,6 +769,11 @@ class Refine:
         f0 = self.calc_target(weight)
         x0 = self.get_x()
         logger.writeln("f0= {:.4e}".format(f0))
+        if 0:
+            logger.writeln(f"geom_vec=\n{self.geom.geom.target.vn}")
+            logger.writeln(f"geom_mat=\n{self.geom.geom.target.am_spmat}")
+            logger.writeln(f"  ll_vec=\n{self.ll.ll.vn}")
+            logger.writeln(f"  ll_mat=\n{self.ll.ll.fisher_spmat}")
         if 1:
             use_ic = False # incomplete cholesky. problematic at least in geometry optimisation case
             logger.writeln("using cgsolve in c++, ic={}".format(use_ic))
@@ -800,7 +805,7 @@ class Refine:
                 for s in numpy.arange(-2, 2, 0.1):
                     dx2 = self.scale_shifts(dx, s)
                     self.set_x(x0 + dx2)
-                    fval = self.calc_target(weight, target_only=True)[0]
+                    fval = self.calc_target(weight, target_only=True)
                     ofs.write("{} {}\n".format(s, fval))
             quit()
 
@@ -867,11 +872,11 @@ class Refine:
                 stats[-1]["occ_refine"] = self.geom.group_occ.refine(self.ll)
             if debug: utils.fileio.write_model(self.st, "refined_{:02d}".format(i+1), pdb=True)#, cif=True)
             stats[-1]["geom"] = self.geom.show_model_stats(show_outliers=(i==ncycles-1))
-            viols = self.geom.update_occ_consts(consts_prev=stats[-2]["occ_const"]["violation"],
-                                                alpha=self.cfg.occ_group_const_mu_update_factor,
-                                                eta=self.cfg.occ_group_const_mu_update_tol_rel,
-                                                tol=self.cfg.occ_group_const_mu_update_tol_abs)
             if self.params.occ_group_constraints:
+                viols = self.geom.update_occ_consts(consts_prev=stats[-2]["occ_const"]["violation"],
+                                                    alpha=self.cfg.occ_group_const_mu_update_factor,
+                                                    eta=self.cfg.occ_group_const_mu_update_tol_rel,
+                                                    tol=self.cfg.occ_group_const_mu_update_tol_abs)
                 stats[-1]["occ_const"] = {"lambda": self.geom.const_ls,
                                           "mu": self.geom.const_u,
                                           "violation": viols,

@@ -194,6 +194,7 @@ struct RefineParams {
     pp.clear();
     pp.assign(pairs.size(), -1);
     size_t count = 0;
+    // TODO for group constrained Q, add only single pair
     for (int i = 0; i < pairs.size(); ++i) {
       const auto &p = pairs[i];
       if (atp[p.first] >= 0 && atp[p.second] >= 0)

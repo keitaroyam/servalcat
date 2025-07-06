@@ -422,7 +422,7 @@ class LsqScale:
             x = x0
             for i in range(40):
                 x_ini = x.copy()
-                f0 = self.target(x)
+                f0 = f1 = self.target(x)
                 dx = self.calc_shift(x)
                 if numpy.max(numpy.abs(dx)) < 1e-6:
                     break

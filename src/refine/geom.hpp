@@ -205,7 +205,8 @@ struct GeomTarget {
       params->set_pairs(RefineParams::Type::X, pairs);
     if (params->is_refined(RefineParams::Type::B))
       params->set_pairs(RefineParams::Type::B, pairs);
-    if (params->is_refined(RefineParams::Type::Q) && use_occr)
+    if (params->is_refined(RefineParams::Type::Q) &&
+        (use_occr || !params->occ_group_constraints.empty()))
       params->set_pairs(RefineParams::Type::Q, pairs);
     const size_t qqv = params->n_params();
     const size_t qqm = params->n_fisher_geom();
@@ -1239,6 +1240,23 @@ inline void Geometry::setup_target(bool use_occr) {
       for (const auto &a2 : t.pairs[1]->atoms)
         add(a1, a2, 10);
 
+  for (int i = 0; i < target.params->occ_group_constraints.size(); ++i) {
+    const auto &group_idxes = target.params->occ_group_constraints[i].second;
+    for (size_t j = 0; j < group_idxes.size(); ++j) {
+      for (int ia1 : target.params->occ_groups[group_idxes[j]])
+        if (target.params->is_atom_refined(ia1, RefineParams::Type::Q)) {
+          for (size_t k = j + 1; k < group_idxes.size(); ++k) {
+            for (int ia2 : target.params->occ_groups[group_idxes[k]])
+              if (target.params->is_atom_refined(ia2, RefineParams::Type::Q)) {
+                add(target.params->atoms[ia1], target.params->atoms[ia2], 11);
+                break;
+              }
+          }
+          break;
+        }
+    }
+  }
+
   // sort_and_compress_distances
   target.pairs.clear();
   target.pairs_kind.clear();
@@ -1480,8 +1498,8 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
       continue;
     ret += 0.5 * u[i] * gemmi::sq(c) - ls[i] * c;
     if (!check_only) {
-      for (size_t j : group_idxes) {
-        for (int ia : target.params->occ_groups[j])
+      for (size_t j = 0; j < group_idxes.size(); ++j) {
+        for (int ia : target.params->occ_groups[group_idxes[j]])
           if (target.params->is_atom_refined(ia, RefineParams::Type::Q)) {
             const int vpos = target.params->get_pos_vec(ia, RefineParams::Type::Q);
             const int apos = target.params->get_pos_mat_geom(ia, RefineParams::Type::Q);
@@ -1489,6 +1507,19 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
               target.vn[vpos] += u[i] * c - ls[i];
             if (apos >= 0)
               target.am[apos] += u[i];
+
+            // non-diagonal
+            for (size_t k = j + 1; k < group_idxes.size(); ++k) {
+              for (int ia2 : target.params->occ_groups[group_idxes[k]])
+                if (target.params->is_atom_refined(ia2, RefineParams::Type::Q)) {
+                  const int vpos2 = target.params->get_pos_vec(ia2, RefineParams::Type::Q);
+                  if (vpos >= 0 && vpos2 >= 0) {
+                    auto mp = target.find_restraint(ia, ia2, RefineParams::Type::Q);
+                    target.am[mp.ipos] += u[i];
+                  }
+                  break;
+                }
+            }
             break; // parameter is common
           }
       }
