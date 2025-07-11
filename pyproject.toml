@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core ~=0.11.1", "nanobind ==2.5.0"]
+requires = ["scikit-build-core ==0.11.5", "nanobind ==2.7.0"]
 build-backend = "scikit_build_core.build"
 
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
@@ -7,7 +7,7 @@ build-backend = "scikit_build_core.build"
 name = "servalcat"
 dynamic = ["version"]
 requires-python = ">=3.8"
-dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0', 'omegaconf==2.3.0', 'gemmi @ git+https://github.com/project-gemmi/gemmi.git@72e3c5f682cbbaed03e72ead005a045780e9724f']
+dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0', 'omegaconf==2.3.0', 'gemmi==0.7.3']
 description="Structure refinement and validation for crystallography and single particle analysis"
 readme = "README.md"
 authors = [
