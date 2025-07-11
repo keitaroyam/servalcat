@@ -54,7 +54,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         logger.writeln(df.to_string(float_format="%.4f"))
     ccs = numpy.array(ccs)
     nums = numpy.array(nums)
-    tmp = [{"Operator": gemmi.Op().triplet(),
+    tmp = [{"Operator": "h,k,l",
             "R_twin_obs": 0,
             "CC_mean": 1}]
     for i_op, op in enumerate(ops):
@@ -65,7 +65,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
         else:
             r_obs = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
         cc = numpy.sum(nums[:,i_op] * ccs[:,i_op]) / numpy.sum(nums[:,i_op])
-        tmp.append({"Operator": op.triplet(),
+        tmp.append({"Operator": op.as_hkl().triplet(),
                     "CC_mean": cc, 
                     "R_twin_obs": r_obs,
                     })
