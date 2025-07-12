@@ -61,7 +61,7 @@ endif()
 # or gemmi sources. If we have the former with a shared library, it may require
 # extra effort to make sure that the shared library is found at runtime.
 if (SEARCH_INSTALLED_GEMMI)
-  find_package(gemmi 0.7.0 CONFIG)
+  find_package(gemmi 0.7.3 CONFIG)
 endif()
 if (gemmi_FOUND)
   message(STATUS "  based on config from ${gemmi_DIR}")
