@@ -342,12 +342,12 @@ def read_cif_safe(cif_in):
     return doc
 # read_cif_safe()
 
-def read_structure(xyz_in, assign_het_flags=True, merge_chain_parts=True):
+def read_structure(xyz_in, assign_het_flags=True, merge_chain_parts=True, ignore_ter=True):
     spext = splitext(xyz_in)
     st = None
     if spext[1].lower() in (".pdb", ".ent"):
         logger.writeln("Reading PDB file: {}".format(xyz_in))
-        st = gemmi.read_pdb(xyz_in)
+        st = gemmi.read_pdb(xyz_in, ignore_ter=ignore_ter)
     elif spext[1].lower() in (".cif", ".mmcif"):
         doc = read_cif_safe(xyz_in)
         for block in doc:
