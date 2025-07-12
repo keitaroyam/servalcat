@@ -43,7 +43,7 @@ execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
 list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
-find_package(nanobind 2.2.0 CONFIG REQUIRED)
+find_package(nanobind 2.7.0 CONFIG REQUIRED)
 message(STATUS "Found nanobind ${nanobind_VERSION}: ${NB_DIR}")
 
 nanobind_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
