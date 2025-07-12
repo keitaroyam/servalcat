@@ -9,6 +9,7 @@
 #include <gemmi/fourier.hpp>
 #include <gemmi/neighbor.hpp>
 #include <gemmi/solmask.hpp>
+#include <gemmi/it92.hpp>
 #include <gemmi/c4322.hpp> // CustomCoef
 
 namespace nb = nanobind;
@@ -84,5 +85,11 @@ NB_MODULE(ext, m) {
         item.set_coefs(p);
         CustomCoef::data.push_back(item);
       }
+  });
+  m.def("IT92_normalize_etc", [](const gemmi::Element &el_x){
+      gemmi::IT92<double>::normalize();
+      gemmi::IT92<double>::ignore_charge = false;
+      const auto coefs = gemmi::IT92<double>::get(el_x, 0).coefs;
+      gemmi::IT92<double>::get(gemmi::El::X, 0).set_coefs(coefs);
   });
 }

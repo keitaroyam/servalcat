@@ -19,7 +19,7 @@ from servalcat import ext
 gemmi.IT92_normalize()
 gemmi.IT92_set_ignore_charge(False)
 gemmi.Element("X").it92.set_coefs(gemmi.Element("O").it92.get_coefs()) # treat X (unknown) as O
-
+ext.IT92_normalize_etc(gemmi.Element("O")) # the same changes to gemmi in servalcat c++ code
 u_to_b = 8 * numpy.pi**2
 b_to_u = 1. / u_to_b
 
