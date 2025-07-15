@@ -6,6 +6,7 @@
 #include <nanobind/stl/vector.h>
 #include <nanobind/stl/complex.h>
 #include <nanobind/eigen/dense.h>
+#include <nanobind/stl/string.h>
 #include <cmath> // for NAN
 #include <gemmi/symmetry.hpp>
 #include <gemmi/unitcell.hpp>
@@ -14,6 +15,7 @@
 #include <map>
 #include <numeric>  // for iota
 #include <iostream>
+#include <fstream>
 #include "math.hpp"
 #include "array.h"
 namespace nb = nanobind;
@@ -28,6 +30,7 @@ struct TwinData {
   std::vector<double> s2_array;
   std::vector<std::complex<double>> f_calc_;
   std::vector<double> mlparams; // (Sigma, D0, D1, ..), ...
+  std::ofstream ofs_debug;
   std::complex<double> &f_calc(size_t idx, size_t i_model) {
     return f_calc_[idx * n_models + i_model];
   }
@@ -262,10 +265,14 @@ struct TwinData {
       if (c == 0) // acentric
         ret -= std::log(f_true(ia));
     }
-    if (std::isnan(ret)) {
+    if (0 && std::isnan(ret)) {
       std::cout << "f_nan [";
-      for (int ia = 0; ia < rb2a[ib].size(); ++ia)
-        std::cout << f_true(ia) << ",";
+      for (int ia = 0; ia < rb2a[ib].size(); ++ia) {
+        const int a_idx = rb2a[ib][ia];
+        std::cout << f_true(ia) << " "
+                  << asu[a_idx][0] << " " << asu[a_idx][1] << " " << asu[a_idx][2]
+                  << ", ";
+      }
       std::cout << "]" << std::endl;
     }
     return ret;
@@ -330,7 +337,7 @@ struct TwinData {
       const double m = fom(X, c + 1);
       const double f_inv_den = std::abs(DFc) * inv_den * (2 - c);
       der1(ia) -= m * f_inv_den;
-      der2(ia, ia) -= fom_der(m, X, c + 1) * gemmi::sq(f_inv_den);
+      //der2(ia, ia) -= fom_der(m, X, c + 1) * gemmi::sq(f_inv_den); // omit for stability
       if (c == 0) { // acentric
         der1(ia) -= 1. / ft(ia);
         der2(ia, ia) += 1. / gemmi::sq(ft(ia));
@@ -379,13 +386,41 @@ struct TwinData {
       if (std::isnan(f_true(ia)))
         throw std::runtime_error("initial f_true is nan");
     }
+    Eigen::IOFormat FmtV(Eigen::StreamPrecision, Eigen::DontAlignCols, ",", ",", "", "", "[", "]");
+    if (ofs_debug.is_open()) {
+      Eigen::VectorXd v(rb2o[ib].size()), v2(rb2a[ib].size());
+      ofs_debug << "{";
+      ofs_debug << "\"ib\":" << ib;
+      for (int io = 0; io < rb2o[ib].size(); ++io) v(io) = iobs[rb2o[ib][io]];
+      ofs_debug << ",\"iobs\":" << v.format(FmtV);
+      for (int io = 0; io < rb2o[ib].size(); ++io) v(io) = sigo[rb2o[ib][io]];
+      ofs_debug << ",\"sigma\":" << v.format(FmtV);
+      ofs_debug << ",\"idx\":[";
+      for (int io = 0; io < rb2o[ib].size(); ++io) {
+        Eigen::VectorXd vv(rbo2a[ib][io].size());
+        for (int ic = 0; ic < rbo2c[ib][io].size(); ++ic) vv(ic) = rbo2c[ib][io][ic];
+        ofs_debug << vv.format(FmtV);
+        ofs_debug << ((io == rb2o[ib].size() - 1) ? "]" : ",");
+      }
+      ofs_debug << ",\"alpha\":" << Eigen::VectorXd::Map(alphas.data(), alphas.size()).format(FmtV);
+      for (int ia = 0; ia < rb2a[ib].size(); ++ia) v2(ia) = std::abs(sum_fcalc(rb2a[ib][ia], true));
+      ofs_debug << ",\"dfc\":" << v2.format(FmtV);
+      for (int ia = 0; ia < rb2a[ib].size(); ++ia) v2(ia) = epsilon[rb2a[ib][ia]] * ml_sigma(bin[rb2a[ib][ia]]);
+      ofs_debug << ",\"eps_s\":" << v2.format(FmtV);
+      for (int ia = 0; ia < rb2a[ib].size(); ++ia) v2(ia) = centric[rb2a[ib][ia]];
+      ofs_debug << ",\"c\":" << v2.format(FmtV);
+      ofs_debug << ",\"ini\":" << f_true.format(FmtV);
+      double tmpf = calc_f(ib, iobs, sigo, f_true);
+      ofs_debug << ",\"f_ini\":" << tmpf;
+    }
 
     Eigen::VectorXd f_true_old = f_true;
     Eigen::IOFormat Fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");
     const double tol = 1.e-5; // enough?
     double det = 1, f0 = 0;
     std::pair<Eigen::VectorXd,Eigen::MatrixXd> ders;
-    for (int i_cyc = 0; i_cyc < max_cycle; ++i_cyc) {
+    int i_cyc = 0;
+    for (; i_cyc < max_cycle; ++i_cyc) {
       f0 = calc_f(ib, iobs, sigo, f_true);
       // printf("f = %.e\n", f0);
       // printf("f_der = [");
@@ -435,7 +470,7 @@ struct TwinData {
       // printf("\n");
       SymMatEig eig(ders.second);
       det = eig.det();
-      auto a_inv = eig.inv();
+      auto a_inv = eig.inv(1e-4);
       f_true_old = f_true;
       Eigen::VectorXd shift = a_inv * ders.first;
       // std::cout << ib << " " << f_true.format(Fmt)
@@ -462,7 +497,8 @@ struct TwinData {
           break;
         lambda *= 0.75;
       }
-      for (int i_ls = 0; i_ls < 20; ++i_ls) {
+      int i_ls = 0;
+      for (; i_ls < 20; ++i_ls) {
         f_true = (f_true_old - lambda * shift).cwiseMax(f_true_old / 2).cwiseMax(1e-6);
         f1 = calc_f(ib, iobs, sigo, f_true);
         if (f1 <= f0 - 1e-4 * lambda * g2p)
@@ -487,6 +523,8 @@ struct TwinData {
         lambda = std::max(tmp, 0.1 * lambda);
         f2 = f1;
       }
+      //std::cout << "i_cyc " << i_cyc << " i_ls " << i_ls
+      //<< " first " << ders.first.format(Fmt) << "\n";
       // std::cout << " lambda " << lambda << "\n";
       if (std::isnan(lambda))
         throw std::runtime_error("nan lambda");
@@ -515,6 +553,19 @@ struct TwinData {
     //           << f0 << " " << det << " " << std::log(det) << " der "
     //           << ders.first.format(Fmt) << std::endl;// << f_true.format(Fmt) <<
     //return f0 + 0.5 * std::log(det); // Laplace approximation. omitted (2pi)**N/2
+
+    if (ofs_debug.is_open()) {
+      ofs_debug << ",\"final\":" << f_true.format(FmtV);
+      ofs_debug << ",\"cyc\":" << i_cyc;
+      ders = calc_f_der(ib, iobs, sigo, f_true);
+      double tmpf = calc_f(ib, iobs, sigo, f_true);
+      ofs_debug << ",\"f\": " << tmpf;
+      ofs_debug << ",\"f_der\":" << ders.first.format(FmtV);
+      auto eig = SymMatEig(ders.second);
+      ofs_debug << ",\"f_sec_eig\":" << eig.es.eigenvalues().format(FmtV);
+      ofs_debug << ",\"f_sec_det\":" << eig.det();
+      ofs_debug << "},";
+    }
 
     for (int i = 0; i < rb2a[ib].size(); ++i)
       f_true_max[rb2a[ib][i]] = std::max(f_true(i), 1e-6);
@@ -723,13 +774,13 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("est_f_true", [](TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+    .def("est_f_true", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, int max_cycle) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
-        self.est_f_true(ib, Io_.data(), sigIo_.data());
-    })
-    .def("ll", [](const TwinData &self) {
+        self.est_f_true(ib, Io_.data(), sigIo_.data(), max_cycle);
+    }, nb::arg("Io"), nb::arg("sigIo"), nb::arg("max_cycle")=10)
+    .def("ll_rice", [](const TwinData &self) { // pseudo -LL
       double ret = 0;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
@@ -747,6 +798,37 @@ void add_twin(nb::module_& m) {
           const double log_ic0 = log_i0_or_cosh(self.f_true_max[ia] * std::abs(DFc) / (S * eps), c);
           const double log_fmax_a = c == 1 ? std::log(self.f_true_max[ia]) : 0;
           ret +=  std::log(S) / c - log_fmax_a + (sq(self.f_true_max[ia]) + std::norm(DFc)) / (eps * S * c) - log_ic0;
+        }
+      }
+      return ret;
+    })
+    .def("ll", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) { // Laplace approximation
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      double ret = 0;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        const int b = self.rbin[ib];
+        Eigen::VectorXd f_true(self.rb2a[ib].size());
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+          f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        const auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+        const double f = self.calc_f(ib, Io_.data(), sigIo_.data(), f_true);
+        if (std::isnan(f))
+          continue;
+        const double h_inv_der = SymMatEig(ders.second).det(); // could be negative?
+        if (h_inv_der <= 0) { // how can we handle this..
+          Eigen::IOFormat Fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");
+          std::cout << "h_inv_der " << h_inv_der << " f " << f
+                    << " f_der " << ders.first.format(Fmt)
+                    << " f_max " << f_true.format(Fmt) << "\n";
+          continue;
+        }
+        ret += f + 0.5 * std::log(h_inv_der);
+        for (int i = 0; i < self.rb2a[ib].size(); ++i) {
+          const int ia = self.rb2a[ib][i];
+          const int c = self.centric[ia];
+          const double S = self.ml_sigma(self.bin[ia]); // omitting eps
+          ret += std::log(S) / (c + 1);
         }
       }
       return ret;
@@ -782,6 +864,34 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
+    .def("ll_der_alpha", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      auto ret = make_numpy_array<double>({self.n_ops()});
+      double* ptr = ret.data();
+      for (int i = 0; i < ret.size(); ++i)
+        ptr[i] = 0.;
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
+        for (int io = 0; io < self.rb2o[ib].size(); ++io) {
+          const int obs_idx = self.rb2o[ib][io];
+          const double i_obs = Io_(obs_idx);
+          if (std::isnan(i_obs)) continue;
+          const double sig2inv =  1. / sq(sigIo_(obs_idx));
+          for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic) {
+            const int ia = self.rb2a[ib][self.rbo2a[ib][io][ic]];
+            const int alpha_idx = self.rbo2c[ib][io][ic];
+            if (std::isnan(self.f_true_max[ia])) continue;
+            ptr[alpha_idx] += -sig2inv * i_obs * sq(self.f_true_max[ia]);
+            for (int ic2 = 0; ic2 < self.rbo2a[ib][io].size(); ++ic2) {
+              const int ia2 = self.rb2a[ib][self.rbo2a[ib][io][ic2]];
+              const int alpha_idx2 = self.rbo2c[ib][io][ic2];
+              if (std::isnan(self.f_true_max[ia2])) continue;
+              ptr[alpha_idx] += sig2inv * self.alphas[alpha_idx2] * sq(self.f_true_max[ia] * self.f_true_max[ia2]);
+            }
+          }
+        }
+      return ret;
+    })
     // F_true must be estimated beforehand
     .def("calc_fom", [](const TwinData &self) {
       auto ret = make_numpy_array<double>({self.asu.size()});
@@ -795,7 +905,7 @@ void add_twin(nb::module_& m) {
           const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const double S = self.ml_sigma(self.bin[ia]);
           ptr[ia] = fom(self.f_true_max[ia] * std::abs(DFc) / (S * eps), c);
-        }
+       }
       }
       return ret;
     })
@@ -925,5 +1035,13 @@ void add_twin(nb::module_& m) {
         ptr[i] = std::exp(-b_iso / 4 * self.s2_array[i]);
       return ret;
     }, nb::arg("b_iso"))
+    .def("debug_open", [](TwinData &self, const std::string &fname) {
+      self.ofs_debug.open(fname);
+      self.ofs_debug << "[";
+    })
+    .def("debug_close", [](TwinData &self) {
+      self.ofs_debug << "]\n";
+      self.ofs_debug.close();
+    })
     ;
 }

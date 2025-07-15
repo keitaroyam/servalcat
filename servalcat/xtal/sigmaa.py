@@ -17,7 +17,7 @@ import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
-from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model
+from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model, mlopt_twin_fractions
 
 """
 DFc = sum_j D_j F_c,j
@@ -59,6 +59,7 @@ def add_arguments(parser):
     parser.add_argument('--use', choices=["all", "work", "test"], default="all",
                         help="Which reflections to be used for the parameter estimate.")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
+    parser.add_argument('--twin_mlalpha', action="store_true", help="Use ML optimisation for twin fractions")
     parser.add_argument('--mask',
                         help="A solvent mask (by default calculated from the coordinates)")
     parser.add_argument('--keep_charges',  action='store_true',
@@ -566,20 +567,30 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     return -g / H
 # mli_shift_S()
 
+#debug_twin_count = 0
+
 def mltwin_est_ftrue(twin_data, df, k_ani, idxes):
     kani2_inv = 1 / k_ani**2
     i_sigi = numpy.empty((2, len(df.index)))
     i_sigi[:] = numpy.nan
     i_sigi[0, idxes] = (df.I.to_numpy() * kani2_inv)[idxes]
     i_sigi[1, idxes] = (df.SIGI.to_numpy() * kani2_inv)[idxes]
-    twin_data.est_f_true(i_sigi[0,:], i_sigi[1,:])
+    #global debug_twin_count
+    #debug_twin_count += 1
+    # sed -i "s/,]/]/; s/nan/NaN/g" *json
+    #twin_data.debug_open(f"twin_debug_{debug_twin_count}.json")
+    twin_data.est_f_true(i_sigi[0,:], i_sigi[1,:], 100)
+    #twin_data.debug_close()
+    return i_sigi[0,:], i_sigi[1,:]
 # mltwin_est_ftrue()
 
 def mltwin(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
-    return twin_data.ll()
+    Io, sigIo = mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    ret = twin_data.ll(Io, sigIo)
+    #print("-LL=", ret)
+    return ret
 # mltwin()
     
 def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
@@ -1728,6 +1739,9 @@ def main(args):
     else:
         b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, centric_and_selections, args.D_trans, args.S_trans, args.use,
                                       twin_data=twin_data)
+        if twin_data and args.twin_mlalpha:
+            mlopt_twin_fractions(hkldata, twin_data, b_aniso)
+        
     use = {"all": "all", "work": "work", "test": "work"}[args.use]
     if twin_data:
         # replace hkldata

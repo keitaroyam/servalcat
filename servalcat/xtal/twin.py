@@ -10,11 +10,12 @@ import argparse
 import gemmi
 import numpy
 import pandas
+import scipy.optimize
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
 
-def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
+def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.4):
     logger.writeln("Finding possible twin operators from data")
     ops = gemmi.find_twin_laws(hkldata.cell, hkldata.sg, max_oblique, False)
     logger.writeln(f" {len(ops)} possible twin operator(s) found")
@@ -32,7 +33,6 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
     ccs, nums = [], []
     tmp = []
     for i_bin, bin_idxes in hkldata.binned():
-        ratios = [1.]
         ccs.append([])
         nums.append([])
         rs = []
@@ -43,13 +43,11 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
             if numpy.sum(val) != 0:
                 cc = numpy.corrcoef(Io[ii][val].T)[0,1]
                 r = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
-            ratio = (1 - numpy.sqrt(1 - cc**2)) / cc
-            ratios.append(ratio)
             ccs[-1].append(cc)
             rs.append(r)
             nums[-1].append(len(val))
-        tmp.append(rs + ccs[-1] + nums[-1] + (numpy.array(ratios) / numpy.nansum(ratios)).tolist()[1:])
-    df = pandas.DataFrame(tmp, columns=[f"{n}_op{i+1}" for n in ("R", "CC", "num", "raw_est") for i in range(len(ops))])
+        tmp.append(rs + ccs[-1] + nums[-1])
+    df = pandas.DataFrame(tmp, columns=[f"{n}_op{i+1}" for n in ("R", "CC", "num") for i in range(len(ops))])
     with logger.with_prefix(" "):
         logger.writeln(df.to_string(float_format="%.4f"))
     ccs = numpy.array(ccs)
@@ -70,27 +68,23 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_alpha=0.05):
                     "R_twin_obs": r_obs,
                     })
     df = pandas.DataFrame(tmp)
-    df["Alpha_from_CC"] = (1 - numpy.sqrt(1 - df["CC_mean"]**2)) / df["CC_mean"]
-    df["Alpha_from_CC"] /= numpy.nansum(df["Alpha_from_CC"])
-    logger.writeln("\n Initial twin fraction estimates:")
     with logger.with_prefix(" "):
         logger.writeln(df.to_string(float_format="%.2f"))
 
-    sel = df["Alpha_from_CC"].to_numpy() > min_alpha
+    sel = df["CC_mean"].to_numpy() > min_cc
     if sel[1:].sum() == 0:
-        logger.writeln(" No twinning detected\n")
+        logger.writeln(" No possible twinning detected\n")
         return None, None
     
     if not sel.all():
         ops = [ops[i] for i in range(len(ops)) if sel[i+1]]
-        logger.writeln(f"\n Twin operators after filtering small fractions (<= {min_alpha})")
+        logger.writeln(f"\n Twin operators after filtering small correlations (<= {min_cc})")
         df = df[sel]
-        df["Alpha_from_CC"] /= numpy.nansum(df["Alpha_from_CC"])
         with logger.with_prefix(" "):
             logger.writeln(df.to_string(float_format="%.2f"))
         twin_data = ext.TwinData()
         twin_data.setup(hkldata.miller_array(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
-    twin_data.alphas = df["Alpha_from_CC"].tolist()
+    twin_data.alphas = [1. / len(twin_data.alphas) for _ in range(len(twin_data.alphas)) ]
     if "I" not in hkldata.df:
         logger.writeln('Generating "observed" intensities for twin refinement: Io = Fo**2, SigIo = 2*F*SigFo')
         hkldata.df["I"] = hkldata.df.FP**2
@@ -111,6 +105,8 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
     P_list, cc_oc_list, weight_list = [], [], []
     n_ops = len(twin_data.ops) + 1
     tidxes = numpy.triu_indices(n_ops, 1)
+    if "CC*" in hkldata.binned_df:
+        logger.writeln(" data-correlations are corrected using CC*")
     for i_bin, bin_idxes in hkldata.binned():
         i_tmp = Ic_all[numpy.asarray(twin_data.bin)==i_bin,:]
         i_tmp = i_tmp[numpy.isfinite(i_tmp).all(axis=1)]
@@ -119,7 +115,10 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
         ic_bin = Ic[rr[bin_idxes,:]]
         val = numpy.isfinite(iobs) & numpy.isfinite(ic_bin).all(axis=1) & numpy.all(rr[bin_idxes,:]>=0, axis=1)
         iobs, ic_bin = iobs[val], ic_bin[val,:]
-        cc_oc = [numpy.corrcoef(iobs, ic_bin[:,i])[0,1] for i in range(n_ops)]
+        cc_star = hkldata.binned_df["CC*"][i_bin] if "CC*" in hkldata.binned_df else 1
+        if cc_star < 0.5:
+            break
+        cc_oc = [numpy.corrcoef(iobs, ic_bin[:,i])[0,1] / cc_star for i in range(n_ops)]
         P_list.append(P)
         cc_oc_list.append(cc_oc)
         weight_list.append(numpy.sum(val))
@@ -138,6 +137,58 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
     with logger.with_prefix(" "):
         logger.writeln(df.to_string(float_format="%.4f"))
     logger.write(" Final twin fraction estimate: ")
-    logger.writeln(" ".join("%.2f"%x for x in frac_est))
+    logger.writeln(" ".join("%.4f"%x for x in frac_est))
     twin_data.alphas = frac_est
     return df
+
+def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
+    k_ani2_inv = 1 / hkldata.debye_waller_factors(b_cart=b_aniso)**2
+    Io = hkldata.df.I.to_numpy(copy=True) * k_ani2_inv
+    sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
+    def fun(x):
+        x = [max(0,a) for a in x]
+        x = x + [max(0,1-sum(x))]
+        twin_data.alphas = x
+        twin_data.est_f_true(Io, sigIo)
+        ret = twin_data.ll(Io, sigIo)
+        return ret
+    def grad(x):
+        x = [max(0,a) for a in x]
+        x = x + [max(0,1-sum(x))]
+        twin_data.alphas = x
+        twin_data.est_f_true(Io, sigIo)
+        ret = twin_data.ll_der_alpha(Io, sigIo)
+        ret2 = [x - ret[-1] for x in ret[:-1]]
+        return ret2
+    if 0:
+        logger.writeln("a ll ll_new der")
+        for a in numpy.linspace(0., 1.0, 50):
+            x = [a, 1-a]
+            twin_data.alphas = x
+            twin_data.est_f_true(Io, sigIo)
+            f_new = twin_data.ll(Io, sigIo)
+            f = twin_data.ll_rice()
+            der = twin_data.ll_der_alpha(Io, sigIo)
+            der = [x - der[-1] for x in der[:-1]]
+            logger.writeln(f"{a} {f} {f_new} {der[0]}")
+        logger.writeln("")
+    if 0:
+        x0 = [x for x in twin_data.alphas[:-1]]
+        f0 = fun(x0)
+        ader = grad(x0)
+        print(f"{ader=}")
+        for e in (1e-2, 1e-3, 1e-4, 1e-5):
+            nder = []
+            for i in range(len(x0)):
+                x = [_ for _ in x0]
+                x[i] += e
+                f1 = fun(x)
+                nder.append((f1 - f0) / e)
+            print(f"{e=} {nder=}")
+    
+    logger.writeln("ML twin fraction refinement..")
+    res = scipy.optimize.minimize(fun=fun, x0=twin_data.alphas[:-1], jac=grad, bounds=[(0,1)]*(len(twin_data.alphas)-1))
+    logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
+    twin_data.alphas = list(res.x) + [1. - sum(res.x)]
+    logger.write(" ML twin fraction estimate: ")
+    logger.writeln(" ".join("%.4f"%x for x in twin_data.alphas))

@@ -86,6 +86,7 @@ class LL_Xtal:
             mask[idxes] = 1 / self.hkldata.debye_waller_factors(b_cart=self.b_aniso)[idxes]**2
             self.twin_data.est_f_true(self.hkldata.df.I.to_numpy() * mask,
                                       self.hkldata.df.SIGI.to_numpy() * mask)
+            self.k_ani2_inv_masked = mask
         
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
@@ -149,7 +150,9 @@ class LL_Xtal:
     def calc_target(self): # -LL target for MLF or MLI
         ret = 0
         if self.twin_data:
-            ret = self.twin_data.ll()
+            Io = self.hkldata.df.I.to_numpy() * self.k_ani2_inv_masked
+            sigIo = self.hkldata.df.SIGI.to_numpy() * self.k_ani2_inv_masked
+            ret = self.twin_data.ll(Io, sigIo)
         else:
             k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
             f = sigmaa.mli if self.is_int else sigmaa.mlf

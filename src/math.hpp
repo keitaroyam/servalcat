@@ -142,10 +142,10 @@ struct SymMatEig {
   double det() const {
     return es.eigenvalues().prod();
   }
-  Eigen::MatrixXd inv() const {
+  Eigen::MatrixXd inv(double e=1e-8) const {
     Eigen::VectorXd eig_inv = es.eigenvalues();
     for (int i = 0; i < eig_inv.size(); ++i)
-      eig_inv(i) = std::abs(eig_inv(i)) < 1e-8 ? 1 : (1. / eig_inv(i));
+      eig_inv(i) = std::abs(eig_inv(i)) < e ? 1 : (1. / eig_inv(i));
     return es.eigenvectors() * eig_inv.asDiagonal() * es.eigenvectors().adjoint();
   }
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es;
