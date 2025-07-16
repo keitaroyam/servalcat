@@ -121,6 +121,8 @@ def main(args):
     refine_cfg = load_config(args.config, args)
     if args.refine_dfrac and args.source != "neutron": # TODO should check params.is_refined()
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
+    if args.labin_llweight and args.twin:
+        raise SystemExit("--labin_llweight not supported for twin refinement")
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"

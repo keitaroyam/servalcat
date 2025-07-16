@@ -249,8 +249,9 @@ class LL_Xtal:
             dll_dab *= d2 * gemmi.mott_bethe_const()
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 
-        dll_dab *= self.hkldata.df.llweight
-        d2ll_dab2 *= self.hkldata.df.llweight
+        if not self.twin_data:
+            dll_dab *= self.hkldata.df.llweight
+            d2ll_dab2 *= self.hkldata.df.llweight
             
         # we need V**2/n for gradient.
         if self.twin_data:
