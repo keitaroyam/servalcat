@@ -615,7 +615,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
                     site.u_iso = site.aniso.transformed_by(cif2cart).trace() / 3
 
                 prev_free_u_iso = site.u_iso
-                logger.write(f"updated prev_free_u_iso to {site.u_iso} at {site.label}")
+                logger.writeln(f"updated prev_free_u_iso to {site.u_iso} at {site.label}")
             else:
                 u_iso_code = float(sp[6])
                 if -5 < u_iso_code and u_iso_code < -0.5:
@@ -744,7 +744,7 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
         sigs.append(gemmi.cif.as_number(l[i, i_sig]))
     
     ints = gemmi.Intensities()
-    ints.set_data(cell, sg, hkls, vals, sigs)
+    ints.set_data(cell, sg, numpy.asarray(hkls), numpy.asarray(vals), numpy.asarray(sigs))
     ints.merge_in_place(gemmi.DataType.Anomalous)
     if not (ints.isign_array < 0).any(): ints.type = gemmi.DataType.Mean
     logger.writeln(" Multiplicity: max= {} mean= {:.1f} min= {}".format(numpy.max(ints.nobs_array),
