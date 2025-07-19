@@ -503,6 +503,7 @@ def h_add(args):
                                              monomer_dir=args.monlib,
                                              cif_files=args.ligand)
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+    restraints.find_and_fix_links(st, monlib, find_metal_links=False, add_found=False)
     try:
         restraints.add_hydrogens(st, monlib, args.pos)
     except RuntimeError as e:
