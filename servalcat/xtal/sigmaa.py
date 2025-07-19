@@ -1684,6 +1684,9 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    for st in sts:
+        utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False)
+
     if args.twin:
         twin_data, _ = find_twin_domains_from_data(hkldata)
     else:
