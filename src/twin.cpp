@@ -280,7 +280,8 @@ struct TwinData {
 
   // first and second derivative matrix of f(x)
   std::pair<Eigen::VectorXd, Eigen::MatrixXd>
-  calc_f_der(int ib, const double *iobs, const double *sigo, const Eigen::VectorXd &ft) const {
+  calc_f_der(int ib, const double *iobs, const double *sigo, const Eigen::VectorXd &ft,
+             bool unstable_mode=false) const {
     const size_t n_a = rb2a[ib].size();
     Eigen::VectorXd der1 = Eigen::VectorXd::Zero(n_a);
     Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(n_a, n_a);
@@ -337,7 +338,8 @@ struct TwinData {
       const double m = fom(X, c + 1);
       const double f_inv_den = std::abs(DFc) * inv_den * (2 - c);
       der1(ia) -= m * f_inv_den;
-      //der2(ia, ia) -= fom_der(m, X, c + 1) * gemmi::sq(f_inv_den); // omit for stability
+      if (unstable_mode)
+        der2(ia, ia) -= fom_der(m, X, c + 1) * gemmi::sq(f_inv_den); // omit for stability
       if (c == 0) { // acentric
         der1(ia) -= 1. / ft(ia);
         der2(ia, ia) += 1. / gemmi::sq(ft(ia));
@@ -811,13 +813,17 @@ void add_twin(nb::module_& m) {
         Eigen::VectorXd f_true(self.rb2a[ib].size());
         for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
           f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        if (f_true.array().isNaN().all())
+          continue;
         const auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
         const double f = self.calc_f(ib, Io_.data(), sigIo_.data(), f_true);
-        if (std::isnan(f))
+        Eigen::IOFormat Fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");
+        if (std::isnan(f)) {
+          std::cout << "nan f ib " << ib << " ft " << f_true.format(Fmt) << "\n";
           continue;
+        }
         const double h_inv_der = SymMatEig(ders.second).det(); // could be negative?
         if (h_inv_der <= 0) { // how can we handle this..
-          Eigen::IOFormat Fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");
           std::cout << "h_inv_der " << h_inv_der << " f " << f
                     << " f_der " << ders.first.format(Fmt)
                     << " f_max " << f_true.format(Fmt) << "\n";
@@ -864,32 +870,95 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("ll_der_alpha", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+    .def("ll_der_alpha", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo, bool accurate) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       auto ret = make_numpy_array<double>({self.n_ops()});
       double* ptr = ret.data();
       for (int i = 0; i < ret.size(); ++i)
         ptr[i] = 0.;
-      for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        // not needed for inaccurate ver
+        Eigen::VectorXd f_true(self.rb2a[ib].size());
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+          f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+        auto eig_f = SymMatEig(ders.second);
+        auto f_inv = eig_f.inv();
+        // __
         for (int io = 0; io < self.rb2o[ib].size(); ++io) {
           const int obs_idx = self.rb2o[ib][io];
           const double i_obs = Io_(obs_idx);
           if (std::isnan(i_obs)) continue;
           const double sig2inv =  1. / sq(sigIo_(obs_idx));
           for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic) {
-            const int ia = self.rb2a[ib][self.rbo2a[ib][io][ic]];
+            // |Fi|^2 part
+            const int i = self.rbo2a[ib][io][ic];
+            const int ia = self.rb2a[ib][i];
             const int alpha_idx = self.rbo2c[ib][io][ic];
             if (std::isnan(self.f_true_max[ia])) continue;
-            ptr[alpha_idx] += -sig2inv * i_obs * sq(self.f_true_max[ia]);
+            const double fac1 = -sig2inv * i_obs;
+            if (accurate) {
+              const double g = sq(self.f_true_max[ia]);
+              const double g2 = g * g;
+              const double g_der_sq = 4 * g;
+              const double g_der2 = 2;
+              const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
+              if (denom <= 0) {
+                printf("negative denom %f fmax %f Hii %f\n", denom, self.f_true_max[ia], f_inv(i,i));
+                std::cout << ders.second << "\n" << f_inv << "\n";
+              }
+              ptr[alpha_idx] += fac1 * g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
+            } else
+              ptr[alpha_idx] += fac1 * sq(self.f_true_max[ia]);
+            // |Fi|^2 |Fj|^2 part
             for (int ic2 = 0; ic2 < self.rbo2a[ib][io].size(); ++ic2) {
-              const int ia2 = self.rb2a[ib][self.rbo2a[ib][io][ic2]];
+              const int j = self.rbo2a[ib][io][ic2];
+              const int ia2 = self.rb2a[ib][j];
               const int alpha_idx2 = self.rbo2c[ib][io][ic2];
               if (std::isnan(self.f_true_max[ia2])) continue;
-              ptr[alpha_idx] += sig2inv * self.alphas[alpha_idx2] * sq(self.f_true_max[ia] * self.f_true_max[ia2]);
+              const double fac2 = sig2inv * self.alphas[alpha_idx2];
+              if (accurate) {
+                const double g = sq(self.f_true_max[ia] * self.f_true_max[ia2]);
+                if (i == j) {
+                  const double g2 = g * g;
+                  const double g_der_sq = 16 * sq(sq(self.f_true_max[ia]) * self.f_true_max[ia]);
+                  const double g_der2 = 12 * sq(self.f_true_max[ia]);
+                  const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
+                  if (denom <= 0) {
+                    printf("negative denom %f fmax %f Hii %f\n", denom, self.f_true_max[ia], f_inv(i,i));
+                    std::cout << ders.second << "\n" << f_inv << "\n";
+                  }
+                  ptr[alpha_idx] += fac2 * g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
+                } else { // cannot use Sherman-Morrison update
+                  Eigen::VectorXd g_der = Eigen::VectorXd::Zero(self.rb2a[ib].size());
+                  g_der(i) = 2 * self.f_true_max[ia] * sq(self.f_true_max[ia2]);
+                  g_der(j) = 2 * sq(self.f_true_max[ia]) * self.f_true_max[ia2];
+                  Eigen::MatrixXd g_der2 = Eigen::MatrixXd::Zero(g_der.size(), g_der.size());
+                  g_der2(i,i) = 2 * sq(self.f_true_max[ia2]);
+                  g_der2(j,j) = 2 * sq(self.f_true_max[ia]);
+                  g_der2(i,j) = g_der2(j,i) = 4 * self.f_true_max[ia] * self.f_true_max[ia2];
+                  const auto H_h = ders.second - g_der2 / g + g_der * g_der.transpose() / sq(g);
+                  const auto eig_h = SymMatEig(H_h);
+                  const double det_f = eig_f.det(), det_h = eig_h.det();
+                  const double tmp = g_der.transpose() * eig_h.inv() * g_der;
+                  if (det_f <= 0) {
+                    printf("negative det_f %f\n", det_f);
+                    std::cout << ders.second << "\n";
+                  }
+                  if (det_h <= 0) {
+                    printf("negative det_h %f\n", det_h);
+                    std::cout << "f_true " << f_true << "\n";
+                    std::cout << H_h << "\n" << g_der2 << "\n";
+                  }
+                  ptr[alpha_idx] += fac2 * g * std::sqrt(det_f / det_h) * std::exp(0.5 * tmp / sq(g));
+                }
+              } else
+                ptr[alpha_idx] += fac2 * sq(self.f_true_max[ia] * self.f_true_max[ia2]);
             }
           }
         }
+      }
       return ret;
     })
     // F_true must be estimated beforehand

@@ -15,7 +15,7 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
 
-def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.4):
+def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
     logger.writeln("Finding possible twin operators from data")
     ops = gemmi.find_twin_laws(hkldata.cell, hkldata.sg, max_oblique, False)
     logger.writeln(f" {len(ops)} possible twin operator(s) found")
@@ -76,7 +76,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.4):
         logger.writeln(" No possible twinning detected\n")
         return None, None
     
-    if not sel.all():
+    if 0:#not sel.all():
         ops = [ops[i] for i in range(len(ops)) if sel[i+1]]
         logger.writeln(f"\n Twin operators after filtering small correlations (<= {min_cc})")
         df = df[sel]
@@ -146,36 +146,36 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
     Io = hkldata.df.I.to_numpy(copy=True) * k_ani2_inv
     sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
     def fun(x):
-        x = [max(0,a) for a in x]
-        x = x + [max(0,1-sum(x))]
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo)
+        twin_data.est_f_true(Io, sigIo, 100)
         ret = twin_data.ll(Io, sigIo)
         return ret
     def grad(x):
-        x = [max(0,a) for a in x]
-        x = x + [max(0,1-sum(x))]
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo)
-        ret = twin_data.ll_der_alpha(Io, sigIo)
-        ret2 = [x - ret[-1] for x in ret[:-1]]
-        return ret2
+        twin_data.est_f_true(Io, sigIo, 100)
+        return twin_data.ll_der_alpha(Io, sigIo, True)
+    if 1:
+        bak = [_ for _ in twin_data.alphas]
+        with open("alpha_ll.csv", "w") as ofs:
+            ofs.write("a,ll,ll_new,der1,der2,der_new1,der_new2\n")
+            for a in numpy.linspace(0., 1.0, 100):
+                x = [a, 1-a]
+                twin_data.alphas = x
+                twin_data.est_f_true(Io, sigIo, 100)
+                f_new = twin_data.ll(Io, sigIo)
+                f = twin_data.ll_rice()
+                der = twin_data.ll_der_alpha(Io, sigIo, False)
+                #der = [x - der[-1] for x in der[:-1]]
+                der_new = twin_data.ll_der_alpha(Io, sigIo, True)
+                #der_new = [x - der_new[-1] for x in der_new[:-1]]
+                ofs.write(f"{a},{f},{f_new},{der[0]},{der[1]},{der_new[0]},{der_new[1]}\n")
+            ofs.write("\n")
+        twin_data.alphas = bak
     if 0:
-        logger.writeln("a ll ll_new der")
-        for a in numpy.linspace(0., 1.0, 50):
-            x = [a, 1-a]
-            twin_data.alphas = x
-            twin_data.est_f_true(Io, sigIo)
-            f_new = twin_data.ll(Io, sigIo)
-            f = twin_data.ll_rice()
-            der = twin_data.ll_der_alpha(Io, sigIo)
-            der = [x - der[-1] for x in der[:-1]]
-            logger.writeln(f"{a} {f} {f_new} {der[0]}")
-        logger.writeln("")
-    if 0:
-        x0 = [x for x in twin_data.alphas[:-1]]
+        x0 = [x for x in twin_data.alphas]
         f0 = fun(x0)
         ader = grad(x0)
+        
         print(f"{ader=}")
         for e in (1e-2, 1e-3, 1e-4, 1e-5):
             nder = []
@@ -187,8 +187,22 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
             print(f"{e=} {nder=}")
     
     logger.writeln("ML twin fraction refinement..")
-    res = scipy.optimize.minimize(fun=fun, x0=twin_data.alphas[:-1], jac=grad, bounds=[(0,1)]*(len(twin_data.alphas)-1))
+    num_params = len(twin_data.alphas)
+    A = numpy.ones((1, num_params))
+    linear_constraint = scipy.optimize.LinearConstraint(A, [1.0], [1.0])
+    bounds = scipy.optimize.Bounds(numpy.zeros(num_params), numpy.ones(num_params))
+    logger.writeln(" starting with " + " ".join("%.4f"%x for x in twin_data.alphas))
+    logger.writeln(f" f0= {fun(twin_data.alphas)}")
+    res = scipy.optimize.minimize(fun=fun, x0=twin_data.alphas,
+                                  bounds=bounds,
+                                  constraints=[linear_constraint],
+                                  jac=grad,
+                                  #callback=lambda *x: logger.writeln(f"callback {x}"),
+                                  )
     logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
-    twin_data.alphas = list(res.x) + [1. - sum(res.x)]
+    logger.writeln(f" f = {res.fun}")
+    # ensure constraints
+    alphas = numpy.clip(res.x, 0, 1)
+    twin_data.alphas = list(alphas / alphas.sum())
     logger.write(" ML twin fraction estimate: ")
     logger.writeln(" ".join("%.4f"%x for x in twin_data.alphas))
