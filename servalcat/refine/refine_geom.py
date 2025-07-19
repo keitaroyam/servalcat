@@ -50,6 +50,7 @@ def add_arguments(parser):
                         help="Write all output from cycles")
     parser.add_argument("--config",
                         help="Config file (.yaml)")
+    parser.add_argument('--adp',  choices=["fix"], default="fix", help=argparse.SUPPRESS) # dummy for omegaconf
 # add_arguments()
 
 def parse_args(arg_list):
