@@ -647,7 +647,7 @@ struct Geometry {
     : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(params) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
-  void setup_nonbonded(bool skip_critical_dist, const std::vector<int> &group_idxes, bool repulse_undefined_angles);
+  void setup_nonbonded(bool skip_critical_dist, bool repulse_undefined_angles);
   void setup_ncsr(const NcsList &ncslist);
   bool in_same_plane(const gemmi::Atom *a1, const gemmi::Atom *a2) const {
     return std::binary_search(plane_pairs.begin(), plane_pairs.end(),
@@ -1024,10 +1024,7 @@ inline void Geometry::set_vdw_values(Geometry::Vdw &vdw, int d_1_2) const {
 // sets up nonbonded interactions for vdwr, ADP restraints, and jellybody
 // group_idxes from occupancy group definition. 0 means not belongig to any group
 inline void Geometry::setup_nonbonded(bool skip_critical_dist,
-                                      const std::vector<int> &group_idxes,
                                       bool repulse_undefined_angles) {
-  if (!group_idxes.empty())
-    assert(group_idxes.size() == target.params->atoms.size());
   if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
   // set hbtypes for hydrogen
   if (!skip_critical_dist && hbtypes.empty()) {
@@ -1056,7 +1053,14 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
     };
     return std::binary_search(angles.begin(), angles.end(), key, cmp());
   };
-  auto test_occ_group_excl = [&](const gemmi::Atom *a1, const gemmi::Atom *a2) {
+  auto test_skip_vdwr = [&](const gemmi::Atom *a1, const gemmi::Atom *a2, bool same_res, bool sym_related) {
+    const bool sum_q_le1 = a1->occ + a2->occ < 1.0001;
+
+    // 1. if symmetry related, just check sum of occ
+    if (sym_related)
+      return sum_q_le1;
+
+    // 2. check occ group
     const int idx_1 = a1->serial - 1, idx_2 = a2->serial - 1;
     int gr_1 = -1, gr_2 = -1;
     for (int i = 0; i < target.params->occ_groups.size(); ++i) {
@@ -1066,13 +1070,26 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
       if (std::find(gr.begin(), gr.end(), idx_2) != gr.end())
         gr_2 = i;
     }
-    const bool ret1 = gr_1 >= 0 && gr_2 >= 0 && gr_1 == gr_2;
-    if (gr_1 >= 0 && gr_2 >= 0)
-      for (const auto &gc : target.params->occ_group_constraints)
-        if (std::find(gc.second.begin(), gc.second.end(), gr_1) != gc.second.end() &&
-            std::find(gc.second.begin(), gc.second.end(), gr_2) != gc.second.end())
-          return std::make_pair(ret1, true);
-    return std::make_pair(ret1, false);
+    // if defined, use it for decision
+    if (gr_1 >=0 || gr_2 >= 0) {
+      if (gr_1 >= 0 && gr_2 >= 0) {
+        if (gr_1 == gr_2)
+          return false; // do not skip if in the same group
+        for (const auto &gc : target.params->occ_group_constraints)
+          if (std::find(gc.second.begin(), gc.second.end(), gr_1) != gc.second.end() &&
+              std::find(gc.second.begin(), gc.second.end(), gr_2) != gc.second.end())
+            return true; // skip if belong to the constrained group
+      }
+      return false; // do not skip otherwise
+    }
+
+    // 3. check altlocs
+    const bool same_conf = gemmi::is_same_conformer(a1->altloc, a2->altloc);
+    if (same_res)
+      return !same_conf; // skip if not same conf
+    // if (a1->altloc == '\0' && a2->altloc == '\0') // not sure this is a good idea..
+    //   return sum_q_le1; // follow sum of occ if both are non-alts
+    return !same_conf;
   };
 
   vdws.clear();
@@ -1108,19 +1125,7 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                if (m.chain_idx == n_ch && m.residue_idx == n_res &&
                                    m.atom_idx == n_atom && dist_sq < 0.1*0.1)
                                  continue;
-                               // Conditions:
-                               //  consider vdw if within the same residue and the same conformer
-                               //  also consider vdw if belonging to the same occupancy group
-                               //  otherwise, exclude if sum of occupancies <= 1
-                               //  if symmetry related, only check the sum of occupancies.
-                               const bool same_res_conf = &res == cra2.residue && gemmi::is_same_conformer(atom.altloc, cra2.atom->altloc);
-                               const bool sum_q_le1 = atom.occ + cra2.atom->occ < 1.0001;
-                               const auto test_consts = test_occ_group_excl(&atom, cra2.atom);
-                               const bool same_group = ((!group_idxes.empty() &&
-                                                         group_idxes[atom.serial-1] > 0 && group_idxes[cra2.atom->serial-1] > 0 &&
-                                                         group_idxes[atom.serial-1] == group_idxes[cra2.atom->serial-1]) ||
-                                                        test_consts.first);
-                               if ((m.image_idx != 0 ? sum_q_le1 : (!same_res_conf && !same_group && sum_q_le1)) || test_consts.second)
+                               if (test_skip_vdwr(&atom, cra2.atom, &res == cra2.residue, m.image_idx != 0))
                                  continue;
                                vdws.emplace_back(&atom, cra2.atom);
                                if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())

@@ -131,6 +131,8 @@ def load_config(yaml_file, args):
         rcfg.atom_selection.dfrac.include = ["*"] # or H?
         rcfg.atom_selection.dfrac.exclude = []
 
+    # TODO read refmac occ group definitions into occ_groups and occ_group_constraints
+
     logger.writeln("Config loaded")
     logger.writeln("--")
     logger.write(omegaconf.OmegaConf.to_yaml(cfg))
@@ -155,11 +157,15 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
             group_ids[occ_gr.id] = len(occ_groups) - 1
             for s in occ_gr.selections:
                 sel = gemmi.Selection(s)
+                nsel = 0
                 for model in sel.models(st):
                     for chain in sel.chains(model):
                         for residue in sel.residues(chain):
                             for atom in sel.atoms(residue):
                                 occ_groups[-1].append(atom)
+                                nsel += 1
+                if nsel == 0:
+                    logger.writeln(f"Warning: no atom found for the selection {s}")
         ret.set_occ_groups(occ_groups)
         for o in cfg.occ_group_constraints:
             ret.occ_group_constraints.append((o.complete, [group_ids[x] for x in o.ids]))
@@ -250,7 +256,7 @@ class Geom:
         self.geom.setup_target(self.params.is_refined(Type.Q))
     def setup_nonbonded(self):
         skip_critical_dist = not self.params.is_refined(Type.X) or self.unrestrained
-        self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist, group_idxes=self.group_occ.group_idxes)
+        self.geom.setup_nonbonded(skip_critical_dist=skip_critical_dist)
         if self.ncslist:
             self.geom.setup_ncsr(self.ncslist)
     def setup_occ_constraint(self, lambda_ini=0., u_ini=100.):

@@ -910,7 +910,6 @@ void add_refine(nb::module_& m) {
     .def("clear_target", &Geometry::clear_target)
     .def("setup_nonbonded", &Geometry::setup_nonbonded,
          nb::arg("skip_critical_dist")=false,
-         nb::arg("group_idxes")=std::vector<int>{},
          nb::arg("repulse_undefined_angles")=true)
     .def("setup_ncsr", &Geometry::setup_ncsr)
     .def("calc", &Geometry::calc, nb::arg("use_nucleus"), nb::arg("check_only"),
