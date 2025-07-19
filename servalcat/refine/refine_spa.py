@@ -138,13 +138,13 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    refine_cfg = load_config(args.config, args)
     args.mask = None
     args.invert_mask = False
     args.trim_fofc_mtz = args.mask_for_fofc is not None
     args.cross_validation_method = "throughout"
     check_args(args)
     params = refmac_keywords.parse_keywords(args.keywords + [l for f in args.keyword_file for l in open(f)])
+    refine_cfg = load_config(args.config, args, params)
 
     st = utils.fileio.read_structure(args.model)
     ccu = utils.model.CustomCoefUtil()

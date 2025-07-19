@@ -195,13 +195,13 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
 # refine_geom()
 
 def main(args):
-    refine_cfg = load_config(args.config, args)
     keywords = []
     if args.keywords: keywords = sum(args.keywords, [])
     if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
+    params = refmac_keywords.parse_keywords(keywords)
+    refine_cfg = load_config(args.config, args, params)
     decide_prefix = lambda f: utils.fileio.splitext(os.path.basename(f))[0] + "_refined"
     if args.model:
-        params = refmac_keywords.parse_keywords(keywords)
         if not args.output_prefix:
             args.output_prefix = decide_prefix(args.model)
         if args.ligand:

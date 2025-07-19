@@ -118,7 +118,6 @@ def parse_args(arg_list):
 # parse_args()
 
 def main(args):
-    refine_cfg = load_config(args.config, args)
     if args.refine_dfrac and args.source != "neutron": # TODO should check params.is_refined()
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
     if args.labin_llweight and args.twin:
@@ -132,7 +131,7 @@ def main(args):
         if args.keywords: keywords = sum(args.keywords, [])
         if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     params = refmac_keywords.parse_keywords(keywords)
-    
+    refine_cfg = load_config(args.config, args, params)
     hklin = args.hklin
     labin = args.labin
     if labin is not None:

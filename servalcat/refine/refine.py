@@ -105,7 +105,7 @@ class RefineConfig:
     )
     write_trajectory: bool = False
 
-def load_config(yaml_file, args):
+def load_config(yaml_file, args, refmac_params):
     cfg = omegaconf.OmegaConf.create({"refine": RefineConfig()})
     if yaml_file:
         conf = omegaconf.OmegaConf.load(yaml_file)
@@ -131,8 +131,30 @@ def load_config(yaml_file, args):
         rcfg.atom_selection.dfrac.include = ["*"] # or H?
         rcfg.atom_selection.dfrac.exclude = []
 
-    # TODO read refmac occ group definitions into occ_groups and occ_group_constraints
-
+    # load Refmac params (unfinished)
+    if refmac_params.get("occu", {}).get("groups"):
+        rgroups = refmac_params["occu"]["groups"]
+        rconst = refmac_params["occu"].get("const", [])
+        occ_grs = rcfg.occ_groups
+        occ_cnst = rcfg.occ_group_constraints
+        occ_incl = rcfg.atom_selection.occ.include
+        for igr in rgroups:
+            occ_grs.append(OccGroupItem(igr))
+            for sel in rgroups[igr]:
+                for chain in sel.get("chains", ["*"]):
+                    if "resi_from" in sel and "resi_to" in sel:
+                        resi = f"{sel['resi_from']}-{sel['resi_to']}"
+                    else:
+                        resi = sel.get("resi", "")
+                    atom = sel.get("atom", "*")
+                    alt = sel.get("alt", "")
+                    if alt: alt = ":" + alt
+                    selstr = f"//{chain}/{resi}/{atom}{alt}"
+                    occ_grs[-1]["selections"].append(selstr)
+                    #occ_incl.append(selstr) # to do this, GroupOccupancy needs to be removed
+        for cmpl, ids in rconst:
+            occ_cnst.append(OccGroupConstItem(ids, cmpl))
+    
     logger.writeln("Config loaded")
     logger.writeln("--")
     logger.write(omegaconf.OmegaConf.to_yaml(cfg))
