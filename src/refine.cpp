@@ -48,6 +48,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::stacking_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::vdw_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::interval_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 NB_MAKE_OPAQUE(std::vector<std::pair<bool, std::vector<size_t>>>)
@@ -109,6 +110,7 @@ void add_refine(nb::module_& m) {
     .def_ro("chirs", &Geometry::Reporting::chirs)
     .def_ro("planes", &Geometry::Reporting::planes)
     .def_ro("stackings", &Geometry::Reporting::stackings)
+    .def_ro("intervals", &Geometry::Reporting::intervals)
     .def_ro("vdws", &Geometry::Reporting::vdws)
     .def_ro("adps", &Geometry::Reporting::adps)
     .def_ro("occs", &Geometry::Reporting::occs)
@@ -243,6 +245,19 @@ void add_refine(nb::module_& m) {
                  p.second, zsq[p.first], sigmas[p.first]);
         }
 
+      // Interval
+      delsq.clear(); zsq.clear(); sigmas.clear();
+      for (const auto& v : self.intervals) {
+        const auto& restr = std::get<0>(v);
+        const double sigma = std::get<2>(v) ? restr->smin : restr->smax;
+        const double d2 = gemmi::sq(std::get<1>(v)), z2 = gemmi::sq(std::get<1>(v) / sigma);
+        delsq[0].push_back(d2);
+        zsq[0].push_back(z2);
+        sigmas[0].push_back(sigma);
+      }
+      if (!delsq[0].empty())
+        append("Interval", delsq[0], zsq[0], sigmas[0]);
+      
       // NCSR
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& v : self.ncsrs) {
@@ -534,6 +549,32 @@ void add_refine(nb::module_& m) {
       d["type"] = types;
       return d;
     }, nb::arg("min_z"))
+    .def("get_interval_outliers", [](const Geometry::Reporting& self, double min_z) {
+      std::vector<const gemmi::Atom*> atom1, atom2;
+      std::vector<double> values, ideals, sigmas, zs;
+      for (const auto& t : self.intervals) {
+        const auto& restr = std::get<0>(t);
+        const double ideal = std::get<2>(t) ? restr->dmin : restr->dmax;
+        const double sigma = std::get<2>(t) ? restr->smin : restr->smax;
+        const double z = std::get<1>(t) / sigma;
+        if (std::abs(z) >= min_z) {
+          atom1.push_back(restr->atoms[0]);
+          atom2.push_back(restr->atoms[1]);
+          values.push_back(std::get<1>(t) + ideal);
+          ideals.push_back(ideal);
+          sigmas.push_back(sigma);
+          zs.push_back(z);
+        }
+      }
+      nb::dict d;
+      d["atom1"] = atom1;
+      d["atom2"] = atom2;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
+    }, nb::arg("min_z"))
     .def("get_ncsr_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2, atom3, atom4;
       std::vector<double> dist1, dist2, devs, sigmas, zs;
@@ -703,6 +744,7 @@ void add_refine(nb::module_& m) {
     ;
   nb::class_<Geometry::Interval>(geom, "Interval")
     .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
+    .def("set_image", &Geometry::Interval::set_image)
     .def_rw("dmin", &Geometry::Interval::dmin)
     .def_rw("dmax", &Geometry::Interval::dmax)
     .def_rw("smin", &Geometry::Interval::smin)

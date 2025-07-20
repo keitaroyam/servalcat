@@ -259,7 +259,7 @@ class Geom:
             self.geom.load_topo(topo)
         exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5)
+        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5, interval=5)
         self.parents = {}
         self.ncslist = ncslist
         self.const_ls, self.const_u = [], []
@@ -332,6 +332,7 @@ class Geom:
                              staca=self.geom.reporting.get_stacking_angle_outliers,
                              stacd=self.geom.reporting.get_stacking_dist_outliers,
                              vdw=self.geom.reporting.get_vdw_outliers,
+                             interval=self.geom.reporting.get_interval_outliers,
                              #ncs=self.geom.reporting.get_ncsr_outliers, # not useful?
                              )
             labs = dict(bond="Bond distances",
@@ -342,6 +343,7 @@ class Geom:
                         staca="Stacking plane angles",
                         stacd="Stacking plane distances",
                         vdw="VDW repulsions",
+                        interval="Interval",
                         ncs="Local NCS restraints")
 
             for k in get_table:

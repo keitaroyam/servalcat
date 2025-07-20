@@ -558,10 +558,24 @@ struct Geometry {
   };
   struct Interval {
     Interval(gemmi::Atom* atom1, gemmi::Atom* atom2) : atoms({atom1, atom2}) {}
+    void set_image(const gemmi::UnitCell& cell, gemmi::Asu asu) {
+      const gemmi::NearestImage im = cell.find_nearest_image(atoms[0]->pos, atoms[1]->pos, asu);
+      sym_idx = im.sym_idx;
+      std::copy(std::begin(im.pbc_shift), std::end(im.pbc_shift), std::begin(pbc_shift));
+    }
+    bool same_asu() const {
+      return sym_idx == 0 && pbc_shift[0]==0 && pbc_shift[1]==0 && pbc_shift[2]==0;
+    }
+    std::tuple<int,int,int,int,int,int> sort_key() const {
+      return std::tie(atoms[0]->serial, atoms[1]->serial, sym_idx, pbc_shift[0], pbc_shift[1], pbc_shift[2]);
+    }
+    double calc(const gemmi::UnitCell& cell, double w, GeomTarget* target, Reporting *reporting) const;
     double dmin;
     double dmax;
     double smin;
     double smax;
+    int sym_idx = 0;
+    std::array<int, 3> pbc_shift = {{0,0,0}};
     std::array<gemmi::Atom*, 2> atoms;
   };
   struct Harmonic {
@@ -631,6 +645,7 @@ struct Geometry {
     using vdw_reporting_t = std::tuple<const Vdw*, double>;
     using adp_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
     using occ_reporting_t = std::tuple<const gemmi::Atom*, const gemmi::Atom*, int, float, float, float>; // atom1, atom2, type, dist, sigma, delta
+    using interval_reporting_t = std::tuple<const Interval*, float, bool>; // delta_dist, lt_dmin
     using ncsr_reporting_t = std::tuple<const Ncsr*, float, float>; // dist1, dist2
     std::vector<bond_reporting_t> bonds;
     std::vector<angle_reporting_t> angles;
@@ -639,6 +654,7 @@ struct Geometry {
     std::vector<plane_reporting_t> planes;
     std::vector<stacking_reporting_t> stackings;
     std::vector<vdw_reporting_t> vdws;
+    std::vector<interval_reporting_t> intervals;
     std::vector<ncsr_reporting_t> ncsrs;
     std::vector<adp_reporting_t> adps;
     std::vector<occ_reporting_t> occs;
@@ -1240,6 +1256,9 @@ inline void Geometry::setup_target(bool use_occr) {
         add(t.planes[0][j], t.planes[1][k], 8);
   }
 
+  for (const auto &t : intervals)
+    add(t.atoms[0], t.atoms[1], 9);
+
   for (const auto &t : ncsrs)
     for (const auto &a1 : t.pairs[0]->atoms)
       for (const auto &a2 : t.pairs[1]->atoms)
@@ -1317,6 +1336,8 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   for (const auto &t : vdws)
     if (has_selected(t.atoms))
       ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
+  for (const auto &t : intervals)
+    ret += t.calc(st.cell, wbond, target_ptr, rep_ptr);
   for (const auto &t : ncsrs)
     if (has_selected(t.pairs[0]->atoms) || has_selected(t.pairs[1]->atoms))
       ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff, ncsr_max_dist);
@@ -1325,7 +1346,6 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 
   if (std::isnan(ret))
     gemmi::fail("geom became NaN");
-  // TODO intervals, specials
   return ret;
 }
 
@@ -2165,7 +2185,6 @@ inline double Geometry::Stacking::calc(double wstack, bool use_dist, GeomTarget*
   return ret;
 }
 
-
 inline double
 Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const {
   if (sigma <= 0) return 0.;
@@ -2212,6 +2231,61 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
   }
   if (reporting != nullptr)
     reporting->vdws.emplace_back(this, db);
+  return ret;
+}
+
+inline double
+Geometry::Interval::calc(const gemmi::UnitCell& cell, double wb, GeomTarget* target, Reporting *reporting) const {
+  if (smin <= 0 || smax <= 0) return 0.;
+  const gemmi::Atom& atom1 = *atoms[0];
+  const gemmi::Atom& atom2 = *atoms[1];
+  const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
+  const gemmi::Position& x1 = atom1.pos;
+  const gemmi::Position& x2 = same_asu() ? atom2.pos : gemmi::Position(tr.apply(atom2.pos));
+  const double b = x1.dist(x2);
+  double db = 0;
+  double weight = wb * wb;
+  if (b < dmin) {
+    db = b - dmin;
+    weight /= smin * smin;
+  } else if (b > dmax) {
+    db = b - dmax;
+    weight /= smax * smax;
+  } else // do we need this?
+    weight *= 2 / (smin * smin + smax * smax);
+  
+  const double ret = db * db * weight * 0.5;
+  if (target != nullptr) {
+    const int ia1 = atom1.serial - 1;
+    const int ia2 = atom2.serial - 1;
+    const int pos1 = target->params->get_pos_vec(ia1, RefineParams::Type::X);
+    const int pos2 = target->params->get_pos_vec(ia2, RefineParams::Type::X);
+    const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+    const int apos2 = target->params->get_pos_mat_geom(ia2, RefineParams::Type::X);
+    const gemmi::Position dbdx1 = (x1 - x2) / std::max(b, 0.02);
+    const gemmi::Position dbdx2 = same_asu() ? -dbdx1 : gemmi::Position(tr.mat.transpose().multiply(-dbdx1));
+    if (pos1 >= 0) {
+      target->incr_vn(pos1, weight * db, dbdx1);
+      target->incr_am_diag(apos1, weight, dbdx1);
+    }
+    if (pos2 >= 0) {
+      target->incr_vn(pos2, weight * db, dbdx2);
+      target->incr_am_diag(apos2, weight, dbdx2);
+    }
+    if (pos1 >= 0 && pos2 >= 0) {
+      if (ia1 != ia2) {
+        auto mp = target->find_restraint(ia1, ia2);
+        if (mp.imode == 0)
+          target->incr_am_ndiag(mp.ipos, weight, dbdx1, dbdx2);
+        else
+          target->incr_am_ndiag(mp.ipos, weight, dbdx2, dbdx1);
+      } else
+        target->incr_am_diag12(apos1, weight, dbdx1, dbdx2);
+    }
+    target->target += ret;
+  }
+  if (reporting != nullptr && db != 0)
+    reporting->intervals.emplace_back(this, db, b < dmin);
   return ret;
 }
 

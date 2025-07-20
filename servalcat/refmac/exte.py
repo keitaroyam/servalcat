@@ -162,6 +162,10 @@ def read_external_restraints(params, st, geom):
             ex.dmax = dmax
             ex.smin = smin
             ex.smax = smax
+            symm1 = any(spec.get("symm") for spec in r["restr"]["specs"]) # not tested
+            if r["restr"].get("symm_in", defs["symall_block"]) or symm1:
+                asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
+                ex.set_image(st.cell, asu)
             #print("inte=", ex.dmin, ex.dmax, ex.smin, ex.smax, ex.atoms)
         elif r["rest_type"] == "stac":
             ex.dist = r["restr"]["dist_id"]
