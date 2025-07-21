@@ -94,7 +94,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
 
 # find_twin_domains_from_data()
 
-def estimate_twin_fractions_from_model(twin_data, hkldata):
+def estimate_twin_fractions_from_model(twin_data, hkldata, min_alpha=0.02):
     logger.writeln("Estimating twin fractions")
     Ic = numpy.abs(twin_data.f_calc.sum(axis=1))**2
     idx_all = twin_data.twin_related(hkldata.sg)
@@ -139,6 +139,14 @@ def estimate_twin_fractions_from_model(twin_data, hkldata):
     logger.write(" Final twin fraction estimate: ")
     logger.writeln(" ".join("%.4f"%x for x in frac_est))
     twin_data.alphas = frac_est
+
+    if numpy.logical_and(0 < frac_est, frac_est < min_alpha).any():
+        frac_est[frac_est < min_alpha] = 0.
+        frac_est /= frac_est.sum()
+        logger.write(" Small fraction removed: ")
+        logger.writeln(" ".join("%.4f"%x for x in frac_est))
+        twin_data.alphas = frac_est
+
     return df
 
 def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
@@ -154,7 +162,7 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
         twin_data.alphas = x
         twin_data.est_f_true(Io, sigIo, 100)
         return twin_data.ll_der_alpha(Io, sigIo, True)
-    if 1:
+    if 0:
         bak = [_ for _ in twin_data.alphas]
         with open("alpha_ll.csv", "w") as ofs:
             ofs.write("a,ll,ll_new,der1,der2,der_new1,der_new2\n")
