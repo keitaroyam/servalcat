@@ -256,13 +256,13 @@ struct TwinData {
     }
     for (int ia = 0; ia < rb2a[ib].size(); ++ia) {
       const int a_idx = rb2a[ib][ia];
-      const int c = centric[a_idx];
+      const int c = centric[a_idx] + 1;
       const double den = epsilon[a_idx] * ml_sigma(bin[a_idx]);
       const std::complex<double> DFc = sum_fcalc(a_idx, true);
-      ret += (gemmi::sq(f_true(ia)) + std::norm(DFc)) / den / (1. + c);
+      ret += (gemmi::sq(f_true(ia)) + std::norm(DFc)) / den / c;
       const double X = std::abs(DFc) * f_true(ia) / den;
-      ret -= log_i0_or_cosh(X, c + 1);
-      if (c == 0) // acentric
+      ret -= log_i0_or_cosh(X, c);
+      if (c == 1) // acentric
         ret -= std::log(f_true(ia));
     }
     if (0 && std::isnan(ret)) {
@@ -326,21 +326,21 @@ struct TwinData {
       }
     for (int ia = 0; ia < n_a; ++ia) {
       const int a_idx = rb2a[ib][ia];
-      const int c = centric[a_idx];
+      const int c = centric[a_idx] + 1;
       const double inv_den = 1. / (epsilon[a_idx] * ml_sigma(bin[a_idx]));
       const std::complex<double> DFc = sum_fcalc(a_idx, true);
       // printf("ia = %d (%d %d %d) c = %d eps= %f S= %f inv_den = %f\n",
       //     ia, asu[a_idx][0], asu[a_idx][1], asu[a_idx][2],
       //     c, epsilon[a_idx], S, inv_den);
-      der1(ia) += 2 * ft(ia) * inv_den / (1. + c);
+      der1(ia) += 2 * ft(ia) * inv_den / c;
       der2(ia, ia) += 2 * inv_den / (1. + c);
       const double X = std::abs(DFc) * ft(ia) * inv_den;
-      const double m = fom(X, c + 1);
-      const double f_inv_den = std::abs(DFc) * inv_den * (2 - c);
-      der1(ia) -= m * f_inv_den;
+      const double m = fom(X, c);
+      const double f_inv_den = std::abs(DFc) * inv_den;
+      der1(ia) -= m * f_inv_den * (3 - c);
       if (unstable_mode)
-        der2(ia, ia) -= fom_der(m, X, c + 1) * gemmi::sq(f_inv_den); // omit for stability
-      if (c == 0) { // acentric
+        der2(ia, ia) -= fom_der(m, X, c) * gemmi::sq(f_inv_den) * (3 - c); // omit for stability
+      if (c == 1) { // acentric
         der1(ia) -= 1. / ft(ia);
         der2(ia, ia) += 1. / gemmi::sq(ft(ia));
       }
@@ -847,7 +847,6 @@ void add_twin(nb::module_& m) {
         ptr[i] = NAN;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
-        // calculate Rice distribution using Ftrue as Fobs
         for (int i = 0; i < self.rb2a[ib].size(); ++i) {
           const int ia = self.rb2a[ib][i];
           if (std::isnan(self.f_true_max[ia]))
@@ -974,12 +973,12 @@ void add_twin(nb::module_& m) {
           const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const double S = self.ml_sigma(self.bin[ia]);
           ptr[ia] = fom(self.f_true_max[ia] * std::abs(DFc) / (S * eps), c);
-       }
+        }
       }
       return ret;
     })
     // for FWT and DELFWT: <m|F|>
-    .def("expected_F", [](TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+    .def("expected_F", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, bool accurate) {
       auto ret = make_numpy_array<double>({self.asu.size()});
       double* ptr = ret.data();
       auto Io_ = Io.view();
@@ -1000,20 +999,21 @@ void add_twin(nb::module_& m) {
           const double S = self.ml_sigma(self.bin[ia]);
           const double r = std::abs(DFc) / (S * eps); // X without |F|
           const double m = fom(Ft * r, c);
+          const double m_der = fom_der(m, Ft * r, c);
           const double g = m * Ft;
-          const double g2 = g * g;
-          const double g_der_sq = gemmi::sq(c == 1
-                                            ? (2 * Ft * r * (1 - gemmi::sq(m))) // acentric
-                                            : (m + Ft * r * (1 - gemmi::sq(m)))); // centric
-          const double g_der2 = c == 1
-            ? (8 * Ft * gemmi::sq(r) * (m*m*m - m) + 2 * r * (gemmi::sq(m) + 1))
-            : (2 * (r - Ft * gemmi::sq(r) * m) * (1 - gemmi::sq(m)));
-          const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
-          ptr[ia] = g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
+          if (accurate) {
+            const double g2 = g * g;
+            const double g_der_sq = sq(m_der * Ft * r + m);
+            const double g_der2 = fom_der2(m, Ft * r, c) * Ft * sq(r) + 2 * m_der * r;
+            const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
+            ptr[ia] = g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
+          } else {
+            ptr[ia] = g;
+          }
         }
       }
       return ret;
-    })
+    }, nb::arg("Io"), nb::arg("sigIo"), nb::arg("accurate")=true)
     .def("ll_der_fc0", [](const TwinData &self) {
       auto ret1 = make_numpy_array<std::complex<double>>({self.asu.size()});
       auto ret2 = make_numpy_array<double>({self.asu.size()});

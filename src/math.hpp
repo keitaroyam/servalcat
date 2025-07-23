@@ -22,8 +22,15 @@ inline double fom(double X, int c) {
 }
 
 inline double fom_der(double m, double X, int c) {
-  // XXX when c=1, needs 2x.
-  return c == 1 ? 1 - 0.5 * m / X - m * m : 1 - m * m;
+  // c=1: d/dX I1(2X)/I0(2X)
+  // c=2: d/dX tanh(X)
+  return c == 1 ? 2 - m / X - 2 * sq(m) : 1 - sq(m);
+}
+
+inline double fom_der2(double m, double X, int c) {
+  // c=1: d^2/dX^2 I1(2X)/I0(2X)
+  // c=2: d^2/dX^2 tanh(X) 
+  return c == 1 ? m / sq(X) - (4 * m + 1 / X) * (2 - m / X - 2 * sq(m)) : 2 * m * (sq(m) - 1);
 }
 
 inline double x_plus_sqrt_xsq_plus_y(double x, double y) {

@@ -35,7 +35,7 @@ double f1_orig2_der2(double x, double z, double to, double tf, double sig1, int 
   const double X = x * tf / sig1;
   const double m = fom(X, c);
   const double m_der = fom_der(m, X, c);
-  return ret - (3-c)*(3-c) * tf*tf * m_der / (sig1*sig1);
+  return ret - (3-c) * tf*tf * m_der / (sig1*sig1);
 }
 double f1_exp2(double y, double z, double to, double tf, double sig1, int c) {
   // z = 2k+2
@@ -64,7 +64,7 @@ double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c
   const double X = std::exp(y - e_y) * tf / sig1;
   const double m = fom(X, c);
   const double m_der = tf == 0 ? 0 : fom_der(m, X, c);
-  return ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(3-c) * sq(tf / sig1) * m_der * exp2);
+  return ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) - (3-c) * sq(tf / sig1) * m_der * exp2);
 }
 double find_root(double k, double to, double tf, double sig1, int c, double det, bool use_exp2) {
   if (tf == 0.) {
