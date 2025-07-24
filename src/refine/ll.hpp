@@ -446,13 +446,12 @@ struct LL{
   // preparation for fisher_diag_from_table()
   // Steiner et al. (2003) doi: 10.1107/S0907444903018675
   template <typename Table>
-  void make_fisher_table_diag_fast(const TableS3 &d2dfw_table) {
+  void make_fisher_table_diag_fast(const TableS3 &d2dfw_table, const double b_step=5) {
     double b_min, b_max;
     std::tie(b_min, b_max) = b_min_max();
     b_max = 2 * (b_max + b_sf_max<Table>());
     //printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
 
-    const double b_step = 5;
     const double s_min = d2dfw_table.s_min, s_max = d2dfw_table.s_max;
     const int s_dim = 120; // actually +1 is allocated
     const double s_step = (s_max - s_min) / s_dim;
@@ -522,14 +521,14 @@ struct LL{
   }
 
   template <typename Table>
-  void make_fisher_table_diag_direct(const std::vector<double> &svals, const std::vector<double> &yvals) {
+  void make_fisher_table_diag_direct(const std::vector<double> &svals, const std::vector<double> &yvals,
+                                     const double b_step=5) {
     assert(svals.size() == yvals.size());
     double b_min, b_max;
     std::tie(b_min, b_max) = b_min_max();
     b_max = 2 * (b_max + b_sf_max<Table>());
     //printf("b_min= %.2f b_max= %.2f\n", b_min, b_max);
 
-    const double b_step = 5;
     int b_dim = static_cast<int>((b_max - b_min) / b_step) + 2;
     if (b_dim % 2 == 0) ++b_dim; // TODO: need to set maximum b_dim?
     pp1.assign(1, std::vector<double>(b_dim));
@@ -649,16 +648,19 @@ struct LL{
 
       // TODO can be reduced for the same elements
       for (int j = 0; j < N + 1; ++j)
-        for (int k = 0; k < N + 1; ++k) {
+        for (int k = j; k < N + 1; ++k) {
           // * -1 is needed for mott_bethe case, but we only need aj * ak so they cancel.
           const double aj = j < N ? coef.a(j) : c;
           const double ak = k < N ? coef.a(k) : c;
+          if (aj == 0 || ak == 0)
+            continue;
           const double b = 2 * b_iso + (j < N ? coef.b(j) : 0) + (k < N ? coef.b(k) : 0);
-          fac_x += aj * ak * interp_1d(table_bs, pp1[0], b);
-          fac_b += aj * ak * interp_1d(table_bs, bb[0], b);
-          fac_a += aj * ak * interp_1d(table_bs, aa[0], b);
-          fac_q += aj * ak * interp_1d(table_bs, qq[0], b);
-          fac_qb += aj * ak * interp_1d(table_bs, qb[0], b);
+          const double ajak = j == k ? sq(aj) : 2 * aj * ak;
+          fac_x += ajak * interp_1d(table_bs, pp1[0], b);
+          fac_b += ajak * interp_1d(table_bs, bb[0], b);
+          fac_a += ajak * interp_1d(table_bs, aa[0], b);
+          fac_q += ajak * interp_1d(table_bs, qq[0], b);
+          fac_qb += ajak * interp_1d(table_bs, qb[0], b);
         }
       fac_x *= gemmi::sq(neutron_h_f_correction);
       fac_a *= gemmi::sq(neutron_h_f_correction);

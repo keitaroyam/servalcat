@@ -138,12 +138,12 @@ class LL_SPA:
         d2dfw_table = ext.TableS3(*self.hkldata.d_min_max())
         d2dfw_table.make_table(1./self.hkldata.d_spacings(), d2ll_dab2)
         if self.source == "custom":
-            self.ll.make_fisher_table_diag_fast_custom(d2dfw_table)
+            self.ll.make_fisher_table_diag_fast_custom(d2dfw_table, 1.)
             self.ll.fisher_diag_from_table_custom()
         else:
             self.ll.make_fisher_table_diag_fast_it92(d2dfw_table)
             self.ll.fisher_diag_from_table_it92()
-        #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
+        #json.dump(dict(b=self.ll.table_bs, pp1=self.ll.pp1, bb=self.ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))

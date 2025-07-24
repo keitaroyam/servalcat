@@ -257,7 +257,7 @@ void add_refine(nb::module_& m) {
       }
       if (!delsq[0].empty())
         append("Interval", delsq[0], zsq[0], sigmas[0]);
-      
+
       // NCSR
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& v : self.ncsrs) {
@@ -1039,12 +1039,18 @@ void add_refine(nb::module_& m) {
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>, true>)
     .def("calc_grad_custom", &LL::calc_grad<gemmi::CustomCoef<double>>)
-    .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>)
-    .def("make_fisher_table_diag_fast_n92", &LL::make_fisher_table_diag_fast<gemmi::Neutron92<double>>)
-    .def("make_fisher_table_diag_fast_custom", &LL::make_fisher_table_diag_fast<gemmi::CustomCoef<double>>)
-    .def("make_fisher_table_diag_direct_it92", &LL::make_fisher_table_diag_direct<gemmi::IT92<double>>)
-    .def("make_fisher_table_diag_direct_n92", &LL::make_fisher_table_diag_direct<gemmi::Neutron92<double>>)
-    .def("make_fisher_table_diag_direct_custom", &LL::make_fisher_table_diag_direct<gemmi::CustomCoef<double>>)
+    .def("make_fisher_table_diag_fast_it92", &LL::make_fisher_table_diag_fast<gemmi::IT92<double>>,
+         nb::arg("d2dfw_table"), nb::arg("b_step")=5)
+    .def("make_fisher_table_diag_fast_n92", &LL::make_fisher_table_diag_fast<gemmi::Neutron92<double>>,
+         nb::arg("d2dfw_table"), nb::arg("b_step")=5)
+    .def("make_fisher_table_diag_fast_custom", &LL::make_fisher_table_diag_fast<gemmi::CustomCoef<double>>,
+         nb::arg("d2dfw_table"), nb::arg("b_step")=5)
+    .def("make_fisher_table_diag_direct_it92", &LL::make_fisher_table_diag_direct<gemmi::IT92<double>>,
+         nb::arg("svals"), nb::arg("yvals"), nb::arg("b_step")=5)
+    .def("make_fisher_table_diag_direct_n92", &LL::make_fisher_table_diag_direct<gemmi::Neutron92<double>>,
+         nb::arg("svals"), nb::arg("yvals"), nb::arg("b_step")=5)
+    .def("make_fisher_table_diag_direct_custom", &LL::make_fisher_table_diag_direct<gemmi::CustomCoef<double>>,
+         nb::arg("svals"), nb::arg("yvals"), nb::arg("b_step")=5)
     .def("fisher_diag_from_table_it92", &LL::fisher_diag_from_table<gemmi::IT92<double>>)
     .def("fisher_diag_from_table_n92", &LL::fisher_diag_from_table<gemmi::Neutron92<double>, true>)
     .def("fisher_diag_from_table_custom", &LL::fisher_diag_from_table<gemmi::CustomCoef<double>>)
