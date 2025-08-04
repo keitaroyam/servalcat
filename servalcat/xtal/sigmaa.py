@@ -1203,9 +1203,11 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st2
 # merge_models()
 
-def decide_mtz_labels(mtz, find_free=True, require=None):
-    # F is preferred for now by default
-    obs_types = ("F", "J", "G", "K")
+def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False):
+    if prefer_intensity:
+        obs_types = ("J", "F", "K", "G")
+    else:
+        obs_types = ("F", "J", "G", "K")
     if require:
         assert set(require).issubset(obs_types)
     else:
