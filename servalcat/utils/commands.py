@@ -289,6 +289,11 @@ def add_arguments(p):
     parser.add_argument('files', nargs='+', help='Cif/ins/res/hkl files')
     parser.add_argument('-o', '--output_prefix')
 
+    # mm2ins
+    parser = subparsers.add_parser("mm2ins", description = 'convert pdb/mmcif to ins for shelxl/olex2')
+    parser.add_argument('model')
+    parser.add_argument('-o', '--output')
+
     # seq
     parser = subparsers.add_parser("seq", description = 'Print/align model sequence')
     parser.add_argument("--model", required=True)
@@ -1389,6 +1394,24 @@ def sm2mm(args):
         mtz.write_to_file(mtz_out)
 # sm2mm()
 
+def mm2ins(args):
+    if args.output is None:
+        args.output = os.path.basename(fileio.splitext(args.files[0])[0]) + ".ins"
+    st = fileio.read_structure(args.model)
+    elems = [cra.atom.element.name for cra in st[0].all()]
+    counts = {x:elems.count(x) for x in set(elems)}
+    elems = sorted(counts)
+    with open(args.output, "w") as ofs:
+        ofs.write(f"SFAC {' '.join(elems)}\n")
+        ofs.write(f"UNIT {' '.join(str(int(counts[x])) for x in elems)}\n")
+        for cra in st[0].all():
+            frac = st.cell.fractionalize(cra.atom.pos)
+            u_iso = model.b_to_u * cra.atom.b_iso
+            if cra.atom.is_hydrogen():
+                u_iso = -1.2
+            ofs.write(f"{cra.atom.name} {elems.index(cra.atom.element.name)+1} {frac.x:.6f} {frac.y:.6f} {frac.z:.6f} {10+cra.atom.occ} {u_iso:.5f}\n")
+# mm2ins()
+
 def seq(args):
     wrap_width = 100
     seqs = []
@@ -1542,6 +1565,7 @@ def main(args):
                  applymask=applymask,
                  map2mtz=map2mtz,
                  sm2mm=sm2mm,
+                 mm2ins=mm2ins,
                  seq=seq,
                  dnarna=dnarna)
     
