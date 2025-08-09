@@ -274,11 +274,6 @@ struct LL{
       return 1.; // never used
     }();
     vn.assign(params->n_params(), 0.);
-    auto get_pos = [&](size_t idx, RefineParams::Type t) {
-      if (params->is_excluded_ll(idx, t))
-        return -1;
-      return params->get_pos_vec(idx, t);
-    };
     for (size_t i = 0; i < n_atoms; ++i) {
       const gemmi::Atom &atom = *params->atoms[i];
       if (!params->is_atom_refined(i)) continue;
@@ -297,10 +292,10 @@ struct LL{
         return Table::get(el, atom.charge, atom.serial);
       }();
       using precal_aniso_t = decltype(coef.precalculate_density_aniso_b(gemmi::SMat33<double>()));
-      const int pos_x = get_pos(i, RefineParams::Type::X);
-      const int pos_b = get_pos(i, RefineParams::Type::B);
-      const int pos_q = get_pos(i, RefineParams::Type::Q);
-      const int pos_d = get_pos(i, RefineParams::Type::D);
+      const int pos_x = params->get_pos_vec_ll(i, RefineParams::Type::X);
+      const int pos_b = params->get_pos_vec_ll(i, RefineParams::Type::B);
+      const int pos_q = params->get_pos_vec_ll(i, RefineParams::Type::Q);
+      const int pos_d = params->get_pos_vec_ll(i, RefineParams::Type::D);
       const bool has_aniso = atom.aniso.nonzero();
       const int adp_mode = pos_b >= 0 ? (params->aniso ? 2 : 1) : 0;
       if (adp_mode == 1 && has_aniso) gemmi::fail("bad adp_mode");

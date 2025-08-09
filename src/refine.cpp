@@ -847,6 +847,7 @@ void add_refine(nb::module_& m) {
         if (a->is_hydrogen())
             self.add_ll_exclusion(a->serial - 1);
     })
+    .def("add_geom_exclusion", &RefineParams::add_geom_exclusion)
     .def("set_model", &RefineParams::set_model)
     .def("set_params", &RefineParams::set_params,
          nb::arg("refine_xyz")=false, nb::arg("refine_adp")=false,
@@ -883,17 +884,20 @@ void add_refine(nb::module_& m) {
     .def("occ_constraints", &RefineParams::occ_constraints)
     .def("ensure_occ_constraints", &RefineParams::ensure_occ_constraints)
     .def("params_summary", [](const RefineParams &self) {
-      nb::dict ret, n_atoms, n_params, n_excl;
+      nb::dict ret, n_atoms, n_params, n_excl_ll, n_excl_geom;
       for (RefineParams::Type tt : self.Types) {
         const std::string lab = self.type2str(tt);
         const auto &vec = self.atom_to_param(tt);
         n_atoms[lab.c_str()] = std::count_if(vec.begin(), vec.end(), [](int n) { return n >= 0; });
         n_params[lab.c_str()] = self.n_refined_atoms(tt);
-        n_excl[lab.c_str()] = self.ll_exclusion[self.type2num(tt)].size();
+        n_excl_ll[lab.c_str()] = self.ll_exclusion[self.type2num(tt)].size();
+        n_excl_geom[lab.c_str()] = self.geom_exclusion[self.type2num(tt)].size();
       }
       ret["n_params"] = n_params;
       ret["n_atoms"] = n_atoms;
-      ret["n_atoms_geom_only"] = n_excl;
+      ret["n_atoms_geom_only"] = n_excl_ll;
+      ret["n_atoms_data_only"] = n_excl_geom;
+      // should warn if excluded from both ll and geom?
       return ret;
     })
     ;

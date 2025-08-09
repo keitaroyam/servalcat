@@ -66,6 +66,7 @@ struct RefineParams {
   std::vector<int> bd_mix_atoms; // B-D
   std::vector<int> qd_mix_atoms; // Q-D
   std::array<std::set<int>, N> ll_exclusion; // set of atom indices
+  std::array<std::set<int>, N> geom_exclusion; // set of atom indices
   std::vector<std::vector<int>> occ_groups;  // vector of vector of atom indices
   std::vector<std::pair<bool, std::vector<size_t>>> occ_group_constraints; // vector of pair(is_complete, group_indices)
   RefineParams(bool use_aniso, bool use_q_b_mixed)
@@ -178,6 +179,9 @@ struct RefineParams {
         return false;
     return true;
   }
+  bool is_excluded_geom(size_t idx, Type t) const {
+    return geom_exclusion[type2num(t)].count(idx) > 0;
+  }
   void add_ll_exclusion(size_t idx, Type t) {
     ll_exclusion[type2num(t)].insert(idx);
   }
@@ -185,6 +189,9 @@ struct RefineParams {
     for (Type t : Types)
       if (is_atom_refined(idx, t))
         add_ll_exclusion(idx, t);
+  }
+  void add_geom_exclusion(size_t idx, Type t) {
+    geom_exclusion[type2num(t)].insert(idx);
   }
   void set_pairs(Type t, const std::vector<std::pair<int,int>> &pairs) {
     if (!is_refined(t))
@@ -213,6 +220,16 @@ struct RefineParams {
     }
     gemmi::fail("get_pos_vec: bad t");
   }
+  int get_pos_vec_geom(int atom_idx, Type t) const {
+    if (is_excluded_geom(atom_idx, t))
+      return -1;
+    return get_pos_vec(atom_idx, t);
+  }
+  int get_pos_vec_ll(int atom_idx, Type t) const {
+    if (is_excluded_ll(atom_idx, t))
+      return -1;
+    return get_pos_vec(atom_idx, t);
+  }
   int get_pos_mat_geom(int atom_idx, Type t) const {
     int ret = atom_to_param(t)[atom_idx] * nfisher_geom_per_atom(t);
     if (ret < 0)
@@ -225,7 +242,7 @@ struct RefineParams {
     }
     gemmi::fail("get_pos_mat_geom: bad t");
   }
-  int get_pos_mat_ll(int idx, Type t) const {
+  int get_pos_mat_ll(int idx, Type t) const { // should check is_excluded_ll()?
     int ret = atom_to_param(t)[idx] * nfisher_ll_per_atom(t);
     if (ret < 0)
       return -1;

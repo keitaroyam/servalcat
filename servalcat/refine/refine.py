@@ -36,12 +36,15 @@ atom_selection:
   xyz:
     include: []
     exclude: []
+    exclude_restraint: []
   adp:
     include: []
     exclude: []
+    exclude_restraint: []
   occ:
     include: []
     exclude: []
+    exclude_restraint: []
   dfrac:
     include: []
     exclude: []
@@ -67,7 +70,7 @@ initialisation:
 class SelectionConfig:
     include: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to include"})
     exclude: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to exclude"})
-
+    exclude_restraint: List[str] = field(default_factory=list, metadata={"help": "List of gemmi Selection to exclude from restraints"})
 @dataclass
 class OccGroupItem:
     id: int
@@ -200,6 +203,15 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                              sele.occ.include, sele.occ.exclude,
                              sele.dfrac.include, sele.dfrac.exclude)
         ret.set_params_from_flags()
+
+        for t, p in ((Type.X, sele.xyz), (Type.B, sele.adp), (Type.Q, sele.occ)):
+            for ex_sel in p.exclude_restraint:
+                sel = gemmi.Selection(ex_sel)
+                for model in sel.models(st):
+                    for chain in sel.chains(model):
+                        for residue in sel.residues(chain):
+                            for atom in sel.atoms(residue):
+                                ret.add_geom_exclusion(atom.serial-1, t)
     else:
         ret.set_params(refine_xyz=refine_xyz, refine_adp=adp_mode > 0,
                        refine_occ=refine_occ, refine_dfrac=refine_dfrac)
