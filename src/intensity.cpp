@@ -66,7 +66,7 @@ double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c
   if (tf == 0.) return ret;
   const double X = std::exp(y - e_y) * tf / sig1;
   const double m = fom(X, c);
-  const double m_der = tf == 0 ? 0 : fom_der(m, X, c);
+  const double m_der = (tf == 0 || m > 0.9999) ? 0 : fom_der(m, X, c);
   const double ret2 = ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) + (3-c) * sq(tf / sig1) * m_der * exp2);
   // if (ret2 <= 0)
   //   printf("f1_exp2_der2 %f y %f z= %f; to= %f; tf= %f; sig1= %f; c= %d\n", ret2, y, z, to, tf, sig1, c);
@@ -100,13 +100,12 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   auto func = [&](double x) { return fder1(x, z, to, tf, sig1, c); };
   auto fprime = [&](double x) { return fder2(x, z, to, tf, sig1, c); };
   //printf("debug %d x0= %f x1= %f f'_x0= %f f'_x1= %f\n", use_exp2, x0, x1, func(x0), func(x1));
-  if (std::abs(func(x0)) < 1e-2) // need to check. 1e-2 is small enough?
+  if (std::abs(func(x0)) < 1e-4) // need to check. 1e-2 is small enough?
     return x0;
   auto ret = newton(func, fprime, x0);
-  if (ret.success)
+  if (ret.success && std::abs(func(ret.x)) < 1e-4)
     return ret.x;
   //   printf("newton_success iter %d k=%f; to=%f; tf=%f; sig1=%f; c=%d; det=%f; use_exp2=%d\n", ret.iter, k, to, tf,sig1, c, det, use_exp2);
-  // if (std::abs(func(ret.x)) < 1e-2) // need to check. 1e-2 is small enough?
 
   double a = x0, b = std::isnan(x1) ? x0 : x1;
   double fa = func(a), fb = func(b);
@@ -143,10 +142,12 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   if (f2der <= 0)
-    printf("integ_j bad f2der %f exp2 %d z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, z, to, tf, sig1, c);
+    printf("integ_j bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root, z, to, tf, sig1, c);
   if (f2der * f1val * f1val > 1e10) { // Laplace approximation threshould needs to be revisited
     if (use_exp2) {
       const double lap = -f1val - 0.5 * std::log(f2der) + 0.5 * std::log(gemmi::pi() * 0.5);
+      if (std::isinf(lap))
+        printf("log integ_j (Laplace) inf f1val %f f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f1val, f2der, use_exp2, root, z, to, tf, sig1, c);
       return return_log ? lap : std::exp(lap);
     }
   }
@@ -163,6 +164,8 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
   }
   const double laplace_correct = s * h;
   const double expon = -f1val + 0.5 * (std::log(2.) - std::log(f2der));
+  if (std::isinf(expon + std::log(laplace_correct)))
+    printf("log integ_j inf f1val %f laplace_correct %f f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f1val, laplace_correct, f2der, use_exp2, root, z, to, tf, sig1, c);
   return return_log ? expon + std::log(laplace_correct) : std::exp(expon) * laplace_correct;
 }
 
@@ -180,7 +183,7 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
   if (f2der <= 0)
-    printf("integ_j_ratio bad f2der %f exp2 %d z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, z, to, tf, sig1, c);
+    printf("integ_j_ratio bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
   auto calc_fom = [&](double xx) { return fom((use_exp2 ? std::exp(xx - std::exp(-xx)) : xx) * tf / sig1, c); };
   const double tmp = use_exp2 ? root - std::exp(-root) : std::log(root);
@@ -237,10 +240,10 @@ struct IntensityIntegrator {
     if (sig1 < 0)
       printf("ERROR: negative sig1= %f k_ani= %f S= %f sigIo= %f\n", sig1, k_ani, S, sigIo);
     const double logj = integ_j(k, to, tf, sig1, c, true, exp2_threshold, h, N, ewmax);
-    if (c == 1) // acentrics
-      return 2 * std::log(k_ani) + std::log(S) + Ic / S - logj;
-    else
-      return std::log(k_ani) + 0.5 * std::log(S) + 0.5 * Ic / S - logj;
+    const double ret = (3-c) * std::log(k_ani) + (std::log(S) + Ic / S) / c - logj;
+    if (std::isinf(ret))
+      printf("-LL Inf S=%f; logj=%f; to=%f; tf=%f; sig1=%f; k=%f; c=%d\n", S, logj, to, tf, sig1, k, c);
+    return ret;
   }
 
   template<bool for_DS>
