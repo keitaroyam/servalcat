@@ -29,7 +29,7 @@ inline double fom_der(double m, double X, int c) {
 
 inline double fom_der2(double m, double X, int c) {
   // c=1: d^2/dX^2 I1(2X)/I0(2X)
-  // c=2: d^2/dX^2 tanh(X) 
+  // c=2: d^2/dX^2 tanh(X)
   return c == 1 ? m / sq(X) - (4 * m + 1 / X) * (2 - m / X - 2 * sq(m)) : 2 * m * (sq(m) - 1);
 }
 
@@ -46,29 +46,46 @@ inline double solve_y_minus_exp_minus_y(double x, double prec) {
   return lambertw::lambertw(std::exp(-x), prec) + x;
 }
 
+struct RootfindResult {
+  bool success = false;
+  std::string reason;
+  int iter = 0;
+  double x;
+};
+
 template<typename Func, typename Fprime>
-double newton(Func&& func, Fprime&& fprime, double x0,
-              int maxiter=50, double tol=1.48e-8) {
-  double x = x0;
+RootfindResult newton(Func&& func, Fprime&& fprime, double x0,
+                      int maxiter=50, double tol=1.48e-8) {
+  RootfindResult ret;
+  ret.x = x0;
   for (int itr = 0; itr < maxiter; ++itr) {
+    ++ret.iter;
     double fval = func(x0);
-    if (fval == 0)
-      return x0;
+    if (fval == 0) {
+      ret.success = true;
+      return ret;
+    }
     double fder = fprime(x0);
-    if (fder == 0)
-      throw std::runtime_error("newton did not converge (der=0)");
-    x = x0 - fval / fder;
-    if (std::abs(x - x0) < tol)
-      return x;
-    x0 = x;
+    if (fder <= 0) {
+      ret.reason = "fder <= 0";
+      return ret;
+    }
+    ret.x = x0 - fval / fder;
+    if (std::abs(ret.x - x0) < tol) {
+      ret.success = true;
+      return ret;
+    }
+    x0 = ret.x;
   }
-  throw std::runtime_error("newton did not converge");
+  ret.reason = "maxiter reached";
+  return ret;
 }
 
 template<typename Func>
-double secant(Func&& func, double x0,
-              int maxiter=50, double tol=1.48e-8) {
+RootfindResult secant(Func&& func, double x0,
+                      int maxiter=50, double tol=1.48e-8) {
   const double eps = 1e-1;
+  RootfindResult ret;
   double p = x0, p0 = x0;
   double p1 = x0 * (1 + eps);
   p1 += p1 >= 0 ? eps : -eps;
@@ -79,55 +96,67 @@ double secant(Func&& func, double x0,
     std::swap(q0, q1);
   }
   for (int itr = 0; itr < maxiter; ++itr) {
+    ++ret.iter;
     if (q1 == q0) {
+      ret.x = 0.5 * (p1 + p0);
       if (p1 != p0)
-        throw std::runtime_error("secant did not converge: x= " + std::to_string(q1));
-      return 0.5 * (p1 + p0);
+        return ret;
+      ret.success = true;
+      return ret;
     } else {
       if (std::abs(q1) > std::abs(q0))
         p = (-q0 / q1 * p1 + p0) / (1 - q0 / q1);
       else
         p = (-q1 / q0 * p0 + p1) / (1 - q1 / q0);
     }
-    if (std::abs(p - p1) < tol)
-      return p;
+    ret.x = p;
+    if (std::abs(p - p1) < tol) {
+      ret.success = true;
+      return ret;
+    }
     p0 = p1;
     q0 = q1;
     p1 = p;
     q1 = func(p1);
   }
-  throw std::runtime_error("secant did not converge: x= " + std::to_string(q1));
+  ret.reason = "maxiter reached";
+  return ret;
 }
 
 template<typename Func, typename Fprime>
-double newton_or_secant(Func&& func, Fprime&& fprime, double x0,
-                        int maxiter=50, double tol=1.48e-8) {
-  try {
-    return newton(func, fprime, x0, maxiter, tol);
-  } catch (const std::runtime_error& e) {
-    return secant(func, x0, maxiter, tol);
-  }
+RootfindResult newton_or_secant(Func&& func, Fprime&& fprime, double x0,
+                                int maxiter=50, double tol=1.48e-8) {
+  auto res = newton(func, fprime, x0, maxiter, tol);
+  if (res.success)
+    return res;
+  return secant(func, x0, maxiter, tol);
 }
 
 
 template<typename Func>
-double bisect(Func&& func, double a, double b,
-              int maxiter=100, double tol=1.48e-8) {
+RootfindResult bisect(Func&& func, double a, double b,
+                      int maxiter=100, double tol=1.48e-8) {
+  RootfindResult ret;
   if (a > b)
     std::swap(a, b);
-  if (func(a) * func(b) >= 0)
-    throw std::runtime_error("fa * fb >= 0");
-
-  for (int itr = 0; itr < maxiter; ++itr) {
-    double c = 0.5 * (a + b);
-    if (func(c) == 0 || 0.5 * (b - a) < tol)
-      return c;
-    if (func(c) * func(a) >= 0)
-      a = c;
-    else
-      b = c;
+  if (func(a) * func(b) >= 0) {
+    ret.reason = "fa * fb >= 0";
+    return ret;
   }
-  throw std::runtime_error("bisect did not converge: c= " + std::to_string(0.5*(a+b)));
+  for (int itr = 0; itr < maxiter; ++itr) {
+    ++ret.iter;
+    ret.x = 0.5 * (a + b);
+    if (func(ret.x) == 0 || 0.5 * (b - a) < tol) {
+      ret.success = true;
+      return ret;
+    }
+    if (func(ret.x) * func(a) >= 0)
+      a = ret.x;
+    else
+      b = ret.x;
+  }
+  ret.reason = "maxiter reached";
+  return ret;
 }
 
 inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {

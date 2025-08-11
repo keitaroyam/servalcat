@@ -35,7 +35,10 @@ double f1_orig2_der2(double x, double z, double to, double tf, double sig1, int 
   const double X = x * tf / sig1;
   const double m = fom(X, c);
   const double m_der = fom_der(m, X, c);
-  return ret - (3-c) * tf*tf * m_der / (sig1*sig1);
+  const double ret2 = ret - (3-c) * tf*tf * m_der / (sig1*sig1);
+  // if (ret2 <= 0)
+  //   printf("f1_orig2_der2 %f x %f z= %f; to= %f; tf= %f; sig1= %f; c= %d\n", ret2, x, z, to, tf, sig1, c);
+  return ret2;
 }
 double f1_exp2(double y, double z, double to, double tf, double sig1, int c) {
   // z = 2k+2
@@ -64,7 +67,10 @@ double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c
   const double X = std::exp(y - e_y) * tf / sig1;
   const double m = fom(X, c);
   const double m_der = tf == 0 ? 0 : fom_der(m, X, c);
-  return ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) - (3-c) * sq(tf / sig1) * m_der * exp2);
+  const double ret2 = ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) + (3-c) * sq(tf / sig1) * m_der * exp2);
+  // if (ret2 <= 0)
+  //   printf("f1_exp2_der2 %f y %f z= %f; to= %f; tf= %f; sig1= %f; c= %d\n", ret2, y, z, to, tf, sig1, c);
+  return ret2;
 }
 double find_root(double k, double to, double tf, double sig1, int c, double det, bool use_exp2) {
   if (tf == 0.) {
@@ -77,12 +83,12 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
   double x0 = det, x1 = NAN;
   if (use_exp2) {
-    const double X1 = (3-c) * tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5));
+    const double X1 = tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5));
     const double m1 = fom(X1, c);
-    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5)), 1e-4);
+    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * (3-c) * X1 * m1 + 3.5)), 1e-4);
     if (std::isnan(x0))
       printf("ERROR: x0= %e, use_exp2= %d, X1=%e, m1=%e in_log=%e\n", x0, use_exp2, X1, m1,
-             0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * X1 * m1 + 3.5));
+             0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * (3-c) * X1 * m1 + 3.5));
     const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 1));
     x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-4);
   } else {
@@ -96,15 +102,11 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
   //printf("debug %d x0= %f x1= %f f'_x0= %f f'_x1= %f\n", use_exp2, x0, x1, func(x0), func(x1));
   if (std::abs(func(x0)) < 1e-2) // need to check. 1e-2 is small enough?
     return x0;
-  double root;
-  try {
-    root = newton(func, fprime, x0);
-    //printf("newton %f %f\n", root, func(root));
-    if (std::abs(func(root)) < 1e-2) // need to check. 1e-2 is small enough?
-      return root;
-  } catch (const std::runtime_error& err) {
-    // proceed to bisect
-  }
+  auto ret = newton(func, fprime, x0);
+  if (ret.success)
+    return ret.x;
+  //   printf("newton_success iter %d k=%f; to=%f; tf=%f; sig1=%f; c=%d; det=%f; use_exp2=%d\n", ret.iter, k, to, tf,sig1, c, det, use_exp2);
+  // if (std::abs(func(ret.x)) < 1e-2) // need to check. 1e-2 is small enough?
 
   double a = x0, b = std::isnan(x1) ? x0 : x1;
   double fa = func(a), fb = func(b);
@@ -118,15 +120,14 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
     }
     if (fa * fb >= 0) throw std::runtime_error("interval not found");
   }
-  try {
-    root = bisect(func, a, b, 10000, 1e-2);
-  } catch (const std::runtime_error& err) {
+  ret = bisect(func, a, b, 10000, 1e-4);
+  if (!ret.success) {
     printf("DEBUG: bisect_fail x0= %e, x1= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n",
            x0, x1, use_exp2, z, to, tf, sig1, c, det);
     return NAN;
-    //throw std::runtime_error(err.what());
   }
-  return root;
+  // printf("bisect_success %f iter %d k=%f; to=%f; tf=%f; sig1=%f; c=%d; det=%f; use_exp2=%d\n", func(ret.x), ret.iter, k, to, tf,sig1, c, det, use_exp2);
+  return ret.x;
 }
 
 // factor of (sig/k_ani^2)^(k+1) is needed, which should be done outside.
@@ -141,6 +142,8 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
   const double root = find_root(k, to, tf, sig1, c, det, use_exp2);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
+  if (f2der <= 0)
+    printf("integ_j bad f2der %f exp2 %d z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, z, to, tf, sig1, c);
   if (f2der * f1val * f1val > 1e10) { // Laplace approximation threshould needs to be revisited
     if (use_exp2) {
       const double lap = -f1val - 0.5 * std::log(f2der) + 0.5 * std::log(gemmi::pi() * 0.5);
@@ -176,6 +179,8 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   const double root = find_root(k_den, to, tf, sig1, c, det, use_exp2);
   const double f1val = f(root, z, to, tf, sig1, c);
   const double f2der = fder2(root, z, to, tf, sig1, c);
+  if (f2der <= 0)
+    printf("integ_j_ratio bad f2der %f exp2 %d z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, z, to, tf, sig1, c);
   const double delta = h * std::sqrt(2 / f2der);
   auto calc_fom = [&](double xx) { return fom((use_exp2 ? std::exp(xx - std::exp(-xx)) : xx) * tf / sig1, c); };
   const double tmp = use_exp2 ? root - std::exp(-root) : std::log(root);
