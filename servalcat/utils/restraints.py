@@ -385,7 +385,13 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 atom = rinfo.res[ia]
                 atom_str = "{}/{} {}/{}".format(cinfo.chain_ref.name, rinfo.res.name, rinfo.res.seqid, atom.name)
                 cc = rinfo.get_final_chemcomp(atom.altloc)
-                if not cc.find_atom(atom.name):
+                cc_atom = cc.find_atom(atom.name)
+                if cc_atom:
+                    if cc_atom.chem_type not in monlib.ener_lib.atoms:
+                        deftype = atom.element.name.upper()
+                        logger.writeln(f"WARNING: unknown chemical type {cc_atom.chem_type} of {atom_str}. Will use default type {deftype}")
+                        cc_atom.chem_type = deftype
+                else:
                     # warning message should have already been given by gemmi
                     if cc_org and cc_org.find_atom(atom.name):
                         if check_hydrogen or not atom.is_hydrogen():
