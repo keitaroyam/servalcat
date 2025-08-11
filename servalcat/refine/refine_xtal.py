@@ -95,6 +95,7 @@ def add_arguments(parser):
     parser.add_argument('--refine_dfrac', action="store_true", help="Refine deuterium fraction (neutron only)")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
+    parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
     parser.add_argument('--use_work_in_est',  action='store_true',
@@ -125,6 +126,8 @@ def main(args):
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
     if args.labin_llweight and args.twin:
         raise SystemExit("--labin_llweight not supported for twin refinement")
+    if args.wavelength is not None and args.source != "xray":
+        raise SystemExit("Error: Wavelength is only available for X-ray source")
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
@@ -171,6 +174,7 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
+    addends = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
     if args.unrestrained:
@@ -251,7 +255,7 @@ def main(args):
 
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin)
+                 twin=args.twin, addends=addends)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 

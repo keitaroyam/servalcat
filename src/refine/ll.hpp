@@ -13,6 +13,7 @@
 #include <gemmi/neutron92.hpp>
 #include <gemmi/c4322.hpp> // CustomCoef
 #include <gemmi/dencalc.hpp>
+#include <gemmi/addends.hpp>
 #include <Eigen/Sparse>
 
 namespace servalcat {
@@ -238,6 +239,7 @@ struct LL{
   std::vector<gemmi::Transform> ncs;
   bool mott_bethe;
   std::shared_ptr<RefineParams> params;
+  gemmi::Addends addends;
   // table (distances x b values)
   std::vector<double> table_bs;
   std::vector<std::vector<double>> pp1; // for x-x diagonal
@@ -248,9 +250,11 @@ struct LL{
   std::vector<double> vn; // first derivatives
   std::vector<double> am; // second derivative sparse matrix
 
-  LL(const gemmi::Structure &st, std::shared_ptr<RefineParams> params, bool mott_bethe)
+  LL(const gemmi::Structure &st, std::shared_ptr<RefineParams> params, bool mott_bethe, const gemmi::Addends *addends_)
     : cell(st.cell), sg(st.find_spacegroup()), params(params), mott_bethe(mott_bethe) {
     set_ncs({});
+    if (addends_ != nullptr)
+      addends = *addends_;
   }
   void set_ncs(const std::vector<gemmi::Transform> &trs) {
     ncs.clear();
@@ -308,9 +312,9 @@ struct LL{
           b_max = std::max(std::max(eig[0], eig[1]), eig[2]);
         }
         const auto precal = coef.precalculate_density_iso(b_max,
-                                                          mott_bethe ? -el.atomic_number() : 0.);
+                                                          mott_bethe ? -el.atomic_number() : addends.get(el));
         const precal_aniso_t precal_aniso = has_aniso ? coef.precalculate_density_aniso_b(b_aniso,
-                                                                                          mott_bethe ? -el.atomic_number() : 0.)
+                                                                                          mott_bethe ? -el.atomic_number() : addends.get(el))
           : precal_aniso_t();
 
         // DensityCalculator::estimate_radius() in gemmi/dencalc.hpp
@@ -637,7 +641,7 @@ struct LL{
         return Table::get(atom.element, atom.charge, atom.serial);
       }();
       const double w = atom.occ * atom.occ;
-      const double c = mott_bethe ? coef.c() - atom.element.atomic_number(): coef.c();
+      const double c = coef.c() + (mott_bethe ? -atom.element.atomic_number(): addends.get(atom.element));
       const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
       double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
 

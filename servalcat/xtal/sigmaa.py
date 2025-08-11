@@ -50,6 +50,7 @@ def add_arguments(parser):
                         help="Number of bins for ML parameters (default: auto)")
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], required=True,
                         help="Scattering factor choice")
+    parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--D_trans', choices=["exp", "splus"],
                         help="estimate D with positivity constraint")
     parser.add_argument('--S_trans', choices=["exp", "splus"],
@@ -1359,7 +1360,6 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
 
         if not keep_charges:
             utils.model.remove_charge(sts)
-        utils.model.check_atomsf(sts, source)
 
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
@@ -1484,7 +1484,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
     return hkldata, sts, fc_labs, free, use
 # process_input()
 
-def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None):
+def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None, addends=None):
     #assert (hkldata, twin_data).count(None) == 1
     # hkldata not updated when twin_data is given
     for i, st in enumerate(st_list):
@@ -1499,7 +1499,8 @@ def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None,
                                      monlib=monlib,
                                      source=source,
                                      mott_bethe=mott_bethe,
-                                     miller_array=hkl)
+                                     miller_array=hkl,
+                                     addends=addends)
         if twin_data:
             twin_data.f_calc[:,i] = fc
         else:
@@ -1671,6 +1672,8 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use="all"):
 # calculate_maps()
 
 def main(args):
+    if args.wavelength is not None and args.source != "xray":
+        raise SystemExit("Error: Wavelength is only available for X-ray source")
     try:
         hkldata, sts, fc_labs, free, args.use = process_input(
             hklin=args.hklin,
@@ -1691,6 +1694,7 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    addends = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
     for st in sts:
         utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False)
 
@@ -1704,7 +1708,7 @@ def main(args):
     subtract_common_aniso_from_model(sts)
     update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
               source=args.source, mott_bethe=(args.source=="electron"),
-              hkldata=hkldata, twin_data=twin_data)
+              hkldata=hkldata, twin_data=twin_data, addends=addends)
     is_int = "I" in hkldata.df
 
     if args.mask:

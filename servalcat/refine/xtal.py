@@ -21,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False):
+                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False, addends=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -42,6 +42,7 @@ class LL_Xtal:
         self.use_in_est = use_in_est
         self.use_in_target = use_in_target
         self.ll = None
+        self.addends = addends
         self.scaling = sigmaa.LsqScale()
         if twin:
             self.twin_data, _ = find_twin_domains_from_data(self.hkldata)
@@ -69,7 +70,8 @@ class LL_Xtal:
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
                          d_min=self.d_min_max[0], monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
-                         hkldata=self.hkldata, twin_data=self.twin_data)
+                         hkldata=self.hkldata, twin_data=self.twin_data,
+                         addends=self.addends)
 
     def prepare_target(self):
         if self.twin_data:
@@ -261,7 +263,7 @@ class LL_Xtal:
         #asu = dll_dab_den.masked_asu()
         #dll_dab_den.array[:] *= 1 - asu.mask_array # 0 to use
         
-        self.ll = ext.LL(self.st, refine_params, self.mott_bethe)
+        self.ll = ext.LL(self.st, refine_params, self.mott_bethe, self.addends)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
         if self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)
