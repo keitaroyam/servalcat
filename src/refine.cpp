@@ -773,7 +773,8 @@ void add_refine(nb::module_& m) {
     ;
   vdw
     .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
-    .def("set_image", &Geometry::Vdw::set_image)
+    .def("set_image", nb::overload_cast<const gemmi::UnitCell&, gemmi::Asu>(&Geometry::Vdw::set_image))
+    .def("set_image", nb::overload_cast<int, const gemmi::Fractional&>(&Geometry::Vdw::set_image))
     .def("same_asu", &Geometry::Vdw::same_asu)
     .def_rw("type", &Geometry::Vdw::type)
     .def_rw("value", &Geometry::Vdw::value)

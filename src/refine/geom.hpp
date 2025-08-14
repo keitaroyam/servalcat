@@ -613,6 +613,12 @@ struct Geometry {
       sym_idx = im.sym_idx;
       std::copy(std::begin(im.pbc_shift), std::end(im.pbc_shift), std::begin(pbc_shift));
     }
+    void set_image(int sym_idx, const gemmi::Fractional &shift) {
+      this->sym_idx = sym_idx;
+      pbc_shift[0] = std::round(shift.x);
+      pbc_shift[1] = std::round(shift.y);
+      pbc_shift[2] = std::round(shift.z);
+    }
     bool same_asu() const {
       return sym_idx == 0 && pbc_shift[0]==0 && pbc_shift[1]==0 && pbc_shift[2]==0;
     }
@@ -1144,8 +1150,12 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                if (test_skip_vdwr(&atom, cra2.atom, &res == cra2.residue, m.image_idx != 0))
                                  continue;
                                vdws.emplace_back(&atom, cra2.atom);
-                               if (m.image_idx != 0 || !st.cell.find_nearest_pbc_image(atom.pos, cra2.atom->pos, 0).same_asu())
-                                 vdws.back().set_image(st.cell, gemmi::Asu::Different);
+                               { // find pbc shift
+                                 auto fpos = ns.grid.unit_cell.fractionalize(cra2.atom->pos);
+                                 ns.grid.unit_cell.apply_transform(fpos, m.image_idx, false);
+                                 const auto dvec = m.pos - p - ns.grid.unit_cell.orthogonalize(fpos) + atom.pos;
+                                 vdws.back().set_image(m.image_idx, ns.grid.unit_cell.fractionalize(dvec));
+                               }
                                int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, vdws.back().same_asu());
                                if ((d_1_2 == 3 && in_same_plane(&atom, cra2.atom)) ||
                                    ((repulse_undefined_angles && d_1_2 == 2) ? angle_defined(&atom, cra2.atom) : d_1_2 < 3)) {
@@ -1164,7 +1174,7 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                  vdws.pop_back();
                              }
                            }
-                         });
+                         }, ns.sufficient_k(std::sqrt(max_dist_sq)));
       }
     }
   }
