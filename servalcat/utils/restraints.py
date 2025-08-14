@@ -490,9 +490,10 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
         if cra1.atom.element.is_metal or cra2.atom.element.is_metal:
             con.type = gemmi.ConnectionType.MetalC
         if con.asu != gemmi.Asu.Same: # XXX info from metadata may be wrong
-            nimage = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
-            image_idx = nimage.sym_idx
-            dist = nimage.dist()
+            im = st.cell.find_nearest_image(cra1.atom.pos, cra2.atom.pos, con.asu)
+            image_idx = im.sym_idx
+            con.asu = gemmi.Asu.Same if im.same_asu() else gemmi.Asu.Different
+            dist = im.dist()
         else:
             image_idx = 0
             con.asu = gemmi.Asu.Same
