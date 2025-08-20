@@ -635,7 +635,7 @@ def find_and_fix_links(st, monlib, bond_margin=1.3, find_metal_links=True, add_f
 
 def add_hydrogens(st, monlib, pos="elec"):
     assert pos in ("elec", "nucl")
-    topo = prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, ignore_unknown_links=True)
+    topo = prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.ReAddButWater, ignore_unknown_links=False)
     
     if pos == "nucl":
         logger.writeln("Generating hydrogens at nucleus positions")
