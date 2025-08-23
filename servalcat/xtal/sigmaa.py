@@ -44,8 +44,8 @@ def add_arguments(parser):
                         help='Input atomic model file(s)')
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
-    parser.add_argument('--nbins', type=int, default=20,
-                        help="Number of bins for statistics (default: %(default)d)")
+    parser.add_argument('--nbins', type=int,
+                        help="Number of bins for statistics (default: auto)")
     parser.add_argument('--nbins_ml', type=int,
                         help="Number of bins for ML parameters (default: auto)")
     parser.add_argument('-s', '--source', choices=["electron", "xray", "neutron"], required=True,
@@ -1262,7 +1262,7 @@ def decide_spacegroup(sg_user, sg_st, sg_hkl):
 def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_min=None,
                   n_per_mlbin=None, use="all", max_mlbins=None, cif_index=0, keep_charges=False,
                   allow_unusual_occupancies=False, space_group=None,
-                  hklin_free=None, labin_free=None, labin_llweight=None, n_bins_stat=20):
+                  hklin_free=None, labin_free=None, labin_llweight=None, n_bins_stat=None, max_statbins=20):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
 
@@ -1423,6 +1423,12 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
                                                          free_label="FREE", free=free,
                                                          use=use, n_per_bin=n_per_mlbin,
                                                          max_bins=max_mlbins)
+    if n_bins_stat is None:
+        sel = hkldata.df[newlabels[0]].notna()
+        if "FREE" in hkldata.df:
+            sel &= hkldata.df["FREE"] == free
+        s_array = 1/hkldata.d_spacings()[sel]
+        n_bins_stat = utils.hkl.decide_n_bins(10, s_array, min_bins=2, max_bins=max_statbins)
 
     hkldata.setup_binning(n_bins=n_bins_ml, name="ml")
     hkldata.setup_binning(n_bins=n_bins_stat, name="stat")

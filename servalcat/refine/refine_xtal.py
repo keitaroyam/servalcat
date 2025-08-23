@@ -28,8 +28,8 @@ def add_arguments(parser):
                         help='Input MTZ file for test flags')
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
-    parser.add_argument('--nbins', type=int, default=20,
-                        help="Number of bins for statistics (default: %(default)d)")
+    parser.add_argument('--nbins', type=int,
+                        help="Number of bins for statistics (default: auto)")
     parser.add_argument('--nbins_ml', type=int,
                         help="Number of bins for ML parameters (default: auto)")
     parser.add_argument("--labin", help="F,SIGF,FREE input")
