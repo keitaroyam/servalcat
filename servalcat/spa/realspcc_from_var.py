@@ -46,21 +46,21 @@ def integ_var(x, s_list, w_list, B):
 def calc_var(hkldata, kind="noise", sharpen_signal=False, weight=None):
     wsq = None
     if kind == "noise":
-        wsq = hkldata.binned_df.var_noise.to_numpy(copy=True)
+        wsq = hkldata.binned_df["ml"].var_noise.to_numpy(copy=True)
     elif kind == "signal":
-        wsq = hkldata.binned_df.var_signal.to_numpy(copy=True)
+        wsq = hkldata.binned_df["ml"].var_signal.to_numpy(copy=True)
     elif kind == "total":
-        wsq = hkldata.binned_df.var_signal.to_numpy() + hkldata.binned_df.var_noise.to_numpy()
+        wsq = hkldata.binned_df["ml"].var_signal.to_numpy() + hkldata.binned_df["ml"].var_noise.to_numpy()
     else:
         raise RuntimeError("unknown kind")
 
     if sharpen_signal:
-        wsq /= hkldata.binned_df.var_signal.to_numpy()
+        wsq /= hkldata.binned_df["ml"].var_signal.to_numpy()
     
     if weight is None:
         wsq *= 1.
     elif weight == "fscfull":
-        wsq *= hkldata.binned_df.FSCfull.to_numpy()**2
+        wsq *= hkldata.binned_df["ml"].FSCfull.to_numpy()**2
     else:
         raise RuntimeError("unknown weight")
         
@@ -68,7 +68,7 @@ def calc_var(hkldata, kind="noise", sharpen_signal=False, weight=None):
 # calc_var()
 
 def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): # XXX unfinished
-    bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
+    bin_s = 0.5*(1./hkldata.binned_df["ml"][["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
     logger.writeln("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     for B in -numpy.arange(0,100,5):
@@ -78,7 +78,7 @@ def find_b(hkldata, smax, x, kind="noise", sharpen_signal=False, weight=None): #
 # find_b()        
 
 def calc_cc_from_var(hkldata, x_list, kind="noise", sharpen_signal=False, weight=None, B=None):
-    bin_s = 0.5*(1./hkldata.binned_df[["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
+    bin_s = 0.5*(1./hkldata.binned_df["ml"][["d_min", "d_max"]]).sum(axis=1).to_numpy() # 0.5 * (1/d_max + 1/d_min)
     logger.writeln("kind= {} sharpen_signal={}, weight={}".format(kind, sharpen_signal, weight))
     wsq = calc_var(hkldata, kind, sharpen_signal, weight)
     cov_xx = integ_var(0., bin_s, wsq, B)
@@ -95,7 +95,7 @@ def main(args):
         mask = None
 
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask)
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("ml")
     utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
     smax = 1. / args.resolution

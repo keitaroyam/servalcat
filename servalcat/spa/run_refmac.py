@@ -191,12 +191,12 @@ def calc_fsc(st, output_prefix, maps, d_min, mask, mask_radius, soft_edge, b_bef
         for lab in labs_fc:
             hkldata.df[lab] *= unblur
     
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("stat")
     stats = spa.fsc.calc_fsc_all(hkldata, labs_fc=labs_fc, lab_f="FP",
                                  labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
 
     hkldata2 = hkldata.copy(d_min=d_min) # for FSCaverage at resolution for refinement # XXX more efficient way
-    hkldata2.setup_relion_binning()
+    hkldata2.setup_relion_binning("stat")
     stats2 = spa.fsc.calc_fsc_all(hkldata2, labs_fc=labs_fc, lab_f="FP",
                                   labs_half=["F_map1", "F_map2"] if len(maps)==2 else None)
     
@@ -628,7 +628,8 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         logger.writeln("crd file written: {}".format(crdout))
 
     hkldata = utils.maps.mask_and_fft_maps(maps, resolution, None, with_000=False)
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("ml")
+    hkldata.copy_binning(src="ml", dst="stat") # todo test usual binning for ml
     if len(maps) == 2:
         map_labs = ["Fmap1", "Fmap2", "Fout"]
         ret["lab_f_half1"] = "Fmap1" + lab_f_suffix(args.blur)
@@ -637,7 +638,7 @@ def process_input(st, maps, resolution, monlib, mask_in, args,
         ret["lab_f_half2"] = "Fmap2" + lab_f_suffix(args.blur)
         ret["lab_phi_half2"] = "Pmap2"
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
-        d_eff_full = hkldata.d_eff("FSCfull")
+        d_eff_full = hkldata.d_eff("ml", "FSCfull")
         logger.writeln("Effective resolution from FSCfull= {:.2f}".format(d_eff_full))
         ret["d_eff"] = d_eff_full
     else:

@@ -101,7 +101,7 @@ def sharpen_mask_unsharpen(maps, mask, d_min, b=None):
         
     # 1. Sharpen
     if b is None:
-        hkldata.setup_relion_binning()
+        hkldata.setup_relion_binning("ml")
         calc_noise_var_from_halfmaps(hkldata)
         logger.writeln("""$TABLE: Normalizing before masking:
 $GRAPHS: ln(Mn(|F|)) :A:1,2:
@@ -109,10 +109,10 @@ $GRAPHS: ln(Mn(|F|)) :A:1,2:
 : FSC(full) :A:1,4:
 $$ 1/resol^2 ln(Mn(|F|)) normalizer FSC $$
 $$""")
-        for i_bin, idxes in hkldata.binned():
-            bin_d_min = hkldata.binned_df.d_min[i_bin]
+        for i_bin, idxes in hkldata.binned("ml"):
+            bin_d_min = hkldata.binned_df["ml"].d_min[i_bin]
             Fo = hkldata.df.FP.to_numpy()[idxes]
-            FSCfull = hkldata.binned_df.FSCfull[i_bin]
+            FSCfull = hkldata.binned_df["ml"].FSCfull[i_bin]
             sig_fo = numpy.std(Fo)
             if FSCfull > 0:
                 n_fo = sig_fo * numpy.sqrt(FSCfull)
@@ -175,14 +175,14 @@ def mask_and_fft_maps(maps, d_min, mask=None, with_000=True):
 # mask_and_fft_maps()
     
 def calc_noise_var_from_halfmaps(hkldata):
-    hkldata.binned_df["var_noise"] = 0.
-    hkldata.binned_df["var_signal"] = 0.
-    hkldata.binned_df["FSCfull"] = 0.
+    hkldata.binned_df["ml"]["var_noise"] = 0.
+    hkldata.binned_df["ml"]["var_signal"] = 0.
+    hkldata.binned_df["ml"]["FSCfull"] = 0.
     
     logger.writeln("Bin Ncoeffs d_max   d_min   FSChalf var.noise")
-    for i_bin, idxes in hkldata.binned():
-        bin_d_min = hkldata.binned_df.d_min[i_bin]
-        bin_d_max = hkldata.binned_df.d_max[i_bin]
+    for i_bin, idxes in hkldata.binned("ml"):
+        bin_d_min = hkldata.binned_df["ml"].d_min[i_bin]
+        bin_d_max = hkldata.binned_df["ml"].d_max[i_bin]
         
         sel1 = hkldata.df.F_map1.to_numpy()[idxes]
         sel2 = hkldata.df.F_map2.to_numpy()[idxes]
@@ -196,9 +196,9 @@ def calc_noise_var_from_halfmaps(hkldata):
         vart = numpy.var(sel1+sel2)/4
         logger.writeln("{:3d} {:7d} {:7.3f} {:7.3f} {:.4f} {:e}".format(i_bin, sel1.size, bin_d_max, bin_d_min,
                                                                       fsc, varn))
-        hkldata.binned_df.loc[i_bin, "var_noise"] = varn
-        hkldata.binned_df.loc[i_bin, "var_signal"] = vart-varn
-        hkldata.binned_df.loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
+        hkldata.binned_df["ml"].loc[i_bin, "var_noise"] = varn
+        hkldata.binned_df["ml"].loc[i_bin, "var_signal"] = vart-varn
+        hkldata.binned_df["ml"].loc[i_bin, "FSCfull"] = 2*fsc/(1+fsc)
 # calc_noise_var_from_halfmaps()
 
 def write_ccp4_map(filename, array, cell=None, sg=None, mask_for_extent=None, mask_threshold=0.5, mask_padding=5,

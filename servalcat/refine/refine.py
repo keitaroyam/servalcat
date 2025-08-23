@@ -891,7 +891,8 @@ class Refine:
             self.ll.prepare_target()
             llstats = self.ll.calc_stats(bin_stats=True)
             stats[-1]["data"] = {"summary": llstats["summary"],
-                                 "binned": llstats["bin_stats"].to_dict(orient="records")}
+                                 "binned": llstats["bin_stats"].to_dict(orient="records"),
+                                 "ml": llstats["ml"].to_dict(orient="records")}
             if "twin_alpha" in llstats:
                 stats[-1]["twin_alpha"] = llstats["twin_alpha"]
             show_binstats(llstats["bin_stats"], 0)
@@ -937,7 +938,8 @@ class Refine:
                     logger.writeln("WARNING: -LL has increased after ML parameter optimization:"
                                    "{} to {}".format(f0, llstats["summary"]["-LL"]))
                 stats[-1]["data"] = {"summary": llstats["summary"],
-                                     "binned": llstats["bin_stats"].to_dict(orient="records")}
+                                     "binned": llstats["bin_stats"].to_dict(orient="records"),
+                                     "ml": llstats["ml"].to_dict(orient="records")}
                 if "twin_alpha" in llstats:
                     stats[-1]["twin_alpha"] = llstats["twin_alpha"]
                 show_binstats(llstats["bin_stats"], i+1)

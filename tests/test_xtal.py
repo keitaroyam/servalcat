@@ -54,25 +54,25 @@ class XtalTests(unittest.TestCase):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_trans", "exp", "--S_trans", "exp",
-                                  "--labin", "FP,SIGFP", "--nbins", "10", "--source", "xray"])
+                                  "--labin", "FP,SIGFP", "--nbins", "10", "--nbins_ml", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.log")
         os.remove("sigmaa.mtz")
 
-        numpy.testing.assert_allclose(hkldata.binned_df.d_min,
+        numpy.testing.assert_allclose(hkldata.binned_df["ml"].d_min,
                                       [5.0834, 3.6631, 3.0103, 2.6155, 2.344 , 2.1426, 1.9855, 1.8586,
                                        1.7532, 1.664 ],
                                       rtol=1e-4)
-        numpy.testing.assert_allclose(hkldata.binned_df.D0,
+        numpy.testing.assert_allclose(hkldata.binned_df["ml"].D0,
                                       [0.829663, 0.993061, 1.033881, 0.982557, 1.016779, 1.035846,
                                        1.025311, 1.023788, 0.970901, 0.974236],
                                       rtol=1e-2)
-        #numpy.testing.assert_allclose(hkldata.binned_df.D1,
+        #numpy.testing.assert_allclose(hkldata.binned_df["ml"].D1,
         #                              [2.974164e-01, 5.624910e-08, 2.500540e-10, 3.980775e-10,
         #                               7.638667e-07, 8.243909e-08, 1.000051e+00, 9.999994e-01,
         #                               9.999997e-01, 1.000001e+00],
         #                              rtol=1e-5)
-        numpy.testing.assert_allclose(hkldata.binned_df.S,
+        numpy.testing.assert_allclose(hkldata.binned_df["ml"].S,
                                       [90.147006,  97.960666,  67.314535,  97.67571 ,  72.546305,
                                        109.631114, 119.247475,  98.844853,  78.992354,  41.845315],
                                       rtol=1e-2)
@@ -83,14 +83,14 @@ class XtalTests(unittest.TestCase):
         mtzin = os.path.join(root, "5e5z", "5e5z.mtz.gz")
         pdbin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_trans", "splus", "--S_trans", "splus",
-                                  "--labin", "I,SIGI", "--nbins", "10", "--source", "xray"])
+                                  "--labin", "I,SIGI", "--nbins", "10", "--nbins_ml", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
         os.remove("sigmaa.mtz")
-        numpy.testing.assert_allclose(hkldata.binned_df.D0,
+        numpy.testing.assert_allclose(hkldata.binned_df["ml"].D0,
                                       [0.829305, 0.98676 , 1.024622, 0.967299, 0.998059,
                                        1.014157, 1.000922, 0.995466, 0.93671 , 0.932352],
                                       rtol=1e-2)
-        numpy.testing.assert_allclose(hkldata.binned_df.S,
+        numpy.testing.assert_allclose(hkldata.binned_df["ml"].S,
                                       [89.637282,  97.784362,  68.782025,  99.382283,  74.905775,
                                        112.326708, 126.651614, 106.853499,  83.032016,  42.909208],
                                       rtol=1e-2)

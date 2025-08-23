@@ -28,8 +28,10 @@ def add_arguments(parser):
                         help='Input MTZ file for test flags')
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
-    parser.add_argument('--nbins', type=int, 
-                        help="Number of bins (default: auto)")
+    parser.add_argument('--nbins', type=int, default=20,
+                        help="Number of bins for statistics (default: %(default)d)")
+    parser.add_argument('--nbins_ml', type=int,
+                        help="Number of bins for ML parameters (default: auto)")
     parser.add_argument("--labin", help="F,SIGF,FREE input")
     parser.add_argument('--labin_free',
                         help='MTZ column of --hklin_free')
@@ -142,17 +144,18 @@ def main(args):
         labin = decide_mtz_labels(hklin, prefer_intensity=args.prefer_intensity)
     software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
-        hkldata, sts, fc_labs, centric_and_selections, args.free, use_in_est = process_input(
+        hkldata, sts, fc_labs, args.free, use_in_est = process_input(
             hklin=hklin,
             labin=labin,
-            n_bins=args.nbins,
+            n_bins_ml=args.nbins_ml,
+            n_bins_stat=args.nbins,
             free=args.free,
             xyzins=[args.model],
             source=args.source,
             d_max=args.d_max,
             d_min=args.d_min,
             use="work" if args.use_work_in_est else "test",
-            max_bins=30,
+            max_mlbins=30,
             keep_charges=args.keep_charges,
             allow_unusual_occupancies=args.allow_unusual_occupancies,
             hklin_free=args.hklin_free,
@@ -246,7 +249,7 @@ def main(args):
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
-    ll = LL_Xtal(hkldata, centric_and_selections, args.free, st, monlib, source=args.source,
+    ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
                  twin=args.twin)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
@@ -270,12 +273,11 @@ def main(args):
     if ll.twin_data:
         # replace hkldata
         hkldata = calculate_maps_twin(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, ll.twin_data,
-                                      centric_and_selections, use=use_in_target)
+                                      use=use_in_target)
     elif is_int:
-        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, centric_and_selections,
-                           use=use_in_target)
+        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, use=use_in_target)
     else:
-        calculate_maps(ll.hkldata, ll.b_aniso, centric_and_selections, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
+        calculate_maps(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
                        use=use_in_target)
 
     # Write mtz file

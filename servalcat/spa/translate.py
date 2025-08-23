@@ -42,10 +42,10 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_fsc(hkldata, lab1, lab2):
-    stats = hkldata.binned_df[["d_min", "d_max"]].copy()
+    stats = hkldata.binned_df["ml"][["d_min", "d_max"]].copy()
     stats["ncoeffs"] = 0
     stats["fsc"] = 0.
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         stats.loc[i_bin, "ncoeffs"] = len(idxes)
         stats.loc[i_bin, "fsc"] = numpy.real(numpy.corrcoef(hkldata.df[lab1].to_numpy()[idxes],
                                                             hkldata.df[lab2].to_numpy()[idxes])[1,0])
@@ -93,7 +93,7 @@ def main(args):
     hkldata = utils.maps.mask_and_fft_maps(maps, args.resolution, mask=None)
     hkldata.df["FC"] = utils.model.calc_fc_fft(st, args.resolution - 1e-6, source="electron",
                                                miller_array=hkldata.miller_array())
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("ml")
 
     stats, fscavg = calc_fsc(hkldata, "FP", "FC")
     logger.writeln(stats.to_string())

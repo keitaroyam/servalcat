@@ -1161,7 +1161,7 @@ def show_power(args):
     if not labs:
         raise SystemExit("No map files given. Exiting.")
             
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("stat")
 
     ofs = open(args.output_prefix+".log", "w")
     ofs.write("Input:\n")
@@ -1179,9 +1179,9 @@ $$
 """.format(",".join([str(i+5) for i in range(len(labs))]), " ".join(labs)))
     print(hkldata.df)
     abssqr = dict((lab, numpy.abs(hkldata.df[lab].to_numpy())**2) for lab in labs)
-    for i_bin, idxes in hkldata.binned():
-        bin_d_min = hkldata.binned_df.d_min[i_bin]
-        bin_d_max = hkldata.binned_df.d_max[i_bin]
+    for i_bin, idxes in hkldata.binned("stat"):
+        bin_d_min = hkldata.binned_df["stat"].d_min[i_bin]
+        bin_d_max = hkldata.binned_df["stat"].d_max[i_bin]
         ofs.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, len(idxes), bin_d_max, bin_d_min,))
         for lab in labs:
             pwr = numpy.log10(numpy.average(abssqr[lab][idxes]))
@@ -1297,7 +1297,7 @@ def nemap(args):
         hkldata = hkldata.copy(d_min=args.resolution)
         map_labs = ["FWT"]
     else:
-        hkldata.setup_relion_binning()
+        hkldata.setup_relion_binning("ml")
         maps.calc_noise_var_from_halfmaps(hkldata)
         map_labs = fofc.calc_maps(hkldata, B=args.B, has_halfmaps=True, half1_only=args.half1_only,
                                   no_fsc_weights=args.no_fsc_weights, sharpening_b=args.sharpening_b)

@@ -20,13 +20,12 @@ u_to_b = utils.model.u_to_b
 integr = sigmaa.integr
 
 class LL_Xtal:
-    def __init__(self, hkldata, centric_and_selections, free, st, monlib, source="xray", mott_bethe=True,
+    def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=False, use_in_est="all", use_in_target="all", twin=False):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
-        self.centric_and_selections = centric_and_selections
         self.free = free
         self.st = st
         self.monlib = monlib
@@ -59,11 +58,10 @@ class LL_Xtal:
 
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
-                                                  self.centric_and_selections, use=self.use_in_est,
+                                                  use=self.use_in_est,
                                                   twin_data=self.twin_data)#D_trans="splus", S_trans="splus")
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-        #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs,
-        #                             self.centric_and_selections)
+        #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs)
     def update_fc(self):
         # modify st before fc calculation
         b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
@@ -76,12 +74,12 @@ class LL_Xtal:
     def prepare_target(self):
         if self.twin_data:
             if self.use_in_target == "all":
-                idxes = numpy.concatenate([sel[i] for i_bin, _ in self.hkldata.binned()
-                                           for sel in self.centric_and_selections[i_bin] for i in (1,2)])
+                idxes = numpy.concatenate([sel[i] for i_bin, _ in self.hkldata.binned("ml")
+                                           for sel in self.hkldata.centric_and_selections["ml"][i_bin] for i in (1,2)])
             else:
                 i = 1 if self.use_in_target == "work" else 2
-                idxes = numpy.concatenate([sel[i] for i_bin, _ in self.hkldata.binned()
-                                           for sel in self.centric_and_selections[i_bin]])
+                idxes = numpy.concatenate([sel[i] for i_bin, _ in self.hkldata.binned("ml")
+                                           for sel in self.hkldata.centric_and_selections["ml"][i_bin]])
             mask = numpy.empty(len(self.hkldata.df.index)) * numpy.nan
             mask[idxes] = 1 / self.hkldata.debye_waller_factors(b_cart=self.b_aniso)[idxes]**2
             self.twin_data.est_f_true(self.hkldata.df.I.to_numpy() * mask,
@@ -156,12 +154,12 @@ class LL_Xtal:
         else:
             k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
             f = sigmaa.mli if self.is_int else sigmaa.mlf
-            for i_bin, _ in self.hkldata.binned():
+            for i_bin, _ in self.hkldata.binned("ml"):
                 if self.use_in_target == "all":
-                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin] for i in (1,2)])
+                    idxes = numpy.concatenate([sel[i] for sel in self.hkldata.centric_and_selections["ml"][i_bin] for i in (1,2)])
                 else:
                     i = 1 if self.use_in_target == "work" else 2
-                    idxes = numpy.concatenate([sel[i] for sel in self.centric_and_selections[i_bin]])
+                    idxes = numpy.concatenate([sel[i] for sel in self.hkldata.centric_and_selections["ml"][i_bin]])
                 ret += f(self.hkldata.df,
                          self.fc_labs,
                          numpy.vstack([self.hkldata.df[lab].to_numpy()[idxes] for lab in self.D_labs]).T,
@@ -172,13 +170,14 @@ class LL_Xtal:
     # calc_target()
 
     def calc_stats(self, bin_stats=False):
-        stats, overall = sigmaa.calc_r_and_cc(self.hkldata, self.centric_and_selections, self.twin_data)
+        stats, overall = sigmaa.calc_r_and_cc(self.hkldata, self.twin_data)
         ret = {"summary": overall}
         ret["summary"]["-LL"] = self.calc_target()
         if self.twin_data:
             ret["twin_alpha"] = self.twin_data.alphas
         if bin_stats:
             ret["bin_stats"] = stats
+            ret["ml"] = self.hkldata.binned_df["ml"].copy()
         for lab in "R", "CC":
             logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
         if self.is_int:
@@ -196,8 +195,8 @@ class LL_Xtal:
             d2ll_dab2 = numpy.empty(len(self.hkldata.df.index))
             d2ll_dab2[:] = numpy.nan
             k_ani = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
-            for i_bin, _ in self.hkldata.binned():
-                for c, work, test in self.centric_and_selections[i_bin]:
+            for i_bin, _ in self.hkldata.binned("ml"):
+                for c, work, test in self.hkldata.centric_and_selections["ml"][i_bin]:
                     if self.use_in_target == "all":
                         cidxes = numpy.concatenate([work, test])
                     else:

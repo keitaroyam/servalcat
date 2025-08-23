@@ -19,10 +19,10 @@ b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 
 def calc_D_and_S(hkldata, lab_obs): # simplified version of fofc.calc_D_and_S()
-    bdf = hkldata.binned_df
+    bdf = hkldata.binned_df["ml"]
     bdf["D"] = 0.
     bdf["S"] = 0.
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         Fo = hkldata.df[lab_obs].to_numpy()[idxes]
         Fc = hkldata.df.FC.to_numpy()[idxes]
         bdf.loc[i_bin, "D"] = numpy.nansum(numpy.real(Fo * numpy.conj(Fc))) / numpy.sum(numpy.abs(Fc)**2)
@@ -86,10 +86,10 @@ class LL_SPA:
 
     def calc_target(self): # -LL target for SPA
         ret = 0
-        for i_bin, idxes in self.hkldata.binned():
+        for i_bin, idxes in self.hkldata.binned("ml"):
             Fo = self.hkldata.df[self.lab_obs].to_numpy()[idxes]
-            DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df.D[i_bin]
-            S = self.hkldata.binned_df.S[i_bin]
+            DFc = self.hkldata.df.FC.to_numpy()[idxes] * self.hkldata.binned_df["ml"].D[i_bin]
+            S = self.hkldata.binned_df["ml"].S[i_bin]
             ret += numpy.nansum(numpy.abs(Fo - DFc)**2) / S + numpy.log(S) * len(idxes)
         return ret * 2 # friedel mates
     # calc_target()
@@ -101,9 +101,8 @@ class LL_SPA:
         logger.writeln("FSCaverage = {:.4f}".format(fsca))
         ret = {"summary": {"FSCaverage": fsca, "-LL": self.calc_target()}}
         # XXX in fsc object, _full is misleading - it's not full in cross validation mode
-        if "D" in self.hkldata.binned_df and "S" in self.hkldata.binned_df:
-            stats[["D", "S"]] = self.hkldata.binned_df[["D", "S"]]
         ret["bin_stats"] = stats
+        ret["ml"] = self.hkldata.binned_df["ml"].copy()
         return ret
 
     def calc_grad(self, refine_params, specs):
@@ -111,9 +110,9 @@ class LL_SPA:
         d2ll_dab2 = numpy.zeros(len(self.hkldata.df.index))
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
-        for i_bin, idxes in self.hkldata.binned():
-            D = self.hkldata.binned_df.D[i_bin]
-            S = self.hkldata.binned_df.S[i_bin]
+        for i_bin, idxes in self.hkldata.binned("ml"):
+            D = self.hkldata.binned_df["ml"].D[i_bin]
+            S = self.hkldata.binned_df["ml"].S[i_bin]
             Fc = self.hkldata.df.FC.to_numpy()[idxes]
             Fo = self.hkldata.df[self.lab_obs].to_numpy()[idxes]
             dll_dab[idxes] = -2 * D / S * (Fo - D * Fc)#.conj()

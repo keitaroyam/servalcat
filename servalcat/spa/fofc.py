@@ -63,7 +63,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def calc_D_and_S(hkldata, has_halfmaps=True, half1_only=False):#fo_asu, fc_asu, varn, bins, bin_idxes):
-    bdf = hkldata.binned_df
+    bdf = hkldata.binned_df["ml"]
     bdf["D"] = 0.
     bdf["S"] = 0.
     stats_str = """$TABLE: Statistics :
@@ -83,20 +83,20 @@ $$
     FP = hkldata.df.FP.to_numpy()
     if half1_only:
         FP = hkldata.df.F_map1.to_numpy()
-        var_noise = hkldata.binned_df.var_noise * 2
+        var_noise = hkldata.binned_df["ml"].var_noise * 2
     elif has_halfmaps:
-        var_noise = hkldata.binned_df.var_noise
+        var_noise = hkldata.binned_df["ml"].var_noise
         
-    for i_bin, idxes in hkldata.binned():
-        bin_d_min = hkldata.binned_df.d_min[i_bin]
-        bin_d_max = hkldata.binned_df.d_max[i_bin]
+    for i_bin, idxes in hkldata.binned("ml"):
+        bin_d_min = hkldata.binned_df["ml"].d_min[i_bin]
+        bin_d_max = hkldata.binned_df["ml"].d_max[i_bin]
         Fo = FP[idxes]
         Fc = hkldata.df.FC.to_numpy()[idxes]
         fsc = numpy.real(numpy.corrcoef(Fo, Fc)[1,0])
         bdf.loc[i_bin, "D"] = numpy.sum(numpy.real(Fo * numpy.conj(Fc)))/numpy.sum(numpy.abs(Fc)**2)
         if has_halfmaps:
             varn = var_noise[i_bin]
-            fsc_full = hkldata.binned_df.FSCfull[i_bin]
+            fsc_full = hkldata.binned_df["ml"].FSCfull[i_bin]
             S = max(0, numpy.average(numpy.abs(Fo-bdf.D[i_bin]*Fc)**2)-varn)
             bdf.loc[i_bin, "S"] = S
             w = S/(S+varn)
@@ -159,14 +159,14 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
     fsc_became_negative = False
         
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         if has_halfmaps:
-            fsc = hkldata.binned_df.FSCfull[i_bin] # FSCfull
+            fsc = hkldata.binned_df["ml"].FSCfull[i_bin] # FSCfull
             if half1_only:
-                varn = hkldata.binned_df.var_noise[i_bin] * 2
+                varn = hkldata.binned_df["ml"].var_noise[i_bin] * 2
                 fsc = fsc/(2-fsc) # to FSChalf
             else:
-                varn = hkldata.binned_df.var_noise[i_bin]
+                varn = hkldata.binned_df["ml"].var_noise[i_bin]
         else:
             fsc, varn = 1., 0.
             
@@ -177,8 +177,8 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
 
         if has_fc:
             Fc = hkldata.df.FC.to_numpy()[idxes]
-            D = hkldata.binned_df.D[i_bin]
-            S = hkldata.binned_df.S[i_bin] # variance of unexplained signal
+            D = hkldata.binned_df["ml"].D[i_bin]
+            S = hkldata.binned_df["ml"].S[i_bin] # variance of unexplained signal
             w = 1. if no_fsc_weights or not has_halfmaps else S/(S+varn)
             delfwt = w * (Fo-D*Fc)
             fup = 2 * w * Fo + (1 - 2*w) * D*Fc # <F> + delfwt
@@ -187,7 +187,7 @@ def calc_maps(hkldata, B=None, has_halfmaps=True, half1_only=False, no_fsc_weigh
                 tmp["Fupdate_noscale"][idxes] = fup
 
         if not fsc_became_negative and fsc <= 0:
-            logger.writeln(" WARNING: cutting resolution at {:.2f} A because fsc < 0".format(hkldata.binned_df.d_max[i_bin]))
+            logger.writeln(" WARNING: cutting resolution at {:.2f} A because fsc < 0".format(hkldata.binned_df["ml"].d_max[i_bin]))
             fsc_became_negative = True
         if fsc_became_negative:
             continue
@@ -257,7 +257,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
         fc_map.array[:] *= mask
         hkldata.df["FC"] = gemmi.transform_map_to_f_phi(fc_map).get_value_by_hkl(hkldata.miller_array())
         
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("ml")
 
     has_halfmaps = (len(maps) == 2)
     if has_halfmaps:

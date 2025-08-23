@@ -115,7 +115,7 @@ def calc_fsc(hkldata, labs=None, fs=None):
     else:
         assert fs is not None and len(fs) == 2
     ret = []
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("stat"):
         F1, F2 = fs[0][idxes], fs[1][idxes]
         fsc = numpy.real(numpy.corrcoef(F1, F2)[1,0])
         ret.append(fsc)
@@ -123,7 +123,7 @@ def calc_fsc(hkldata, labs=None, fs=None):
 # calc_fsc()
 
 def calc_phase_randomized_fsc(hkldata, mask, labs_half, labs_half_masked, randomize_fsc_at=0.8):
-    stats = hkldata.binned_df[["d_min", "d_max"]].copy()
+    stats = hkldata.binned_df["stat"][["d_min", "d_max"]].copy()
     stats["fsc_half_unmasked"] = calc_fsc(hkldata, labs=labs_half)
     stats["fsc_half_masked"] = calc_fsc(hkldata, labs=labs_half_masked)
     stats["ncoeffs"] = 0
@@ -131,7 +131,7 @@ def calc_phase_randomized_fsc(hkldata, mask, labs_half, labs_half_masked, random
     # Randomize F
     f_rands = [numpy.copy(hkldata.df[labs_half[i]]) for i in range(2)]
     rand_start_bin = None
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("stat"):
         stats.loc[i_bin, "ncoeffs"] = len(idxes)
         fsc_half = stats["fsc_half_unmasked"][i_bin]
         if rand_start_bin is None and fsc_half < randomize_fsc_at:
@@ -184,7 +184,7 @@ def calc_fsc_all(hkldata, labs_fc, lab_f, labs_half=None,
                                                       labs_half_masked=labs_half)
         half_fsc_done = True
     else:
-        stats = hkldata.binned_df[["d_min", "d_max"]].copy()
+        stats = hkldata.binned_df["stat"][["d_min", "d_max"]].copy()
         half_fsc_done = False
         
     stats["ncoeffs"] = 0
@@ -203,7 +203,7 @@ def calc_fsc_all(hkldata, labs_fc, lab_f, labs_half=None,
             stats["fsc_{}_half1".format(lab)] = 0.
             stats["fsc_{}_half2".format(lab)] = 0.
 
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("stat"):
         stats.loc[i_bin, "ncoeffs"] = len(idxes)
         Fo = hkldata.df[lab_f].to_numpy()[idxes]
         stats.loc[i_bin, "power_{}".format(lab_f)] = numpy.average(numpy.abs(Fo)**2)
@@ -356,7 +356,7 @@ def main(args):
             fg = gemmi.transform_map_to_f_phi(g)
             hkldata.df[labs_fc[-1]] = fg.get_value_by_hkl(hkldata.miller_array()) * normalizer
 
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("stat")
     stats = calc_fsc_all(hkldata, labs_fc=labs_fc, lab_f=lab_f,
                          labs_half=labs_half_masked if mask is not None else labs_half,
                          labs_half_nomask=labs_half, mask=mask)

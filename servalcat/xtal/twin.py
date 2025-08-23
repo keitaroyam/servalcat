@@ -25,14 +25,14 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
         logger.writeln("")
         return None, None
     twin_data = ext.TwinData()
-    twin_data.setup(hkldata.miller_array(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
+    twin_data.setup(hkldata.miller_array(), hkldata.df.bin_ml, hkldata.sg, hkldata.cell, ops)
     if "I" in hkldata.df:
         Io = hkldata.df.I.to_numpy()
     else:
         Io = hkldata.df.FP.to_numpy()**2
     ccs, nums = [], []
     tmp = []
-    for i_bin, bin_idxes in hkldata.binned():
+    for i_bin, bin_idxes in hkldata.binned("ml"):
         ccs.append([])
         nums.append([])
         rs = []
@@ -83,7 +83,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
         with logger.with_prefix(" "):
             logger.writeln(df.to_string(float_format="%.2f"))
         twin_data = ext.TwinData()
-        twin_data.setup(hkldata.miller_array(), hkldata.df.bin, hkldata.sg, hkldata.cell, ops)
+        twin_data.setup(hkldata.miller_array(), hkldata.df.bin_ml, hkldata.sg, hkldata.cell, ops)
     twin_data.alphas = [1. / len(twin_data.alphas) for _ in range(len(twin_data.alphas)) ]
     if "I" not in hkldata.df:
         logger.writeln('Generating "observed" intensities for twin refinement: Io = Fo**2, SigIo = 2*F*SigFo')
@@ -105,9 +105,9 @@ def estimate_twin_fractions_from_model(twin_data, hkldata, min_alpha=0.02):
     P_list, cc_oc_list, weight_list = [], [], []
     n_ops = len(twin_data.ops) + 1
     tidxes = numpy.triu_indices(n_ops, 1)
-    if "CC*" in hkldata.binned_df:
+    if "CC*" in hkldata.binned_df["ml"]:
         logger.writeln(" data-correlations are corrected using CC*")
-    for i_bin, bin_idxes in hkldata.binned():
+    for i_bin, bin_idxes in hkldata.binned("ml"): # XXX
         i_tmp = Ic_all[numpy.asarray(twin_data.bin)==i_bin,:]
         i_tmp = i_tmp[numpy.isfinite(i_tmp).all(axis=1)]
         P = numpy.corrcoef(i_tmp.T)
@@ -115,7 +115,7 @@ def estimate_twin_fractions_from_model(twin_data, hkldata, min_alpha=0.02):
         ic_bin = Ic[rr[bin_idxes,:]]
         val = numpy.isfinite(iobs) & numpy.isfinite(ic_bin).all(axis=1) & numpy.all(rr[bin_idxes,:]>=0, axis=1)
         iobs, ic_bin = iobs[val], ic_bin[val,:]
-        cc_star = hkldata.binned_df["CC*"][i_bin] if "CC*" in hkldata.binned_df else 1
+        cc_star = hkldata.binned_df["ml"]["CC*"][i_bin] if "CC*" in hkldata.binned_df["ml"] else 1
         if cc_star < 0.5:
             break
         cc_oc = [numpy.corrcoef(iobs, ic_bin[:,i])[0,1] / cc_star for i in range(n_ops)]

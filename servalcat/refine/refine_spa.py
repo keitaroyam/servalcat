@@ -183,7 +183,8 @@ def main(args):
                                              require_types=["F", "P"])
         hkldata.df = hkldata.df.dropna() # workaround for missing data
         #hkldata.setup_relion_binning()
-        hkldata.setup_binning(n_bins=10) # need to sort out
+        hkldata.setup_binning(n_bins=10, name="ml") # need to sort out
+        hkldata.copy_binning(src="ml", dst="stat")
         st.cell = hkldata.cell
         st.spacegroup_hm = hkldata.sg.xhm()
         st.setup_cell_images()

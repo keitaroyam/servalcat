@@ -50,25 +50,25 @@ def parse_args(arg_list):
 
 def determine_Sigma_and_aniso(hkldata):
     # initial estimate
-    hkldata.binned_df["S"] = 1.
+    hkldata.binned_df["ml"]["S"] = 1.
     I_over_eps = hkldata.df.I.to_numpy() / hkldata.df.epsilon.to_numpy()
     x = []
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         #S = max(numpy.nanmean(I_over_eps[idxes]), 1e-3)
         # var(I) = var_signal + var_noise, so this overestimates S,
         # but it should be better than having negative values (in noisy shell)
         S = numpy.nanstd(I_over_eps[idxes])
-        hkldata.binned_df.loc[i_bin, "S"] = S
+        hkldata.binned_df["ml"].loc[i_bin, "S"] = S
         x.append(S)
     logger.writeln("Initial estimates:")
-    logger.writeln(hkldata.binned_df.to_string())
+    logger.writeln(hkldata.binned_df["ml"].to_string())
 
     B = gemmi.SMat33d(0,0,0,0,0,0)
     SMattolist = lambda B: [B.u11, B.u22, B.u33, B.u12, B.u13, B.u23]
     adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
     logger.writeln("ADP free parameters = {}".format(adpdirs.shape[0]))
     ssqmat = hkldata.ssq_mat()
-    cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df.S)]
+    cycle_data = [[0] + SMattolist(B) + list(hkldata.binned_df["ml"].S)]
     for icyc in range(100):
         #logger.writeln("Refine B")
         B_converged = False
@@ -93,12 +93,12 @@ def determine_Sigma_and_aniso(hkldata):
         #logger.writeln("time= {}".format(time.time() - t0))
         #logger.writeln("B_aniso= {}".format(B))
         #logger.writeln("Refine S")
-        S_converged = [False for _ in hkldata.binned()]
+        S_converged = [False for _ in hkldata.binned("ml")]
         k_ani = hkldata.debye_waller_factors(b_cart=B)
-        for i, (i_bin, idxes) in enumerate(hkldata.binned()):
+        for i, (i_bin, idxes) in enumerate(hkldata.binned("ml")):
             #logger.writeln("Bin {}".format(i_bin))
             for j in range(10):
-                S = hkldata.binned_df.loc[i_bin, "S"]
+                S = hkldata.binned_df["ml"].loc[i_bin, "S"]
                 f0 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
                                                 S * hkldata.df.epsilon.to_numpy()[idxes],
                                                 numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
@@ -114,7 +114,7 @@ def determine_Sigma_and_aniso(hkldata):
                                                     hkldata.df.llweight.to_numpy()[idxes]))
                     #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
                     if f1 < f0:
-                        hkldata.binned_df.loc[i_bin, "S"] = S * ss
+                        hkldata.binned_df["ml"].loc[i_bin, "S"] = S * ss
                         if ss > 0.9999: S_converged[i] = True
                         break
                 else:
@@ -122,18 +122,18 @@ def determine_Sigma_and_aniso(hkldata):
                 if S_converged[i]: break
 
         #logger.writeln("Refined estimates in cycle {}:".format(icyc))
-        #logger.writeln(hkldata.binned_df.to_string())
+        #logger.writeln(hkldata.binned_df["ml"].to_string())
         #logger.writeln("B_aniso= {}".format(B))
-        cycle_data.append([icyc] + SMattolist(B) + list(hkldata.binned_df.S))
+        cycle_data.append([icyc] + SMattolist(B) + list(hkldata.binned_df["ml"].S))
         if B_converged and all(S_converged):
             logger.writeln("Converged in cycle {}".format(icyc))
             logger.writeln("Refined estimates:")
-            logger.writeln(hkldata.binned_df.to_string())
+            logger.writeln(hkldata.binned_df["ml"].to_string())
             logger.writeln("B_aniso= {}".format(B))
             break
 
     #with open("fw_cycles.dat", "w") as ofs:
-    #    ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df.index) + "\n")
+    #    ofs.write("cycle B11 B22 B33 B12 B13 B23 " + " ".join("S{}".format(i) for i in hkldata.binned_df["ml"].index) + "\n")
     #    for data in cycle_data:
     #        ofs.write("{:2d} ".format(data[0]+1))
     #        ofs.write(" ".join("{:.4e}".format(x) for x in data[1:]))
@@ -145,9 +145,9 @@ def ll_all_B(x, ssqmat, hkldata, adpdirs):
     B = gemmi.SMat33d(*numpy.dot(x, adpdirs))
     k_ani = hkldata.debye_waller_factors(b_cart=B)
     ret = 0.
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         ret += numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                          hkldata.binned_df.S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
+                                          hkldata.binned_df["ml"].S[i_bin] * hkldata.df.epsilon.to_numpy()[idxes],
                                           numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
                                           hkldata.df.llweight.to_numpy()[idxes]))
     return ret
@@ -170,9 +170,9 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
     epsilon = hkldata.df.epsilon.to_numpy()
     llw = hkldata.df.llweight.to_numpy()
     r = numpy.empty(len(Io)) * numpy.nan
-    for i_bin, idxes in hkldata.binned():
+    for i_bin, idxes in hkldata.binned("ml"):
         r[idxes] = integr.ll_int_fw_der1_ani(Io[idxes], sigIo[idxes],
-                                             k_ani[idxes], hkldata.binned_df.S[i_bin],
+                                             k_ani[idxes], hkldata.binned_df["ml"].S[i_bin],
                                              c[idxes], epsilon[idxes], llw[idxes])
     g = -numpy.nansum(ssqmat * r, axis=1)
     H = numpy.nansum(numpy.matmul(ssqmat[None,:].T, ssqmat.T[:,None]) * (r**2)[:,None,None], axis=0)
@@ -200,8 +200,8 @@ def french_wilson(hkldata, B_aniso, labout=None):
         if len(labout) == 2:
             labout += [f"{labout[0]}(+)", f"{labout[1]}(+)", f"{labout[0]}(-)", f"{labout[1]}(-)"]
     hkldata.df[labout] = numpy.nan
-    for i_bin, idxes in hkldata.binned():
-        S = hkldata.binned_df.S[i_bin]
+    for i_bin, idxes in hkldata.binned("ml"):
+        S = hkldata.binned_df["ml"].S[i_bin]
         c = hkldata.df.centric.to_numpy()[idxes] + 1 # 1 for acentric, 2 for centric
         Io = hkldata.df.I.to_numpy()[idxes]
         sigo = hkldata.df.SIGI.to_numpy()[idxes]
@@ -229,16 +229,16 @@ def main(args):
     else:
         labin = args.labin.split(",")
     try:
-        hkldata, _, _, _, _, _ = sigmaa.process_input(hklin=mtz,
-                                                      labin=labin,
-                                                      n_bins=args.nbins,
-                                                      free=None,
-                                                      xyzins=[],
-                                                      source=None,
-                                                      d_min=args.d_min,
-                                                      n_per_bin=500,
-                                                      max_bins=30,
-                                                      cif_index=args.hklin_index)
+        hkldata, _, _, _, _ = sigmaa.process_input(hklin=mtz,
+                                                   labin=labin,
+                                                   n_bins_ml=args.nbins,
+                                                   free=None,
+                                                   xyzins=[],
+                                                   source=None,
+                                                   d_min=args.d_min,
+                                                   n_per_mlbin=500,
+                                                   max_mlbins=30,
+                                                   cif_index=args.hklin_index)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     

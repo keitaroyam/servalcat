@@ -46,7 +46,7 @@ def parse_args(arg_list):
 
 def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
     hkldata = utils.maps.mask_and_fft_maps(maps, d_min, mask)
-    hkldata.setup_relion_binning()
+    hkldata.setup_relion_binning("ml")
     utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
     nref = len(hkldata.df.index)
@@ -57,15 +57,15 @@ def setup_coeffs_for_halfmap_cc(maps, d_min, mask=None, st=None):
 
     logger.writeln("Calculating weights for half map correlation.")
     logger.writeln(" weight = sqrt(FSChalf / (2*var_noise + var_signal))")
-    hkldata.binned_df["w2_half_varsignal"] = 0.
-    for i_bin, idxes in hkldata.binned():
-        fscfull = hkldata.binned_df.FSCfull[i_bin]
+    hkldata.binned_df["ml"]["w2_half_varsignal"] = 0.
+    for i_bin, idxes in hkldata.binned("ml"):
+        fscfull = hkldata.binned_df["ml"].FSCfull[i_bin]
         if fscfull < 0:
             break # stop here so that higher resolution are all zero
         fsc = fscfull / (2 - fscfull)
-        var_fo = 2 * hkldata.binned_df.var_noise[i_bin] + hkldata.binned_df.var_signal[i_bin]
+        var_fo = 2 * hkldata.binned_df["ml"].var_noise[i_bin] + hkldata.binned_df["ml"].var_signal[i_bin]
         w = numpy.sqrt(fsc / var_fo)
-        hkldata.binned_df.loc[i_bin, "w2_half_varsignal"] = fsc / var_fo * hkldata.binned_df.var_signal[i_bin]
+        hkldata.binned_df["ml"].loc[i_bin, "w2_half_varsignal"] = fsc / var_fo * hkldata.binned_df["ml"].var_signal[i_bin]
         F1w[idxes] = F1[idxes] * w
         F2w[idxes] = F2[idxes] * w
 
@@ -87,20 +87,20 @@ def add_coeffs_for_model_cc(hkldata, st, source="electron"):
     logger.writeln("Calculating weights for map-model correlation.")
     logger.writeln(" weight for Fo = sqrt(FSCfull / var(Fo))")
     logger.writeln(" weight for Fc = sqrt(FSCfull / var(Fc))")
-    hkldata.binned_df["w_mapmodel_c"] = 0.
-    hkldata.binned_df["w_mapmodel_o"] = 0.
-    hkldata.binned_df["var_fc"] = 0.
-    for i_bin, idxes in hkldata.binned():
-        fscfull = hkldata.binned_df.FSCfull[i_bin]
+    hkldata.binned_df["ml"]["w_mapmodel_c"] = 0.
+    hkldata.binned_df["ml"]["w_mapmodel_o"] = 0.
+    hkldata.binned_df["ml"]["var_fc"] = 0.
+    for i_bin, idxes in hkldata.binned("ml"):
+        fscfull = hkldata.binned_df["ml"].FSCfull[i_bin]
         if fscfull < 0: break
         var_fc = numpy.var(FC[idxes])
         wc = numpy.sqrt(fscfull / var_fc)
         wo = numpy.sqrt(fscfull / numpy.var(FP[idxes]))
         FCw[idxes] = FC[idxes] * wc
         FPw[idxes] = FP[idxes] * wo
-        hkldata.binned_df.loc[i_bin, "w_mapmodel_c"] = wc
-        hkldata.binned_df.loc[i_bin, "w_mapmodel_o"] = wo
-        hkldata.binned_df.loc[i_bin, "var_fc"] = var_fc
+        hkldata.binned_df["ml"].loc[i_bin, "w_mapmodel_c"] = wc
+        hkldata.binned_df["ml"].loc[i_bin, "w_mapmodel_o"] = wo
+        hkldata.binned_df["ml"].loc[i_bin, "var_fc"] = var_fc
     
     hkldata.df["FPw"] = FPw
     hkldata.df["FCw"] = FCw
