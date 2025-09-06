@@ -525,7 +525,7 @@ void add_refine(nb::module_& m) {
     .def("get_vdw_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const gemmi::Atom*> atom1, atom2;
       std::vector<double> values, ideals, sigmas, zs;
-      std::vector<int> types;
+      std::vector<std::string> types;
       for (const auto& t : self.vdws) {
         const auto& restr = std::get<0>(t);
         const double z = std::get<1>(t) / restr->sigma;
@@ -536,7 +536,13 @@ void add_refine(nb::module_& m) {
           ideals.push_back(restr->value);
           sigmas.push_back(restr->sigma);
           zs.push_back(z);
-          types.push_back(restr->type);
+          const int i = restr->type > 6 ? restr->type - 6 : restr->type;
+          types.push_back((i == 0 ? "angle" :
+                           i == 1 ? "vdw" :
+                           i == 2 ? "tors" :
+                           i == 3 ? "hbond" :
+                           i == 4 ? "metal" :
+                           "dummy") + std::string(restr->type > 6 ? "_sym" : ""));
         }
       }
       nb::dict d;
