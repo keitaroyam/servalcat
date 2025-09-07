@@ -1323,35 +1323,43 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
         return true;
     return false;
   };
+  auto get_w = [&](const auto &aa) {
+    return target.params->find_geom_weight(aa);
+  };
 
   for (const auto &t : bonds)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, use_nucleus, wbond, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, use_nucleus, wbond * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : angles)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, wangle, angle_von_mises, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wangle * get_w(t.atoms), angle_von_mises, target_ptr, rep_ptr);
   for (const auto &t : torsions)
     if (has_selected(t.atoms))
-      ret += t.calc(wtors, target_ptr, rep_ptr);
+      ret += t.calc(wtors * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : chirs)
     if (has_selected(t.atoms))
-      ret += t.calc(wchir, target_ptr, rep_ptr);
+      ret += t.calc(wchir * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : planes)
     if (has_selected(t.atoms))
-      ret += t.calc(wplane, target_ptr, rep_ptr);
+      ret += t.calc(wplane * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : harmonics)
-    t.calc(target_ptr);
+    t.calc(target_ptr); // get_w?
   for (const auto &t : stackings)
     if (has_selected(t.planes[0]) || has_selected(t.planes[1]))
-      ret += t.calc(wstack, use_stack_dist, target_ptr, rep_ptr);
+      ret += t.calc(wstack * get_w(t.planes), use_stack_dist, target_ptr, rep_ptr);
   for (const auto &t : vdws)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, wvdw, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wvdw * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : intervals)
-    ret += t.calc(st.cell, wbond, target_ptr, rep_ptr);
+    ret += t.calc(st.cell, wbond * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : ncsrs)
-    if (has_selected(t.pairs[0]->atoms) || has_selected(t.pairs[1]->atoms))
-      ret += t.calc(st.cell, wncs, target_ptr, rep_ptr, ncsr_diff_cutoff, ncsr_max_dist);
+    if (has_selected(t.pairs[0]->atoms) || has_selected(t.pairs[1]->atoms)) {
+      const float w = target.params->find_geom_weight({t.pairs[0]->atoms[0],
+          t.pairs[0]->atoms[1],
+          t.pairs[1]->atoms[0],
+          t.pairs[1]->atoms[1]});
+      ret += t.calc(st.cell, wncs * w, target_ptr, rep_ptr, ncsr_diff_cutoff, ncsr_max_dist);
+    }
   if (!check_only && ridge_dmax > 0)
     calc_jellybody(); // no contribution to target
 
@@ -1361,6 +1369,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 }
 
 inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
+  // TODO find_geom_weight?
   if (wbskal <= 0) return 0.;
   if (!check_only)
     assert(target.params->is_refined(RefineParams::Type::B));
@@ -1564,6 +1573,7 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
   return ret;
 }
 inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
+  // TODO find_geom_weight?
   if (wocc <= 0) return 0.;
   if (!check_only)
     assert(target.params->is_refined(RefineParams::Type::Q) && target.use_occr);

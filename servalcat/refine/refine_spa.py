@@ -129,6 +129,7 @@ def add_arguments(parser):
                         help="Write all output from cycles")
     parser.add_argument("--config",
                         help="Config file (.yaml)")
+    parser.add_argument("--halfmapcc_for_dynamic_weighting", help=argparse.SUPPRESS) # testing
 # add_arguments()
 
 def parse_args(arg_list):
@@ -245,6 +246,23 @@ def main(args):
                                  refine_occ=args.refine_all_occ,
                                  refine_dfrac=False, cfg=refine_cfg,
                                  exclude_h_ll=not args.refine_h)
+    if args.halfmapcc_for_dynamic_weighting:
+        localcc, _, _ = utils.fileio.read_ccp4_map(args.halfmapcc_for_dynamic_weighting, pixel_size=args.pixel_size)
+        max_w = 2
+        pos_all = numpy.array([a.pos.tolist() for a in refine_params.atoms])
+        cc = numpy.maximum(0, localcc.interpolate_position_array(pos_all))
+        cc_true = numpy.sqrt(2 * cc / (1 + cc))
+        w = max_w - 0.5 * (numpy.tanh(6 * cc_true - 3) + 1) * (max_w - 1)
+        refine_params.geom_weights[:] = w
+        # debug output
+        st_debug = st.clone()
+        for cra in st_debug[0].all():
+            i = cra.atom.serial - 1
+            cra.atom.b_iso = w[i]
+            cra.atom.occ = cc[i]
+            logger.writeln(f"{cra} {cc[i]} {w[i]}")
+        utils.fileio.write_model(st_debug, file_name="debug_weights.mmcif")
+        
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,

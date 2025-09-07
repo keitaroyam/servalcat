@@ -832,6 +832,12 @@ void add_refine(nb::module_& m) {
     .def_ro("aniso", &RefineParams::aniso)
     .def_ro("use_q_b_mixed_derivatives", &RefineParams::use_q_b_mixed_derivatives)
     .def_ro("atoms", &RefineParams::atoms)
+    .def_prop_ro("geom_weights", [](RefineParams &self) {
+      using T = typename decltype(self.geom_weights)::value_type;
+      return nb::ndarray<nb::numpy, T>(self.geom_weights.data(),
+                                       {self.geom_weights.size()},
+                                       nb::handle());
+        })
     .def("atom_to_param", [](const RefineParams &self, RefineParams::Type t) {
       return self.atom_to_param(t);})
     .def("param_to_atom", [](const RefineParams &self, RefineParams::Type t) {
