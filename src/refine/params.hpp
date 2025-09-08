@@ -7,9 +7,12 @@
 #include <bitset>
 #include <set>
 #include <vector>
+#include <numeric>
 #include <gemmi/model.hpp>     // for Atom
 #include <gemmi/calculate.hpp> // for count_atom_sites
 #include <gemmi/eig3.hpp>      // eigen_decomposition
+#include <Eigen/Dense>
+#include "../math.hpp"
 namespace servalcat {
 
 struct RefineParams {
@@ -479,20 +482,41 @@ struct RefineParams {
     return ret;
   }
   void ensure_occ_constraints() {
-    const size_t n_consts = occ_group_constraints.size();
-    for (int i = 0; i < n_consts; ++i) {
-      const bool is_comp = occ_group_constraints[i].first;
-      const auto &group_idxes = occ_group_constraints[i].second;
-      double sum_occ = 0.;
-      for (size_t j : group_idxes)
-        if (!occ_groups[j].empty()) {
-          const int atom_idx = occ_groups[j].front();
-          sum_occ += atoms[atom_idx]->occ;
+    // there could be non-straightforward cases
+    // for example, a+b=1 and a+c+d=1
+    // here we define f = sum_groupps violation**2
+    // and apply shift -f' / f''
+    // there is a risk of having out of bound values
+    // we clip the values and repeat. this may fail as well.
+
+    const auto is_good = [&]() {
+      for (const double v : occ_constraints())
+        if (std::abs(v) > 1e-4)
+          return false;
+      return true;
+    };
+    if (is_good())
+      return;
+    const auto get_occ = [&](size_t j) { return atoms[occ_groups[j].front()]->occ; };
+    for (int cyc = 0; cyc < 10; ++cyc) {
+      Eigen::VectorXd der1 = Eigen::VectorXd::Zero(occ_groups.size());
+      Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(occ_groups.size(), occ_groups.size());
+      for (auto gr : occ_group_constraints) {
+        const double tmp = std::accumulate(gr.second.begin(), gr.second.end(), -1.0,
+                                           [&](double a, size_t i) { return a + get_occ(i);});
+        for (size_t i : gr.second) {
+          der1(i) += tmp;
+          for (size_t j : gr.second)
+            der2(i, j) += 1;
         }
-      const double fac = (is_comp || sum_occ > 1) ? 1./sum_occ : 1.;
-      for (size_t j : group_idxes)
-        for (int ia : occ_groups[j])
-          atoms[ia]->occ *= fac;
+      }
+      Eigen::VectorXd shift = -SymMatEig(der2).inv() * der1;
+      for (auto gr : occ_group_constraints)
+        for (size_t j : gr.second)
+          for (int ia : occ_groups[j])
+            atoms[ia]->occ = gemmi::clamp(atoms[ia]->occ + shift(j), 0.01, 1.);
+      if (is_good())
+        return;
     }
   }
   template <typename T>

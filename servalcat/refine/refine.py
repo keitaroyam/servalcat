@@ -871,6 +871,7 @@ class Refine:
                    weight_adjust_bond_rmsz_range=(0.5, 1.), stats_json_out=None):
         self.print_weights()
         stats = [{"Ncyc": 0}]
+        self.params.ensure_occ_constraints()
         self.geom.setup_nonbonded()
         self.geom.setup_target()
         self.geom.setup_occ_constraint(u_ini=self.cfg.occ_group_const_mu)
