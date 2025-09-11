@@ -224,7 +224,7 @@ def get_output_model_names(xyzout):
     return pdb, mmcif
 # get_output_model_names()
 
-def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, keep_original_output=False, tls_addu=False):
+def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, modres, keep_original_output=False, tls_addu=False):
     st = utils.fileio.read_structure(cifout)
     st.cispeps = cispeps
     if os.path.exists(pdbout):
@@ -254,6 +254,9 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, keep_ori
             for res in chain:
                 res.label_seq = None
         st.assign_label_seq_id()
+
+    # assuming refmac won't write MODRES
+    st.mod_residues = modres
 
     # add servalcat version
     if len(st.meta.software) > 0 and st.meta.software[-1].name == "refmac":
@@ -414,7 +417,7 @@ def main(args):
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
             modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps,
-                          software_items, args.keep_original_output, args.tls_addu)
+                          software_items, st.mod_residues, args.keep_original_output, args.tls_addu)
 # main()
 
 def command_line():
