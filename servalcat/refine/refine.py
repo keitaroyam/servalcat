@@ -231,7 +231,7 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
 class Geom:
     def __init__(self, st, topo, monlib, refine_params, adpr_w=1, occr_w=1, shake_rms=0,
                  params=None, unrestrained=False, use_nucleus=False,
-                 ncslist=None, atom_pos=None):
+                 ncslist=None):
         self.st = st
         self.params = refine_params
         self.lookup = {x.atom: x for x in self.st[0].all()}

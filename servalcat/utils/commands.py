@@ -858,22 +858,21 @@ def geometry(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
+    refine_params = RefineParams(st, refine_xyz=True)
     if args.selection:
         sel = gemmi.Selection(args.selection)
-        atom_pos = [-1 for _ in range(st[0].count_atom_sites())]
+        geom_w = [0. for _ in range(st[0].count_atom_sites())]
         n = 0
         for chain in sel.chains(st[0]):
             for res in sel.residues(chain):
                 for atom in sel.atoms(res):
-                    atom_pos[atom.serial-1] = n
+                    geom_w[atom.serial-1] = 1.
                     n += 1
-        logger.writeln("Using selection '{}': {} atoms out of {}".format(args.selection, n, len(atom_pos)))
-    else:
-        atom_pos = None
+        logger.writeln("Using selection '{}': {} atoms out of {}".format(args.selection, n, len(geom_w)))
+        refine_params.geom_weights[:] = geom_w
 
-    refine_params = RefineParams(st, refine_xyz=True)
     geom = Geom(st, topo, monlib, refine_params,
-                params=params, atom_pos=atom_pos, use_nucleus=args.nucleus)
+                params=params, use_nucleus=args.nucleus)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.setup_nonbonded()
     ret = geom.show_model_stats()

@@ -1676,6 +1676,7 @@ inline void Geometry::calc_jellybody() {
 inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal,
                                    GeomTarget* target, Reporting *reporting) const {
   assert(!values.empty());
+  if (wdskal <= 0) return 0.;
   const gemmi::Atom* atom1 = atoms[0];
   const gemmi::Atom* atom2 = atoms[1];
   const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
@@ -1727,6 +1728,7 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
 
 inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, bool von_mises,
                                     GeomTarget* target, Reporting *reporting) const {
+  if (waskal <= 0) return 0.;
   // target functions:
   //  when ideal close to 180: 0.5 * w * h^T h = w * (1 + cosa) where h = v1/|v1| + v2/|v2|
   //  if von_mises: w * (1 - cos(a - a0))
@@ -1838,6 +1840,7 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
 }
 
 inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporting *reporting) const {
+  if (wtskal <= 0) return 0.;
   const gemmi::Position& x1 = atoms[0]->pos;
   const gemmi::Position& x2 = atoms[1]->pos;
   const gemmi::Position& x3 = atoms[2]->pos;
@@ -1932,6 +1935,7 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
 }
 
 inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Reporting *reporting) const {
+  if (wchiral <= 0) return 0.;
   const double weight = wchiral * wchiral / (sigma * sigma);
   const gemmi::Position& xc = atoms[0]->pos;
   const gemmi::Position& x1 = atoms[1]->pos;
@@ -1986,6 +1990,7 @@ inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Repo
 }
 
 inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting *reporting) const {
+  if (wplane <= 0) return 0.;
   const double weight = wplane * wplane / (sigma * sigma);
   const int natoms = atoms.size();
   const PlaneDeriv pder(atoms);
@@ -2050,6 +2055,7 @@ inline void Geometry::Harmonic::calc(GeomTarget* target) const {
 }
 
 inline double Geometry::Stacking::calc(double wstack, bool use_dist, GeomTarget* target, Reporting *reporting) const {
+  if (wstack <= 0) return 0.;
   double ret = 0;
   PlaneDeriv pder[2] = {planes[0], planes[1]};
   double vm1vm2 = pder[0].vm.dot(pder[1].vm);
@@ -2208,7 +2214,7 @@ inline double Geometry::Stacking::calc(double wstack, bool use_dist, GeomTarget*
 
 inline double
 Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const {
-  if (sigma <= 0) return 0.;
+  if (sigma <= 0 || wvdw <= 0) return 0.;
   const double weight = wvdw * wvdw / (sigma * sigma);
   const gemmi::Atom& atom1 = *atoms[0];
   const gemmi::Atom& atom2 = *atoms[1];
@@ -2257,7 +2263,7 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
 
 inline double
 Geometry::Interval::calc(const gemmi::UnitCell& cell, double wb, GeomTarget* target, Reporting *reporting) const {
-  if (smin <= 0 || smax <= 0) return 0.;
+  if (smin <= 0 || smax <= 0 || wb <= 0) return 0.;
   const gemmi::Atom& atom1 = *atoms[0];
   const gemmi::Atom& atom2 = *atoms[1];
   const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
@@ -2313,7 +2319,7 @@ Geometry::Interval::calc(const gemmi::UnitCell& cell, double wb, GeomTarget* tar
 inline double
 Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* target, Reporting *reporting,
                      double ncsr_diff_cutoff, double ncsr_max_dist) const {
-  if (sigma <= 0) return 0.;
+  if (sigma <= 0 || wncsr <= 0) return 0.;
   const Vdw &vdw1 = *pairs[0], &vdw2 = *pairs[1];
   const gemmi::Atom* atoms[4] = {vdw1.atoms[0], vdw1.atoms[1], vdw2.atoms[0], vdw2.atoms[1]};
   const gemmi::Transform tr1 = get_transform(cell, vdw1.sym_idx, vdw1.pbc_shift);
