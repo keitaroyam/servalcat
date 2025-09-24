@@ -649,9 +649,12 @@ def map_peaks(args):
         res = chain[x.residue_idx]
         atom = res[x.atom_idx]
         im = st.cell.find_nearest_image(atom.pos, bpos, gemmi.Asu.Any)
-        mpos = st.cell.find_nearest_pbc_position(atom.pos, bpos, im.sym_idx)
-        dist = atom.pos.dist(mpos)
-        peaks.append((map_val, b.volume, mpos, dist, chain, res, atom))
+        if st.cell.is_crystal():
+            bpos = st.cell.find_nearest_pbc_position(atom.pos, bpos, im.sym_idx)
+        elif im.sym_idx > 0:
+            bpos = st.cell.orthogonalize(st.cell.images[im.sym_idx - 1].apply(st.cell.fractionalize(bpos)))
+        dist = atom.pos.dist(bpos)
+        peaks.append((map_val, b.volume, bpos, dist, chain, res, atom))
 
     if len(peaks) == 0:
         logger.writeln("No peaks found. Change parameter(s).")
