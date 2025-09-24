@@ -670,9 +670,9 @@ def map_peaks(args):
             map_val /= gr_sigma
         lab_str = "Peak {:4d} value= {: .2e} volume= {:5.1f} pos= {} closest= {:10s} dist= {:.2f}".format(i+1, map_val, volume, mpos_str, atom_str, dist)
         for_coot.append((lab_str, (mpos.x, mpos.y, mpos.z)))
-        for_df.append((map_val, volume, mpos.x, mpos.y, mpos.z, chain.name, str(res.seqid), atom_name, dist))
+        for_df.append((map_val, volume, mpos.x, mpos.y, mpos.z, chain.name, str(res.seqid), res.name, atom_name, dist))
     df = pandas.DataFrame(for_df, columns=["map_value" if args.abs_level is not None else "sigma_level",
-                                           "volume", "x", "y", "z", "chain", "residue", "atom", "dist"])
+                                           "volume", "x", "y", "z", "chain", "seqid", "residue", "atom", "dist"])
     logger.writeln(df.to_string())
     with open(args.output_prefix + ".json", "w") as ofs:
         df.to_json(ofs, orient="records", indent=2)
