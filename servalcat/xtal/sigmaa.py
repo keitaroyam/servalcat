@@ -155,7 +155,7 @@ def calc_r_and_cc(hkldata, twin_data=None):
             ret[rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
     else:
         ret[cclab+"avg"] = nanaverage(stats[cclab], stats["n_obs"])
-        ret[rlab] = utils.hkl.r_factor(obs, calc)
+        ret[rlab] = utils.hkl.r_factor(obs_sqrt, calc_sqrt)
         
     return stats, ret
 # calc_r_and_cc()
