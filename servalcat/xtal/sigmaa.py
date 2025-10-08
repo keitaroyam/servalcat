@@ -1509,12 +1509,17 @@ def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None,
         hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
 # update_fc()
 
-def calc_Fmask(st, d_min, miller_array):
+def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     logger.writeln("Calculating solvent contribution..")
     grid = gemmi.FloatGrid()
     grid.setup_from(st, spacing=min(0.6, (d_min-1e-6) / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
+    if use_non_binary_mask:
+        logger.writeln("Using non-binary solvent mask")
+        masker.use_atom_occupancy = True
+        masker.island_min_volume = 0
     masker.put_mask_on_float_grid(grid, st[0])
+    #utils.maps.write_ccp4_map("solmask.ccp4", grid)
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
     Fmask = fmask_gr.get_value_by_hkl(miller_array)
     return Fmask

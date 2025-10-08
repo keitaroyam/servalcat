@@ -21,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False, addends=None):
+                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -32,9 +32,11 @@ class LL_Xtal:
         self.d_min_max = hkldata.d_min_max()
         self.fc_labs = ["FC0"]
         self.use_solvent = use_solvent
-        if use_solvent:
+        if use_solvent: # 0: no solvent, 1: use solvent, 2: non-binary solvent mask
             self.fc_labs.append("FCbulk")
             self.hkldata.df["FCbulk"] = 0j
+            self.use_non_binary_mask = use_solvent == 2
+                
         self.D_labs = ["D{}".format(i) for i in range(len(self.fc_labs))]
         self.k_overall = numpy.ones(len(self.hkldata.df.index))
         self.b_aniso = gemmi.SMat33d(0,0,0,0,0,0)
@@ -91,7 +93,7 @@ class LL_Xtal:
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array)
+            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array, self.use_non_binary_mask)
             if self.twin_data:
                 fc_sum = self.twin_data.f_calc[:,:-1].sum(axis=1)
             else:

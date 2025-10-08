@@ -98,6 +98,8 @@ def add_arguments(parser):
     parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
+    parser.add_argument("--non_binary_solvent_mask", action='store_true',
+                        help=argparse.SUPPRESS) # experimental
     parser.add_argument('--use_work_in_est',  action='store_true',
                         help="Use work reflections in ML parameter estimates")
     parser.add_argument('--keep_charges',  action='store_true',
@@ -254,7 +256,8 @@ def main(args):
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
-                 use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
+                 use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
+                 use_in_est=use_in_est, use_in_target=use_in_target,
                  twin=args.twin, addends=addends)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
