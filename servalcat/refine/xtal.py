@@ -174,7 +174,9 @@ class LL_Xtal:
         ret = {"summary": overall}
         ret["summary"]["-LL"] = self.calc_target()
         if self.twin_data:
-            ret["twin_alpha"] = self.twin_data.alphas
+            ret["twin_alpha"] = {op.as_hkl().triplet(): a
+                                 # ops does not include identity
+                                 for op, a in zip([gemmi.Op()]+self.twin_data.ops, self.twin_data.alphas)}
         if bin_stats:
             ret["bin_stats"] = stats
             ret["ml"] = self.hkldata.binned_df["ml"].copy()
