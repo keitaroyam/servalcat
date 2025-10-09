@@ -85,6 +85,7 @@ def nanaverage(cc, w):
 def calc_r_and_cc(hkldata, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
+    has_llw = (hkldata.df.llweight != 1.0).any()
     rlab = "R1" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
     olab = "Io" if has_int else "Fo"
@@ -94,12 +95,18 @@ def calc_r_and_cc(hkldata, twin_data=None):
     stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
+    if has_llw:
+        for suf in ("_llw=0", "_llw>0"):
+            stats["n"+suf] = 0
     if rlab == "R1":
         if has_free:
             for suf in ("work", "free"):
                 stats["n_R1"+suf] = 0
         else:
             stats["n_R1"] = 0
+        if has_llw:
+            for suf in ("_llw=0", "_llw>0"):
+                stats["n_R1"+suf] = 0
     stats["Cmpl"] = 0.
     if twin_data:
         Fc = numpy.sqrt(twin_data.i_calc_twin())
@@ -123,8 +130,13 @@ def calc_r_and_cc(hkldata, twin_data=None):
     else:
         stats[cclab] = numpy.nan
         stats[rlab] = numpy.nan
+    if has_llw:
+        for lab in (cclab, rlab):
+            for suf in ("_llw=0", "_llw>0"):
+                stats[lab+suf] = numpy.nan
 
     centric_and_selections = hkldata.centric_and_selections["stat"]
+    sel_llw = [hkldata.df.llweight == 0, hkldata.df.llweight > 0]
     for i_bin, idxes in hkldata.binned("stat"):
         stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
         stats.loc[i_bin, "n_all"] = len(idxes)
@@ -144,7 +156,14 @@ def calc_r_and_cc(hkldata, twin_data=None):
             stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
             if rlab == "R1":
                 stats.loc[i_bin, "n_"+rlab] = numpy.sum(numpy.isfinite(obs_sqrt[idxes]))
-
+        if has_llw:
+            for j, suf in enumerate(("_llw=0", "_llw>0")):
+                sel = sel_llw[j][idxes]
+                stats.loc[i_bin, "n"+suf] = numpy.sum(numpy.isfinite(obs[idxes][sel]))
+                stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes][sel], calc[idxes][sel])
+                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes][sel], calc_sqrt[idxes][sel])
+                if rlab == "R1":
+                    stats.loc[i_bin, "n_"+rlab+suf] = numpy.sum(numpy.isfinite(obs_sqrt[idxes][sel]))
     # Overall
     ret = {}
     if has_free:
@@ -156,6 +175,11 @@ def calc_r_and_cc(hkldata, twin_data=None):
     else:
         ret[cclab+"avg"] = nanaverage(stats[cclab], stats["n_obs"])
         ret[rlab] = utils.hkl.r_factor(obs_sqrt, calc_sqrt)
+    if has_llw:
+        for j, suf in enumerate(("_llw=0", "_llw>0")):
+            ret[cclab+suf+"_avg"] = nanaverage(stats[cclab+suf], stats["n"+suf])
+            sel = sel_llw[j]
+            ret[rlab+suf] = utils.hkl.r_factor(obs_sqrt[sel], calc_sqrt[sel])
         
     return stats, ret
 # calc_r_and_cc()
