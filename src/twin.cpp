@@ -1181,8 +1181,10 @@ void add_twin(nb::module_& m) {
                 const std::complex<double> DFc = self.sum_fcalc(ia, true);
                 const double xpct_mF = calc_expected_mF(Ft, f_inv(i,i), std::abs(DFc), S * eps, c);
                 const double tmp = (calc_expected_F2(Ft, f_inv(i,i)) + std::norm(DFc)) / c - (3 - c) * xpct_mF * std::abs(DFc);
-                numer += tmp / eps;
-                denom += 1. / c;
+                if (!std::isnan(tmp)) {
+                  numer += tmp / eps;
+                  denom += 1. / c;
+                }
               }
             }
           }
@@ -1213,7 +1215,9 @@ void add_twin(nb::module_& m) {
             const bool use_exp = true; //par == 1;
             if (par < 0 || par == 1) {
               // printf("debug: sigma %f to %f\n", self.ml_sigma(i_bin), find_sigma(i_bin));
-              self.ml_sigma(i_bin) = find_sigma(i_bin);
+              const double tmp = find_sigma(i_bin);
+              if (std::isfinite(tmp))
+                self.ml_sigma(i_bin) = tmp;
             }
             auto f0_ders = calc_f_ders(i_bin, par, false);
             const Eigen::VectorXd pval = get_par(i_bin, par, use_exp);
