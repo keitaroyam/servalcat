@@ -576,6 +576,48 @@ struct TwinData {
   }
 };
 
+// <m|F|>
+double calc_expected_mF(double Ft, double Hinv, double DFc, double S_eps, int c) {
+  assert (c == 1 || c == 2);
+  const double r = std::abs(DFc) / S_eps; // X without |F|
+  const double m = fom(Ft * r, c);
+  const double m_der = fom_der(m, Ft * r, c);
+  const double g = m * Ft;
+  const double g2 = g * g;
+  const double g_der_sq = sq(m_der * Ft * r + m);
+  const double g_der2 = fom_der2(m, Ft * r, c) * Ft * sq(r) + 2 * m_der * r;
+  const double denom = g2 + (-g_der2 * g + g_der_sq) * Hinv;
+  return g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * Hinv / denom);
+}
+
+// <m^2|F|^2>
+double calc_expected_m2F2(double Ft, double Hinv, double DFc, double S_eps, int c) {
+  assert (c == 1 || c == 2);
+  const double r = std::abs(DFc) / S_eps; // X without |F|
+  const double m = fom(Ft * r, c);
+  const double m_der = fom_der(m, Ft * r, c);
+  const double m_der2 = fom_der2(m, Ft * r, c);
+  const double g = sq(m * Ft);
+  const double g2 = sq(g);
+  const double g_der_sq = sq(2 * m * m_der * DFc / S_eps * sq(Ft) + 2 * sq(m) * Ft);
+  // const double g_der2 = 2 * sq(DFc * Ft / S_eps) * (sq(m_der) + m * m_der2) +
+  //   4 * sq(DFc / S_eps) * Ft * m * m_der + 4 * m* m_der * 2 * DFc * Ft / S_eps + 2 * sq(m);
+  const double g_der2 = 2 * sq(m_der * Ft * DFc / S_eps + m) +
+    2 * m * Ft * (m_der2 * sq(DFc / S_eps) * Ft + 2 * m_der * DFc / S_eps);
+  const double denom = g2 + (-g_der2 * g + g_der_sq) * Hinv;
+  return g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * Hinv / denom);
+}
+
+// <|F|^2>
+double calc_expected_F2(double Ft, double Hinv) {
+  const double g = sq(Ft);
+  const double g2 = sq(g);
+  const double g_der_sq = 4 * g;
+  const double g_der2 = 2;
+  const double denom = g2 + (-g_der2 * g + g_der_sq) * Hinv;
+  return g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * Hinv / denom);
+}
+
 void add_twin(nb::module_& m) {
   using T = double;
   nb::class_<TwinData>(m, "TwinData")
@@ -839,7 +881,9 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("ll_der_D_S", [](const TwinData &self) {
+    .def("ll_der_D_S", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
       const size_t n_cols = self.n_models + 1;
       auto ret = make_numpy_array<double>({self.asu.size(), n_cols});
       double* ptr = ret.data();
@@ -847,23 +891,27 @@ void add_twin(nb::module_& m) {
         ptr[i] = NAN;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
         const int b = self.rbin[ib];
+        Eigen::VectorXd f_true(self.rb2a[ib].size());
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+          f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+        auto f_inv = SymMatEig(ders.second).inv();
         for (int i = 0; i < self.rb2a[ib].size(); ++i) {
           const int ia = self.rb2a[ib][i];
-          if (std::isnan(self.f_true_max[ia]))
-            continue;
+          const double Ft = self.f_true_max[ia];
           const int c = self.centric[ia] + 1;
           const double eps = self.epsilon[ia];
           const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const std::complex<double> DFc_conj = std::conj(DFc);
           const double S = self.ml_sigma(self.bin[ia]);
-          const double m = fom(self.f_true_max[ia] * std::abs(DFc) / (eps * S), c);
+          const double xpct_mF = calc_expected_mF(Ft, f_inv(i,i), std::abs(DFc), S * eps, c);
           for (size_t j = 0; j < self.n_models; ++j) {
             const double r_fcj_fc = (self.f_calc(ia, j) * DFc_conj).real();
             // wrt Dj
-            ptr[ia*n_cols + j] = 2 * r_fcj_fc / (eps * S * c) * (1. - m * self.f_true_max[ia] / std::abs(DFc));
+            ptr[ia*n_cols + j] = 2 * r_fcj_fc / (eps * S * c) * (1. - xpct_mF / std::abs(DFc));
           }
           // wrt S
-          const double tmp = (sq(self.f_true_max[ia]) + std::norm(DFc)) / c - m * (3 - c) * self.f_true_max[ia] * std::abs(DFc);
+          const double tmp = (calc_expected_F2(Ft, f_inv(i,i)) + std::norm(DFc)) / c - (3 - c) * xpct_mF * std::abs(DFc);
           ptr[(ia+1)*n_cols - 1] = 1. / (c * S) - tmp / (eps * sq(S));
         }
       }
@@ -897,18 +945,9 @@ void add_twin(nb::module_& m) {
             const int alpha_idx = self.rbo2c[ib][io][ic];
             if (std::isnan(self.f_true_max[ia])) continue;
             const double fac1 = -sig2inv * i_obs;
-            if (accurate) {
-              const double g = sq(self.f_true_max[ia]);
-              const double g2 = g * g;
-              const double g_der_sq = 4 * g;
-              const double g_der2 = 2;
-              const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
-              if (denom <= 0) {
-                printf("negative denom %f fmax %f Hii %f\n", denom, self.f_true_max[ia], f_inv(i,i));
-                std::cout << ders.second << "\n" << f_inv << "\n";
-              }
-              ptr[alpha_idx] += fac1 * g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
-            } else
+            if (accurate)
+              ptr[alpha_idx] += fac1 * calc_expected_F2(self.f_true_max[ia], f_inv(i,i));
+            else
               ptr[alpha_idx] += fac1 * sq(self.f_true_max[ia]);
             // |Fi|^2 |Fj|^2 part
             for (int ic2 = 0; ic2 < self.rbo2a[ib][io].size(); ++ic2) {
@@ -997,49 +1036,243 @@ void add_twin(nb::module_& m) {
           const double eps = self.epsilon[ia];
           const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const double S = self.ml_sigma(self.bin[ia]);
-          const double r = std::abs(DFc) / (S * eps); // X without |F|
-          const double m = fom(Ft * r, c);
-          const double m_der = fom_der(m, Ft * r, c);
-          const double g = m * Ft;
-          if (accurate) {
-            const double g2 = g * g;
-            const double g_der_sq = sq(m_der * Ft * r + m);
-            const double g_der2 = fom_der2(m, Ft * r, c) * Ft * sq(r) + 2 * m_der * r;
-            const double denom = g2 + (-g_der2 * g + g_der_sq) * f_inv(i,i);
-            ptr[ia] = g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
-          } else {
-            ptr[ia] = g;
-          }
+          if (accurate)
+            ptr[ia] = calc_expected_mF(Ft, f_inv(i,i), std::abs(DFc), S * eps, c);
+          else
+            ptr[ia] = fom(Ft * std::abs(DFc) / (S * eps), c) * Ft;
         }
       }
       return ret;
     }, nb::arg("Io"), nb::arg("sigIo"), nb::arg("accurate")=true)
-    .def("ll_der_fc0", [](const TwinData &self) {
+    .def("ll_der_fc0", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
       auto ret1 = make_numpy_array<std::complex<double>>({self.asu.size()});
       auto ret2 = make_numpy_array<double>({self.asu.size()});
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
       std::complex<double>* ptr1 = ret1.data();
       double* ptr2 = ret2.data();
       for (int i = 0; i < ret1.size(); ++i) {
         ptr1[i] = NAN;
         ptr2[i] = NAN;
       }
-      for (int ia = 0; ia < self.asu.size(); ++ia) {
-        const int b = self.bin[ia];
-        const std::complex<double> DFc = self.sum_fcalc(ia, true);
-        const double fmax = self.f_true_max[ia];
-        if (!std::isnan(fmax)) {
+      for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        const size_t b = self.rbin[ib];
+        Eigen::VectorXd f_true(self.rb2a[ib].size());
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+          f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+        auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+        auto f_inv = SymMatEig(ders.second).inv();
+        for (size_t i = 0; i < self.rb2a[ib].size(); ++i) {
+          const size_t ia = self.rb2a[ib][i];
+          const double Ft = self.f_true_max[ia];
           const int c = self.centric[ia] + 1;
           const double eps = self.epsilon[ia];
-          const double S = self.ml_sigma(b);
-          const double X_der = fmax / (S * eps);
-          const double X = std::abs(DFc) * X_der;
-          const double m = fom(X, c);
+          const std::complex<double> DFc = self.sum_fcalc(ia, true);
           const std::complex<double> exp_ip = std::exp(std::arg(DFc) * std::complex<double>(0, 1));
-          ptr1[ia] = (3 - c) * (std::abs(DFc) - m * fmax) / (eps * S) * self.ml_scale(b, 0) * exp_ip; // assuming 0 is atomic structure
-          ptr2[ia] = ((3 - c) / (eps * S) - fom_der(m, X, c) * sq((3 - c) * X_der)) * sq(self.ml_scale(b, 0));
+          const double DFc_abs = std::abs(DFc);
+          const double S = self.ml_sigma(self.bin[ia]);
+          const double xpct_mF = calc_expected_mF(Ft, f_inv(i,i), DFc_abs, S * eps, c);
+          const double xpct_m2F2 = calc_expected_m2F2(Ft, f_inv(i,i), DFc_abs, S * eps, c);
+          const double invS = (3 - c) / (eps * S);
+          const double tmp1 = DFc_abs - xpct_mF;
+          const double D0 = self.ml_scale(b, 0); // assuming 0 is atomic structure
+          ptr1[ia] = (3 - c) * tmp1 / (eps * S) * D0 * exp_ip;
+          //ptr2[ia] = (invS + sq(invS) * (sq(xpct_mF) - xpct_m2F2)) * sq(D0); // could be negative
+          ptr2[ia] = sq((3 - c) * tmp1 / (eps * S) * D0);
+          // if (std::isnan(ptr2[ia]))
+          //   printf("der2_nan %f %f %f %f\n", xpct_mF, xpct_m2F2, Ft, f_inv(i,i));
+          //ptr2[ia] = (invS + sq(invS * tmp1) - sq(invS) * (std::norm(DFc) - 2 * DFc_abs * xpct_mF)) * sq(D0);
+          //ptr2[ia] = (invS + sq(invS * tmp1) - sq(invS) * (std::norm(DFc) - 2 * DFc_abs * xpct_mF + xpct_m2F2)) * sq(D0);
+          //ptr2[ia] = invS * sq(D0); // good enough?
         }
       }
       return nb::make_tuple(ret1, ret2);
+    })
+    .def("ll_refine_D_S", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, int max_cyc) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
+      // calc f and derivatives
+      auto calc_f_ders = [&](int i_bin, int par, bool ll_only) {
+        double ll = 0;
+        const int n_par = par < 0 ? (self.n_models + 1) : par == 0 ? self.n_models : 1;
+        Eigen::VectorXd der1 = Eigen::VectorXd::Zero(n_par);
+        Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(n_par, n_par);
+        for (int ib = 0; ib < self.rb2o.size(); ++ib)
+          if (self.rbin[ib] == i_bin) {
+            self.est_f_true(ib, Io_.data(), sigIo_.data(), 10);
+            Eigen::VectorXd f_true(self.rb2a[ib].size());
+            for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+              f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+            const double f = self.calc_f(ib, Io_.data(), sigIo_.data(), f_true);
+            const auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+            const auto eig = SymMatEig(ders.second);
+            const auto f_inv = eig.inv();
+            const double h_inv_der = eig.det(); // could be negative?
+            if (!std::isnan(f) && h_inv_der > 0) {
+              ll += f + 0.5 * std::log(h_inv_der);
+              for (int i = 0; i < self.rb2a[ib].size(); ++i) {
+                const int ia = self.rb2a[ib][i];
+                const int c = self.centric[ia] + 1;
+                const double S = self.ml_sigma(self.bin[ia]); // omitting eps
+                ll += std::log(S) / c;
+                if (!ll_only) {
+                  const double Ft = self.f_true_max[ia];
+                  const double eps = self.epsilon[ia];
+                  const std::complex<double> DFc = self.sum_fcalc(ia, true);
+                  const std::complex<double> DFc_conj = std::conj(DFc);
+                  const double DFc_abs = std::abs(DFc);
+                  const double xpct_mF = calc_expected_mF(Ft, f_inv(i,i), std::abs(DFc), S * eps, c);
+                  if (par <= 0) // wrt Dj
+                    for (size_t j = 0; j < self.n_models; ++j) {
+                      const double r_fcj_fc = (self.f_calc(ia, j) * DFc_conj).real();
+                      der1(j) += 2 * r_fcj_fc / (eps * S * c) * (1. - xpct_mF / DFc_abs);
+                      for (size_t k = 0; k < self.n_models; ++k) {
+                        const double r_fck_fc = (self.f_calc(ia, k) * DFc_conj).real();
+                        //const double d_fc_dj_dk = (self.f_calc(ia, j) * self.f_calc(ia, k)).real() / DFc_abs
+                        //  - r_fcj_fc * r_fck_fc / (DFc_abs * sq(DFc_abs));
+                        der2(j,k) += (3-c) / (eps * S) * r_fcj_fc * r_fck_fc / sq(DFc_abs);
+                      }
+                      if (par < 0) { // mixed derivative
+                        const int k = der1.size() - 1;
+                        const double tmp = -2 * r_fcj_fc / (eps * sq(S) * c) * (1. - xpct_mF / DFc_abs); // m' involving term ignored
+                        der2(j,k) += tmp;
+                        der2(k,j) += tmp;
+                      }
+                    }
+                  if (par < 0 || par == 1) { // wrt S
+                    const int j = der1.size() - 1;
+                    const double tmp = (calc_expected_F2(Ft, f_inv(i,i)) + std::norm(DFc)) / c - (3 - c) * xpct_mF * DFc_abs;
+                    der1(j) += 1. / (c * S) - tmp / (eps * sq(S));
+                    der2(j,j) +=  sq(1. / (c * S) - tmp / (eps * sq(S)));
+                  }
+                }
+              }
+            }
+          }
+        // if (!ll_only) {
+        //   printf("<der1 ");
+        //   for (int i = 0; i < der1.size(); ++i)
+        //     printf("%f ", der1(i));
+        //   printf(">\n");
+        //   std::cout << "der2 "
+        //             << der2 << "\n";
+        // }
+        return std::make_pair(ll, std::make_pair(der1, der2));
+      };
+      auto find_sigma = [&](int i_bin) {
+        double numer = 0, denom = 0;
+        for (int ib = 0; ib < self.rb2o.size(); ++ib)
+          if (self.rbin[ib] == i_bin) {
+            self.est_f_true(ib, Io_.data(), sigIo_.data(), 10);
+            Eigen::VectorXd f_true(self.rb2a[ib].size());
+            for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
+              f_true(i) = self.f_true_max[self.rb2a[ib][i]];
+            const double f = self.calc_f(ib, Io_.data(), sigIo_.data(), f_true);
+            const auto ders = self.calc_f_der(ib, Io_.data(), sigIo_.data(), f_true);
+            const auto eig = SymMatEig(ders.second);
+            const auto f_inv = eig.inv();
+            const double h_inv_der = eig.det(); // could be negative?
+            if (!std::isnan(f) && h_inv_der > 0) {
+              for (int i = 0; i < self.rb2a[ib].size(); ++i) {
+                const int ia = self.rb2a[ib][i];
+                const int c = self.centric[ia] + 1;
+                const double S = self.ml_sigma(self.bin[ia]); // omitting eps
+                const double Ft = self.f_true_max[ia];
+                const double eps = self.epsilon[ia];
+                const std::complex<double> DFc = self.sum_fcalc(ia, true);
+                const double xpct_mF = calc_expected_mF(Ft, f_inv(i,i), std::abs(DFc), S * eps, c);
+                const double tmp = (calc_expected_F2(Ft, f_inv(i,i)) + std::norm(DFc)) / c - (3 - c) * xpct_mF * std::abs(DFc);
+                numer += tmp / eps;
+                denom += 1. / c;
+              }
+            }
+          }
+        return numer / denom;
+      };
+      auto get_par = [&](int i_bin, int par, bool use_exp) {
+        Eigen::VectorXd pval(par < 0 ? (self.n_models + 1) : par == 0 ? self.n_models : 1);
+        if (par <= 0)
+          for (size_t j = 0; j < self.n_models; ++j)
+            pval(j) = self.ml_scale(i_bin, j);
+        if (par != 0)
+          pval(pval.size()-1) = self.ml_sigma(i_bin);
+        return use_exp ? pval.array().log() : pval;
+      };
+      auto set_par = [&](int i_bin, int par, const auto &val, bool use_exp) {
+        if (par <= 0)
+          for (size_t j = 0; j < self.n_models; ++j)
+            self.ml_scale(i_bin, j) = std::max(1e-4, use_exp ? std::exp(val(j)) : val(j));
+        if (par != 0)
+          self.ml_sigma(i_bin) = std::max(1e-1, use_exp ? std::exp(val(val.size()-1)) : val(val.size()-1));
+      };
+      for (int i_bin = 0; i_bin < bin_max; ++i_bin) {
+        for (int cyc = 0; cyc < max_cyc; ++cyc) {
+          //bool no_shift[2] = {false, false};
+          bool no_shift = true;
+          {//for (int par = 0; par < 2; ++par) { // par = 0: refine D, par = 1: refine S
+            const int par = -1;
+            const bool use_exp = true; //par == 1;
+            if (par < 0 || par == 1) {
+              // printf("debug: sigma %f to %f\n", self.ml_sigma(i_bin), find_sigma(i_bin));
+              self.ml_sigma(i_bin) = find_sigma(i_bin);
+            }
+            auto f0_ders = calc_f_ders(i_bin, par, false);
+            const Eigen::VectorXd pval = get_par(i_bin, par, use_exp);
+
+            Eigen::VectorXd shift(pval.size());
+            if (use_exp) {
+              f0_ders.second.first = f0_ders.second.first.array() * pval.array().exp();
+              for (int i = 0; i < pval.size(); ++i)
+                for (int j = 0; j < pval.size(); ++j)
+                  if (i == j)
+                    f0_ders.second.second(i,j) = f0_ders.second.second(i,j) * sq(std::exp(pval(i))) + f0_ders.second.first(i);
+                  else
+                    f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
+            }
+            if (par == 1)
+              shift(0) = -f0_ders.second.first(0) / f0_ders.second.second(0,0);
+            else
+              shift = -SymMatEig(f0_ders.second.second).inv() * f0_ders.second.first;
+            // std::cout << "shift " << shift;
+            if (0 && cyc == 0) { // debug
+              std::ofstream ofs("debug_" + std::to_string(i_bin) + "_" + std::to_string(par) + ".csv");
+              ofs << "dx,ll\n";
+              ofs << "0," << f0_ders.first << "\n";
+              for (int j = 1; j < 21; ++j) {
+                set_par(i_bin, par, pval + shift * j / 10., use_exp);
+                auto tmp = calc_f_ders(i_bin, par, true);
+                ofs << j / 10. << "," << tmp.first << "\n";
+              }
+            }
+            for (int i = 0; i < 6; ++i) {
+              // printf("bin %d cyc %d par %d ", i_bin, cyc, par);
+              // if (par <= 0) {
+              //   printf("D ");
+              //   for (size_t j = 0; j < self.n_models; ++j)
+              //     printf("%f%+f ", self.ml_scale(i_bin, j), shift(j));
+              // }
+              // if (par < 0 || par == 1) {
+              //   printf("S %f%+f ", self.ml_sigma(i_bin), shift(pval.size()-1));
+              // }
+              set_par(i_bin, par, pval + shift, use_exp);
+              const double f1 = calc_f_ders(i_bin, par, true).first;
+              // printf("ll %f\n", f1 - f0_ders.first);
+              if (f1 < f0_ders.first)
+                break;
+              shift /= 2;
+              if (shift.array().abs().maxCoeff() < (use_exp ? 1e-2 : 1e-4)) { // arbitrary
+                //no_shift[par] = true;
+                no_shift = true;
+                break;
+              }
+            }
+          }
+          //if (no_shift[0] && no_shift[1])
+          if (no_shift)
+            break;
+        }
+      }
     })
     // helper function for least-square scaling
     // n_models should include mask, but last f_falc is ignored

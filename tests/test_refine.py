@@ -157,6 +157,19 @@ class TestRefine(unittest.TestCase):
         st = utils.fileio.read_structure("1v9g-spk_refined.mmcif")
         self.assertGreater(numpy.std([x.atom.fraction for x in st[0].all() if x.atom.is_hydrogen()]), 0.3)
 
+    def test_refine_twin(self):
+        hklin = os.path.join(root, "1l2h", "1l2h.mtz.gz")
+        xyzin = os.path.join(root, "1l2h", "1l2h.cif.gz")
+        sys.argv = ["", "refine_xtal_norefmac", "--model", xyzin,
+                    "--hklin", hklin, "-s", "xray", "--twin",
+                    "--ncycle", "5"]
+        main()
+        with open("1l2h_refined_stats.json") as f:
+            stats = json.load(f)
+        self.assertEqual(list(stats[-1]["twin_alpha"]), ['h,k,l', '-h,k,-l'])
+        self.assertAlmostEqual(stats[-1]["twin_alpha"]["h,k,l"], 0.66, delta=0.02)
+        self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.81)
+
 if __name__ == '__main__':
     unittest.main()
 

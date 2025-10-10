@@ -190,7 +190,9 @@ class LL_Xtal:
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         if self.twin_data:
-            dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0()
+            Io = self.hkldata.df.I.to_numpy() * self.k_ani2_inv_masked
+            sigIo = self.hkldata.df.SIGI.to_numpy() * self.k_ani2_inv_masked
+            dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0(Io, sigIo)
             dll_dab *= self.twin_data.debye_waller_factors(b_iso=-blur)
         else:
             dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
@@ -278,7 +280,7 @@ class LL_Xtal:
         else:
             self.ll.make_fisher_table_diag_direct_it92(s_array, d2ll_dab2)
             self.ll.fisher_diag_from_table_it92()
-        #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
+        #json.dump(dict(b=self.ll.table_bs, pp1=self.ll.pp1, bb=self.ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))
