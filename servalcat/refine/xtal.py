@@ -66,8 +66,9 @@ class LL_Xtal:
         # modify st before fc calculation
         b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
         self.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb()) # needed for target calculation
+        d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
-                         d_min=self.d_min_max[0], monlib=self.monlib,
+                         d_min=d_min, monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data)
 
@@ -88,8 +89,9 @@ class LL_Xtal:
         
     def overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
+        d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array)
+            Fmask = sigmaa.calc_Fmask(self.st, d_min, miller_array)
             if self.twin_data:
                 fc_sum = self.twin_data.f_calc[:,:-1].sum(axis=1)
             else:
