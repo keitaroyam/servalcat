@@ -648,19 +648,17 @@ void add_twin(nb::module_& m) {
     .def_ro("mlparams", &TwinData::mlparams) // debug raw access
     // Sigma
     .def_prop_ro("ml_sigma", [](TwinData &self) {
-      const size_t size = sizeof(T);
-      const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
+      const size_t n_bins = self.mlparams.size() / (self.n_models + 1);
       return nb::ndarray<nb::numpy, T>(self.mlparams.data(),
-                                       {bin_max},
+                                       {n_bins},
                                        nb::handle(),
                                        {(int64_t)self.n_models+1});
     }, nb::rv_policy::reference_internal)
     // D
     .def_prop_ro("ml_scale", [](TwinData &self) {
-      const size_t size = sizeof(T);
-      const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
+      const size_t n_bins = self.mlparams.size() / (self.n_models + 1);
       return nb::ndarray<nb::numpy, T>(self.mlparams.data() + 1,
-                                       {bin_max, self.n_models},
+                                       {n_bins, self.n_models},
                                        nb::handle(),
                                        {(int64_t)self.n_models+1, 1});
     }, nb::rv_policy::reference_internal)
@@ -1091,7 +1089,7 @@ void add_twin(nb::module_& m) {
     .def("ll_refine_D_S", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, int max_cyc) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
-      const size_t bin_max = self.mlparams.size() / (self.n_models + 1);
+      const size_t n_bins = self.mlparams.size() / (self.n_models + 1);
       // calc f and derivatives
       auto calc_f_ders = [&](int i_bin, int par, bool ll_only) {
         double ll = 0;
@@ -1206,7 +1204,7 @@ void add_twin(nb::module_& m) {
         if (par != 0)
           self.ml_sigma(i_bin) = std::max(1e-1, use_exp ? std::exp(val(val.size()-1)) : val(val.size()-1));
       };
-      for (int i_bin = 0; i_bin < bin_max; ++i_bin) {
+      for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
         for (int cyc = 0; cyc < max_cyc; ++cyc) {
           //bool no_shift[2] = {false, false};
           bool no_shift = true;
@@ -1234,7 +1232,9 @@ void add_twin(nb::module_& m) {
               shift(0) = -f0_ders.second.first(0) / f0_ders.second.second(0,0);
             else
               shift = -SymMatEig(f0_ders.second.second).inv() * f0_ders.second.first;
-            // std::cout << "shift " << shift;
+            //std::cout << "shift " << shift;
+            if (use_exp)
+              shift = shift.cwiseMin(5).cwiseMax(-5); // cap shift
             if (0 && cyc == 0) { // debug
               std::ofstream ofs("debug_" + std::to_string(i_bin) + "_" + std::to_string(par) + ".csv");
               ofs << "dx,ll\n";
