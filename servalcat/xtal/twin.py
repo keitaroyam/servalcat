@@ -126,6 +126,10 @@ def estimate_twin_fractions_from_model(twin_data, hkldata, min_alpha=0.02):
         frac_est /= frac_est.sum()
         tmp.append(P[tidxes].tolist() + cc_oc + [weight_list[-1]] + frac_est.tolist())
 
+    good = numpy.logical_and(numpy.isfinite(P_list).any(axis=(1,2)), numpy.isfinite(cc_oc_list).any(axis=1))
+    P_list = numpy.array(P_list)[good]
+    cc_oc_list = numpy.array(cc_oc_list)[good]
+    weight_list = numpy.array(weight_list)[good]
     P = numpy.average(P_list, axis=0, weights=weight_list)
     cc_oc = numpy.average(cc_oc_list, axis=0, weights=weight_list)
     frac_est = numpy.dot(numpy.linalg.pinv(P), cc_oc)
