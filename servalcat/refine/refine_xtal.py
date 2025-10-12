@@ -110,6 +110,8 @@ def add_arguments(parser):
     parser.add_argument("--vonmises", action='store_true',
                         help="Experimental: von Mises type restraint for angles")
     parser.add_argument("--prefer_intensity", action='store_true')
+    parser.add_argument("--use_fw", action='store_true',
+                        help="For debugging purpose; use F&W-converted amplitudes but use intensity for stats")
     parser.add_argument("--config",
                         help="Config file (.yaml)")
 # add_arguments()
@@ -161,7 +163,6 @@ def main(args):
             hklin_free=args.hklin_free,
             labin_free=args.labin_free,
             labin_llweight=args.labin_llweight)
-
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -171,6 +172,16 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
+    if args.use_fw:
+        if not is_int:
+            raise SystemExit("Error: need intensity input when -use_fw")
+        logger.writeln("Converting intensities to amplitudes with the French & Wilson algorithm")
+        from servalcat.xtal import french_wilson
+        B_aniso = french_wilson.determine_Sigma_and_aniso(hkldata)
+        french_wilson.french_wilson(hkldata, B_aniso, labout=["FP", "SIGFP"]) # TODO when anomalous
+        del hkldata.binned_df["ml"]["S"]
+        is_int = False
+        
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
     if args.unrestrained:
@@ -251,7 +262,7 @@ def main(args):
 
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin)
+                 twin=args.twin, is_int=is_int)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 

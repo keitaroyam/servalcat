@@ -21,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False):
+                 use_solvent=False, use_in_est="all", use_in_target="all", twin=False, is_int=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -48,8 +48,11 @@ class LL_Xtal:
         else:
             self.twin_data = None
         if self.twin_data:
-            self.twin_data.setup_f_calc(len(self.fc_labs))    
-        self.is_int = "I" in self.hkldata.df
+            self.twin_data.setup_f_calc(len(self.fc_labs))
+        if is_int is None:
+            self.is_int = "I" in self.hkldata.df
+        else:
+            self.is_int = is_int
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -125,11 +128,11 @@ class LL_Xtal:
                 self.twin_data.f_calc[:,-1] = Fbulk
             else:
                 self.hkldata.df[self.fc_labs[-1]] = Fbulk
-        if self.is_int:
+        if "I" in self.hkldata.df:
             o_labs = self.hkldata.df.columns.intersection(["I", "SIGI",
                                                            "I(+)","SIGI(+)", "I(-)", "SIGI(-)"])
             self.hkldata.df[o_labs] /= self.scaling.k_overall**2
-        else:
+        if "FP" in self.hkldata.df:
             o_labs = self.hkldata.df.columns.intersection(["FP", "SIGFP",
                                                            "F(+)","SIGF(+)", "F(-)", "SIGF(-)"])
             self.hkldata.df[o_labs] /= self.scaling.k_overall
