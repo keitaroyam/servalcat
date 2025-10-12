@@ -1209,7 +1209,7 @@ void add_twin(nb::module_& m) {
       for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
         for (int cyc = 0; cyc < max_cyc; ++cyc) {
           //bool no_shift[2] = {false, false};
-          bool no_shift = true;
+          bool no_shift = false;
           {//for (int par = 0; par < 2; ++par) { // par = 0: refine D, par = 1: refine S
             const int par = -1;
             const bool use_exp = true; //par == 1;
