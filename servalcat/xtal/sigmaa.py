@@ -1507,7 +1507,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
                                                      free_label="FREE", free=free,
                                                      use=use, n_per_bin=n_per_mlbin,
                                                      max_bins=max_mlbins)
-        if n_bins_ml == 1 and use == "test":
+        if n_bins_ml < 3 and use == "test":
             logger.writeln("Warning: Not enough reflections for ML parameters.")
             logger.writeln("Switching to use=work, i.e. use working reflections for ML estimation")
             use = "work"
