@@ -1123,7 +1123,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
         for dlab, fclab in zip(D_labs, fc_labs):
             hkldata.binned_df["ml"]["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
 
-    if twin_data:
+    if twin_data or use_int:
         t0 = time.time()
         if use == "all":
             idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
@@ -1133,23 +1133,35 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
             idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
                                        for sel in centric_and_selections[i_bin]])
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
-        kani2_inv = 1 / k_ani**2
         i_sigi = numpy.empty((2, len(hkldata.df.index)))
         i_sigi[:] = numpy.nan
-        i_sigi[0, idxes] = (hkldata.df.I.to_numpy() * kani2_inv)[idxes]
-        i_sigi[1, idxes] = (hkldata.df.SIGI.to_numpy() * kani2_inv)[idxes]
-        twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20)
-        for i_bin, _ in hkldata.binned("ml"):
-            hkldata.binned_df["ml"].loc[i_bin, D_labs] = twin_data.ml_scale[i_bin, :]
-            hkldata.binned_df["ml"].loc[i_bin, "S"] = twin_data.ml_sigma[i_bin]
-
-        dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
-        for i_bin, idxes in hkldata.binned("ml"):
-            dfc_bin = dfc[numpy.asarray(twin_data.bin)==i_bin,:]
-            mean_dfc = numpy.nanmean(dfc_bin, axis=0)
-            for i, (dlab, fclab) in enumerate(zip(D_labs, fc_labs)):
-                hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc[i]
-
+        if twin_data:
+            kani2_inv = 1 / k_ani**2
+            i_sigi[0, idxes] = (hkldata.df.I.to_numpy() * kani2_inv)[idxes]
+            i_sigi[1, idxes] = (hkldata.df.SIGI.to_numpy() * kani2_inv)[idxes]
+            twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20)
+            dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
+            for i_bin, idxes in hkldata.binned("ml"):
+                hkldata.binned_df["ml"].loc[i_bin, D_labs] = twin_data.ml_scale[i_bin, :]
+                hkldata.binned_df["ml"].loc[i_bin, "S"] = twin_data.ml_sigma[i_bin]
+                dfc_bin = dfc[numpy.asarray(twin_data.bin)==i_bin,:]
+                mean_dfc = numpy.nanmean(dfc_bin, axis=0)
+                for i, (dlab, fclab) in enumerate(zip(D_labs, fc_labs)):
+                    hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc[i]
+        else:
+            i_sigi[0, idxes] = hkldata.df.I.to_numpy()[idxes]
+            i_sigi[1, idxes] = hkldata.df.SIGI.to_numpy()[idxes]
+            DS = integr.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], k_ani,
+                                      hkldata.binned_df["ml"].loc[:, "S"].to_numpy(), hkldata.df[fc_labs].to_numpy(),
+                                      hkldata.binned_df["ml"].loc[:, D_labs].to_numpy(), hkldata.df.centric.to_numpy()+1,
+                                      hkldata.df.epsilon.to_numpy(), hkldata.df.llweight.to_numpy(),
+                                      hkldata.df.bin_ml.to_numpy(), 20)
+            for i_bin, idxes in hkldata.binned("ml"):
+                hkldata.binned_df["ml"].loc[i_bin, D_labs] = DS[i_bin, :-1]
+                hkldata.binned_df["ml"].loc[i_bin, "S"] = DS[i_bin, -1]
+                for dlab, fclab in zip(D_labs, fc_labs):
+                    mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df["ml"][dlab][i_bin] * hkldata.df[fclab][idxes]))
+                    hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
         logger.writeln("Refined estimates:")
         logger.writeln(hkldata.binned_df["ml"].to_string())
         logger.writeln(f"time: {time.time()-t0:.1f} sec")
