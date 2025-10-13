@@ -1139,7 +1139,9 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
             kani2_inv = 1 / k_ani**2
             i_sigi[0, idxes] = (hkldata.df.I.to_numpy() * kani2_inv)[idxes]
             i_sigi[1, idxes] = (hkldata.df.SIGI.to_numpy() * kani2_inv)[idxes]
+            #twin_data.debug_open("twin_debug.json")
             twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20)
+            #twin_data.debug_close()
             dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
             for i_bin, idxes in hkldata.binned("ml"):
                 hkldata.binned_df["ml"].loc[i_bin, D_labs] = twin_data.ml_scale[i_bin, :]
