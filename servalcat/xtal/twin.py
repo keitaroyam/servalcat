@@ -62,7 +62,8 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
             r_obs = numpy.nan
         else:
             r_obs = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
-        cc = numpy.sum(nums[:,i_op] * ccs[:,i_op]) / numpy.sum(nums[:,i_op])
+        good = numpy.isfinite(ccs[:,i_op])
+        cc = numpy.sum(nums[good,i_op] * ccs[good,i_op]) / numpy.sum(nums[good,i_op])
         tmp.append({"Operator": op.as_hkl().triplet(),
                     "CC_mean": cc, 
                     "R_twin_obs": r_obs,
