@@ -877,7 +877,14 @@ void add_twin(nb::module_& m) {
         const double f = self.calc_f(ib, Io_.data(), sigIo_.data(), f_true);
         Eigen::IOFormat Fmt(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");
         if (std::isnan(f)) {
-          std::cout << "nan f ib " << ib << " ft " << f_true.format(Fmt) << "\n";
+          Eigen::VectorXd mask = Eigen::VectorXd::Zero(self.rb2a[ib].size());
+          for (int io = 0; io < self.rb2o[ib].size(); ++io)
+            if (!std::isnan(Io_(self.rb2o[ib][io])))
+              for (int ic = 0; ic < self.rbo2a[ib][io].size(); ++ic)
+                if (self.alphas[self.rbo2c[ib][io][ic]] > 0)
+                  mask(self.rbo2a[ib][io][ic]) = true;
+          std::cout << "nan f ib " << ib << " ft " << f_true.format(Fmt)
+                    << " mask " << mask.format(Fmt) << "\n";
           continue;
         }
         const double h_inv_der = SymMatEig(ders.second).det(true); // could be negative?
@@ -998,7 +1005,7 @@ void add_twin(nb::module_& m) {
                   g_der2(i,j) = g_der2(j,i) = 4 * self.f_true_max[ia] * self.f_true_max[ia2];
                   const auto H_h = ders.second - g_der2 / g + g_der * g_der.transpose() / sq(g);
                   const auto eig_h = SymMatEig(H_h);
-                  const double det_f = eig_f.det(), det_h = eig_h.det();
+                  const double det_f = eig_f.det(true), det_h = eig_h.det(true);
                   const double tmp = g_der.transpose() * eig_h.inv() * g_der;
                   if (det_f <= 0) {
                     printf("negative det_f %f\n", det_f);

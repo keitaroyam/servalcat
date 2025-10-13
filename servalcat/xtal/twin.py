@@ -160,12 +160,12 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
     sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
     def fun(x):
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo, 100)
+        twin_data.est_f_true(Io, sigIo, 10)
         ret = twin_data.ll(Io, sigIo)
         return ret
     def grad(x):
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo, 100)
+        twin_data.est_f_true(Io, sigIo, 10)
         return twin_data.ll_der_alpha(Io, sigIo, True)
     if 0:
         bak = [_ for _ in twin_data.alphas]

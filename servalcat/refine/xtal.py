@@ -155,6 +155,7 @@ class LL_Xtal:
         if self.twin_data:
             Io = self.hkldata.df.I.to_numpy() * self.k_ani2_inv_masked
             sigIo = self.hkldata.df.SIGI.to_numpy() * self.k_ani2_inv_masked
+            self.twin_data.est_f_true(Io, sigIo)
             ret = self.twin_data.ll(Io, sigIo)
         else:
             k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)

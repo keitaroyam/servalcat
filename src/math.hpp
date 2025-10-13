@@ -179,7 +179,7 @@ struct SymMatEig {
     if (exclude_zero) {
       const auto v = es.eigenvalues();
       // not exact zero due to finite precision
-      return (v.array().abs() < 1e-15).select(1, v).prod();
+      return (v.array().abs() < 1e-13).select(1, v).prod();
     }
     return es.eigenvalues().prod();
   }
