@@ -109,7 +109,7 @@ def calc_r_and_cc(hkldata, twin_data=None):
                 stats["n_R1"+suf] = 0
     stats["Cmpl"] = 0.
     if twin_data:
-        Fc = numpy.sqrt(twin_data.i_calc_twin())
+        Fc = numpy.sqrt(twin_data.i_calc_twin()) * hkldata.df.k_aniso
     else:
         Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
     if has_int:

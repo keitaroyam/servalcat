@@ -90,7 +90,7 @@ class LL_Xtal:
                                       self.hkldata.df.SIGI.to_numpy() * mask)
             self.k_ani2_inv_masked = mask
         
-    def overall_scale(self, min_b=0.1):
+    def _overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
         d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         if self.use_solvent:
@@ -146,8 +146,13 @@ class LL_Xtal:
         # for next cycle
         self.scaling.k_overall = 1.
         self.scaling.b_iso = 0.
+    # _overall_scale()
+    
+    def overall_scale(self, min_b=0.1):
+        self._overall_scale(min_b)
         if self.twin_data:
             estimate_twin_fractions_from_model(self.twin_data, self.hkldata)
+            self._overall_scale(min_b)
     # overall_scale()
 
     def calc_target(self): # -LL target for MLF or MLI
