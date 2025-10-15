@@ -727,6 +727,7 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, use="all", smoothing=
 # determine_mlf_params_from_cc()
 
 def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None):
+    hkldata.binned_df["ml"]["n_ref"] = 0
     # Initial values
     for lab in D_labs: hkldata.binned_df["ml"][lab] = 1.
     hkldata.binned_df["ml"]["S"] = 10000.
@@ -740,6 +741,7 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
             i = 1 if use == "work" else 2
             idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
         valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
+        hkldata.binned_df["ml"].loc[i_bin, "n_ref"] = valid_sel.sum()
         if numpy.sum(valid_sel) < 2:
             continue
         idxes = idxes[valid_sel]

@@ -97,8 +97,8 @@ def add_arguments(parser):
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
-    parser.add_argument('--use_work_in_est',  action='store_true',
-                        help="Use work reflections in ML parameter estimates")
+    parser.add_argument('--use_in_est', choices=["all", "work", "test"],
+                        help="Which set of reflections to use for the ML parameter estimation. Default: 'work' if --twin is set; otherwise 'test'.")
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument("--keep_entities", action='store_true',
@@ -130,7 +130,9 @@ def main(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
-
+    # This could be confusing. Twinning may not be detected.
+    if not args.use_in_est:
+        args.use_in_est = "work" if args.twin else "test"
     keywords = []
     if args.keywords or args.keyword_file:
         if args.keywords: keywords = sum(args.keywords, [])
@@ -156,7 +158,7 @@ def main(args):
             source=args.source,
             d_max=args.d_max,
             d_min=args.d_min,
-            use="work" if args.use_work_in_est else "test",
+            use=args.use_in_est,
             max_mlbins=30,
             keep_charges=args.keep_charges,
             allow_unusual_occupancies=args.allow_unusual_occupancies,
