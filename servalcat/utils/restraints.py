@@ -328,7 +328,7 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
         if params:
             parsed = refmac_keywords.parse_keywords(keywords).get("exte")
             if parsed:
-                params["exte"] = params.get("exte", []) + parsed
+                params["exte"] = parsed + params.get("exte", [])
     else:
         keywords = []
     # these checks can be done after sorting links
