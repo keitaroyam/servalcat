@@ -358,14 +358,31 @@ class Geom:
                         interval="Interval",
                         ncs="Local NCS restraints")
 
+            def atomlabel(r, i):
+                symstr = lambda idx, s: f" ({idx+1};{s[0]},{s[1]},{s[2]})"
+                ret = str(self.lookup[r.atoms[i]])
+                if type(r) in (ext.Geometry.Bond, ext.Geometry.Interval, ext.Geometry.Vdw) and i > 0 and not r.same_asu():
+                    return ret + symstr(r.sym_idx, r.pbc_shift)
+                if type(r) is ext.Geometry.Angle and not r.same_asu(i): # always true if i==1
+                    return ret + symstr(r.sym_idx_1 if i == 0 else r.sym_idx_2,
+                                        r.pbc_shift_1 if i == 0 else r.pbc_shift_2)
+                return ret
+            
             for k in get_table:
                 kwgs = {"min_z": self.outlier_sigmas[k]}
                 if k == "bond": kwgs["use_nucleus"] = self.use_nucleus
                 table = get_table[k](**kwgs)
                 if table["z"]:
-                    for kk in table:
-                        if kk.startswith(("atom", "plane", "1_atom", "2_atom")):
-                            table[kk] = [str(self.lookup[x]) for x in table[kk]]
+                    if "restr" in table:
+                        tmp = {}
+                        for i in range(3 if k == "angle" else 2): # only bond/angle/interval/vdw return restr
+                            tmp[f"atom{i+1}"] = [atomlabel(r, i) for r in table["restr"]]
+                        del table["restr"]
+                        table = tmp | table
+                    else:
+                        for kk in table:
+                            if kk.startswith(("atom", "plane", "1_atom", "2_atom")):
+                                table[kk] = [str(self.lookup[x]) for x in table[kk]]
                     df = pandas.DataFrame(table)
                     df = df.reindex(df.z.abs().sort_values(ascending=False).index)
                     ret["outliers"][k] = df

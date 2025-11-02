@@ -319,7 +319,7 @@ void add_refine(nb::module_& m) {
       return d;
     })
     .def("get_bond_outliers", [](const Geometry::Reporting& self, bool use_nucleus, double min_z) {
-      std::vector<const gemmi::Atom*> atom1, atom2;
+      std::vector<const Geometry::Bond*> rr;
       std::vector<double> values, ideals, sigmas, zs, alphas;
       std::vector<int> types;
       for (const auto& b : self.bonds) {
@@ -331,8 +331,7 @@ void add_refine(nb::module_& m) {
         const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
         const double z = robustf.dfdy;
         if (std::abs(z) >= min_z) {
-          atom1.push_back(restr->atoms[0]);
-          atom2.push_back(restr->atoms[1]);
+          rr.push_back(restr);
           values.push_back(db + ideal);
           ideals.push_back(ideal);
           sigmas.push_back(sigma);
@@ -342,8 +341,7 @@ void add_refine(nb::module_& m) {
         }
       }
       nb::dict d;
-      d["atom1"] = atom1;
-      d["atom2"] = atom2;
+      d["restr"] = rr;
       d["value"] = values;
       d["ideal"] = ideals;
       d["sigma"] = sigmas;
@@ -353,16 +351,14 @@ void add_refine(nb::module_& m) {
       return d;
     }, nb::arg("use_nucleus"), nb::arg("min_z"))
     .def("get_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
-      std::vector<const gemmi::Atom*> atom1, atom2, atom3;
+      std::vector<const Geometry::Angle*> rr;
       std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.angles) {
         const auto& restr = std::get<0>(t);
         const auto& val = std::get<1>(t);
         const double z = std::get<2>(t) / val->sigma; // value - ideal
         if (std::abs(z) >= min_z) {
-          atom1.push_back(restr->atoms[0]);
-          atom2.push_back(restr->atoms[1]);
-          atom3.push_back(restr->atoms[2]);
+          rr.push_back(restr);
           values.push_back(std::get<2>(t) + val->value);
           sigmas.push_back(val->sigma);
           ideals.push_back(val->value);
@@ -370,9 +366,7 @@ void add_refine(nb::module_& m) {
         }
       }
       nb::dict d;
-      d["atom1"] = atom1;
-      d["atom2"] = atom2;
-      d["atom3"] = atom3;
+      d["restr"] = rr;
       d["value"] = values;
       d["ideal"] = ideals;
       d["sigma"] = sigmas;
@@ -523,15 +517,14 @@ void add_refine(nb::module_& m) {
       return d;
     }, nb::arg("min_z"))
     .def("get_vdw_outliers", [](const Geometry::Reporting& self, double min_z) {
-      std::vector<const gemmi::Atom*> atom1, atom2;
+      std::vector<const Geometry::Vdw*> rr;
       std::vector<double> values, ideals, sigmas, zs;
       std::vector<std::string> types;
       for (const auto& t : self.vdws) {
         const auto& restr = std::get<0>(t);
         const double z = std::get<1>(t) / restr->sigma;
         if (std::abs(z) >= min_z) {
-          atom1.push_back(restr->atoms[0]);
-          atom2.push_back(restr->atoms[1]);
+          rr.push_back(restr);
           values.push_back(std::get<1>(t) + restr->value);
           ideals.push_back(restr->value);
           sigmas.push_back(restr->sigma);
@@ -546,8 +539,7 @@ void add_refine(nb::module_& m) {
         }
       }
       nb::dict d;
-      d["atom1"] = atom1;
-      d["atom2"] = atom2;
+      d["restr"] = rr;
       d["value"] = values;
       d["ideal"] = ideals;
       d["sigma"] = sigmas;
@@ -556,7 +548,7 @@ void add_refine(nb::module_& m) {
       return d;
     }, nb::arg("min_z"))
     .def("get_interval_outliers", [](const Geometry::Reporting& self, double min_z) {
-      std::vector<const gemmi::Atom*> atom1, atom2;
+      std::vector<const Geometry::Interval*> rr;
       std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.intervals) {
         const auto& restr = std::get<0>(t);
@@ -564,8 +556,7 @@ void add_refine(nb::module_& m) {
         const double sigma = std::get<2>(t) ? restr->smin : restr->smax;
         const double z = std::get<1>(t) / sigma;
         if (std::abs(z) >= min_z) {
-          atom1.push_back(restr->atoms[0]);
-          atom2.push_back(restr->atoms[1]);
+          rr.push_back(restr);
           values.push_back(std::get<1>(t) + ideal);
           ideals.push_back(ideal);
           sigmas.push_back(sigma);
@@ -573,8 +564,7 @@ void add_refine(nb::module_& m) {
         }
       }
       nb::dict d;
-      d["atom1"] = atom1;
-      d["atom2"] = atom2;
+      d["restr"] = rr;
       d["value"] = values;
       d["ideal"] = ideals;
       d["sigma"] = sigmas;
@@ -713,6 +703,7 @@ void add_refine(nb::module_& m) {
   bond
     .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
     .def("set_image", &Geometry::Bond::set_image)
+    .def("same_asu", &Geometry::Bond::same_asu)
     .def_rw("type", &Geometry::Bond::type)
     .def_rw("alpha", &Geometry::Bond::alpha)
     .def_rw("sym_idx", &Geometry::Bond::sym_idx)
@@ -723,6 +714,7 @@ void add_refine(nb::module_& m) {
   angle
     .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
     .def("set_images", &Geometry::Angle::set_images)
+    .def("same_asu", &Geometry::Angle::same_asu)
     .def_rw("sym_idx_1", &Geometry::Angle::sym_idx_1)
     .def_rw("sym_idx_2", &Geometry::Angle::sym_idx_2)
     .def_rw("pbc_shift_1", &Geometry::Angle::pbc_shift_1)
