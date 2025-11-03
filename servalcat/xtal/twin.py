@@ -62,7 +62,8 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
             r_obs = numpy.nan
         else:
             r_obs = numpy.sum(numpy.abs(Io[ii][val, 0] - Io[ii][val, 1])) / numpy.sum(Io[ii][val])
-        cc = numpy.sum(nums[:,i_op] * ccs[:,i_op]) / numpy.sum(nums[:,i_op])
+        good = numpy.isfinite(ccs[:,i_op])
+        cc = numpy.sum(nums[good,i_op] * ccs[good,i_op]) / numpy.sum(nums[good,i_op])
         tmp.append({"Operator": op.as_hkl().triplet(),
                     "CC_mean": cc, 
                     "R_twin_obs": r_obs,
@@ -126,6 +127,10 @@ def estimate_twin_fractions_from_model(twin_data, hkldata, min_alpha=0.02):
         frac_est /= frac_est.sum()
         tmp.append(P[tidxes].tolist() + cc_oc + [weight_list[-1]] + frac_est.tolist())
 
+    good = numpy.logical_and(numpy.isfinite(P_list).any(axis=(1,2)), numpy.isfinite(cc_oc_list).any(axis=1))
+    P_list = numpy.array(P_list)[good]
+    cc_oc_list = numpy.array(cc_oc_list)[good]
+    weight_list = numpy.array(weight_list)[good]
     P = numpy.average(P_list, axis=0, weights=weight_list)
     cc_oc = numpy.average(cc_oc_list, axis=0, weights=weight_list)
     frac_est = numpy.dot(numpy.linalg.pinv(P), cc_oc)
@@ -155,12 +160,12 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
     sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
     def fun(x):
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo, 100)
+        twin_data.est_f_true(Io, sigIo, 10)
         ret = twin_data.ll(Io, sigIo)
         return ret
     def grad(x):
         twin_data.alphas = x
-        twin_data.est_f_true(Io, sigIo, 100)
+        twin_data.est_f_true(Io, sigIo, 10)
         return twin_data.ll_der_alpha(Io, sigIo, True)
     if 0:
         bak = [_ for _ in twin_data.alphas]

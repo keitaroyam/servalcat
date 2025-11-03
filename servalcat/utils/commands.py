@@ -893,8 +893,9 @@ def geometry(args):
         logger.writeln("\nChecking skewness of bond length deviation")
         # better to ignore hydrogen
         tab = geom.geom.reporting.get_bond_outliers(use_nucleus=geom.use_nucleus, min_z=0)
-        for a in "atom1", "atom2":
-            tab[a] = [str(geom.lookup[x]) for x in tab[a]]
+        for i in range(2):
+            tab[f"atom{i+1}"] = [str(geom.lookup[r.atoms[i]]) for r in tab["restr"]]
+        del tab["restr"]
         df = pandas.DataFrame(tab)
         df["dev"] = df["value"] - df["ideal"]
         df = df.reindex(df.dev.abs().sort_values(ascending=False).index)

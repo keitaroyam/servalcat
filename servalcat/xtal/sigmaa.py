@@ -86,6 +86,7 @@ def nanaverage(cc, w):
 def calc_r_and_cc(hkldata, twin_data=None):
     has_int = "I" in hkldata.df
     has_free = "FREE" in hkldata.df
+    has_llw = (hkldata.df.llweight != 1.0).any()
     rlab = "R1" if has_int else "R"
     cclab = "CCI" if has_int else "CCF"
     olab = "Io" if has_int else "Fo"
@@ -95,15 +96,21 @@ def calc_r_and_cc(hkldata, twin_data=None):
     stats[["n_obs", "n_all"]] = 0
     if has_free:
         stats[["n_work", "n_free"]] = 0
+    if has_llw:
+        for suf in ("_llw=0", "_llw>0"):
+            stats["n"+suf] = 0
     if rlab == "R1":
         if has_free:
             for suf in ("work", "free"):
                 stats["n_R1"+suf] = 0
         else:
             stats["n_R1"] = 0
+        if has_llw:
+            for suf in ("_llw=0", "_llw>0"):
+                stats["n_R1"+suf] = 0
     stats["Cmpl"] = 0.
     if twin_data:
-        Fc = numpy.sqrt(twin_data.i_calc_twin())
+        Fc = numpy.sqrt(twin_data.i_calc_twin()) * hkldata.df.k_aniso
     else:
         Fc = numpy.abs(hkldata.df.FC * hkldata.df.k_aniso)
     if has_int:
@@ -124,8 +131,13 @@ def calc_r_and_cc(hkldata, twin_data=None):
     else:
         stats[cclab] = numpy.nan
         stats[rlab] = numpy.nan
+    if has_llw:
+        for lab in (cclab, rlab):
+            for suf in ("_llw=0", "_llw>0"):
+                stats[lab+suf] = numpy.nan
 
     centric_and_selections = hkldata.centric_and_selections["stat"]
+    sel_llw = [hkldata.df.llweight == 0, hkldata.df.llweight > 0]
     for i_bin, idxes in hkldata.binned("stat"):
         stats.loc[i_bin, "n_obs"] = numpy.sum(numpy.isfinite(obs[idxes]))
         stats.loc[i_bin, "n_all"] = len(idxes)
@@ -145,7 +157,14 @@ def calc_r_and_cc(hkldata, twin_data=None):
             stats.loc[i_bin, rlab] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
             if rlab == "R1":
                 stats.loc[i_bin, "n_"+rlab] = numpy.sum(numpy.isfinite(obs_sqrt[idxes]))
-
+        if has_llw:
+            for j, suf in enumerate(("_llw=0", "_llw>0")):
+                sel = sel_llw[j][idxes]
+                stats.loc[i_bin, "n"+suf] = numpy.sum(numpy.isfinite(obs[idxes][sel]))
+                stats.loc[i_bin, cclab+suf] = utils.hkl.correlation(obs[idxes][sel], calc[idxes][sel])
+                stats.loc[i_bin, rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes][sel], calc_sqrt[idxes][sel])
+                if rlab == "R1":
+                    stats.loc[i_bin, "n_"+rlab+suf] = numpy.sum(numpy.isfinite(obs_sqrt[idxes][sel]))
     # Overall
     ret = {}
     if has_free:
@@ -156,7 +175,12 @@ def calc_r_and_cc(hkldata, twin_data=None):
             ret[rlab+suf] = utils.hkl.r_factor(obs_sqrt[idxes], calc_sqrt[idxes])
     else:
         ret[cclab+"avg"] = nanaverage(stats[cclab], stats["n_obs"])
-        ret[rlab] = utils.hkl.r_factor(obs, calc)
+        ret[rlab] = utils.hkl.r_factor(obs_sqrt, calc_sqrt)
+    if has_llw:
+        for j, suf in enumerate(("_llw=0", "_llw>0")):
+            ret[cclab+suf+"_avg"] = nanaverage(stats[cclab+suf], stats["n"+suf])
+            sel = sel_llw[j]
+            ret[rlab+suf] = utils.hkl.r_factor(obs_sqrt[sel], calc_sqrt[sel])
         
     return stats, ret
 # calc_r_and_cc()
@@ -600,8 +624,8 @@ def mltwin(df, twin_data, Ds, S, k_ani, idxes, i_bin):
 def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
-    r = twin_data.ll_der_D_S()
+    Io, sigIo = mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S(Io, sigIo)
     g = numpy.zeros(r.shape[1])
     g[:-1] = numpy.nansum(r[:,:-1], axis=0) # D
     g[-1] = numpy.nansum(r[:,-1]) # S
@@ -611,8 +635,8 @@ def deriv_mltwin_wrt_D_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
 def mltwin_shift_S(df, twin_data, Ds, S, k_ani, idxes, i_bin):
     twin_data.ml_sigma[i_bin] = S
     twin_data.ml_scale[i_bin, :] = Ds
-    mltwin_est_ftrue(twin_data, df, k_ani, idxes)
-    r = twin_data.ll_der_D_S()
+    Io, sigIo = mltwin_est_ftrue(twin_data, df, k_ani, idxes)
+    r = twin_data.ll_der_D_S(Io, sigIo)
     g = numpy.nansum(r[:,-1])
     H = numpy.nansum(r[:,-1]**2) # approximating expectation value of second derivative
     return -g / H
@@ -704,6 +728,7 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, use="all", smoothing=
 # determine_mlf_params_from_cc()
 
 def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None):
+    hkldata.binned_df["ml"]["n_ref"] = 0
     # Initial values
     for lab in D_labs: hkldata.binned_df["ml"][lab] = 1.
     hkldata.binned_df["ml"]["S"] = 10000.
@@ -717,6 +742,7 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
             i = 1 if use == "work" else 2
             idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
         valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
+        hkldata.binned_df["ml"].loc[i_bin, "n_ref"] = valid_sel.sum()
         if numpy.sum(valid_sel) < 2:
             continue
         idxes = idxes[valid_sel]
@@ -757,13 +783,8 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
     logger.writeln(hkldata.binned_df["ml"].to_string())
 # initialize_ml_params()
 
-def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
-                        D_trans=None, S_trans=None, use="all", n_cycle=1, smoothing="gauss",
-                        twin_data=None):
-    assert use in ("all", "work", "test")
-    assert smoothing in (None, "gauss")
-    logger.write(f"Estimating sigma-A parameters from {'intensities' if use_int else 'amplitudes'} using {use} reflections")
-    logger.writeln(f"{' (twin)' if twin_data else ''}")
+def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
+                     D_trans=None, S_trans=None, use="all", n_cycle=1, twin_data=None):
     trans = VarTrans(D_trans, S_trans)
     lab_obs = "I" if use_int else "FP"
     centric_and_selections = hkldata.centric_and_selections["ml"]
@@ -773,11 +794,6 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
         else:
             i = 1 if use == "work" else 2
             return numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
-
-    if not set(D_labs + ["S"]).issubset(hkldata.binned_df["ml"]):
-        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=twin_data)
-        for dlab, fclab in zip(D_labs, fc_labs):
-            hkldata.binned_df["ml"]["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
 
     refpar = "all"
     for i_cyc in range(n_cycle):
@@ -852,6 +868,17 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                     x0 = numpy.array([trans.D_inv(hkldata.binned_df["ml"].loc[i_bin, lab]) for lab in D_labs])
                     #print("MLTWIN=", target(x0))
                     #quit()
+                    if 0 and ids == 0: # debug
+                        x = x0.copy()
+                        with open(f"debug_d_{i_bin}.dat", "w") as ofs:
+                            ofs.write("x f der1 shift\n")
+                            for d in numpy.linspace(0.001, 1.2, 100):
+                                x[0] = d
+                                #shift = mli_shift_D(hkldata.df, fc_labs, trans.D(x), hkldata.binned_df.loc[i_bin, "S"], k_ani, idxes)[0]
+                                shift = numpy.nan
+                                der1 = grad(x)[0]
+                                f = target(x)
+                                ofs.write(f"{d} {f} {der1} {shift}\n")
                     if 0:
                         h = 1e-3
                         f00 = target(x0)
@@ -915,6 +942,20 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                             f0 = target([x0])
                             Ds = [hkldata.binned_df["ml"].loc[i_bin, lab] for lab in D_labs]
                             nfev_total += 1
+                            if 0 and ids == 0: # debug
+                                x = x0.copy()
+                                with open(f"debug_s_{i_bin}.dat", "w") as ofs:
+                                    ofs.write("x f der1 shift\n")
+                                    for s in numpy.linspace(-5,5,100):
+                                        x = x0 * 10**s
+                                        if twin_data:
+                                            shift = mltwin_shift_S(hkldata.df, twin_data, Ds, trans.S(x), k_ani, idxes, i_bin)
+                                        else:
+                                            calc_shift_S = mli_shift_S if use_int else mlf_shift_S
+                                            shift = calc_shift_S(hkldata.df, fc_labs, Ds, trans.S(x), k_ani, idxes)
+                                        der1 = grad([x])[0]
+                                        f = target([x])
+                                        ofs.write(f"{x} {f} {der1} {shift}\n")
                             if twin_data:
                                 shift = mltwin_shift_S(hkldata.df, twin_data, Ds, trans.S(x0), k_ani, idxes, i_bin)
                             else:
@@ -1068,6 +1109,70 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
         logger.writeln("Refined B_aniso = {}".format(b_aniso))
         logger.writeln("cycle {} f= {}".format(i_cyc, f1))
 
+    return b_aniso
+# refine_ml_params()
+
+def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
+                        D_trans=None, S_trans=None, use="all", n_cycle=1, smoothing="gauss",
+                        twin_data=None):
+    assert use in ("all", "work", "test")
+    assert smoothing in (None, "gauss")
+    logger.write(f"Estimating sigma-A parameters from {'intensities' if use_int else 'amplitudes'} using {use} reflections")
+    logger.writeln(f"{' (twin)' if twin_data else ''}")
+    centric_and_selections = hkldata.centric_and_selections["ml"]
+
+    if not set(D_labs + ["S"]).issubset(hkldata.binned_df["ml"]):
+        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=twin_data)
+        for dlab, fclab in zip(D_labs, fc_labs):
+            hkldata.binned_df["ml"]["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
+
+    if twin_data or use_int:
+        t0 = time.time()
+        if use == "all":
+            idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
+                                       for sel in centric_and_selections[i_bin] for i in (1,2)])
+        else:
+            i = 1 if use == "work" else 2
+            idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
+                                       for sel in centric_and_selections[i_bin]])
+        k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
+        i_sigi = numpy.empty((2, len(hkldata.df.index)))
+        i_sigi[:] = numpy.nan
+        if twin_data:
+            kani2_inv = 1 / k_ani**2
+            i_sigi[0, idxes] = (hkldata.df.I.to_numpy() * kani2_inv)[idxes]
+            i_sigi[1, idxes] = (hkldata.df.SIGI.to_numpy() * kani2_inv)[idxes]
+            #twin_data.debug_open("twin_debug.json")
+            twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20)
+            #twin_data.debug_close()
+            dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
+            for i_bin, idxes in hkldata.binned("ml"):
+                hkldata.binned_df["ml"].loc[i_bin, D_labs] = twin_data.ml_scale[i_bin, :]
+                hkldata.binned_df["ml"].loc[i_bin, "S"] = twin_data.ml_sigma[i_bin]
+                dfc_bin = dfc[numpy.asarray(twin_data.bin)==i_bin,:]
+                mean_dfc = numpy.nanmean(dfc_bin, axis=0)
+                for i, (dlab, fclab) in enumerate(zip(D_labs, fc_labs)):
+                    hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc[i]
+        else:
+            i_sigi[0, idxes] = hkldata.df.I.to_numpy()[idxes]
+            i_sigi[1, idxes] = hkldata.df.SIGI.to_numpy()[idxes]
+            DS = integr.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], k_ani,
+                                      hkldata.binned_df["ml"].loc[:, "S"].to_numpy(), hkldata.df[fc_labs].to_numpy(),
+                                      hkldata.binned_df["ml"].loc[:, D_labs].to_numpy(), hkldata.df.centric.to_numpy()+1,
+                                      hkldata.df.epsilon.to_numpy(), hkldata.df.llweight.to_numpy(),
+                                      hkldata.df.bin_ml.to_numpy(), 20)
+            for i_bin, idxes in hkldata.binned("ml"):
+                hkldata.binned_df["ml"].loc[i_bin, D_labs] = DS[i_bin, :-1]
+                hkldata.binned_df["ml"].loc[i_bin, "S"] = DS[i_bin, -1]
+                for dlab, fclab in zip(D_labs, fc_labs):
+                    mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df["ml"][dlab][i_bin] * hkldata.df[fclab][idxes]))
+                    hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
+        logger.writeln("Refined estimates:")
+        logger.writeln(hkldata.binned_df["ml"].to_string())
+        logger.writeln(f"time: {time.time()-t0:.1f} sec")
+    else:
+        b_aniso = refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
+                                   D_trans, S_trans, use, n_cycle, twin_data)
     smooth_params(hkldata, D_labs, smoothing)
     return b_aniso
 # determine_ml_params()
@@ -1170,17 +1275,8 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all")
     Ft = numpy.asarray(twin_data.f_true_max)
     m = twin_data.calc_fom()
     Fexp = twin_data.expected_F(Io, sigIo)
-    if 1:
-        fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
-                          2 * m * Ft * exp_ip - DFc,
-                          m * Ft * exp_ip)
-        delfwt = m * Ft * exp_ip - DFc
-    else: # based on "more accurate" evaluation of <m|F|>
-        fwt = numpy.where(numpy.asarray(twin_data.centric) == 0,
-                          2 * Fexp * exp_ip - DFc,
-                          m * Fexp * exp_ip)
-        delfwt = Fexp * exp_ip - DFc
-
+    fwt = 2 * Fexp * exp_ip - DFc
+    delfwt = Fexp * exp_ip - DFc
     sel = numpy.isnan(fwt)
     fwt[sel] = DFc[sel]
     
@@ -1415,7 +1511,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
                                                      free_label="FREE", free=free,
                                                      use=use, n_per_bin=n_per_mlbin,
                                                      max_bins=max_mlbins)
-        if n_bins_ml == 1 and use == "test":
+        if n_bins_ml < 3 and use == "test":
             logger.writeln("Warning: Not enough reflections for ML parameters.")
             logger.writeln("Switching to use=work, i.e. use working reflections for ML estimation")
             use = "work"

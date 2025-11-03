@@ -175,7 +175,12 @@ inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {
 
 struct SymMatEig {
   SymMatEig(const Eigen::MatrixXd &m) : es(m) {}
-  double det() const {
+  double det(bool exclude_zero=false) const {
+    if (exclude_zero) {
+      const auto v = es.eigenvalues();
+      // not exact zero due to finite precision
+      return (v.array().abs() < 1e-13).select(1, v).prod();
+    }
     return es.eigenvalues().prod();
   }
   Eigen::MatrixXd inv(double e=1e-8) const {

@@ -208,19 +208,12 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
 // d/dDj -log(Io; Fc)
 // note Re(Fcj Fc*) needs to be multiplied
 double ll_int_der1_D(double S, double Fc, int c, double eps, double j_ratio_2) {
-  const double invepsS = 1. / (S * eps);
-  if (c == 1) // acentrics
-    return (2 - (3-c) / Fc * j_ratio_2) * invepsS;
-  else
-    return (1. - (3-c) * j_ratio_2 / Fc) * invepsS;
+  return (3 - c) * (1. - j_ratio_2 / Fc) / (S * eps);
 }
 // d/dS -log(Io; Fc)
 double ll_int_der1_S(double S, double Fc, int c, double eps, double j_ratio_1, double j_ratio_2) {
   const double invepsS2 = 1. / (S * S * eps);
-  if (c == 1) // acentrics
-    return 1. / S - (sq(Fc) + j_ratio_1 / c - (3-c) * Fc * j_ratio_2) * invepsS2;
-  else
-    return 0.5 / S - 0.5 * sq(Fc) * invepsS2 - (j_ratio_1 / c - (3-c) * Fc * j_ratio_2) * invepsS2;
+  return 1. / (c * S) - ((sq(Fc) + j_ratio_1) / c - (3-c) * Fc * j_ratio_2) * invepsS2;
 }
 
 struct IntensityIntegrator {
@@ -399,6 +392,176 @@ struct IntensityIntegrator {
     }
     return ret;
   }
+
+  nb::ndarray<nb::numpy, double>
+  ll_refine_D_S_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
+                   np_array<double> S, np_array<std::complex<double>, 2> Fc, np_array<double, 2> D,
+                   np_array<int> c, np_array<int> eps, np_array<double> w, np_array<int> bin,
+                   int max_cyc) const {
+    const bool use_exp = true; //par == 1;
+    auto Io_ = Io.view();
+    auto sigIo_ = sigIo.view();
+    auto k_ani_ = k_ani.view();
+    auto S_ = S.view();
+    auto Fc_ = Fc.view();
+    auto D_ = D.view();
+    auto c_ = c.view();
+    auto eps_ = eps.view();
+    auto w_ = w.view();
+    auto bin_ = bin.view();
+    const size_t n_models = Fc_.shape(1);
+    const size_t n_ref = Fc_.shape(0);
+    const size_t n_bins = *std::max_element(bin.data(), bin.data() + bin.size()) + 1;
+    if (D_.shape(1) != n_models) throw std::runtime_error("Fc and D shape mismatch");
+    if (D_.shape(0) != n_bins) throw std::runtime_error("D and n_bins mismatch");
+    if (S_.shape(0) != n_bins) throw std::runtime_error("S and n_bins mismatch");
+    if (n_ref != Io_.shape(0) || n_ref != sigIo_.shape(0) || n_ref != k_ani_.shape(0) || n_ref != c_.shape(0) ||
+        n_ref != eps_.shape(0) || n_ref != bin_.shape(0) || n_ref != w_.shape(0))
+      throw std::runtime_error("ll_refine_D_S: shape mismatch");
+
+    auto ret = make_numpy_array<double>({n_bins, n_models + 1}); // [D0, D1, .., S]
+    auto DS = ret.view<double, nb::ndim<2>>();
+    for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
+      for (int j = 0; j < n_models; ++j)
+        DS(i_bin, j) = D_(i_bin, j);
+      DS(i_bin, n_models) = S_(i_bin);
+    }
+    auto sum_Fc = [&](int i, int i_bin) {
+      std::complex<double> s = Fc_(i, 0) * DS(i_bin, 0);
+      for (size_t j = 1; j < n_models; ++j)
+        s += Fc_(i, j) * DS(i_bin, j);
+      return s;
+    };
+    auto calc_f_ders = [&](int i_bin, bool ll_only) {
+      double ll = 0;
+      const int n_par = n_models + 1;
+      Eigen::VectorXd der1 = Eigen::VectorXd::Zero(n_par);
+      Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(n_par, n_par);
+      for (int i = 0; i < n_ref; ++i)
+        if (bin_(i) == i_bin && !std::isnan(Io_(i)) && !std::isnan(sigIo_(i)) && w_(i) != 0) {
+          const double S = DS(i_bin, n_models);
+          const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i, i_bin));
+          const double Fc_abs = std::abs(Fc_total_conj);
+          const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+          const double sqrt_sigIo = std::sqrt(sigIo_(i));
+          const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+          const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+          if (sig1 < 0) {
+            printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
+            continue;
+          }
+          const double logj = integ_j(c_(i) == 1 ? 0 : -0.5, to, tf, sig1, c_(i), true, exp2_threshold, h, N, ewmax);
+          ll += w_(i) * ((3-c_(i)) * std::log(k_ani_(i)) + (std::log(S) + sq(Fc_abs) / S) / c_(i) - logj);
+          if (!ll_only) {
+            const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+            const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+            const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+            const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
+                                                   exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+            const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
+            // wrt D
+            for (size_t j = 0; j < n_models; ++j) {
+              const double r_fcj_fc = (Fc_(i, j) * Fc_total_conj).real();
+              der1(j) += w_(i) * tmp * r_fcj_fc;
+              for (size_t k = 0; k < n_models; ++k) {
+                const double r_fck_fc = (Fc_(i, k) * Fc_total_conj).real();
+                der2(j,k) += w_(i) * (3-c_(i)) / (eps_(i) * S) * r_fcj_fc * r_fck_fc / sq(Fc_abs);
+              }
+              // mixed derivatives
+              const double tmp = -2 * r_fcj_fc / (eps_(i) * sq(S) * c_(i)) * (1. - j_ratio_2 / Fc_abs); // m' involving term ignored
+              der2(j, n_models) += w_(i) * tmp;
+              der2(n_models, j) += w_(i) * tmp;
+            }
+            // wrt S
+            const double tmp2 = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+            der1(n_models) += w_(i) * tmp2;
+            der2(n_models, n_models) += w_(i) * sq(tmp2);
+          }
+        }
+      return std::make_pair(ll, std::make_pair(der1, der2));
+    };
+    auto find_sigma = [&](int i_bin) {
+      double numer = 0, denom = 0;
+      for (int i = 0; i < n_ref; ++i)
+        if (bin_(i) == i_bin && !std::isnan(Io_(i)) && !std::isnan(sigIo_(i)) && w_(i) != 0) {
+          const double S = DS(i_bin, n_models);
+          const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i, i_bin));
+          const double Fc_abs = std::abs(Fc_total_conj);
+          const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
+          const double sqrt_sigIo = std::sqrt(sigIo_(i));
+          const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
+          const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
+          const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
+          const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
+          const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+          const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
+                                                 exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+          const double tmp = (sq(Fc_abs) + j_ratio_1) / c_(i) - (3 - c_(i)) * Fc_abs * j_ratio_2;
+          if (!std::isnan(tmp)) {
+            numer += w_(i) * tmp / eps_(i);
+            denom += w_(i) / c_(i);
+          }
+        }
+      return numer / denom;
+    };
+    auto get_par = [&](int i_bin, bool use_exp) {
+      Eigen::VectorXd pval(n_models + 1);
+      for (size_t j = 0; j < n_models; ++j)
+        pval(j) = DS(i_bin, j);
+      pval(pval.size()-1) = DS(i_bin, n_models);
+      return use_exp ? pval.array().log() : pval;
+    };
+    auto set_par = [&](int i_bin, const auto &val, bool use_exp) {
+      for (size_t j = 0; j < n_models; ++j)
+        DS(i_bin, j) = std::max(1e-4, use_exp ? std::exp(val(j)) : val(j));
+      DS(i_bin, n_models) = std::max(1e-1, use_exp ? std::exp(val(val.size()-1)) : val(val.size()-1));
+    };
+    for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
+      for (int cyc = 0; cyc < max_cyc; ++cyc) {
+        bool no_shift = false;
+        const double tmp = find_sigma(i_bin);
+        if (std::isfinite(tmp)) {
+          // printf("updating sigma %e to %e\n", DS(i_bin, n_models), tmp);
+          DS(i_bin, n_models) = tmp;
+        }
+        auto f0_ders = calc_f_ders(i_bin, false);
+        const Eigen::VectorXd pval = get_par(i_bin, use_exp);
+        Eigen::VectorXd shift(pval.size());
+        if (use_exp) {
+          f0_ders.second.first = f0_ders.second.first.array() * pval.array().exp();
+          for (int i = 0; i < pval.size(); ++i)
+            for (int j = 0; j < pval.size(); ++j)
+              if (i == j)
+                f0_ders.second.second(i,j) = f0_ders.second.second(i,j) * sq(std::exp(pval(i))) + f0_ders.second.first(i);
+              else
+                f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
+        }
+        shift = -SymMatEig(f0_ders.second.second).inv() * f0_ders.second.first;
+        if (use_exp)
+          shift = shift.cwiseMin(5).cwiseMax(-5); // cap shift
+        for (int i = 0; i < 6; ++i) {
+          // printf("bin %d cyc %d ", i_bin, cyc);
+          // printf("D ");
+          // for (size_t j = 0; j < n_models; ++j)
+          //   printf("%f%+f ", DS(i_bin, j), shift(j));
+          // printf("S %f%+f ", DS(i_bin, n_models), shift(pval.size()-1));
+          set_par(i_bin, pval + shift, use_exp);
+          const double f1 = calc_f_ders(i_bin, true).first;
+          // printf("ll %f\n", f1 - f0_ders.first);
+          if (f1 < f0_ders.first)
+            break;
+          shift /= 2;
+          if (shift.array().abs().maxCoeff() < (use_exp ? 1e-2 : 1e-4)) { // arbitrary
+            no_shift = true;
+            break;
+          }
+        }
+        if (no_shift)
+          break;
+      }
+    }
+    return ret;
+  }
 };
 
 void add_intensity(nb::module_& m) {
@@ -470,6 +633,7 @@ void add_intensity(nb::module_& m) {
     .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)
     .def("ll_int_fw_der1_S", &IntensityIntegrator::ll_int_fw_der1_params_py<true>)
     .def("ll_int_fw_der1_ani", &IntensityIntegrator::ll_int_fw_der1_params_py<false>)
+    .def("ll_refine_D_S", &IntensityIntegrator::ll_refine_D_S_py)
     ;
   m.def("lambertw", &lambertw::lambertw);
   m.def("find_root", &find_root);

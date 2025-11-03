@@ -194,7 +194,7 @@ def decide_ml_binning(hkldata, data_label, free_label, free, use, n_per_bin, max
         elif use == "work":
             n_per_bin = 100
         elif use == "test":
-            n_per_bin = 20
+            n_per_bin = 50
         else:
             raise RuntimeError(f"should not happen: {use=}")
 

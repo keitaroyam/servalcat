@@ -21,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None):
+                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None, is_int=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -36,7 +36,6 @@ class LL_Xtal:
             self.fc_labs.append("FCbulk")
             self.hkldata.df["FCbulk"] = 0j
             self.use_non_binary_mask = use_solvent == 2
-                
         self.D_labs = ["D{}".format(i) for i in range(len(self.fc_labs))]
         self.k_overall = numpy.ones(len(self.hkldata.df.index))
         self.b_aniso = gemmi.SMat33d(0,0,0,0,0,0)
@@ -51,8 +50,11 @@ class LL_Xtal:
         else:
             self.twin_data = None
         if self.twin_data:
-            self.twin_data.setup_f_calc(len(self.fc_labs))    
-        self.is_int = "I" in self.hkldata.df
+            self.twin_data.setup_f_calc(len(self.fc_labs))
+        if is_int is None:
+            self.is_int = "I" in self.hkldata.df
+        else:
+            self.is_int = is_int
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -69,8 +71,9 @@ class LL_Xtal:
         # modify st before fc calculation
         b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
         self.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb()) # needed for target calculation
+        d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
-                         d_min=self.d_min_max[0], monlib=self.monlib,
+                         d_min=d_min, monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data,
                          addends=self.addends)
@@ -90,10 +93,11 @@ class LL_Xtal:
                                       self.hkldata.df.SIGI.to_numpy() * mask)
             self.k_ani2_inv_masked = mask
         
-    def overall_scale(self, min_b=0.1):
+    def _overall_scale(self, min_b=0.1):
         miller_array = self.twin_data.asu if self.twin_data else self.hkldata.miller_array()
+        d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         if self.use_solvent:
-            Fmask = sigmaa.calc_Fmask(self.st, self.d_min_max[0], miller_array, self.use_non_binary_mask)
+            Fmask = sigmaa.calc_Fmask(self.st, d_min, miller_array, self.use_non_binary_mask)
             if self.twin_data:
                 fc_sum = self.twin_data.f_calc[:,:-1].sum(axis=1)
             else:
@@ -127,11 +131,11 @@ class LL_Xtal:
                 self.twin_data.f_calc[:,-1] = Fbulk
             else:
                 self.hkldata.df[self.fc_labs[-1]] = Fbulk
-        if self.is_int:
+        if "I" in self.hkldata.df:
             o_labs = self.hkldata.df.columns.intersection(["I", "SIGI",
                                                            "I(+)","SIGI(+)", "I(-)", "SIGI(-)"])
             self.hkldata.df[o_labs] /= self.scaling.k_overall**2
-        else:
+        if "FP" in self.hkldata.df:
             o_labs = self.hkldata.df.columns.intersection(["FP", "SIGFP",
                                                            "F(+)","SIGF(+)", "F(-)", "SIGF(-)"])
             self.hkldata.df[o_labs] /= self.scaling.k_overall
@@ -145,8 +149,13 @@ class LL_Xtal:
         # for next cycle
         self.scaling.k_overall = 1.
         self.scaling.b_iso = 0.
+    # _overall_scale()
+    
+    def overall_scale(self, min_b=0.1):
+        self._overall_scale(min_b)
         if self.twin_data:
             estimate_twin_fractions_from_model(self.twin_data, self.hkldata)
+            self._overall_scale(min_b)
     # overall_scale()
 
     def calc_target(self): # -LL target for MLF or MLI
@@ -154,6 +163,7 @@ class LL_Xtal:
         if self.twin_data:
             Io = self.hkldata.df.I.to_numpy() * self.k_ani2_inv_masked
             sigIo = self.hkldata.df.SIGI.to_numpy() * self.k_ani2_inv_masked
+            self.twin_data.est_f_true(Io, sigIo)
             ret = self.twin_data.ll(Io, sigIo)
         else:
             k_aniso = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
@@ -178,7 +188,9 @@ class LL_Xtal:
         ret = {"summary": overall}
         ret["summary"]["-LL"] = self.calc_target()
         if self.twin_data:
-            ret["twin_alpha"] = self.twin_data.alphas
+            ret["twin_alpha"] = {op.as_hkl().triplet(): a
+                                 # ops does not include identity
+                                 for op, a in zip([gemmi.Op()]+self.twin_data.ops, self.twin_data.alphas)}
         if bin_stats:
             ret["bin_stats"] = stats
             ret["ml"] = self.hkldata.binned_df["ml"].copy()
@@ -192,7 +204,9 @@ class LL_Xtal:
         blur = utils.model.determine_blur_for_dencalc(self.st, self.d_min_max[0] / 3) # TODO need more work
         logger.writeln("blur for deriv= {:.2f}".format(blur))
         if self.twin_data:
-            dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0()
+            Io = self.hkldata.df.I.to_numpy() * self.k_ani2_inv_masked
+            sigIo = self.hkldata.df.SIGI.to_numpy() * self.k_ani2_inv_masked
+            dll_dab, d2ll_dab2 = self.twin_data.ll_der_fc0(Io, sigIo)
             dll_dab *= self.twin_data.debye_waller_factors(b_iso=-blur)
         else:
             dll_dab = numpy.zeros(len(self.hkldata.df.FC), dtype=numpy.complex128)
@@ -280,7 +294,7 @@ class LL_Xtal:
         else:
             self.ll.make_fisher_table_diag_direct_it92(s_array, d2ll_dab2)
             self.ll.fisher_diag_from_table_it92()
-        #json.dump(dict(b=ll.table_bs, pp1=ll.pp1, bb=ll.bb),
+        #json.dump(dict(b=self.ll.table_bs, pp1=self.ll.pp1, bb=self.ll.bb),
         #          open("ll_fisher.json", "w"), indent=True)
         #a, (b,c) = ll.fisher_for_coo()
         #json.dump(([float(x) for x in a], ([int(x) for x in b], [int(x) for x in c])), open("fisher.json", "w"))

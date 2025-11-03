@@ -100,8 +100,8 @@ def add_arguments(parser):
                         help="Do not consider bulk solvent contribution")
     parser.add_argument("--non_binary_solvent_mask", action='store_true',
                         help=argparse.SUPPRESS) # experimental
-    parser.add_argument('--use_work_in_est',  action='store_true',
-                        help="Use work reflections in ML parameter estimates")
+    parser.add_argument('--use_in_est', choices=["all", "work", "test"],
+                        help="Which set of reflections to use for the ML parameter estimation. Default: 'work' if --twin is set; otherwise 'test'.")
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
     parser.add_argument("--keep_entities", action='store_true',
@@ -113,6 +113,8 @@ def add_arguments(parser):
     parser.add_argument("--vonmises", action='store_true',
                         help="Experimental: von Mises type restraint for angles")
     parser.add_argument("--prefer_intensity", action='store_true')
+    parser.add_argument("--use_fw", action='store_true',
+                        help="For debugging purpose; use F&W-converted amplitudes but use intensity for stats")
     parser.add_argument("--config",
                         help="Config file (.yaml)")
 # add_arguments()
@@ -133,7 +135,9 @@ def main(args):
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
-
+    # This could be confusing. Twinning may not be detected.
+    if not args.use_in_est:
+        args.use_in_est = "work" if args.twin else "test"
     keywords = []
     if args.keywords or args.keyword_file:
         if args.keywords: keywords = sum(args.keywords, [])
@@ -159,14 +163,13 @@ def main(args):
             source=args.source,
             d_max=args.d_max,
             d_min=args.d_min,
-            use="work" if args.use_work_in_est else "test",
+            use=args.use_in_est,
             max_mlbins=30,
             keep_charges=args.keep_charges,
             allow_unusual_occupancies=args.allow_unusual_occupancies,
             hklin_free=args.hklin_free,
             labin_free=args.labin_free,
             labin_llweight=args.labin_llweight)
-
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -177,6 +180,16 @@ def main(args):
 
     is_int = "I" in hkldata.df
     addends = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
+    if args.use_fw:
+        if not is_int:
+            raise SystemExit("Error: need intensity input when -use_fw")
+        logger.writeln("Converting intensities to amplitudes with the French & Wilson algorithm")
+        from servalcat.xtal import french_wilson
+        B_aniso = french_wilson.determine_Sigma_and_aniso(hkldata)
+        french_wilson.french_wilson(hkldata, B_aniso, labout=["FP", "SIGFP"]) # TODO when anomalous
+        del hkldata.binned_df["ml"]["S"]
+        is_int = False
+        
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
     if args.unrestrained:
@@ -258,7 +271,7 @@ def main(args):
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
                  use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin, addends=addends)
+                 twin=args.twin, addends=addends, is_int=is_int)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 
