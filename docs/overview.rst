@@ -30,7 +30,7 @@ The most common commands are listed below. To see all arguments for a specific c
 Command examples for cryo-EM SPA
 --------------------------------
 
-refinement
+Refinement
 ~~~~~~~~~~
 Servalcat performs reciprocal space refinement for single particle analysis. The weighted and sharpened Fo-Fc map is calculated after the refinement. For details please see the reference.
 Make a new directory and run:
@@ -57,8 +57,10 @@ Other useful options:
    * ``--pixel_size value`` : override pixel size of map
 
 Output files:
-   * ``prefix.pdb``: refined model
+   * ``prefix.pdb``: refined model (legacy PDB format)
+   * ``prefix.mmcif``: refined model (mmCIF format)
    * ``prefix_expanded.pdb``: symmetry-expanded version
+   * ``prefix_expanded.mmcif``: symmetry-expanded version
    * ``prefix_diffmap.mtz``: can be auto-opened with coot. sharpened and weighted Fo map and Fo-Fc map
    * ``prefix_diffmap_normalized_fofc.mrc``: Fo-Fc map normalised within a mask. Look at raw values
 
@@ -92,3 +94,23 @@ Model(s) are shifted into a new box.
 By default new boundary is centred on the original map and cubic, but they can be turned off with ``--noncentered`` and ``--noncubic``.
 If you do not want to shift maps and models, specify ``--no_shift`` to keep origin.
 
+Command examples for crystallography
+------------------------------------
+
+Refinement
+~~~~~~~~~~
+To perform crystallographic refinement with Servalcat, it is necessary to specify an input model (PDB, mmCIF or smCIF), diffraction data (MTZ or CIF format) and type radiation source (xray, neutron or electron).
+
+.. code-block:: console
+
+    $ servalcat refine_xtal_norefmac \
+     --model input.pdb --hklin ../data.mtz \
+     -s xray --ncycle 10 \
+     [-o output_prefix]
+
+Output files:
+   * ``prefix.pdb``: refined model (legacy PDB format)
+   * ``prefix.mmcif``: refined model (mmCIF format)
+   * ``prefix.mtz``: 2Fo-Fc and Fo-Fc maps which can be auto-opened with coot.
+
+More details about crystallographic refinement with Servalcat can be found `on a separate page <xtal.html>`_.

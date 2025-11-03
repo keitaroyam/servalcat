@@ -27,4 +27,5 @@ Table of Contents
    overview
    spa
    spa_examples/index
+   xtal
    commands
