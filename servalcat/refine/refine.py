@@ -378,7 +378,7 @@ class Geom:
                         for i in range(3 if k == "angle" else 2): # only bond/angle/interval/vdw return restr
                             tmp[f"atom{i+1}"] = [atomlabel(r, i) for r in table["restr"]]
                         del table["restr"]
-                        table = tmp | table
+                        table = {**tmp, **table}
                     else:
                         for kk in table:
                             if kk.startswith(("atom", "plane", "1_atom", "2_atom")):
