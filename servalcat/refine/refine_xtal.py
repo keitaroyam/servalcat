@@ -179,7 +179,7 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
-    addends = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
+    addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
     if args.use_fw:
         if not is_int:
             raise SystemExit("Error: need intensity input when -use_fw")
@@ -271,7 +271,7 @@ def main(args):
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
                  use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin, addends=addends, is_int=is_int)
+                 twin=args.twin, addends=addends, addends2=addends2, is_int=is_int)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 
@@ -310,6 +310,8 @@ def main(args):
     labs.extend(["FOM", "FWT", "DELFWT", "FC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
+    if "DELFAN" in hkldata.df:
+        labs.append("DELFAN")
     if not args.no_solvent:
         labs.append("FCbulk")
     if "FREE" in hkldata.df:

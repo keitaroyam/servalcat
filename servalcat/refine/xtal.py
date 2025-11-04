@@ -21,7 +21,7 @@ integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None, is_int=None):
+                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None, addends2=None, is_int=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -44,6 +44,7 @@ class LL_Xtal:
         self.use_in_target = use_in_target
         self.ll = None
         self.addends = addends
+        self.addends2 = addends2
         self.scaling = sigmaa.LsqScale()
         if twin:
             self.twin_data, _ = find_twin_domains_from_data(self.hkldata)
@@ -76,7 +77,7 @@ class LL_Xtal:
                          d_min=d_min, monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data,
-                         addends=self.addends)
+                         addends=self.addends, addends2=self.addends2)
 
     def prepare_target(self):
         if self.twin_data:

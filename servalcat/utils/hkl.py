@@ -21,6 +21,7 @@ def r_factor(fo, fc):
         return numpy.nan
     return numpy.nansum(numpy.abs(fo-fc)) / denom
 def correlation(obs, calc):
+    obs, calc = obs.flatten(), calc.flatten() # for anomalous data
     sel = numpy.isfinite(obs)
     if obs.size == 0 or numpy.all(~sel):
         return numpy.nan
@@ -786,7 +787,7 @@ class HklData:
             if numpy.iscomplexobj(df[lab]):
                 mtz.add_column(lab, "F")
                 if phase_label_decorator is None:
-                    plab = {"FWT": "PHWT", "DELFWT": "PHDELWT", "FAN":"PHAN"}.get(lab, "PH"+lab)
+                    plab = {"FWT": "PHWT", "DELFWT": "PHDELWT", "FAN":"PHAN", "DELFAN":"PHDELAN"}.get(lab, "PH"+lab)
                 else:
                     plab = phase_label_decorator(lab)
                 mtz.add_column(plab, "P")
