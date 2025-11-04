@@ -15,6 +15,29 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
 
+def calculate_obliquity(gv, twin_op):
+    """
+    Beforehand, the following calculation must be done
+    gv = gemmi.GruberVector(cell, sg.centring_type(), True)
+    gv.niggli_reduce()
+    """
+    def get_axis(r):
+        eigenvalues, eigenvectors = numpy.linalg.eig(r)
+        idx = numpy.argmin(numpy.abs(eigenvalues - 1))
+        return eigenvectors[:,idx].real
+    reduced_cell = gv.get_cell()
+    orth = numpy.array(reduced_cell.orth.mat.tolist())
+    frac = numpy.array(reduced_cell.frac.mat.tolist())
+    op = gv.change_of_basis.inverse().combine(twin_op.as_xyz()).combine(gv.change_of_basis)
+    r = numpy.array(op.rot) / op.DEN
+    u = get_axis(r)
+    h = get_axis(numpy.linalg.inv(r.transpose()))
+    tau = h.dot(frac)
+    t = orth.dot(u)
+    obl_deg = numpy.rad2deg(numpy.arccos(numpy.clip(t.dot(tau) / numpy.linalg.norm(t) / numpy.linalg.norm(tau), -1, 1)))
+    return obl_deg
+# calculate_obliquity()
+
 def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
     logger.writeln("Finding possible twin operators from data")
     ops = gemmi.find_twin_laws(hkldata.cell, hkldata.sg, max_oblique, False)
@@ -24,6 +47,8 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
     if not ops:
         logger.writeln("")
         return None, None
+    gv = gemmi.GruberVector(hkldata.cell, hkldata.sg.centring_type(), True)
+    gv.niggli_reduce()
     twin_data = ext.TwinData()
     twin_data.setup(hkldata.miller_array(), hkldata.df.bin_ml, hkldata.sg, hkldata.cell, ops)
     if "I" in hkldata.df:
@@ -53,6 +78,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
     ccs = numpy.array(ccs)
     nums = numpy.array(nums)
     tmp = [{"Operator": "h,k,l",
+            "Obliquity": 0,
             "R_twin_obs": 0,
             "CC_mean": 1}]
     for i_op, op in enumerate(ops):
@@ -65,6 +91,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
         good = numpy.isfinite(ccs[:,i_op])
         cc = numpy.sum(nums[good,i_op] * ccs[good,i_op]) / numpy.sum(nums[good,i_op])
         tmp.append({"Operator": op.as_hkl().triplet(),
+                    "Obliquity": calculate_obliquity(gv, op),
                     "CC_mean": cc, 
                     "R_twin_obs": r_obs,
                     })
