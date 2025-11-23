@@ -8,14 +8,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-14, windows-2022]
+        os: [ubuntu-22.04, macos-15-intel, macos-14, windows-2022]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
     - name: Build wheels
-      uses: pypa/cibuildwheel@v3.0.0
+      uses: pypa/cibuildwheel@v3.3.0
       env:
         CIBW_BUILD: 'cp*'
         CIBW_SKIP: '*musllinux* *_i686 *-win32'
@@ -44,19 +44,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04, macos-13, macos-14, macos-15, windows-2022]
-        py: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+        os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-14, macos-15, windows-latest]
+        py: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
     name: ${{ matrix.os }} py${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     needs: merge
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
       with:
         submodules: true
 
     - name: checkout monomers
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: MonomerLibrary/monomers
         path: monomers
@@ -65,7 +65,7 @@ jobs:
       with:
         name: wheels2
         path: wheels2
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.py }}
     - name: Python Setup

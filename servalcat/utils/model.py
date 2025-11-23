@@ -129,14 +129,25 @@ class CustomCoefUtil:
     # show_info()
 # class CustomCoefUtil
 
-def check_atomsf(sts, source, mott_bethe=True):
+def check_atomsf(sts, source, mott_bethe=True, wavelength=None):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": mott_bethe = False
+    if wavelength is not None: assert source == "xray"
     logger.writeln("Atomic scattering factors for {}".format("xray (use Mott-Bethe to convert to electrons)" if mott_bethe else source))
     if source != "xray" and not mott_bethe:
         logger.writeln("  Note that charges will be ignored")
     el_charges = {(cra.atom.element, cra.atom.charge) for st in sts for cra in st[0].all()}
     elems = {x[0] for x in el_charges}
+    if wavelength is not None and source == "xray":
+        addends = gemmi.Addends()
+        addends2 = gemmi.Addends()
+        logger.writeln(f"f' and f'' for lambda= {wavelength} A will be used.")
+        for el in elems:
+            fp, fpp = gemmi.cromer_liberman(el.atomic_number, gemmi.hc / wavelength)
+            addends.set(el, fp)
+            addends2.set(el, fpp)
+    else:
+        addends, addends2 = None, None
     tmp = {}
     if source == "xray" or mott_bethe:
         shown = set()
@@ -150,6 +161,9 @@ def check_atomsf(sts, source, mott_bethe=True):
             label = el.name if charge == 0 else "{}{:+}".format(el.name, charge)
             shown.add((el, charge))
             tmp[label] = {**{f"{k}{i+1}": x for k in ("a", "b") for i, x in enumerate(getattr(sf, k))}, "c": sf.c}
+            if addends and addends2:
+                tmp[label]["f'"] = addends.get(el)
+                tmp[label]["f''"] = addends2.get(el)
     else:
         for el in sorted(elems, key=lambda x: x.atomic_number):
             if source == "electron":
@@ -159,6 +173,7 @@ def check_atomsf(sts, source, mott_bethe=True):
     with logger.with_prefix("  "):
         logger.writeln(pandas.DataFrame(tmp).T.to_string())
     logger.writeln("")
+    return addends, addends2
 # check_atomsf()
 
 def calc_sum_ab(st):
@@ -173,7 +188,7 @@ def calc_sum_ab(st):
 # calc_sum_ab()
 
 def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cutoff=1e-5, rate=1.5,
-                omit_proton=False, omit_h_electron=False, miller_array=None):
+                omit_proton=False, omit_h_electron=False, miller_array=None, addends=None):
     assert source in ("xray", "electron", "neutron", "custom")
     if source != "electron": mott_bethe = False
     topo = None
@@ -262,6 +277,7 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
         mb_000 = sum_ab * gemmi.mott_bethe_const() / 4
     else:
+        if addends is not None: dc.addends = addends
         dc.put_model_density_on_grid(st[0])
         mb_000 = 0
 
@@ -274,6 +290,24 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur,
                                      mott_bethe_000=mb_000)
 # calc_fc_fft()
+
+def calc_fcpp_fft(st, d_min, addends2, blur=None, cutoff=1e-5, rate=1.5, miller_array=None): # f'' contribution
+    if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
+    dc2 = gemmi.DensityCalculatorZ()
+    dc2.d_min = d_min
+    dc2.blur = blur
+    dc2.cutoff = cutoff
+    dc2.rate = rate
+    dc2.grid.setup_from(st)
+    dc2.addends = addends2
+    dc2.put_model_density_on_grid(st[0])
+    grid2 = gemmi.transform_map_to_f_phi(dc2.grid)
+    if miller_array is None:
+        return grid2.prepare_asu_data(dmin=d_min, unblur=dc2.blur)
+    else:
+        return grid2.get_value_by_hkl(miller_array, unblur=dc2.blur)
+    #return (fc + numpy.vstack([fpp * 1j, -fpp * 1j])).T # shape of (nref, 2); F+ and F-*
+# calc_fcpp_fft()
 
 def calc_fc_direct(st, d_min, source, mott_bethe, monlib=None, miller_array=None):
     assert source in ("xray", "electron")

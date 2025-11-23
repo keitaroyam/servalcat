@@ -95,8 +95,11 @@ def add_arguments(parser):
     parser.add_argument('--refine_dfrac', action="store_true", help="Refine deuterium fraction (neutron only)")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
+    parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
+    parser.add_argument("--non_binary_solvent_mask", action='store_true',
+                        help=argparse.SUPPRESS) # experimental
     parser.add_argument('--use_in_est', choices=["all", "work", "test"],
                         help="Which set of reflections to use for the ML parameter estimation. Default: 'work' if --twin is set; otherwise 'test'.")
     parser.add_argument('--keep_charges',  action='store_true',
@@ -127,6 +130,8 @@ def main(args):
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
     if args.labin_llweight and args.twin:
         raise SystemExit("--labin_llweight not supported for twin refinement")
+    if args.wavelength is not None and args.source != "xray":
+        raise SystemExit("Error: Wavelength is only available for X-ray source")
     if args.ligand: args.ligand = sum(args.ligand, [])
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
@@ -174,6 +179,7 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
+    addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
     if args.use_fw:
         if not is_int:
             raise SystemExit("Error: need intensity input when -use_fw")
@@ -263,8 +269,9 @@ def main(args):
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
 
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
-                 use_solvent=not args.no_solvent, use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin, is_int=is_int)
+                 use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
+                 use_in_est=use_in_est, use_in_target=use_in_target,
+                 twin=args.twin, addends=addends, addends2=addends2, is_int=is_int)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 
@@ -303,6 +310,8 @@ def main(args):
     labs.extend(["FOM", "FWT", "DELFWT", "FC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
+    if "DELFAN" in hkldata.df:
+        labs.append("DELFAN")
     if not args.no_solvent:
         labs.append("FCbulk")
     if "FREE" in hkldata.df:

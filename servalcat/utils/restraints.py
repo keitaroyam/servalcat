@@ -385,7 +385,13 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 atom = rinfo.res[ia]
                 atom_str = "{}/{} {}/{}".format(cinfo.chain_ref.name, rinfo.res.name, rinfo.res.seqid, atom.name)
                 cc = rinfo.get_final_chemcomp(atom.altloc)
-                if not cc.find_atom(atom.name):
+                cc_atom = cc.find_atom(atom.name)
+                if cc_atom:
+                    if cc_atom.chem_type not in monlib.ener_lib.atoms:
+                        deftype = atom.element.name.upper()
+                        logger.writeln(f"WARNING: unknown chemical type {cc_atom.chem_type} of {atom_str}. Will use default type {deftype}")
+                        cc_atom.chem_type = deftype
+                else:
                     # warning message should have already been given by gemmi
                     if cc_org and cc_org.find_atom(atom.name):
                         if check_hydrogen or not atom.is_hydrogen():
@@ -415,6 +421,58 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
             st.connections.insert(i, con)
     return topo, keywords
 # prepare_topology()
+
+def dump_topology(topo, st):
+    lookup = {x.atom: x for x in st[0].all()}
+    def get_details(rule):
+        lab, tt = {gemmi.RKind.Bond: ("bond", topo.bonds),
+                   gemmi.RKind.Angle: ("angle", topo.angles),
+                   gemmi.RKind.Torsion: ("torsion", topo.torsions),
+                   gemmi.RKind.Chirality: ("chirality", topo.chirs),
+                   gemmi.RKind.Plane: ("plane", topo.planes),
+                   }[rule.rkind]
+        t = tt[rule.index]
+        ret = {}
+        ret["kind"] = lab
+        ret["atoms"] = [str(lookup[x]) for x in t.atoms]
+        if rule.rkind == gemmi.RKind.Chirality:
+            ret["ideal"] = {gemmi.ChiralityType.Both: "both",
+                            gemmi.ChiralityType.Negative: "negative",
+                            gemmi.ChiralityType.Positive: "positive"}[t.restr.sign]
+        elif rule.rkind == gemmi.RKind.Plane:
+            ret["esd"] = t.restr.esd
+        else:
+            ret["ideal"] = t.restr.value
+            ret["esd"] = t.restr.esd
+        if rule.rkind in (gemmi.RKind.Torsion, gemmi.RKind.Plane):
+            ret["label"] = t.restr.label
+        if rule.rkind in (gemmi.RKind.Angle, gemmi.RKind.Torsion):
+            ret["model"] = numpy.rad2deg(t.calculate())
+        elif rule.rkind == gemmi.RKind.Plane:
+            coef = gemmi.find_best_plane(t.atoms)
+            ret["model"] = [gemmi.get_distance_from_plane(x.pos, coef) for x in t.atoms]
+        else:
+            ret["model"] = t.calculate()
+        return ret
+
+    ret = []
+    for cinfo in topo.chain_infos:
+        for ri in cinfo.res_infos:
+            for prev in ri.prev:
+                for rule in prev.link_rules:
+                    ret.append({"link_id": prev.link_id} | get_details(rule))
+            for rule in ri.monomer_rules:
+                ret.append(get_details(rule))
+
+    for extra in topo.extras:
+        for rule in extra.link_rules:
+            ret.append({"link_id": extra.link_id,
+                        "asu": {gemmi.Asu.Different:"different",
+                                gemmi.Asu.Any:"any",
+                                gemmi.Asu.Same:"same"}[extra.asu],
+                        } | get_details(rule))
+    return ret
+# dump_topology()
 
 def check_monlib_support_nucleus_distances(monlib, resnames):
     good = True

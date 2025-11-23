@@ -1042,8 +1042,8 @@ void add_refine(nb::module_& m) {
     .def_rw("maxbin", &TableS3::maxbin)
     ;
   nb::class_<LL>(m, "LL")
-    .def(nb::init<const gemmi::Structure &, std::shared_ptr<RefineParams>, bool>(),
-         nb::arg("st"), nb::arg("params"), nb::arg("mott_bethe"))
+    .def(nb::init<const gemmi::Structure &, std::shared_ptr<RefineParams>, bool, const gemmi::Addends*>(),
+         nb::arg("st"), nb::arg("params"), nb::arg("mott_bethe"), nb::arg("addends")=nullptr)
     .def("set_ncs", &LL::set_ncs)
     .def("calc_grad_it92", &LL::calc_grad<gemmi::IT92<double>>)
     .def("calc_grad_n92", &LL::calc_grad<gemmi::Neutron92<double>, true>)
