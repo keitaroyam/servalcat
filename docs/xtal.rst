@@ -24,32 +24,23 @@ Output logs:
 Frequently used options
 -----------------------
 
+   * ``--ligand [LIGAND ...]``: Restraint dictionary CIF file(s)
    * ``--ncycle NCYCLE``: Number of refinement cycles. Default: 10
+   * ``--weight WEIGHT``: Starting value of the weight for the experimental data term (default: automatically determined from resolution). By default, the weight is further adjusted to achieve bond length rmsZ in the range between 0.5 and 1.0. This can be changed using the option ``--target_bond_rmsz_range MIN_RMSZ MAX_RMSZ``.
+   * ``--ncsr``: Use local restraints for non-crystallographic symmetry
+   * ``--jellybody``: Use jelly body restraints
    * ``--adp {iso,aniso,fix}``: Atomic displacement parameter (isotropic: 1 parameter per atom, anisotropic: 6 parameters per atom, fixed B-values)
    * ``-d D_MIN, --d_min D_MIN``: High-resolution limit (in Å)
    * ``--d_max D_MAX``: Low-resolution limit (in Å)
    * ``--free FREE``: flag number for test set
-   * ``--hydrogen {all,yes,no}``: Hydrogen atoms - ``all``: add riding hydrogen atoms, ``yes``: use hydrogen atoms if present in input structure model, ``no``: remove hydrogen atoms in input structure model. Default: all.
+   * ``--hydrogen {all,yes,no}``: Hydrogen atoms - ``all``: (re)generate riding hydrogen atoms, ``yes``: use hydrogen atoms if present in input structure model, ``no``: remove hydrogen atoms in input structure model. Default: all.
    * ``--hout``: Write hydrogen atoms in the output model
    * ``--twin``: Twin refinement
-   * ``--randomize RANDOMIZE``: Shake coordinates with a specified mean shift (in Å).
-   * ``--bfactor BFACTOR``: Reset all ADPs to specified value (in Å)
-   * ``--keywords KEYWORDS [KEYWORDS ...]``: Keyword(s) in REFMAC5 syntax
+   * ``--randomize RANDOMIZE``: Shake coordinates with a specified rms (in Å)
+   * ``--bfactor BFACTOR``: Reset all atomic B values to specified value
+   * ``--keywords KEYWORDS [KEYWORDS ...]``: Keyword(s) in REFMAC5 syntax. See :doc:`supported Refmac keywords <refmac_keywords>`
    * ``--keyword_file KEYWORD_FILE [KEYWORD_FILE ...]``: File with keyword(s) in REFMAC5 syntax  (e.g. ProSMART restraint file)
 
-Restraints
-----------
-TBD
-
-   * ``--ligand [LIGAND ...]``: Restraint dictionary CIF file(s)
-   * ``--weight WEIGHT``: Weight for the experimental data term (default: automatic). The automatic mode adjusts the weight to achieve root mean square deviation Z-score in the range between 0.5 and 1.0. This can be changed using the option ``--target_bond_rmsz_range MIN_RMSZ MAX_RMSZ``.
-   * ``--ncsr``: Use local restraints for non-crystallographic symmetry. TBD: How does this work?
-   * ``--jellybody``: Use jelly body restraints
-   * ``--adpr_weight ADPR_WEIGHT``: ADP restraint weight (default: 1.0)
-   * Keyword argument ``vdwr VDWR_WEIGHT``: Van der Waals repulsion restraint weight, a higher number can help to reduce interatomic clashes (default: 1.0)
-   * TBD external bond, angle and torsion restraints
-   * TBD harmonic restraints for coordinates
-   * TBD YAML file
 
 Input columns for diffraction data
 ----------------------------------
@@ -59,42 +50,37 @@ If there are multiple columns available in the input file, mean amplitudes (Frid
 
 To specify which columns to use, use the ``--labin`` option. For example, the file ``data_merged.mtz`` contains the following columns with **merged** diffraction data:
 
-``H K L FreeR_flag IMEAN SIGIMEAN I(+) SIGI(+) I(-) SIGI(-) FMEAN SIGFMEAN F(+) SIGF(+) F(-) SIGF(-)``
+``H K L FreeR_flag IMEAN SIGIMEAN I(+) SIGI(+) I(-) SIGI(-) FP SIGFP F(+) SIGF(+) F(-) SIGF(-)``
 
-Servalcat would select to use the ``FMEAN,SIGFMEAN,FreeR_flag`` columns by default (refinement against mean amplitudes of structure factor).
-Anyway, we can specify to use intensities or separate Fridel pairs as follows:
+Servalcat would select to use the ``FP, SIGFP,FreeR_flag`` columns by default (refinement against mean structure factor amplitudes).
+Anyway, we can specify to use intensities or separate Friedel pairs as follows:
 
   * ``--labin I(+),SIGI(+),I(-),SIGI(-),FreeR_flag`` (refinement against intensities, separate Fridel pairs)
   * ``--labin IMEAN,SIGIMEAN,FreeR_flag`` (refinement against mean intensities)
   * ``--labin F(+),SIGF(+),F(-),SIGF(-),FreeR_flag`` (refinement against amplitudes, separate Fridel pairs)
-  * ``--labin FMEAN,SIGFMEAN,FreeR_flag`` (refinement against mean amplitudes, selected by default)
+  * ``--labin FP, SIGFP,FreeR_flag`` (refinement against mean amplitudes, selected by default)
 
 If the separate Fridel pairs are specified, anomalous difference density map (``FAN`` and ``PHAN``) columns will be present in the output MTZ file.
 Note that the anomalous signal is used only for the map calculation but not for the actual refinement.
 
-If the input file contains **unmerged** data, Servalcat merges the data internally and refines against intensities.
+If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities.
 An MTZ or CIF file with free flags can be specified with the ``--hklin_free`` option. A particular column for free flags in this file can be specified with the ``--labin_free`` option.
 In the logfiles, the CC* statistic is then available which estimates the data quality and represents an upper limit for CCI which is correlation between experimentally observed intensities and intensities calculated based on the refined structure model.
-
-TBD - How does intensity-based refinement work?
+See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
 
 Radiation sources
 -----------------
-Apart from x-ray crystallography, it is possible to use atomic scattering factors for neutron and electron radiation:
 
-.. code-block:: console
-
-    -s {electron,xray,neutron}, --source {electron,xray,neutron}
+Radiation sources can be changed by using the ``-s`` or ``--source`` option (xray, neutron, electron).
 
 When performing refinement against neutron diffraction data, it is possible to refine deuterium fraction using the option ``--refine_dfrac``.
-In this case, an extra output file ``output_prefix_expanded.mmcif`` is created for the purpose of deposition to the PDB.
+In this case, an extra output file ``output_prefix_expanded.mmcif`` is created for the purpose of deposition to the PDB. The bond lengths and their sigmas from ``_chem_comp_bond.value_dist_nucleus`` and ``_chem_comp_bond.value_dist_nucleus_esd`` are used.
+
+For electron data (MicroED), the scattering factors are calculated using the Mott-Bethe formula from X-ray scattering factors. Both the electron and nucleus positions for hydrogen are considered in the structure factor calculation. See `Yamashita et al. (2021) <https://doi.org/10.1107/S2059798321009475>`_
+
 
 Logs and statistics
 -------------------
-TBD
-
-Occupancy refinement
---------------------
 TBD
 
 Small molecules
