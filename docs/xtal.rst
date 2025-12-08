@@ -65,8 +65,37 @@ Note that the anomalous signal is used only for the map calculation but not for 
 
 If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities.
 An MTZ or CIF file with free flags can be specified with the ``--hklin_free`` option. A particular column for free flags in this file can be specified with the ``--labin_free`` option.
-In the logfiles, the CC* statistic is then available which estimates the data quality and represents an upper limit for CCI which is correlation between experimentally observed intensities and intensities calculated based on the refined structure model.
-See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+The advantage of providing unmerged data the availablity of the CC* statistic is the in log files as discussed bellow.
+
+
+Logs and statistics
+-------------------
+
+Refinement progress is monitored by several statistics quantifying the agreement of the refined model with the experimental diffraction data and also with the expected geometry.
+The statistics are written in the logfile ``servalcat.log`` and are also available in the JSON format ``output_prefix_stats.json``.
+
+
+Model agreement with data
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Which model quality statistics are calculated depends on the nature of the input reflection data.
+
+When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients between observed and calculated amplitudes ``CCFwork`` and ``CCFfree`` are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are calculated.
+
+When intensities (or unmerged diffraction data) are used for refinement and free R flags are provided, ``R1work`` and ``R1free`` values are provided as is usual in crystallography of small molecules. These statistics are calculated as the R values between the square roots of observed and calculated intensities while taking into acount only those with intensity-to-sigma ratio above 2. The correlation coefficients between observed and calculated intensities ``CCIwork`` and ``CCIfree`` are calculated. In case of free R flags not provided, only ``R1`` and ``CCI`` are available.
+
+If unmerged data are used, ``CC*`` statistic is then available which estimates the data quality and represents an upper limit for ``CCI`` which is correlation between experimentally observed intensities and intensities calculated based on the refined structure model. See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+
+
+Model agreement with ideal geometry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The geometry of the refined model is assessed in the same way as in refinement against cryoEM SPA maps.
+Root mean square deviations (RMSD) are calculated. 
+Also their Z-scores (RMSZ) are provided which represents how many standard deviations the observed geometry deviates from the ideal values. 
+
+Importantly, individual model geometry outliers with a Z-score higher than 5 are reported in the last cycle of refinement in ``servalcat.log`` and ``output_prefix_stats.json``. It is recommended to inspect these outliers as they can guide where the model needs to be improved.
+
 
 Radiation sources
 -----------------
@@ -78,10 +107,6 @@ In this case, an extra output file ``output_prefix_expanded.mmcif`` is created f
 
 For electron data (MicroED), the scattering factors are calculated using the Mott-Bethe formula from X-ray scattering factors. Both the electron and nucleus positions for hydrogen are considered in the structure factor calculation. See `Yamashita et al. (2021) <https://doi.org/10.1107/S2059798321009475>`_
 
-
-Logs and statistics
--------------------
-TBD
 
 Small molecules
 ---------------
