@@ -46,7 +46,7 @@ Input columns for diffraction data
 ----------------------------------
 
 In the required ``--hklin`` option, it is possible to provide merged or unmerged diffraction data (MTZ or CIF format).
-If there are multiple columns available in the input file, mean amplitudes (Fridel pairs averaged) are used by default.
+If there are multiple columns available in the input file, mean amplitudes (Friedel pairs averaged) are used by default.
 
 To specify which columns to use, use the ``--labin`` option. For example, the file ``data_merged.mtz`` contains the following columns with **merged** diffraction data:
 
@@ -55,17 +55,16 @@ To specify which columns to use, use the ``--labin`` option. For example, the fi
 Servalcat would select to use the ``FP, SIGFP,FreeR_flag`` columns by default (refinement against mean structure factor amplitudes).
 Anyway, we can specify to use intensities or separate Friedel pairs as follows:
 
-  * ``--labin I(+),SIGI(+),I(-),SIGI(-),FreeR_flag`` (refinement against intensities, separate Fridel pairs)
+  * ``--labin I(+),SIGI(+),I(-),SIGI(-),FreeR_flag`` (refinement against intensities, separate Friedel pairs)
   * ``--labin IMEAN,SIGIMEAN,FreeR_flag`` (refinement against mean intensities)
-  * ``--labin F(+),SIGF(+),F(-),SIGF(-),FreeR_flag`` (refinement against amplitudes, separate Fridel pairs)
+  * ``--labin F(+),SIGF(+),F(-),SIGF(-),FreeR_flag`` (refinement against amplitudes, separate Friedel pairs)
   * ``--labin FP, SIGFP,FreeR_flag`` (refinement against mean amplitudes, selected by default)
 
-If the separate Fridel pairs are specified, anomalous difference density map (``FAN`` and ``PHAN``) columns will be present in the output MTZ file.
+If the separate Friedel pairs are specified, anomalous difference density map (``FAN`` and ``PHAN``) columns will be present in the output MTZ file.
 Note that the anomalous signal is used only for the map calculation but not for the actual refinement.
 
-If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities.
+If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities. In the log files, the CC* statistic is also available (described below).
 An MTZ or CIF file with free flags can be specified with the ``--hklin_free`` option. A particular column for free flags in this file can be specified with the ``--labin_free`` option.
-The advantage of providing unmerged data the availablity of the CC* statistic is the in log files as discussed bellow.
 
 
 Logs and statistics
@@ -80,11 +79,11 @@ Model agreement with data
 
 Which model quality statistics are calculated depends on the nature of the input reflection data.
 
-When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients between observed and calculated amplitudes ``CCFwork`` and ``CCFfree`` are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are calculated.
+When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients ``CCFwork`` and ``CCFfree`` between experimentally observed amplitudes and amplitudes calculated based on the refined structure model are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are calculated.
 
-When intensities (or unmerged diffraction data) are used for refinement and free R flags are provided, ``R1work`` and ``R1free`` values are provided as is usual in crystallography of small molecules. These statistics are calculated as the R values between the square roots of observed and calculated intensities while taking into acount only those with intensity-to-sigma ratio above 2. The correlation coefficients between observed and calculated intensities ``CCIwork`` and ``CCIfree`` are calculated. In case of free R flags not provided, only ``R1`` and ``CCI`` are available.
+When intensities (or unmerged diffraction data) are used for refinement and free R flags are provided, ``R1work`` and ``R1free`` values are provided as is usual in crystallography of small molecules. These statistics are calculated as the R-values between the square roots of observed and calculated intensities while taking into account only those with intensity-to-sigma ratio above 2. The correlation coefficients ``CCIwork`` and ``CCIfree`` between experimentally observed intensities and intensities calculated based on the refined structure model are calculated. In case of free R flags not provided, only ``R1`` and ``CCI`` are available.
 
-If unmerged data are used, ``CC*`` statistic is then available which estimates the data quality and represents an upper limit for ``CCI`` which is correlation between experimentally observed intensities and intensities calculated based on the refined structure model. See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+If unmerged data are used, ``CC*`` statistic is then available which estimates the data quality and represents an upper limit for the ``CCI`` statistics which is correlation  See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
 
 
 Model agreement with ideal geometry
