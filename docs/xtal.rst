@@ -70,7 +70,7 @@ An MTZ or CIF file with free flags can be specified with the ``--hklin_free`` op
 Logs and statistics
 -------------------
 
-Refinement progress is monitored by several statistics quantifying the agreement of the refined model with the experimental diffraction data and also with the expected geometry.
+Refinement progress is monitored by several statistics that quantify the agreement of the refined model with the experimental diffraction data as well as its quality in respect to expected geometry.
 The statistics are written in the logfile ``servalcat.log`` and are also available in the JSON format ``output_prefix_stats.json``.
 
 
@@ -79,21 +79,20 @@ Model agreement with data
 
 Which model quality statistics are calculated depends on the nature of the input reflection data.
 
-When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients ``CCFwork`` and ``CCFfree`` between experimentally observed amplitudes and amplitudes calculated based on the refined structure model are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are calculated.
+When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients ``CCFwork`` and ``CCFfree`` between experimentally observed amplitudes and amplitudes calculated based on the refined model are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are reported.
 
-When intensities (or unmerged diffraction data) are used for refinement and free R flags are provided, ``R1work`` and ``R1free`` values are provided as is usual in crystallography of small molecules. These statistics are calculated as the R-values between the square roots of observed and calculated intensities while taking into account only those with intensity-to-sigma ratio above 2. The correlation coefficients ``CCIwork`` and ``CCIfree`` between experimentally observed intensities and intensities calculated based on the refined structure model are calculated. In case of free R flags not provided, only ``R1`` and ``CCI`` are available.
+When intensities (or unmerged diffraction data) are given and free R flags are provided, ``R1work`` and ``R1free`` values are provided, as is common in crystallography of small molecules. These statistics are calculated as R-values between the square roots of observed and calculated intensities, considering only reflections with an intensity-to-sigma ratio above 2. The correlation coefficients ``CCIwork`` and ``CCIfree`` between experimentally observed intensities and intensities calculated based on the refined model are also calculated. If free R flags are not provided, only ``R1`` and ``CCI`` are available.
 
-If unmerged data are used, ``CC*`` statistic is then available which estimates the data quality and represents an upper limit for the ``CCI`` statistics which is correlation  See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+If unmerged data are used, ``CC*`` statistic is also reported. It estimates the data quality and represents an upper limit for the ``CCI`` statistics. See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
 
 
 Model agreement with ideal geometry
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The geometry of the refined model is assessed in the same way as in refinement against cryoEM SPA maps.
-Root mean square deviations (RMSD) are calculated. 
-Also their Z-scores (RMSZ) are provided which represents how many standard deviations the observed geometry deviates from the ideal values. 
+Root mean square deviations (RMSD) from expected bond lengths and angles are calculated, as well as  their Z-scores (RMSZ), which represent how many standard deviations the observed geometry deviates from the ideal values. 
 
-Importantly, individual model geometry outliers with a Z-score higher than 5 are reported in the last cycle of refinement in ``servalcat.log`` and ``output_prefix_stats.json``. It is recommended to inspect these outliers as they can guide where the model needs to be improved.
+Importantly, various kinds of individual model geometry outliers with a Z-score greater than 5 are reported in the last cycle of refinement in ``servalcat.log`` and ``output_prefix_stats.json``. It is recommended to inspect these outliers as they can indicate where the model may need improvement.
 
 
 Radiation sources
