@@ -115,7 +115,7 @@ Servalcat can also refine small molecules against crystallographic data. A gener
 
     $ servalcat refine_xtal_norefmac \
      --model small_molecule.cif --hklin small_molecule.hkl \
-     -s xray --unre --hout --hydrogen yes --refine_h --adp aniso --no_solvent \
+     -s xray --unre --hout --hydrogen no --refine_h --adp aniso --no_solvent \
      [-o prefix]
 
 This would run unrestrained refinement of the small molecule with anisotropic ADPs without bulk solvent correction. Note the Servalcat does not currently support riding hydrogen atoms for small molecules.
