@@ -947,11 +947,15 @@ void add_twin(nb::module_& m) {
     .def("ll_der_alpha", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo, bool accurate) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
-      auto ret = make_numpy_array<double>({self.n_ops()});
-      double* ptr = ret.data();
-      for (int i = 0; i < ret.size(); ++i)
-        ptr[i] = 0.;
+      auto ret1 = make_numpy_array<double>({self.n_ops()});
+      auto ret2 = make_numpy_array<double>({self.n_ops(), self.n_ops()});
+      double *ptr1 = ret1.data(), *ptr2 = ret2.data();
+      for (int i = 0; i < ret1.size(); ++i)
+        ptr1[i] = 0;
+      for (int i = 0; i < ret2.size(); ++i)
+        ptr2[i] = 0;
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib) {
+        std::vector<double> der1(self.n_ops(), 0.);
         // not needed for inaccurate ver
         Eigen::VectorXd f_true(self.rb2a[ib].size());
         for (size_t i = 0; i < self.rb2a[ib].size(); ++i)
@@ -973,9 +977,9 @@ void add_twin(nb::module_& m) {
             if (std::isnan(self.f_true_max[ia])) continue;
             const double fac1 = -sig2inv * i_obs;
             if (accurate)
-              ptr[alpha_idx] += fac1 * calc_expected_F2(self.f_true_max[ia], f_inv(i,i));
+              der1[alpha_idx] += fac1 * calc_expected_F2(self.f_true_max[ia], f_inv(i,i));
             else
-              ptr[alpha_idx] += fac1 * sq(self.f_true_max[ia]);
+              der1[alpha_idx] += fac1 * sq(self.f_true_max[ia]);
             // |Fi|^2 |Fj|^2 part
             for (int ic2 = 0; ic2 < self.rbo2a[ib][io].size(); ++ic2) {
               const int j = self.rbo2a[ib][io][ic2];
@@ -994,7 +998,7 @@ void add_twin(nb::module_& m) {
                     printf("negative denom %f fmax %f Hii %f\n", denom, self.f_true_max[ia], f_inv(i,i));
                     std::cout << ders.second << "\n" << f_inv << "\n";
                   }
-                  ptr[alpha_idx] += fac2 * g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
+                  der1[alpha_idx] += fac2 * g2 / std::sqrt(denom) * std::exp(0.5 * g_der_sq * f_inv(i,i) / denom);
                 } else { // cannot use Sherman-Morrison update
                   Eigen::VectorXd g_der = Eigen::VectorXd::Zero(self.rb2a[ib].size());
                   g_der(i) = 2 * self.f_true_max[ia] * sq(self.f_true_max[ia2]);
@@ -1015,16 +1019,27 @@ void add_twin(nb::module_& m) {
                     printf("negative det_h %f\n", det_h);
                     std::cout << "f_true " << f_true << "\n";
                     std::cout << H_h << "\n" << g_der2 << "\n";
+                    std::cout << eig_h.es.eigenvalues() << "\n";
                   }
-                  ptr[alpha_idx] += fac2 * g * std::sqrt(det_f / det_h) * std::exp(0.5 * tmp / sq(g));
+                  der1[alpha_idx] += fac2 * g * std::sqrt(det_f / det_h) * std::exp(0.5 * tmp / sq(g));
                 }
               } else
-                ptr[alpha_idx] += fac2 * sq(self.f_true_max[ia] * self.f_true_max[ia2]);
+                der1[alpha_idx] += fac2 * sq(self.f_true_max[ia] * self.f_true_max[ia2]);
             }
           }
         }
+        for (int i = 0; i < self.n_ops(); ++i) {
+          ptr1[i] += der1[i];
+          for (int j = i; j < self.n_ops(); ++j)
+            ptr2[self.n_ops() * i + j] += der1[i] * der1[j];
+        }
       }
-      return ret;
+      // symmetrise
+        for (int i = 0; i < self.n_ops(); ++i)
+          for (int j = i + 1; j < self.n_ops(); ++j)
+            ptr2[self.n_ops() * j + i] = ptr2[self.n_ops() * i + j];
+
+      return nb::make_tuple(ret1, ret2);
     })
     // F_true must be estimated beforehand
     .def("calc_fom", [](const TwinData &self) {

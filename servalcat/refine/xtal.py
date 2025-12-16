@@ -14,14 +14,15 @@ from servalcat.utils import logger
 from servalcat.xtal import sigmaa
 from servalcat import utils
 from servalcat import ext
-from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model
+from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model, mlopt_twin_fractions
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 integr = sigmaa.integr
 
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
-                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, addends=None, addends2=None, is_int=None):
+                 use_solvent=0, use_in_est="all", use_in_target="all", twin=False, twin_mlalpha=False,
+                 addends=None, addends2=None, is_int=None):
         assert source in ("electron", "xray", "neutron")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -50,6 +51,7 @@ class LL_Xtal:
             self.twin_data, _ = find_twin_domains_from_data(self.hkldata)
         else:
             self.twin_data = None
+        self.twin_mlalpha = twin_mlalpha
         if self.twin_data:
             self.twin_data.setup_f_calc(len(self.fc_labs))
         if is_int is None:
@@ -68,6 +70,8 @@ class LL_Xtal:
                                                   twin_data=self.twin_data)#D_trans="splus", S_trans="splus")
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs)
+        if self.twin_data and self.twin_mlalpha:
+            mlopt_twin_fractions(self.hkldata, self.twin_data, self.b_aniso)
     def update_fc(self):
         # modify st before fc calculation
         b_resid = sigmaa.subtract_common_aniso_from_model([self.st])

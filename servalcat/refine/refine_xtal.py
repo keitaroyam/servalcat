@@ -94,6 +94,7 @@ def add_arguments(parser):
     parser.add_argument('--refine_h', action="store_true", help="Refine hydrogen (default: restraints only)")
     parser.add_argument('--refine_dfrac', action="store_true", help="Refine deuterium fraction (neutron only)")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
+    parser.add_argument('--twin_mlalpha', action="store_true", help="Use ML optimisation for twin fractions")
     parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
     parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--no_solvent',  action='store_true',
@@ -271,7 +272,8 @@ def main(args):
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
                  use_in_est=use_in_est, use_in_target=use_in_target,
-                 twin=args.twin, addends=addends, addends2=addends2, is_int=is_int)
+                 twin=args.twin, twin_mlalpha=args.twin_mlalpha,
+                 addends=addends, addends2=addends2, is_int=is_int)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 

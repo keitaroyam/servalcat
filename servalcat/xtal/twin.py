@@ -186,11 +186,15 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
     Io = hkldata.df.I.to_numpy(copy=True) * k_ani2_inv
     sigIo = hkldata.df.SIGI.to_numpy(copy=True) * k_ani2_inv
     def fun(x):
+        #x = numpy.clip(x, 0, 1)
+        #twin_data.alphas = x.tolist() + [1-x.sum()]
         twin_data.alphas = x
         twin_data.est_f_true(Io, sigIo, 10)
         ret = twin_data.ll(Io, sigIo)
         return ret
     def grad(x):
+        #x = numpy.clip(x, 0, 1)
+        #twin_data.alphas = x.tolist() + [1-x.sum()]
         twin_data.alphas = x
         twin_data.est_f_true(Io, sigIo, 10)
         return twin_data.ll_der_alpha(Io, sigIo, True)
@@ -211,6 +215,7 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
                 ofs.write(f"{a},{f},{f_new},{der[0]},{der[1]},{der_new[0]},{der_new[1]}\n")
             ofs.write("\n")
         twin_data.alphas = bak
+        quit()
     if 0:
         x0 = [x for x in twin_data.alphas]
         f0 = fun(x0)
@@ -228,21 +233,84 @@ def mlopt_twin_fractions(hkldata, twin_data, b_aniso):
     
     logger.writeln("ML twin fraction refinement..")
     num_params = len(twin_data.alphas)
-    A = numpy.ones((1, num_params))
-    linear_constraint = scipy.optimize.LinearConstraint(A, [1.0], [1.0])
-    bounds = scipy.optimize.Bounds(numpy.zeros(num_params), numpy.ones(num_params))
     logger.writeln(" starting with " + " ".join("%.4f"%x for x in twin_data.alphas))
-    logger.writeln(f" f0= {fun(twin_data.alphas)}")
-    res = scipy.optimize.minimize(fun=fun, x0=twin_data.alphas,
-                                  bounds=bounds,
-                                  constraints=[linear_constraint],
-                                  jac=grad,
-                                  #callback=lambda *x: logger.writeln(f"callback {x}"),
-                                  )
-    logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
-    logger.writeln(f" f = {res.fun}")
-    # ensure constraints
-    alphas = numpy.clip(res.x, 0, 1)
-    twin_data.alphas = list(alphas / alphas.sum())
+    f0 = fun(numpy.asarray(twin_data.alphas))
+    logger.writeln(f" f0= {f0}")
+    if 0:
+        A = numpy.ones((1, num_params))
+        linear_constraint = scipy.optimize.LinearConstraint(A, 0., 1.)#[1.0], [1.0])
+        bounds = scipy.optimize.Bounds(numpy.zeros(num_params), numpy.ones(num_params))
+        res = scipy.optimize.minimize(fun=fun, x0=twin_data.alphas[:-1],
+                                      bounds=bounds,
+                                      constraints=[linear_constraint],
+                                      jac=grad,
+                                      method="trust-constr", #"SLSQP",
+                                      #callback=lambda *x: logger.writeln(f"callback {x}"),
+                                      )
+        logger.writeln(" finished in {} iterations ({} evaluations)".format(res.nit, res.nfev))
+        logger.writeln(f" f = {res.fun}")
+        logger.writeln(str(res))
+        # ensure constraints
+        alphas = numpy.clip(res.x, 0, 1)
+        twin_data.alphas = alphas.tolist() + [1-alphas.sum()] #list(alphas / alphas.sum())
+    else:
+        def x2alpha(x):
+            x = numpy.clip(x, 0, 1)
+            if x.sum() > 1: x /= x.sum()
+            return x.tolist() + [numpy.clip(1 - x.sum(), 0, 1)]
+        x = twin_data.alphas[:-1]
+        for cyc in range(200):
+            der1, tmp = twin_data.ll_der_alpha(Io, sigIo, True)
+            #print("Der:")
+            #print(der1)
+            #print(tmp)
+            #print(-der1.dot(numpy.linalg.pinv(tmp)))
+            if 0:
+                bak = [_ for _ in twin_data.alphas]
+                with open("alpha_ll.csv", "w") as ofs:
+                    ofs.write("a,ll,der1\n")
+                    for x in numpy.linspace(0., 1.0, 100):
+                        twin_data.alphas = x2alpha([x])
+                        twin_data.est_f_true(Io, sigIo, 100)
+                        f = twin_data.ll(Io, sigIo)
+                        der1, der2 = twin_data.ll_der_alpha(Io, sigIo, True)
+                        der1 = der1[:-1] - der1[-1]
+                        ofs.write(f"{x},{f},{der1[0]}\n")
+                #twin_data.alphas = bak
+            #numpy.nan_to_num(der, False)
+            #print(der)
+            #der1 = numpy.sum(der, axis=1)
+            der1 = der1[:-1] - der1[-1]
+            #tmp = der.dot(der.T)
+            der2 = tmp[:-1,:-1].copy()
+            N = der2.shape[0]
+            #der2[numpy.diag_indices(N)] += tmp[-1, -1]
+            der2 += tmp[-1, -1]
+            for i in range(N):
+                for j in range(N):
+                    der2[i, j] -= tmp[i, -1] + tmp[j, -1]
+            #rows, cols = numpy.indices((N, N))
+            #non_diag_rows, non_diag_cols = numpy.where(rows != cols)
+            #der2[non_diag_rows, non_diag_cols] -= tmp[:-1,-1][non_diag_rows]
+            shift = -der1.dot(numpy.linalg.pinv(der2))
+            x += shift
+            twin_data.alphas = x2alpha(x)
+            twin_data.est_f_true(Io, sigIo)
+            f = twin_data.ll(Io, sigIo)
+            logger.writeln(f"{cyc=} {shift=} alpha={twin_data.alphas} f={f} diff={f - f0}")
+            if f > f0:
+                x -= shift
+                twin_data.alphas = x2alpha(x)
+                twin_data.est_f_true(Io, sigIo)
+                break
+            if numpy.abs(shift).max() < 1e-4:
+                break
+            f0 = f
+            if 0:
+                with open("debug.csv", "w") as ofs:
+                    ofs.write("scale,f\n")
+                    for i in range(10):
+                        ofs.write(f"{i},{fun(x2alpha(x + i * shift))}\n")
+                quit()
     logger.write(" ML twin fraction estimate: ")
     logger.writeln(" ".join("%.4f"%x for x in twin_data.alphas))

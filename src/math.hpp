@@ -174,11 +174,20 @@ inline double procrust_dist(Eigen::MatrixXd x, Eigen::MatrixXd y) {
 }
 
 struct SymMatEig {
-  SymMatEig(const Eigen::MatrixXd &m) : es(m) {}
+  SymMatEig(const Eigen::MatrixXd &m) : es(m), n_nonzero_rows(m.rows()) {
+    // check zero-valued rows which should give zero eigenvalues
+    for (int i = 0; i < m.rows(); ++i)
+      if ((m.row(i).array() == 0).all())
+        --n_nonzero_rows;
+  }
   double det(bool exclude_zero=false) const {
     if (exclude_zero) {
-      const auto v = es.eigenvalues();
-      // not exact zero due to finite precision
+      auto v = es.eigenvalues();
+      // eigenvalue is sorted, but not with its magnitude
+      std::sort(v.data(), v.data() + v.size(),
+                [](double a, double b) { return std::abs(a) < std::abs(b); });
+      v = v.tail(n_nonzero_rows);
+      // filtering no longer needed, but just in case
       return (v.array().abs() < 1e-13).select(1, v).prod();
     }
     return es.eigenvalues().prod();
@@ -190,6 +199,7 @@ struct SymMatEig {
     return es.eigenvectors() * eig_inv.asDiagonal() * es.eigenvectors().adjoint();
   }
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es;
+  int n_nonzero_rows;
 };
 
 } // namespace servalcat
