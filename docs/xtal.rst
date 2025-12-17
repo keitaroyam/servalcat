@@ -46,7 +46,7 @@ Input columns for diffraction data
 ----------------------------------
 
 In the required ``--hklin`` option, it is possible to provide merged or unmerged diffraction data (MTZ or CIF format).
-If there are multiple columns available in the input file, mean amplitudes (Fridel pairs averaged) are used by default.
+If there are multiple columns available in the input file, mean amplitudes (Friedel pairs averaged) are used by default.
 
 To specify which columns to use, use the ``--labin`` option. For example, the file ``data_merged.mtz`` contains the following columns with **merged** diffraction data:
 
@@ -55,18 +55,45 @@ To specify which columns to use, use the ``--labin`` option. For example, the fi
 Servalcat would select to use the ``FP, SIGFP,FreeR_flag`` columns by default (refinement against mean structure factor amplitudes).
 Anyway, we can specify to use intensities or separate Friedel pairs as follows:
 
-  * ``--labin I(+),SIGI(+),I(-),SIGI(-),FreeR_flag`` (refinement against intensities, separate Fridel pairs)
+  * ``--labin I(+),SIGI(+),I(-),SIGI(-),FreeR_flag`` (refinement against intensities, separate Friedel pairs)
   * ``--labin IMEAN,SIGIMEAN,FreeR_flag`` (refinement against mean intensities)
-  * ``--labin F(+),SIGF(+),F(-),SIGF(-),FreeR_flag`` (refinement against amplitudes, separate Fridel pairs)
+  * ``--labin F(+),SIGF(+),F(-),SIGF(-),FreeR_flag`` (refinement against amplitudes, separate Friedel pairs)
   * ``--labin FP, SIGFP,FreeR_flag`` (refinement against mean amplitudes, selected by default)
 
-If the separate Fridel pairs are specified, anomalous difference density map (``FAN`` and ``PHAN``) columns will be present in the output MTZ file.
+If the separate Friedel pairs are specified, anomalous difference density map (``FAN`` and ``PHAN``) columns will be present in the output MTZ file.
 Note that the anomalous signal is used only for the map calculation but not for the actual refinement.
 
-If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities.
+If the column for **unmerged** intensities is specified, Servalcat merges the data internally and refines against merged intensities. In the log files, the CC* statistic is also available (described below).
 An MTZ or CIF file with free flags can be specified with the ``--hklin_free`` option. A particular column for free flags in this file can be specified with the ``--labin_free`` option.
-In the logfiles, the CC* statistic is then available which estimates the data quality and represents an upper limit for CCI which is correlation between experimentally observed intensities and intensities calculated based on the refined structure model.
-See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+
+
+Logs and statistics
+-------------------
+
+Refinement progress is monitored by several statistics that quantify the agreement of the refined model with the experimental diffraction data as well as its quality in respect to expected geometry.
+The statistics are written in the log file ``servalcat.log`` and are also available in the JSON format ``output_prefix_stats.json``, which is updated every cycle.
+
+
+Model agreement with data
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Which model quality statistics are calculated depends on the nature of the input reflection data.
+
+When amplitudes are used for refinement and free R flags are provided for the test set, the conventional ``Rwork`` and ``Rfree`` values are provided. Moreover, the correlation coefficients ``CCFwork`` and ``CCFfree`` between experimentally observed amplitudes and amplitudes calculated based on the refined model are calculated. If free R flags are not available, only ``R`` (sometimes called ``Rall``) and ``CCF`` are reported.
+
+When intensities (or unmerged diffraction data) are given and free R flags are provided, ``R1work`` and ``R1free`` values are provided, as is common in crystallography of small molecules. These statistics are calculated as R-values between the square roots of observed and calculated intensities, considering only reflections with an intensity-to-sigma ratio above 2. The correlation coefficients ``CCIwork`` and ``CCIfree`` between experimentally observed intensities and intensities calculated based on the refined model are also calculated. If free R flags are not provided, only ``R1`` and ``CCI`` are available.
+
+If unmerged data are used, ``CC*`` statistic is also reported. It estimates the data quality and represents an upper limit for the ``CCI`` statistics. See `Karplus and Diederichs (2012) <https://doi.org/10.1126/science.1218231>`_ or `Diederichs and Karplus (2013) <https://doi.org/10.1107/S0907444913001121>`_.
+
+
+Model agreement with ideal geometry
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The geometry of the refined model is assessed in the same way as in refinement against cryoEM SPA maps.
+Root mean square deviations (RMSD) from expected bond lengths and angles are calculated, as well as  their Z-scores (RMSZ), which represent how many standard deviations the observed geometry deviates from the ideal values. 
+
+Importantly, various kinds of individual model geometry outliers with a Z-score greater than 5 are reported in the last cycle of refinement in ``servalcat.log`` and ``output_prefix_stats.json``. It is recommended to inspect these outliers as they can indicate where the model may need improvement.
+
 
 Radiation sources
 -----------------
@@ -79,13 +106,25 @@ In this case, an extra output file ``output_prefix_expanded.mmcif`` is created f
 For electron data (MicroED), the scattering factors are calculated using the Mott-Bethe formula from X-ray scattering factors. Both the electron and nucleus positions for hydrogen are considered in the structure factor calculation. See `Yamashita et al. (2021) <https://doi.org/10.1107/S2059798321009475>`_
 
 
-Logs and statistics
--------------------
-TBD
-
 Small molecules
 ---------------
-TBD
+
+Servalcat can also refine small molecules against crystallographic data. A generally suggested protocol is as follows:
+
+.. code-block:: console
+
+    $ servalcat refine_xtal_norefmac \
+     --model small_molecule.cif --hklin small_molecule.hkl \
+     -s xray --unrestrained --hydrogen no --adp aniso --no_solvent \
+     [-o prefix]
+
+For ``--model`` and ``--hklin``, common formats for small molecule crystallography (.hkl, .cif, .res, .ins) can be used. This will run unrestrained refinement with anisotropic ADPs without bulk solvent correction. Note that the Servalcat does not currently support riding hydrogen atoms for the unrestrained refinement. If you require riding hydrogen atoms, you will need to use restrained refinement using dictionaries generated by AceDRG.
+
+Servalcat provides a helper command which converts files between the small molecule formats to .pdb, .mmcif or .mtz:
+
+.. code-block:: console
+
+    $ servalcat util sm2mm structure_and_data.cif -o output
 
 
 Complete list of options
