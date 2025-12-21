@@ -243,17 +243,8 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, modres, 
 
     # fix entity (Refmac seems to make DNA non-polymer; as seen in 1fix)
     if not fixes or not fixes.res_labels:
-        utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True)
-        for e in st.entities:
-            if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
-                rspan = st[0].get_subchain(e.subchains[0])
-                e.full_sequence = [r.name for r in rspan]
-
-        # fix label_seq_id
-        for chain in st[0]:
-            for res in chain:
-                res.label_seq = None
-        st.assign_label_seq_id()
+        utils.model.setup_entities(st, clear=True, overwrite_entity_type=True, force_subchain_names=True,
+                                   fix_sequences=True)
 
     # assuming refmac won't write MODRES
     st.mod_residues = modres

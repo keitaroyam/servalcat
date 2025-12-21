@@ -169,7 +169,8 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
     if not args.keep_entities:
-        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True,
+                                   fix_sequences=True)
     if not args.keep_charges:
         utils.model.remove_charge([st])
     if args.source == "custom":

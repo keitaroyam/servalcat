@@ -43,7 +43,7 @@ def shake_structure(st, sigma, copy=True):
     return st2
 # shake_structure()
 
-def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_names=False):
+def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_names=False, fix_sequences=None):
     if clear:
         st.entities.clear()
         st.add_entity_ids(overwrite=True) # clear entity_id so that ensure_entities() will work properly
@@ -52,6 +52,19 @@ def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_
     st.ensure_entities()
     st.add_entity_ids()
     st.deduplicate_entities()
+
+    # TODO Add an option to set user-given sequences (use assign_best_sequences)
+    if fix_sequences:
+        for e in st.entities:
+            if not e.full_sequence and e.entity_type == gemmi.EntityType.Polymer and e.subchains:
+                rspan = st[0].get_subchain(e.subchains[0])
+                e.full_sequence = [r.name for r in rspan]
+
+        # fix label_seq_id
+        for chain in st[0]:
+            for res in chain:
+                res.label_seq = None
+        st.assign_label_seq_id()
 # setup_entities()
 
 def determine_blur_for_dencalc(st, grid):
