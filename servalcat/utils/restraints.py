@@ -300,7 +300,7 @@ def select_restrained_torsions(monlib, include_rules, exclude_rules):
 # select_restrained_torsions()
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
-                     use_cispeps=False, add_metal_restraints=True, params=None):
+                     remove_bad_hydrogen=True, use_cispeps=False, add_metal_restraints=True, params=None):
     # Check duplicated atoms
     bad = []
     for chain in st[0]:
@@ -336,6 +336,26 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
     with logger.with_prefix("  "):
         topo = gemmi.prepare_topology(st, monlib, h_change=h_change, warnings=logger, reorder=False,
                                       ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
+
+    if remove_bad_hydrogen:
+        deleted = False
+        for chain in st[0]:
+            for res in chain:
+                todel = []
+                for i, atom in enumerate(res):
+                    if atom.is_hydrogen() and (atom.calc_flag == gemmi.CalcFlag.Dummy
+                                               or any(numpy.isnan(atom.pos.tolist()))):
+                        logger.writeln(f"  Removing failed hydrogen: {chain.name}/{res.name} {res.seqid}/{atom.name}")
+                        todel.append(i)
+                        deleted = True
+                for i in reversed(todel):
+                    del res[i]
+        if deleted: # needs re-creation, as the deletion invalidates pointers stored in topo
+            logger.writeln("Re-creating restraints..")
+            with logger.with_prefix("  "):
+                topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=logger, reorder=False,
+                                              ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
+
     unknown_cc = set()
     link_related = set()
     nan_hydr = set()
