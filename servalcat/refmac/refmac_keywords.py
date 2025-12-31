@@ -76,7 +76,7 @@ def parse_from_to(s, itk):
     return ret, itk
 # parse_from_to()
 
-def read_exte(s):
+def read_exte(s, raise_unknown=True):
     # using the same variable names as used in read_extra_restraints.f
     ret = dict(defaults={})
     if not s: return ret
@@ -247,11 +247,15 @@ def read_exte(s):
                     itk += 1
 
         else:
-            logger.writeln("WARNING: cannot parse: {}".format(" ".join(s)))
+            msg = "unrecognized exte keyword: " + " ".join(s)
+            if raise_unknown:
+                raise RuntimeError(msg)
+            else:
+                logger.writeln(f"WARNING: {msg}")
     return ret
 # read_exte()
 
-def read_ridge_params(l, r):
+def read_ridge_params(l, r, raise_unknown=True):
     s = l.split()
     assert s[0].lower().startswith("ridg")
     ntok = len(s)
@@ -308,7 +312,11 @@ def read_ridge_params(l, r):
                 v = float(s[4])
                 r["bvalue_filter_range"] = v if v > 0 else 2.0
         else:
-            logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[2], l))
+            msg = "unrecognised keyword: {}\n=> {}".format(s[2], l)
+            if raise_unknown:
+                raise RuntimeError(msg)
+            else:
+                logger.writeln(f"WARNING: {msg}")
     elif s[1].lower().startswith(("atom", "posi")): # not used
         r["sigma_pos"] = float(s[2]) if ntok > 2 else 0.1
     elif s[1].lower().startswith(("bval", "uval")) and ntok > 2:
@@ -342,12 +350,16 @@ def read_ridge_params(l, r):
             r["sigma_b"] = float(s[2])
             r["sigma_u"] = float(s[2])
     else:
-        logger.writeln("WARNING: unrecognised keyword: {}\n=> {}".format(s[1], l))
+        msg = "unrecognised keyword: {}\n=> {}".format(s[1], l)
+        if raise_unknown:
+            raise RuntimeError(msg)
+        else:
+            logger.writeln(f"WARNING: {msg}")
 
     return r
 # read_ridge_params()
 
-def read_occupancy_params(l, r):
+def read_occupancy_params(l, r, raise_unknown=True):
     s = l.split()
     if not s[0].lower().startswith("occu"):
         return r
@@ -393,11 +405,13 @@ def read_occupancy_params(l, r):
             r["ncycle"] = max(int(s[3]), r["ncycle"])
         elif r["ncycle"] == 0:
             r["ncycle"] = 1 # default
+    elif raise_unknown:
+        raise RuntimeError("unrecognized keyword: " + l)
 
     return r
 # read_occupancy_params()
 
-def read_restr_params(l, r):
+def read_restr_params(l, r, raise_unknown=True):
     s = l.split()
 
     def read_tors_params(itk):
@@ -475,9 +489,11 @@ def read_restr_params(l, r):
         pass
     elif s[1].lower().startswith("chir"):
         pass
+    elif raise_unknown:
+        raise RuntimeError("unrecognized keyword: " + l)
 # read_restr_params()
 
-def read_make_params(l, r):
+def read_make_params(l, r, raise_unknown=True):
     # TODO: hout,ribo,valu,spec,form,sdmi,segi
     s = l.split()
     assert s[0].lower().startswith("make")
@@ -517,19 +533,22 @@ def read_make_params(l, r):
                 else:
                     raise SystemExit("Invalid make instruction: {}".format(l))
                 break
-        else: # if no keywords match (can raise an error if all make keywords are implemented)
-            itk += 1
+        else:
+            if raise_unknown:
+                raise RuntimeError("unrecognized keyword: " + l)
+            else:
+                itk += 1
     return r
 # read_make_params()
 
-def parse_line(l, ret):
+def parse_line(l, ret, raise_unknown=True):
     s = l.split()
     ntok = len(s)
     if ntok == 0: return
     if s[0].lower().startswith("exte"):
-        ret.setdefault("exte", []).append(read_exte(s))
+        ret.setdefault("exte", []).append(read_exte(s, raise_unknown))
     elif s[0].lower().startswith("make"):
-        read_make_params(l, ret.setdefault("make", {}))
+        read_make_params(l, ret.setdefault("make", {}), raise_unknown)
     elif s[0].lower().startswith(("sour", "scat")):
         k = s[1].lower()
         if k.startswith("em"):
@@ -558,11 +577,11 @@ def parse_line(l, ret):
             pass
         # TODO read sdex, excu, dele, dmxe, dmne
     elif s[0].lower().startswith("ridg"):
-        read_ridge_params(l, ret.setdefault("ridge", {}))
+        read_ridge_params(l, ret.setdefault("ridge", {}), raise_unknown)
     elif s[0].lower().startswith("occu"):
-        read_occupancy_params(l, ret.setdefault("occu", {}))
+        read_occupancy_params(l, ret.setdefault("occu", {}), raise_unknown)
     elif s[0].lower().startswith("rest"):
-        read_restr_params(l, ret.setdefault("restr", {}))
+        read_restr_params(l, ret.setdefault("restr", {}), raise_unknown)
     elif s[0].lower().startswith("angl") and ntok > 1:
         ret["wangle"] = float(s[1])
     elif s[0].lower().startswith("tors") and ntok > 1:
@@ -581,6 +600,8 @@ def parse_line(l, ret):
             itk += 1
         except ValueError:
             pass
+    elif raise_unknown:
+        raise RuntimeError(f"unrecognized keyword: {l}")
         # TODO read maxr, over, sigm, incr, chan, vdwc, excl
 # parse_line()
 
@@ -614,16 +635,16 @@ def get_lines(lines, depth=0):
         yield l
 # get_lines()
             
-def update_params(ret, inputs):
+def update_params(ret, inputs, raise_unknown=True):
     if not inputs:
         return
     for l in get_lines(inputs):
-        parse_line(l, ret)
+        parse_line(l, ret, raise_unknown=raise_unknown)
 # update_keywords()
 
-def parse_keywords(inputs):
+def parse_keywords(inputs, raise_unknown=True):
     ret = {"make":{}, "ridge":{}, "refi":{}}
-    update_params(ret, inputs)
+    update_params(ret, inputs, raise_unknown)
     return ret
 # parse_keywords()
 

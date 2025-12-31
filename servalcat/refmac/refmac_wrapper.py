@@ -54,7 +54,7 @@ def read_stdin(stdin):
     ret = {"make":{}, "ridge":{}, "refi":{}}
     inputs = []
     for l in refmac_keywords.get_lines(stdin):
-        refmac_keywords.parse_line(l, ret)
+        refmac_keywords.parse_line(l, ret, raise_unknown=False)
         inputs.append(l + "\n")
     
     def sorry(s): raise SystemExit("Sorry, '{}' is not supported".format(s))
