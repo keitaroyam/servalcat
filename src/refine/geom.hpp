@@ -873,6 +873,7 @@ inline void Geometry::load_topo(const gemmi::Topo& topo) {
 }
 
 inline void Geometry::finalize_restraints() {
+  // shouldn't we put vdw for type 2 bonds??
   for (const auto& b : bonds)
     if (b.type < 2)
       bondindex.add_link(*b.atoms[0], *b.atoms[1], b.same_asu());
@@ -880,29 +881,42 @@ inline void Geometry::finalize_restraints() {
   // sort out type 0 or 1 bonds
   // type = 0: replace it
   // type = 1: add it
-  // check type 2. remove if type 0 (or 1?) bonds defined
+  // check type 2. remove if type 0 (or 1) bonds defined
 
-  if (bonds.size() > 1)
+  std::vector<size_t> to_remove;
+  if (bonds.size() > 1) {
     std::stable_sort(bonds.begin(), bonds.end(),
                      [](const Bond& l, const Bond& r) { return l.sort_key() < r.sort_key(); });
-  // remove duplicated type 0 bonds
-  // remove type 2 bonds if bond/angles defined
-  std::vector<size_t> to_remove;
-  for (size_t i = 0; i < bonds.size(); ++i) {
-    if (bonds[i].type == 2 && bondindex.graph_distance(*bonds[i].atoms[0], *bonds[i].atoms[1], bonds[i].same_asu()) < 3) {
-      //std::cout << "remove type 2: " << bonds[i].atoms[0]->name << "-" <<  bonds[i].atoms[1]->name << "\n";
-      to_remove.emplace_back(i);
-    } else if (i < bonds.size() - 1 && bonds[i].sort_key() == bonds[i+1].sort_key()) {
-      if (bonds[i+1].type > 0) // merge. overwrite if next is type 0.
-        bonds[i+1].values.insert(bonds[i+1].values.end(), bonds[i].values.begin(), bonds[i].values.end());
-      //std::cout << "remove/merge: " << bonds[i].atoms[0]->name << "-" <<  bonds[i].atoms[1]->name << " d="
-      //          << bonds[i].atoms[0]->pos.dist(bonds[i].atoms[1]->pos)
-      //          << " target0=" << bonds[i].values[0].value << "\n";
-      to_remove.emplace_back(i);
+    // remove duplicated type 0 bonds
+    // remove type 2 bonds if bond/angles defined
+    for (size_t i = 0; i < bonds.size() - 1; ) {
+      size_t ref_idx = i, j = i + 1;
+      int min_type = bonds[i].type;
+      for (; j < bonds.size() - 1 && bonds[i].sort_key() == bonds[j].sort_key(); ++j) {
+        if (bonds[j].type < min_type)
+          min_type = bonds[j].type;
+        if (bonds[j].type == 2 && min_type < 2) // ignore type 2 when bond is defined
+          continue;
+        if (bonds[j].type == 0 || (bonds[j].type == 1 && bonds[ref_idx].type == 2))
+          ref_idx = j;
+        else
+          bonds[ref_idx].values.insert(bonds[ref_idx].values.end(), bonds[j].values.begin(), bonds[j].values.end());
+      }
+      for (size_t k = i; k < j; ++k)
+        if (k != ref_idx)
+          to_remove.emplace_back(k);
+      // if (j - i > 1) {
+      //   std::cout << "[" << i << "," << j << ") : there are " << j - i << " restraints defined for "
+      //             << bonds[i].atoms[0]->name << "-" <<  bonds[i].atoms[1]->name << "\n";
+      //   for (size_t k = i; k < j; ++k)
+      //     std::cout << k << ": type=" << bonds[k].type << ", ideal=" << bonds[k].values[0].value
+      //               << " for " << bonds[k].atoms[0]->name << "-" <<  bonds[k].atoms[1]->name << "\n";
+      // }
+      i = j;
     }
+    for (auto it = to_remove.rbegin(); it != to_remove.rend(); ++it)
+      bonds.erase(bonds.begin() + (*it));
   }
-  for (auto it = to_remove.rbegin(); it != to_remove.rend(); ++it)
-    bonds.erase(bonds.begin() + (*it));
 
   // sort angles
   for (auto& t : angles)

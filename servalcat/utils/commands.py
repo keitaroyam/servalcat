@@ -183,6 +183,7 @@ def add_arguments(p):
     parser.add_argument('-n', '--nucleus', action="store_true", help="Use nucleus distances (for neutron)")
     parser.add_argument("--ignore_h", action='store_true', help="ignore hydrogen")
     parser.add_argument("--selection", help="evaluate part of the model")
+    parser.add_argument('--dump_all', action="store_true", help=argparse.SUPPRESS)
     parser.add_argument('-o', '--output_prefix', 
                         help="default: taken from input file")
 
@@ -889,6 +890,20 @@ def geometry(args):
         json.dump(ret["outliers"], ofs, indent=2)
         logger.writeln("saved: {}".format(ofs.name))
 
+    if args.dump_all: # for debug, unfinished
+        dd = {"bonds": [], "vdw": []}
+        for t in geom.geom.bonds:
+            dd["bonds"].append({"atoms":[str(geom.lookup[x]) for x in t.atoms],
+                                "ideals": [{"ideal":x.value, "sigma":x.sigma} for x in t.values],
+                                "alpha": t.alpha, "type": t.type,
+                                "sym_idx": t.sym_idx, "pbc_shift": t.pbc_shift})
+        for t in geom.geom.vdws:
+            dd["vdw"].append({"atoms":[str(geom.lookup[x]) for x in t.atoms],
+                              "ideal": t.value, "sigma": t.sigma,
+                              "type": t.type, "sym_idx": t.sym_idx, "pbc_shift": t.pbc_shift})
+        with open(args.output_prefix + "_restraints.json", "w") as ofs:
+            json.dump(dd, ofs)
+            logger.writeln("saved: {}".format(ofs.name))
     if args.check_skew:
         logger.writeln("\nChecking skewness of bond length deviation")
         # better to ignore hydrogen
