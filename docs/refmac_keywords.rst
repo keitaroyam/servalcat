@@ -11,6 +11,9 @@ External restraints
 EXTErnal UNDEfined [IGNOre | STOP]
     Default: stop. When ``igno`` is given, the program continues even when it encounters external restraints defined for non-existent atoms.
 
+EXTErnal HYDRogen [IGNOre | USE]
+    Default: ignore. Hydrogen atoms in external restraints are ignored.
+
 EXTErnal WEIGht SCALe [<dist_sigma_scale>] [DISTance <dist_sigma_scale>] [ANGLe <angle_sigma_scale>] [TORSion <torsion_sigma_scale>] [CHIRal <chiral_sigma_scale>] [PLANe <plane_sigma_scale>] [INTErval <inte_sigma_scale>]
     Default: 1.0. The sigma values in subsequent keywords will be divided by the specified value.
 

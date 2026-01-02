@@ -42,7 +42,7 @@ def read_external_restraints(params, st, geom):
     lookup = {(cra.chain.name, cra.residue.seqid.num, cra.residue.seqid.icode,
                cra.atom.name, cra.atom.altloc) : cra.atom for cra in st[0].all()}
 
-    # TODO main chain / side chain filtering, hydrogen, dist_max_external/dist_min_external
+    # TODO main chain / side chain filtering
     for r in params:
         if not r: continue
         defs.update(r["defaults"])
@@ -74,6 +74,11 @@ def read_external_restraints(params, st, geom):
                             skip = True
                             continue
                         raise RuntimeError("Atom not found: {}".format(key))
+                    if defs["ignore_hydrogens"] and atom.is_hydrogen():
+                        logger.writeln("External restraints with hydrogen atoms will be ignored: {}".format(key))
+                        if r["rest_type"] in ("dist", "angl", "tors", "inte"):
+                            skip = True
+                        continue
                     if r["rest_type"] == "stac":
                         atoms[i].append(atom)
                     else:
