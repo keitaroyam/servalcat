@@ -21,7 +21,13 @@ Also, it has several utility commands: `servalcat util`.
 ## Installation
 
 ```
+# PyPI
 pip install servalcat
+
+# conda, mamba or pixi
+conda install conda-forge::servalcat
+mamba install conda-forge::servalcat
+pixi add servalcat
 ```
 will install the stable version.
 
