@@ -20,7 +20,7 @@ Also, it has several utility commands: `servalcat util`.
 
 ## Installation
 
-```
+```shell
 # PyPI
 pip install servalcat
 
