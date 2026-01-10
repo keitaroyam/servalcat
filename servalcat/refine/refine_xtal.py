@@ -95,7 +95,7 @@ def add_arguments(parser):
     parser.add_argument('--refine_dfrac', action="store_true", help="Refine deuterium fraction (neutron only)")
     parser.add_argument('--twin', action="store_true", help="Turn on twin refinement")
     parser.add_argument('--twin_mlalpha', action="store_true", help="Use ML optimisation for twin fractions")
-    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron"], required=True)
+    parser.add_argument("-s", "--source", choices=["electron", "xray", "neutron", "custom"], required=True)
     parser.add_argument("--wavelength", type=float, help="For f_prime")
     parser.add_argument('--no_solvent',  action='store_true',
                         help="Do not consider bulk solvent contribution")
@@ -161,7 +161,6 @@ def main(args):
             n_bins_stat=args.nbins,
             free=args.free,
             xyzins=[args.model],
-            source=args.source,
             d_max=args.d_max,
             d_min=args.d_min,
             use=args.use_in_est,
@@ -180,7 +179,13 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
-    addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
+    ccu = utils.model.CustomCoefUtil()
+    if args.source == "custom":
+        ccu.read_from_cif(sts[0], args.model)
+        ccu.show_info()
+        addends, addends2 = None, None
+    else:
+        addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=args.wavelength)
     if args.use_fw:
         if not is_int:
             raise SystemExit("Error: need intensity input when -use_fw")
@@ -269,7 +274,8 @@ def main(args):
     if args.jellybody or args.jellyonly:
         geom.geom.ridge_sigma, geom.geom.ridge_dmax = args.jellybody_params
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
-
+    if args.source == "custom":
+        ccu.set_coeffs(st)
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
                  use_in_est=use_in_est, use_in_target=use_in_target,

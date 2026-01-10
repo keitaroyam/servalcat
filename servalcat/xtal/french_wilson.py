@@ -234,7 +234,6 @@ def main(args):
                                                    n_bins_ml=args.nbins,
                                                    free=None,
                                                    xyzins=[],
-                                                   source=None,
                                                    d_min=args.d_min,
                                                    n_per_mlbin=500,
                                                    max_mlbins=30,

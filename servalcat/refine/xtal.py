@@ -23,7 +23,7 @@ class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=0, use_in_est="all", use_in_target="all", twin=False, twin_mlalpha=False,
                  addends=None, addends2=None, is_int=None):
-        assert source in ("electron", "xray", "neutron")
+        assert source in ("electron", "xray", "neutron", "custom")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
         self.hkldata = hkldata
@@ -62,7 +62,7 @@ class LL_Xtal:
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
     def refine_id(self):
-        return {"xray": "X-RAY", "electron": "ELECTRON", "neutron": "NEUTRON"}.get(self.source, "") + " DIFFRACTION"
+        return {"xray": "X-RAY", "electron": "ELECTRON", "neutron": "NEUTRON", "custom": "CUSTOM"}.get(self.source, "") + " DIFFRACTION"
 
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
@@ -286,14 +286,19 @@ class LL_Xtal:
         
         self.ll = ext.LL(self.st, refine_params, self.mott_bethe, self.addends)
         self.ll.set_ncs([x.tr for x in self.st.ncs if not x.given])
-        if self.source == "neutron":
+        if self.source == "custom":
+            self.ll.calc_grad_custom(dll_dab_den, blur)
+        elif self.source == "neutron":
             self.ll.calc_grad_n92(dll_dab_den, blur)
         else:
             self.ll.calc_grad_it92(dll_dab_den, blur)
 
         # second derivative
         s_array = numpy.sqrt(self.twin_data.s2_array) if self.twin_data else 1./self.hkldata.d_spacings().to_numpy()
-        if self.source == "neutron":
+        if self.source == "custom":
+            self.ll.make_fisher_table_diag_direct_custom(s_array, d2ll_dab2)
+            self.ll.fisher_diag_from_table_custom()
+        elif self.source == "neutron":
             self.ll.make_fisher_table_diag_direct_n92(s_array, d2ll_dab2)
             self.ll.fisher_diag_from_table_n92()
         else:

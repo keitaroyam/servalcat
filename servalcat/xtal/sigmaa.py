@@ -1385,7 +1385,7 @@ def decide_spacegroup(sg_user, sg_st, sg_hkl):
     return ret
 # decide_spacegroup
 
-def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_min=None,
+def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
                   n_per_mlbin=None, use="all", max_mlbins=None, cif_index=0, keep_charges=False,
                   allow_unusual_occupancies=False, space_group=None,
                   hklin_free=None, labin_free=None, labin_llweight=None, n_bins_stat=None, max_statbins=20):
@@ -1470,7 +1470,6 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, source, d_max=None, d_m
         raise RuntimeError("No data in hkl data")
 
     if sts:
-        assert source in ["electron", "xray", "neutron"]
         for st in sts:
             if st[0].count_atom_sites() == 0:
                 raise RuntimeError("No atom in the model")
@@ -1825,7 +1824,6 @@ def main(args):
             n_bins_stat=args.nbins,
             free=args.free,
             xyzins=sum(args.model, []),
-            source=args.source,
             d_max=args.d_max,
             d_min=args.d_min,
             use=args.use,
