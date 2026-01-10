@@ -565,7 +565,7 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         elif ins == "HKLF":
             info["hklf"] = int(sp[1])
         elif ins == "FVAR":
-            fvar = list(map(float, sp[1:]))
+            fvar.extend(map(float, sp[1:]))
         elif not re_kwd.search(ins):
             if not 4 < len(sp) < 13:
                 logger.writeln("cannot parse this line: {}".format(l))
@@ -731,11 +731,17 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
 
     if cell is None or sg is None:
         raise RuntimeError("Cell and/or symmetry operations not found in {}".format(cif_in))
-        
+
     l = b.find_values("_refln_index_h").get_loop()
-    i_hkl = [l.tags.index("_refln_index_{}".format(h)) for h in "hkl"]
-    i_int = l.tags.index("_refln_F_squared_meas")
-    i_sig = l.tags.index("_refln_F_squared_sigma")
+    if l:
+        i_hkl = [l.tags.index("_refln_index_{}".format(h)) for h in "hkl"]
+        i_int = l.tags.index("_refln_F_squared_meas")
+        i_sig = l.tags.index("_refln_F_squared_sigma")
+    else:
+        l = b.find_values("_diffrn_refln_index_h").get_loop()
+        i_hkl = [l.tags.index("_diffrn_refln_index_{}".format(h)) for h in "hkl"]
+        i_int = l.tags.index("_diffrn_refln_intensity_net") # this may not always exist?
+        i_sig = l.tags.index("_diffrn_refln_intensity_u")
     hkls, vals, sigs = [], [], []
     for i in range(l.length()):
         hkl = [gemmi.cif.as_int(l[i, j]) for j in i_hkl]
@@ -801,7 +807,7 @@ def read_small_molecule_files(files):
             if hkl_str:
                 mtz = read_shelx_hkl(st.cell, st.find_spacegroup(), hklf, lines_in=hkl_str.splitlines())
                 logger.writeln("reflection data read from: {}".format(filename))
-            elif b.find_loop("_refln_index_h"):
+            elif b.find_loop("_refln_index_h") or b.find_loop("_diffrn_refln_index_h"):
                 mtz = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
         except ValueError: # not a cif file
             if ext == ".hkl":
