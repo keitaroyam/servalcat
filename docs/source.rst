@@ -28,6 +28,7 @@ For electron scattering (Cryo-EM), the Mott-Bethe formula is used to convert X-r
 where :math:`Z` is the atomic number.
 Because both the electron cloud and the nucleus contribute to the scattering, special treatment is required for hydrogen atoms, as their electron cloud centre and nucleus positions differ.
 The _chem_comp_bond.value_dist and _chem_comp_bond.value_dist_nucleus values are used to adjust these positions.
+See the subsection 4.4 of `Yamashita et al. (2021) <https://doi.org/10.1107/S2059798321009475>`_.
 
 
 Neutron
@@ -46,7 +47,7 @@ This was introduced in `Shtyrov et al. (2025) <https://doi.org/10.1101/2025.10.2
 In this scheme, users can define coefficients for a sum of five Gaussians:
 
 .. math::
-	f_X(s) = \sum_{j=1}^{5} a_j e^{-b_j s^2/4}.
+	f(s) = \sum_{j=1}^{5} a_j e^{-b_j s^2/4}.
 
 To utilise this feature, it is necessary to define the _atom_site.scat_id and the _lmb_scat_coef table in the input mmCIF file.
 In the example below, _atom_site.scat_id refers to _lmb_scat_coef.scat_id, where :math:`a` and :math:`b` values are defined.
