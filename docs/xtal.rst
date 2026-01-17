@@ -98,7 +98,7 @@ Importantly, various kinds of individual model geometry outliers with a Z-score 
 Radiation sources
 -----------------
 
-Radiation sources can be changed by using the ``-s`` or ``--source`` option (xray, neutron, electron).
+Radiation sources can be changed by using the ``-s`` or ``--source`` option (xray, neutron, electron); see :doc:`source`.
 
 When performing refinement against neutron diffraction data, it is possible to refine deuterium fraction using the option ``--refine_dfrac``.
 In this case, an extra output file ``output_prefix_expanded.mmcif`` is created for the purpose of deposition to the PDB. The bond lengths and their sigmas from ``_chem_comp_bond.value_dist_nucleus`` and ``_chem_comp_bond.value_dist_nucleus_esd`` are used.

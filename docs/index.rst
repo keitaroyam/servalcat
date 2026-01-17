@@ -29,4 +29,5 @@ Table of Contents
    spa_examples/index
    xtal
    refmac_keywords
+   source
    commands

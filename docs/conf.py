@@ -19,7 +19,7 @@ import os
 # -- Project information -----------------------------------------------------
 
 project = 'Servalcat'
-copyright = '2021-2024, Keitaro Yamashita'
+copyright = '2021-2026, Keitaro Yamashita'
 author = 'Keitaro Yamashita, Garib Murshudov'
 
 
