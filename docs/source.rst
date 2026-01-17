@@ -8,7 +8,7 @@ X-ray
 -----
 
 X-ray scattering factor coefficients from the International Tables for Crystallography Volume C (1992 edition or later) are used.
-These are implemented in `GEMMI <https://github.com/project-gemmi/gemmi/blob/master/include/gemmi/it92.hpp>`_ and are compatible with CCP4's atomsf.lib and cctbx's it1992 table.
+These are implemented in `GEMMI <https://github.com/project-gemmi/gemmi/blob/master/include/gemmi/it92.hpp>`__ and are compatible with CCP4's atomsf.lib and cctbx's it1992 table.
 This scheme tabulates four Gaussian coefficients and one constant value for each element:
 
 .. math::
@@ -16,11 +16,20 @@ This scheme tabulates four Gaussian coefficients and one constant value for each
 
 Some ionised atoms are supported. For ideal bond lengths and their sigmas, values from _chem_comp_bond.value_dist and _chem_comp_bond.value_dist_esd from the monomer library are used.
 
+When ``--wavelength`` is specified, the corresponding :math:`f'` and :math:`f''` values are applied, via the Cromer-Liberman algorithm as implemented in `GEMMI <https://gemmi.readthedocs.io/en/latest/scattering.html#anomalous-scattering>`__.
+During refinement, only averaged intensities/amplitudes are used.
+Anomalous difference maps are calculated using the following coefficients (when amplitudes are provided as input):
+
+.. math::
+    F_{\rm AN} = \frac{m \left(|F_{\rm o}^{(+)}| - |F_{\rm o}^{(-)}|\right) e^{i\alpha_{\rm c}}}{2i}, \\
+    F_{\rm DELAN} = F_{\rm AN} - \frac{\left(|F_{\rm c}^{(+)}| - |F_{\rm c}^{(-)}|\right) e^{i\alpha_{\rm c}}}{2i}.
+
+These map coefficients are stored as FAN/PHAN and DELFAN/PHDELAN in the output mtz file.
 
 Electron
 --------
 
-For electron scattering (Cryo-EM), the Mott-Bethe formula is used to convert X-ray scattering factors to electron scattering factors.
+For electron scattering (Cryo-EM), the Mott-Bethe formula is used to convert X-ray scattering factors to electron scattering factors:
 
 .. math::
 	f_E(s) = \frac{r_{\rm Bohr}}{4} \frac{Z - f_X(s)}{s^2},
@@ -34,7 +43,7 @@ See the subsection 4.4 of `Yamashita et al. (2021) <https://doi.org/10.1107/S205
 Neutron
 -------
 
-Neutron coherent scattering lengths of the elements from Neutron News, Vol. 3, No. 3, 1992 are used (implemented in `GEMMI <https://github.com/project-gemmi/gemmi/blob/master/include/gemmi/neutron92.hpp>`_).
+Neutron coherent scattering lengths of the elements from Neutron News, Vol. 3, No. 3, 1992 are used (implemented in `GEMMI <https://github.com/project-gemmi/gemmi/blob/master/include/gemmi/neutron92.hpp>`__).
 These consist of a single constant value for each element.
 For ideal bond lengths and their sigmas, values from _chem_comp_bond.value_dist_nucleus and _chem_comp_bond.value_dist_nucleus_esd from the monomer library are used.
 
