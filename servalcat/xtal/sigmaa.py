@@ -758,6 +758,7 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
             i = 1 if use == "work" else 2
             idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin]])
         valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
+        valid_sel &= hkldata.df.llweight[idxes] > 0
         hkldata.binned_df["ml"].loc[i_bin, "n_ref"] = valid_sel.sum()
         if numpy.sum(valid_sel) < 2:
             continue
@@ -1528,6 +1529,13 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
     hkldata.calc_epsilon()
     hkldata.calc_centric()
 
+    # fill dummy value for missing where observation is also missing
+    for lab in ("FREE", "llweight"):
+        if lab in hkldata.df:
+            if (hkldata.df[lab].isna() & ~hkldata.df[newlabels[0]].isna()).any():
+                raise RuntimeError(f"Missing {lab} reflection(s).")
+            hkldata.df[lab] = hkldata.df[lab].fillna(0)
+
     if "llweight" not in hkldata.df:
         hkldata.df["llweight"] = 1.
 
@@ -1758,6 +1766,11 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use="all"):
             hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc_abs) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             hkldata.df.loc[cidxes, "X"] = X
+            #hkldata.df.loc[cidxes, "LL"] = ext.ll_amp(hkldata.df.FP.to_numpy()[cidxes],
+            #                                          hkldata.df.SIGFP.to_numpy()[cidxes],
+            #                                          k_ani[cidxes], S * epsilon,
+            #                                          DFc_abs, numpy.full(cidxes.shape, c + 1),
+            #                                          hkldata.df.llweight.to_numpy()[cidxes])
             if has_ano:
                 Fo_dano = (hkldata.df["F(+)"].to_numpy()[cidxes] - hkldata.df["F(-)"].to_numpy()[cidxes]) / k_ani[cidxes]
                 hkldata.df.loc[cidxes, "FAN"] = m * Fo_dano * expip / 2j
