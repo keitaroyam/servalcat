@@ -25,6 +25,9 @@ EXTErnal ALPHall <alpha>
 
 EXTErnal TYPEAll <type>
     Default: 2. Change the default external restraint types (0, 1, 2) for subsequent keywords.
+     * Type 0: Override existing distance restraint.
+     * Type 1: Use this restraints in addition to the existing restraint.
+     * Type 2: Long(er) range restraints.
 
 EXTErnal [SYMAll | SYMAll [Yes | No] [EXCLude [SELF]]]
     Default: no symmetry. Change whether symmetry should be considered or not for subsequent keywords.
