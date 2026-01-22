@@ -34,12 +34,14 @@ EXTErnal [DMIN <dist_min>] [DMAX <dist_max>]
 
 EXTErnal [DISTance | ANGLe | PLANe | CHIRal | TORSion] <atom_specs...> [TYPE <type>] [SYMM Y|N] [VALUe <value>] [SIGMa <sigma>] [ALPHa <alpha>]
     Define distance/angle/plane/chiral/torsion restraints. SYMM is only supported for distance and angle. ALPHA is only for distances. See `Barron (2019) <https://arxiv.org/abs/1701.03077>`_ for alpha.
+    For distance restraints, <atom_specs...> has the `FIRST <atom_spec> SECOND <atom_spec>` syntax, e.g.: `FIRSt CHAIn A RESIdue 100 [INSErtion A] ATOM N [ALTE B] SECOnd CHAIn A RESIdue 200 [INSErtion B] ATOM O [ALTE B]`
+    For the other restraint types, <atom_specs...> has the `FIRST <atom_spec> NEXT <atom_spec> NEXT <atom_spec> [ NEXT <atom_spec>]` e.g.: `FIRSt CHAIn A RESIdue 100 [INSErtion A] ATOM N [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM O [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM C [ALTE B] [NEXT ...]`
 
 EXTErnal INTErval <atom_specs...> [DMIN <dist_min>] [DMAX <dist_max>] [SMIN <sigma_min>] [SMAX <sigma_max>]
-    Define an interval distance restraint.
+    Define an interval distance restraint. <atom_specs...> has the same syntax as for the distance restraints.
 
 EXTErnal STACking PLANe 1 <atom_specs...> PLANe 2 <atom_specs...> [DISTance <dist>] [SDDI <sigma_dist>] [ANGLe <angle>] [SDAN <sigma_angle>]
-    Define a stacking restraint.
+    Define a stacking restraint. <atom_specs...> has the same syntax as for the angle restraints.
 
 EXTErnal HARMonic <atom_spec> [SIGMa <sigma>]
     Define a positional harmonic restraint.
