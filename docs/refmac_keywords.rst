@@ -40,7 +40,7 @@ EXTErnal [DISTance | ANGLe | PLANe | CHIRal | TORSion] <atom_specs...> [TYPE <ty
 
     For distance restraints, <atom_specs...> has the `FIRST <atom_spec> SECOND <atom_spec>` syntax, e.g.: `FIRSt CHAIn A RESIdue 100 [INSErtion A] ATOM N [ALTE B] SECOnd CHAIn A RESIdue 200 [INSErtion B] ATOM O [ALTE B]`
 
-    For the other restraint types, <atom_specs...> has the `FIRST <atom_spec> NEXT <atom_spec> NEXT <atom_spec> [ NEXT <atom_spec>]` e.g.: `FIRSt CHAIn A RESIdue 100 [INSErtion A] ATOM N [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM O [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM C [ALTE B] [NEXT ...]`
+    For the other restraint types, <atom_specs...> has the `FIRST <atom_spec> NEXT <atom_spec> NEXT <atom_spec> [NEXT <atom_spec>]` syntax, e.g.: `FIRSt CHAIn A RESIdue 100 [INSErtion A] ATOM N [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM O [ALTE B] NEXT CHAIn A RESIdue 200 [INSErtion B] ATOM C [ALTE B] [NEXT ...]`
 
 EXTErnal INTErval <atom_specs...> [DMIN <dist_min>] [DMAX <dist_max>] [SMIN <sigma_min>] [SMAX <sigma_max>]
     Define an interval distance restraint. <atom_specs...> has the same syntax as for the distance restraints.
