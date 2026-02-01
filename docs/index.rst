@@ -10,6 +10,10 @@ Servalcat (for **S**\ tructur\ **e** **r**\ efinement and **val**\ idation for *
 
 Source code repository: https://github.com/keitaroyam/servalcat
 
+Installation
+------------
+Please see https://github.com/keitaroyam/servalcat/blob/main/README.md#installation
+
 References
 ----------
 
