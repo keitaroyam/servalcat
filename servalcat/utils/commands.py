@@ -293,6 +293,7 @@ def add_arguments(p):
     # mm2ins
     parser = subparsers.add_parser("mm2ins", description = 'convert pdb/mmcif to ins for shelxl/olex2')
     parser.add_argument('model')
+    parser.add_argument('--hklin')
     parser.add_argument('-o', '--output')
 
     # seq
@@ -1414,20 +1415,47 @@ def sm2mm(args):
 
 def mm2ins(args):
     if args.output is None:
-        args.output = os.path.basename(fileio.splitext(args.files[0])[0]) + ".ins"
+        args.output = os.path.basename(fileio.splitext(args.model)[0]) + ".ins"
     st = fileio.read_structure(args.model)
+    sg = st.find_spacegroup()
     elems = [cra.atom.element.name for cra in st[0].all()]
     counts = {x:elems.count(x) for x in set(elems)}
     elems = sorted(counts)
+    cell = st.cell
+    if args.hklin:
+        mtz = fileio.read_mmhkl(args.hklin)
+        cell = mtz.cell
+        wavelength = next((x.wavelength for x in mtz.datasets if x==x and x.wavelength > 0), None)
+    else:
+        mtz = None
+        wavelength = None
+
+    latt = dict(P=1, I=2, R=3, F=4, A=5, B=6, C=7).get(sg.centring_type())
+    if not sg.is_centrosymmetric():
+        latt *= -1
+        
     with open(args.output, "w") as ofs:
+        ofs.write(f"TITL {os.path.basename(args.model)} in {sg.xhm()}\n")
+        ofs.write(f"CELL {wavelength if wavelength else '????'} ")
+        ofs.write(" ".join(str(x) for x in cell.parameters) + "\n")
+        ofs.write("ZERR 1 0 0 0 0 0 0\n")
+        ofs.write(f"LATT {latt}\n")
+        for op in sg.operations().sym_ops[1:]: # the first is identity
+            ofs.write(f"SYMM {op.triplet('X')}\n")
         ofs.write(f"SFAC {' '.join(elems)}\n")
-        ofs.write(f"UNIT {' '.join(str(int(counts[x])) for x in elems)}\n")
+        ofs.write(f"UNIT {' '.join(str(int(counts[x])) for x in elems)}\n\n")
+        ofs.write("""\
+L.S. 10
+ACTA
+LIST 6
+MORE -1\n\n""")
         for cra in st[0].all():
             frac = st.cell.fractionalize(cra.atom.pos)
             u_iso = model.b_to_u * cra.atom.b_iso
             if cra.atom.is_hydrogen():
                 u_iso = -1.2
             ofs.write(f"{cra.atom.name} {elems.index(cra.atom.element.name)+1} {frac.x:.6f} {frac.y:.6f} {frac.z:.6f} {10+cra.atom.occ} {u_iso:.5f}\n")
+        logger.writeln(f"Written: {args.output}")
 # mm2ins()
 
 def seq(args):
