@@ -241,9 +241,9 @@ struct IntensityIntegrator {
 
   template<bool for_DS>
   nb::ndarray<nb::numpy, double>
-  ll_int_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                        double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                        np_array<int> c, np_array<int> eps, np_array<double> w) const {
+  ll_int_der1_params_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                        double S, np_array<const std::complex<double>, 2> Fcs, std::vector<double> Ds,
+                        np_array<const int> c, np_array<const int> eps, np_array<const double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
@@ -305,9 +305,9 @@ struct IntensityIntegrator {
   }
 
   // an attempt to fast update of Sigma, but it does look good.
-  double find_ll_int_S_from_current_estimates_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                                                 double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                                                 np_array<int> c, np_array<int> eps, np_array<double> w) const {
+  double find_ll_int_S_from_current_estimates_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                                                 double S, np_array<const std::complex<double>, 2> Fcs, std::vector<double> Ds,
+                                                 np_array<const int> c, np_array<const int> eps, np_array<const double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
@@ -358,8 +358,8 @@ struct IntensityIntegrator {
 // For French-Wilson
   template<bool for_S>
   nb::ndarray<nb::numpy, double>
-  ll_int_fw_der1_params_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                           double S, np_array<int> c, np_array<int> eps, np_array<double> w) const {
+  ll_int_fw_der1_params_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                           double S, np_array<const int> c, np_array<const int> eps, np_array<const double> w) const {
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
@@ -394,9 +394,9 @@ struct IntensityIntegrator {
   }
 
   nb::ndarray<nb::numpy, double>
-  ll_refine_D_S_py(np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                   np_array<double> S, np_array<std::complex<double>, 2> Fc, np_array<double, 2> D,
-                   np_array<int> c, np_array<int> eps, np_array<double> w, np_array<int> bin,
+  ll_refine_D_S_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                   np_array<const double> S, np_array<const std::complex<double>, 2> Fc, np_array<const double, 2> D,
+                   np_array<const int> c, np_array<const int> eps, np_array<const double> w, np_array<const int> bin,
                    int max_cyc) const {
     const bool use_exp = true; //par == 1;
     auto Io_ = Io.view();
@@ -565,7 +565,7 @@ struct IntensityIntegrator {
 };
 
 void add_intensity(nb::module_& m) {
-  m.def("integ_J", [](double k, np_array<double> to, np_array<double> tf, np_array<double> sig1, int c, bool return_log,
+  m.def("integ_J", [](double k, np_array<const double> to, np_array<const double> tf, np_array<const double> sig1, int c, bool return_log,
                       double exp2_threshold, double h, int N, double ewmax) {
     auto to_ = to.view();
     auto tf_ = tf.view();
@@ -581,8 +581,8 @@ void add_intensity(nb::module_& m) {
   },
     nb::arg("k"), nb::arg("to"), nb::arg("tf"), nb::arg("sig1"), nb::arg("c"), nb::arg("return_log"),
     nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
-  m.def("integ_J_ratio", [](np_array<double> k_num, np_array<double> k_den, bool l, np_array<double> to, np_array<double> tf,
-                            np_array<double> sig1, np_array<int> c, double exp2_threshold, double h, int N, double ewmax) {
+  m.def("integ_J_ratio", [](np_array<const double> k_num, np_array<const double> k_den, bool l, np_array<const double> to, np_array<const double> tf,
+                            np_array<const double> sig1, np_array<const int> c, double exp2_threshold, double h, int N, double ewmax) {
     auto k_num_ = k_num.view();
     auto k_den_ = k_den.view();
     auto to_ = to.view();
@@ -608,8 +608,8 @@ void add_intensity(nb::module_& m) {
     .def_rw("N", &IntensityIntegrator::N)
     .def_rw("ewmax", &IntensityIntegrator::ewmax)
     .def_rw("exp2_threshold", &IntensityIntegrator::exp2_threshold)
-    .def("ll_int", [](const IntensityIntegrator& self, np_array<double> Io, np_array<double> sigIo, np_array<double> k_ani,
-                      np_array<double> S, np_array<double> Fc, np_array<int> c, np_array<double> w) {
+    .def("ll_int", [](const IntensityIntegrator& self, np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                      np_array<const double> S, np_array<const double> Fc, np_array<const int> c, np_array<const double> w) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       auto k_ani_ = k_ani.view();

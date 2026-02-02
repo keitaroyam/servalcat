@@ -1658,6 +1658,9 @@ def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     masker.put_mask_on_float_grid(grid, st[0])
     #utils.maps.write_ccp4_map("solmask.ccp4", grid)
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
+    # TODO remove this with gemmi 0.7.5
+    if not miller_array.flags.writeable:
+        miller_array = miller_array.copy()
     Fmask = fmask_gr.get_value_by_hkl(miller_array)
     return Fmask
 # calc_Fmask()
@@ -1671,6 +1674,9 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
             Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
+            # TODO remove this with gemmi 0.7.5
+            if not miller_array.flags.writeable:
+                miller_array = miller_array.copy()
             Fmask = fmask_gr.get_value_by_hkl(miller_array)
         if twin_data:
             fc_sum = twin_data.f_calc[:,:-1].sum(axis=1)

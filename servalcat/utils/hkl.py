@@ -233,6 +233,11 @@ def fft_map(cell, sg, miller_array, data, grid_size=None, sample_rate=3):
         data = data.astype(numpy.complex64) # we may want to keep complex128?
     if type(data) is pandas.core.series.Series:
         data = data.to_numpy()
+    # TODO remove this with gemmi 0.7.5
+    if not miller_array.flags.writeable:
+        miller_array = miller_array.copy()
+    if not data.flags.writeable:
+        data = data.copy()
     asu = gemmi.ComplexAsuData(cell, sg, miller_array, data)
     if grid_size is None:
         ma = asu.transform_f_phi_to_map(sample_rate=sample_rate, exact_size=(0, 0, 0)) # half_l=True
@@ -299,9 +304,10 @@ class HklData:
             self.df = self.df.merge(df_tmp, how="outer")
     # merge_asu_data()
 
-    def miller_array(self):
-        return self.df[["H","K","L"]].to_numpy()
-
+    def miller_array(self, copy_if_not_writable=True): # workaround for pandas3. remove this option with gemm 0.7.5
+        ret = self.df[["H","K","L"]].to_numpy()
+        if not ret.flags.writeable: ret = ret.copy()
+        return ret
     def s_array(self):
         hkl = self.miller_array()
         return numpy.dot(hkl, self.cell.frac.mat.array)

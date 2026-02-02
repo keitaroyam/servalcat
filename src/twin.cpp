@@ -699,7 +699,7 @@ void add_twin(nb::module_& m) {
     })
     .def_ro("ops", &TwinData::ops)
     .def_rw("alphas", &TwinData::alphas)
-    .def("idx_of_asu", [](const TwinData &self, np_array<int, 2> hkl, bool inv){
+    .def("idx_of_asu", [](const TwinData &self, np_array<const int, 2> hkl, bool inv){
       auto h = hkl.view();
       if (h.shape(1) < 3)
         throw std::domain_error("error: the size of the second dimension < 3");
@@ -724,7 +724,7 @@ void add_twin(nb::module_& m) {
     }, nb::arg("hkl"), nb::arg("inv")=false)
     .def("setup_f_calc", &TwinData::setup_f_calc)
     .def("d_min", &TwinData::d_min)
-    .def("setup", [](TwinData &self, np_array<int, 2> hkl, const std::vector<int> &bin,
+    .def("setup", [](TwinData &self, np_array<const int, 2> hkl, const std::vector<int> &bin,
                      const gemmi::SpaceGroup &sg, const gemmi::UnitCell &cell,
                      const std::vector<gemmi::Op> &operators) {
       auto h = hkl.view();
@@ -834,7 +834,7 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("est_f_true", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, int max_cycle) {
+    .def("est_f_true", [](TwinData &self, np_array<const double> Io, np_array<const double> sigIo, int max_cycle) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       for (size_t ib = 0; ib < self.rb2o.size(); ++ib)
@@ -862,7 +862,7 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("ll", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) { // Laplace approximation
+    .def("ll", [](const TwinData &self, np_array<const double> Io, np_array<const double> sigIo) { // Laplace approximation
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       double ret = 0;
@@ -907,7 +907,7 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("ll_der_D_S", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+    .def("ll_der_D_S", [](const TwinData &self, np_array<const double> Io, np_array<const double> sigIo) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       const size_t n_cols = self.n_models + 1;
@@ -944,7 +944,7 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     })
-    .def("ll_der_alpha", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo, bool accurate) {
+    .def("ll_der_alpha", [](const TwinData &self, np_array<const double> Io, np_array<const double> sigIo, bool accurate) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       auto ret1 = make_numpy_array<double>({self.n_ops()});
@@ -1062,7 +1062,7 @@ void add_twin(nb::module_& m) {
       return ret;
     })
     // for FWT and DELFWT: <m|F|>
-    .def("expected_F", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, bool accurate) {
+    .def("expected_F", [](TwinData &self, np_array<const double> Io, np_array<const double> sigIo, bool accurate) {
       auto ret = make_numpy_array<double>({self.asu.size()});
       double* ptr = ret.data();
       for (int i = 0; i < ret.size(); ++i)
@@ -1092,7 +1092,7 @@ void add_twin(nb::module_& m) {
       }
       return ret;
     }, nb::arg("Io"), nb::arg("sigIo"), nb::arg("accurate")=true)
-    .def("ll_der_fc0", [](const TwinData &self, np_array<double> Io, np_array<double> sigIo) {
+    .def("ll_der_fc0", [](const TwinData &self, np_array<const double> Io, np_array<const double> sigIo) {
       auto ret1 = make_numpy_array<std::complex<double>>({self.asu.size()});
       auto ret2 = make_numpy_array<double>({self.asu.size()});
       auto Io_ = Io.view();
@@ -1137,7 +1137,7 @@ void add_twin(nb::module_& m) {
       }
       return nb::make_tuple(ret1, ret2);
     })
-    .def("ll_refine_D_S", [](TwinData &self, np_array<double> Io, np_array<double> sigIo, int max_cyc) {
+    .def("ll_refine_D_S", [](TwinData &self, np_array<const double> Io, np_array<const double> sigIo, int max_cyc) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       const size_t n_bins = self.mlparams.size() / (self.n_models + 1);
@@ -1336,7 +1336,7 @@ void add_twin(nb::module_& m) {
     // 1: dF/dk_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * exp(...)).conj)
     // 2: dF/dB_sol = 1/F_calc * Re((Fc,0+...) * (Fc,1 * k_sol * exp(...) * (-s^2/4)).conj)
     .def("scaling_fc_and_mask_grad", [](const TwinData &self,
-                                        np_array<std::complex<double>> f_mask,
+                                        np_array<const std::complex<double>> f_mask,
                                         double k_sol, double b_sol) {
       auto f_mask_ = f_mask.view();
       if (f_mask_.shape(0) != self.asu.size())

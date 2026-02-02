@@ -26,9 +26,9 @@ double ll_amp(double Fo, double sigFo, double k_ani, double S, double Fc, int c)
 }
 
 auto
-ll_amp_der1_params_py(np_array<double> Fo, np_array<double> sigFo, np_array<double> k_ani,
-                      double S, np_array<std::complex<double>, 2> Fcs, std::vector<double> Ds,
-                      np_array<int> c, np_array<int> eps, np_array<double> w) {
+ll_amp_der1_params_py(np_array<const double> Fo, np_array<const double> sigFo, np_array<const double> k_ani,
+                      double S, np_array<const std::complex<double>, 2> Fcs, std::vector<double> Ds,
+                      np_array<const int> c, np_array<const int> eps, np_array<const double> w) {
   auto Fo_ = Fo.view();
   auto sigFo_ = sigFo.view();
   auto k_ani_ = k_ani.view();
@@ -81,8 +81,8 @@ ll_amp_der1_params_py(np_array<double> Fo, np_array<double> sigFo, np_array<doub
 }
 
 void add_amplitude(nb::module_& m) {
-  m.def("ll_amp", [](np_array<double> Fo, np_array<double> sigFo, np_array<double> k_ani,
-                     np_array<double> S, np_array<double> Fc, np_array<int> c, np_array<double> w) {
+  m.def("ll_amp", [](np_array<const double> Fo, np_array<const double> sigFo, np_array<const double> k_ani,
+                     np_array<const double> S, np_array<const double> Fc, np_array<const int> c, np_array<const double> w) {
     auto Fo_ = Fo.view();
     auto sigFo_ = sigFo.view();
     auto k_ani_ = k_ani.view();

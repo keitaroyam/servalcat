@@ -53,8 +53,8 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::ncsr_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<NcsList::Ncs>)
 NB_MAKE_OPAQUE(std::vector<std::pair<bool, std::vector<size_t>>>)
 
-nb::tuple precondition_eigen_coo(np_array<double> am, np_array<int> rows,
-                                 np_array<int> cols, int N, double cutoff) {
+nb::tuple precondition_eigen_coo(np_array<const double> am, np_array<const int> rows,
+                                 np_array<const int> cols, int N, double cutoff) {
   auto colp = cols.view();
   auto rowp = rows.view();
   auto amp = am.view();
@@ -1098,8 +1098,8 @@ void add_refine(nb::module_& m) {
     .def_rw("max_gamma_cyc", &CgSolve::max_gamma_cyc)
     ;
 
-  m.def("smooth_gauss", [](np_array<double> bin_centers, np_array<double, 2> bin_values,
-                           np_array<double> s_array, int n, double kernel_width) {
+  m.def("smooth_gauss", [](np_array<const double> bin_centers, np_array<const double, 2> bin_values,
+                           np_array<const double> s_array, int n, double kernel_width) {
     auto s_ = s_array.view();
     auto bin_cen_ = bin_centers.view();
     auto bin_val_ = bin_values.view();

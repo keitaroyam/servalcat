@@ -300,6 +300,9 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     if miller_array is None:
         return grid.prepare_asu_data(dmin=d_min, mott_bethe=mott_bethe, unblur=dc.blur)
     else:
+        # TODO remove this with gemmi 0.7.5
+        if not miller_array.flags.writeable:
+            miller_array = miller_array.copy()
         return grid.get_value_by_hkl(miller_array, mott_bethe=mott_bethe, unblur=dc.blur,
                                      mott_bethe_000=mb_000)
 # calc_fc_fft()
@@ -318,6 +321,9 @@ def calc_fcpp_fft(st, d_min, addends2, blur=None, cutoff=1e-5, rate=1.5, miller_
     if miller_array is None:
         return grid2.prepare_asu_data(dmin=d_min, unblur=dc2.blur)
     else:
+        # TODO remove this with gemmi 0.7.5
+        if not miller_array.flags.writeable:
+            miller_array = miller_array.copy()
         return grid2.get_value_by_hkl(miller_array, unblur=dc2.blur)
     #return (fc + numpy.vstack([fpp * 1j, -fpp * 1j])).T # shape of (nref, 2); F+ and F-*
 # calc_fcpp_fft()
