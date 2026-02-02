@@ -1383,7 +1383,6 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 }
 
 inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
-  // TODO find_geom_weight?
   if (wbskal <= 0) return 0.;
   if (!check_only)
     assert(target.params->is_refined(RefineParams::Type::B));
@@ -1418,6 +1417,7 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
       const float sig = adpr_kl_sigs.at(pair_kind-1);
       w = gemmi::sq(wbskal / sig) / (std::max(4., dsq) / 4.);
     };
+    w *= gemmi::sq(target.params->find_geom_weight({atom1, atom2}, true));
     if (adp_mode == 2) w /= 3;
 
     if (adp_mode == 1) {

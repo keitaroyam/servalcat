@@ -61,7 +61,7 @@ struct RefineParams {
   bool aniso;
   bool use_q_b_mixed_derivatives;
   std::vector<gemmi::Atom*> atoms;
-  std::vector<float> geom_weights;
+  std::vector<float> geom_weights, adpr_weights;
   std::array<std::vector<int>, N> atom_to_param_; // atom index to parameter index (-1 indicates fixed atoms)
   std::array<std::vector<int>, N> param_to_atom_; // parameter index to atom index
   std::array<std::vector<int>, N> pairs_refine_; // should we have param_to_atom equivalent for this?
@@ -302,8 +302,10 @@ struct RefineParams {
   void set_model(gemmi::Model &model) {
     atoms.clear();
     geom_weights.clear();
+    adpr_weights.clear();
     atoms.assign(gemmi::count_atom_sites(model), nullptr);
     geom_weights.assign(atoms.size(), 1.f);
+    adpr_weights.assign(atoms.size(), 1.f);
     for (gemmi::CRA cra : model.all()) {
       atoms[cra.atom->serial - 1] = cra.atom;
     }
@@ -520,27 +522,30 @@ struct RefineParams {
     }
   }
   template <typename T>
-  float find_geom_weight(const T &atoms) const {
-    float ret = 9999.f; // take min weight
-    for (const gemmi::Atom *a : atoms)
-      if (geom_weights.at(a->serial-1) < ret)
-        ret = geom_weights.at(a->serial-1);
-    return ret;
+  float find_geom_weight(const T &atoms, bool adpr=false) const {
+    const auto &weights = adpr ? adpr_weights : geom_weights;
+    return std::accumulate(atoms.begin(), atoms.end(), 0.0f,
+                           [&](float sum, const gemmi::Atom *a) {
+                             return sum + weights.at(a->serial - 1);
+                           }) / atoms.size();
   }
-  float find_geom_weight(const std::initializer_list<gemmi::Atom*> &atoms) const {
-    float ret = 9999.f; // take min weight
-    for (const gemmi::Atom *a : atoms)
-      if (geom_weights.at(a->serial-1) < ret)
-        ret = geom_weights.at(a->serial-1);
-    return ret;
+  float find_geom_weight(const std::initializer_list<const gemmi::Atom*> &atoms, bool adpr=false) const {
+    const auto &weights = adpr ? adpr_weights : geom_weights;
+    return std::accumulate(atoms.begin(), atoms.end(), 0.0f,
+                           [&](float sum, const gemmi::Atom *a) {
+                             return sum + weights.at(a->serial - 1);
+                           }) / atoms.size();
   }
-  float find_geom_weight(const std::array<std::vector<gemmi::Atom*>, 2> &atomsets) const {
-    float ret = 9999.f; // take min weight
-    for (const auto &atoms : atomsets)
-      for (const gemmi::Atom *a : atoms)
-        if (geom_weights.at(a->serial-1) < ret)
-          ret = geom_weights.at(a->serial-1);
-    return ret;
+  float find_geom_weight(const std::array<std::vector<gemmi::Atom*>, 2> &atomsets, bool adpr=false) const {
+    const auto &weights = adpr ? adpr_weights : geom_weights;
+    int count = 0;
+    float total = std::accumulate(atomsets.begin(), atomsets.end(), 0.0f, [&](float sum, const auto& atoms) {
+      count += atoms.size();
+      return sum + std::accumulate(atoms.begin(), atoms.end(), 0.0f, [&](float s, const gemmi::Atom *a) { 
+        return s + weights.at(a->serial - 1);
+      });
+    });
+    return total / count;
   }
 };
 

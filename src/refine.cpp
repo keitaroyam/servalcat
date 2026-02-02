@@ -830,6 +830,12 @@ void add_refine(nb::module_& m) {
                                        {self.geom_weights.size()},
                                        nb::handle());
         })
+    .def_prop_ro("adpr_weights", [](RefineParams &self) {
+      using T = typename decltype(self.adpr_weights)::value_type;
+      return nb::ndarray<nb::numpy, T>(self.adpr_weights.data(),
+                                       {self.adpr_weights.size()},
+                                       nb::handle());
+        })
     .def("atom_to_param", [](const RefineParams &self, RefineParams::Type t) {
       return self.atom_to_param(t);})
     .def("param_to_atom", [](const RefineParams &self, RefineParams::Type t) {

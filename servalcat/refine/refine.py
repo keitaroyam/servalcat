@@ -57,7 +57,12 @@ occ_groups:
 occ_group_constraints:
   - ids: [1, 2]
     complete: true
-
+local_geom_weights:
+  - sel: ..
+    w: 1
+local_adpr_weights:
+  - sel: ..
+    w: 1
 initialisation:
   adp:
     '*': 50
@@ -75,12 +80,14 @@ class SelectionConfig:
 class OccGroupItem:
     id: int
     selections: List[str] = field(default_factory=list)
-    
 @dataclass
 class OccGroupConstItem:
     ids: List[int] = field(default_factory=list)
     complete: bool = True
-    
+@dataclass
+class SelectionAndWeightItem:
+    sel: str = omegaconf.MISSING
+    w: float = 1.
 @dataclass
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
@@ -98,6 +105,8 @@ class RefineConfig:
     occ_group_const_mu_update_factor: float = 1.1
     occ_group_const_mu_update_tol_rel: float = 0.25
     occ_group_const_mu_update_tol_abs: float = 0.01
+    local_geom_weights: List[SelectionAndWeightItem] = field(default_factory=list)
+    local_adpr_weights: List[SelectionAndWeightItem] = field(default_factory=list)
     initialisation: Dict[str, Dict[str, float]] = field(
         default_factory=lambda: {
             "adp": {},
@@ -165,6 +174,15 @@ def load_config(yaml_file, args, refmac_params):
     return cfg.refine
 # load_config()
 
+def iterate_selection(sel_str, st):
+    sel = gemmi.Selection(sel_str)
+    for model in sel.models(st):
+        for chain in sel.chains(model):
+            for residue in sel.residues(chain):
+                for atom in sel.atoms(residue):
+                    yield (model, chain, residue, atom)
+# iterate_selection()
+
 def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                  refine_dfrac=False, use_q_b_mixed=True, cfg=None,
                  exclude_h_ll=True): # FIXME refine_dfrac/exclude_h_ll and cfg
@@ -181,14 +199,10 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
             occ_groups.append([])
             group_ids[occ_gr.id] = len(occ_groups) - 1
             for s in occ_gr.selections:
-                sel = gemmi.Selection(s)
                 nsel = 0
-                for model in sel.models(st):
-                    for chain in sel.chains(model):
-                        for residue in sel.residues(chain):
-                            for atom in sel.atoms(residue):
-                                occ_groups[-1].append(atom)
-                                nsel += 1
+                for _, _, _, atom in iterate_selection(s, st):
+                    occ_groups[-1].append(atom)
+                    nsel += 1
                 if nsel == 0:
                     logger.writeln(f"Warning: no atom found for the selection {s}")
         ret.set_occ_groups(occ_groups)
@@ -206,12 +220,14 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
 
         for t, p in ((Type.X, sele.xyz), (Type.B, sele.adp), (Type.Q, sele.occ)):
             for ex_sel in p.exclude_restraint:
-                sel = gemmi.Selection(ex_sel)
-                for model in sel.models(st):
-                    for chain in sel.chains(model):
-                        for residue in sel.residues(chain):
-                            for atom in sel.atoms(residue):
-                                ret.add_geom_exclusion(atom.serial-1, t)
+                for _, _, _, atom in iterate_selection(ex_sel, st):
+                    ret.add_geom_exclusion(atom.serial-1, t)
+
+        for specs, weights in ((cfg.local_geom_weights, ret.geom_weights),
+                               (cfg.local_adpr_weights, ret.adpr_weights)):
+            for spec in specs:
+                for _, _, _, atom in iterate_selection(spec.sel, st):
+                    weights[atom.serial-1] = spec.w
     else:
         ret.set_params(refine_xyz=refine_xyz, refine_adp=adp_mode > 0,
                        refine_occ=refine_occ, refine_dfrac=refine_dfrac)
