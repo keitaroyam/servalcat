@@ -274,8 +274,10 @@ class Geom:
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
         if params is None:
             params = {}
-        for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wvdw", "wncs"):
-            if k in params:
+        for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
+            if self.unrestrained:
+                self.calc_kwds[k] = 0
+            elif k in params:
                 self.calc_kwds[k] = params[k]
                 logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
         inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
@@ -313,7 +315,7 @@ class Geom:
         self.const_ls = [lambda_ini for _ in self.params.occ_group_constraints]
         self.const_u = [u_ini for _ in self.params.occ_group_constraints]
     def calc(self, target_only):
-        if self.params.is_refined(Type.X) and not self.unrestrained:
+        if self.params.is_refined(Type.X):
             return self.geom.calc(check_only=target_only, **self.calc_kwds)
         return 0
     def calc_adp_restraint(self, target_only):
