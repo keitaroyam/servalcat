@@ -657,7 +657,8 @@ def adp_stats_per_chain(model, ignore_zero_occ=True):
 
     ret = []
     for chain in model:
-        if chain.name in [x[0] for x in ret]: continue
+        if any(x[0] == chain.name for x in ret) or chain.name not in bs:
+            continue
         qs = numpy.quantile(bs[chain.name], [0,0.25,0.5,0.75,1])
         ret.append((chain.name, len(bs[chain.name]), qs))
 
