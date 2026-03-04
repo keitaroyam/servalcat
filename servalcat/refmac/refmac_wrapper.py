@@ -405,10 +405,13 @@ def main(args):
 
     # Modify output
     if xyzin is not None:
+        # FIXME This may pickup existing files (when refmac fails)
         pdbout, cifout = get_output_model_names(opts.get("xyzout"))
         if os.path.exists(cifout):
             modify_output(pdbout, cifout, refmac_fixes, keywords["make"].get("hout"), cispeps,
                           software_items, st.mod_residues, args.keep_original_output, args.tls_addu)
+    
+    return retcode
 # main()
 
 def command_line():
@@ -417,7 +420,7 @@ def command_line():
     if args.prefix:
         logger.set_file(args.prefix + ".log")
     logger.write_header(command="refmacat")
-    main(args)
+    sys.exit(main(args))
 
 if __name__ == "__main__":
     command_line()
