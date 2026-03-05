@@ -68,7 +68,7 @@ def main():
     parser.add_argument("--skip_test", action="store_true", help="Skip installation test")
     parser.add_argument("-v", "--version", action="version",
                         version=logger.versions_str())
-    parser.add_argument("--logfile", default="servalcat.log")
+    parser.add_argument("--logfile")
     subparsers = parser.add_subparsers(dest="command")
 
     modules = dict(shiftback=servalcat.spa.shiftback,
@@ -101,6 +101,13 @@ def main():
     if args.command == "util" and not args.subcommand:
         print("specify subcommand.")    
     elif args.command in modules:
+        if hasattr(modules[args.command], "set_prefix"):
+            modules[args.command].set_prefix(args)
+        if not args.logfile:
+            if getattr(args, "output_prefix", None):
+                args.logfile = args.output_prefix + ".log"
+            else:
+                args.logfile = "servalcat.log"
         logger.set_file(args.logfile)
         logger.write_header()
         try:

@@ -126,6 +126,11 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def set_prefix(args):
+    if not args.output_prefix:
+        args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
+# set_prefix()
+
 def main(args):
     if args.refine_dfrac and args.source != "neutron": # TODO should check params.is_refined()
         raise SystemExit("--refine_dfrac can only be used for the neutron source")
@@ -134,8 +139,7 @@ def main(args):
     if args.wavelength is not None and args.source != "xray":
         raise SystemExit("Error: Wavelength is only available for X-ray source")
     if args.ligand: args.ligand = sum(args.ligand, [])
-    if not args.output_prefix:
-        args.output_prefix = utils.fileio.splitext(os.path.basename(args.model))[0] + "_refined"
+    set_prefix(args)
     # This could be confusing. Twinning may not be detected.
     if not args.use_in_est:
         args.use_in_est = "work" if args.twin else "test"

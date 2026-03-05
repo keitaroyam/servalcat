@@ -217,9 +217,13 @@ def french_wilson(hkldata, B_aniso, labout=None):
             hkldata.df.loc[idxes, labout[4]] = Fm
             hkldata.df.loc[idxes, labout[5]] = sigFm
 
-def main(args):
+def set_prefix(args):
     if not args.output_prefix:
         args.output_prefix = utils.fileio.splitext(os.path.basename(args.hklin))[0] + "_fw"
+# set_prefix()
+
+def main(args):
+    set_prefix(args)
     try:
         mtz = utils.fileio.read_mmhkl(args.hklin, cif_index=args.hklin_index)
     except RuntimeError as e:

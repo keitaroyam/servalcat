@@ -195,16 +195,20 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         utils.fileio.write_model(refiner.st_traj, output_prefix + "_traj", cif=True)
 # refine_geom()
 
+def set_prefix(args):
+    if not args.output_prefix:
+        xyzin = args.model if args.model else args.update_dictionary
+        args.output_prefix = utils.fileio.splitext(os.path.basename(xyzin))[0] + "_refined"
+# set_prefix()
+
 def main(args):
     keywords = []
     if args.keywords: keywords = sum(args.keywords, [])
     if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
     params = refmac_keywords.parse_keywords(keywords)
     refine_cfg = load_config(args.config, args, params)
-    decide_prefix = lambda f: utils.fileio.splitext(os.path.basename(f))[0] + "_refined"
+    set_prefix(args)
     if args.model:
-        if not args.output_prefix:
-            args.output_prefix = decide_prefix(args.model)
         if args.ligand:
             args.ligand = sum(args.ligand, [])
         h_change = {"all":gemmi.HydrogenChange.ReAddButWater,
@@ -223,8 +227,6 @@ def main(args):
                     find_links=args.find_links,
                     use_ncsr=args.ncsr)
     else:
-        if not args.output_prefix:
-            args.output_prefix = decide_prefix(args.update_dictionary)
         if args.ligand:
             logger.writeln("WARNING: monlib and ligand are ignored in the dictionary updating mode")
         if keywords:

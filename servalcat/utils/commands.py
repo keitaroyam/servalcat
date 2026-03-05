@@ -54,7 +54,7 @@ def add_arguments(p):
                         "short: use unique new IDs, "
                         "number: add number to original chain ID")
     parser.add_argument('--biomt', action="store_true", help="Add BIOMT also")
-    parser.add_argument('-o', '--output_prfix')
+    parser.add_argument('-o', '--output_prefix')
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
     parser.add_argument('--cif', action="store_true", help="Write a cif file")
 
@@ -74,7 +74,7 @@ def add_arguments(p):
                         "dup: use original chain IDs (with different segment IDs), "
                         "short: use unique new IDs, "
                         "number: add number to original chain ID")
-    parser.add_argument('-o', '--output_prfix')
+    parser.add_argument('-o', '--output_prefix')
 
     # expand
     parser = subparsers.add_parser("expand", description="Expand symmetry")
@@ -87,7 +87,7 @@ def add_arguments(p):
                        "short: use unique new IDs, "
                        "number: add number to original chain ID")
     group.add_argument("--split", action="store_true", help="split file for each operator")
-    parser.add_argument('-o', '--output_prfix')
+    parser.add_argument('-o', '--output_prefix')
     parser.add_argument('--pdb', action="store_true", help="Write a pdb file")
     parser.add_argument('--cif', action="store_true", help="Write a cif file")
 
@@ -97,7 +97,7 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
-    parser.add_argument('-o','--output')
+    parser.add_argument('-o','--output_prefix')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
 
     # add_op3
@@ -107,7 +107,7 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
-    parser.add_argument('-o','--output')
+    parser.add_argument('-o','--output_prefix')
 
     # map_peaks
     parser = subparsers.add_parser("map_peaks", description = 'List density peaks and write a coot script')
@@ -153,7 +153,7 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('--bond_margin', type=float, default=1.3, help='(default: %(default).1f)')
     parser.add_argument('--metal_margin', type=float, default=1.1, help='(default: %(default).1f)')
-    parser.add_argument('-o','--output', help="Default: input_fixlink.{pdb|mmcif}")
+    parser.add_argument('-o','--output_prefix', help="Default: input_fixlink.{pdb|mmcif}")
 
     # merge_models
     parser = subparsers.add_parser("merge_models", description = 'Merge multiple model files')
@@ -322,6 +322,7 @@ def parse_args(arg_list):
 # parse_args()
 
 def symmodel(args):
+    set_prefix(args)
     if args.chains: args.chains = sum(args.chains, [])
     model_format = fileio.check_model_format(args.model)
 
@@ -364,28 +365,25 @@ def symmodel(args):
         a = model.prepare_assembly("1", all_chains, st.ncs, is_helical=is_helical)
         st.assemblies.append(a)
 
-    if not args.output_prfix:
-        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_asu"
-
     if args.pdb or args.cif:
-        fileio.write_model(st, args.output_prfix, pdb=args.pdb, cif=args.cif, cif_ref=cif_ref)
+        fileio.write_model(st, args.output_prefix, pdb=args.pdb, cif=args.cif, cif_ref=cif_ref)
     else:
-        fileio.write_model(st, file_name=args.output_prfix+model_format, cif_ref=cif_ref)
+        fileio.write_model(st, file_name=args.output_prefix+model_format, cif_ref=cif_ref)
 
     # Sym expand
     model.expand_ncs(st, howtoname=howtoname)
     st.assemblies.clear()
-    args.output_prfix += "_expanded"
+    args.output_prefix += "_expanded"
     if args.pdb or args.cif:
-        fileio.write_model(st, args.output_prfix, pdb=args.pdb, cif=args.cif)
+        fileio.write_model(st, args.output_prefix, pdb=args.pdb, cif=args.cif)
     else:
-        fileio.write_model(st, file_name=args.output_prfix+model_format)
+        fileio.write_model(st, file_name=args.output_prefix+model_format)
 # symmodel()
 
 def helical_biomt(args):
     if (args.twist, args.rise).count(None) > 0:
         raise SystemExit("ERROR: give helical parameters --twist and --rise")
-
+    set_prefix(args)
     model_format = fileio.check_model_format(args.model)
     howtoname = dict(dup=gemmi.HowToNameCopiedChain.Dup,
                      short=gemmi.HowToNameCopiedChain.Short,
@@ -429,21 +427,19 @@ def helical_biomt(args):
     a = model.prepare_assembly("1", all_chains, ncsops, is_helical=True)
     st.assemblies.append(a)
 
-    if not args.output_prfix:
-        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0] + "_biomt"
-
-    fileio.write_model(st, args.output_prfix, pdb=(model_format == ".pdb"), cif=True, cif_ref=cif_ref)
+    fileio.write_model(st, args.output_prefix, pdb=(model_format == ".pdb"), cif=True, cif_ref=cif_ref)
     logger.writeln("")
-    logger.writeln("These {}.* files may be used for deposition (once OneDep implemented reading BIOMT from file..)".format(args.output_prfix))
+    logger.writeln("These {}.* files may be used for deposition (once OneDep implemented reading BIOMT from file..)".format(args.output_prefix))
     logger.writeln("")
     # BIOMT expand
     st.transform_to_assembly("1", howtoname)
-    args.output_prfix += "_expanded"
-    fileio.write_model(st, file_name=args.output_prfix+model_format)
+    args.output_prefix += "_expanded"
+    fileio.write_model(st, file_name=args.output_prefix+model_format)
     logger.writeln(" note that this expanded model file is just for visual inspection, *not* for deposition!")
 # helical_biomt()
 
 def symexpand(args):
+    set_prefix(args)
     if args.chains: args.chains = sum(args.chains, [])
     model_format = fileio.check_model_format(args.model)
     if not args.split:
@@ -462,9 +458,6 @@ def symexpand(args):
 
     all_chains = [c.name for c in st[0] if c.name not in st[0]]
 
-    if not args.output_prfix:
-        args.output_prfix = fileio.splitext(os.path.basename(args.model))[0]
-
     if len(st.ncs) > 0:
         symmetry.show_ncs_operators_axis_angle(st.ncs)
         non_given = [op for op in st.ncs if not op.given]
@@ -474,19 +467,19 @@ def symexpand(args):
                     if op.given: continue
                     st_tmp = st.clone()
                     for m in st_tmp: m.transform_pos_and_adp(op.tr)
-                    output_prfix = args.output_prfix + "_ncs_{:02d}".format(i+1)
+                    output_prefix = args.output_prefix + "_ncs_{:02d}".format(i+1)
                     if args.pdb or args.cif:
-                        fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+                        fileio.write_model(st_tmp, output_prefix, pdb=args.pdb, cif=args.cif)
                     else:
-                        fileio.write_model(st_tmp, file_name=output_prfix+model_format)
+                        fileio.write_model(st_tmp, file_name=output_prefix+model_format)
             else:
                 st_tmp = st.clone()
                 model.expand_ncs(st_tmp, howtoname=howtoname)
-                output_prfix = args.output_prfix + "_ncs_expanded"
+                output_prefix = args.output_prefix + "_ncs_expanded"
                 if args.pdb or args.cif:
-                    fileio.write_model(st_tmp, output_prfix, pdb=args.pdb, cif=args.cif)
+                    fileio.write_model(st_tmp, output_prefix, pdb=args.pdb, cif=args.cif)
                 else:
-                    fileio.write_model(st_tmp, file_name=output_prfix+model_format)
+                    fileio.write_model(st_tmp, file_name=output_prefix+model_format)
         else:
             logger.writeln("All operators are already expanded (marked as given). Exiting.")
     else:
@@ -497,14 +490,10 @@ def symexpand(args):
 # symexpand()
 
 def h_add(args):
+    set_prefix(args)
     st = fileio.read_structure(args.model)
     model_format = fileio.check_model_format(args.model)
-    
-    if not args.output:
-        tmp = fileio.splitext(os.path.basename(args.model))[0]
-        args.output = tmp + "_h" + model_format
-    logger.writeln("Output file: {}".format(args.output))
-        
+    logger.writeln("Output file: {}".format(args.output_prefix + model_format))
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
@@ -516,19 +505,15 @@ def h_add(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    fileio.write_model(st, file_name=args.output)
+    fileio.write_model(st, file_name=args.output_prefix + model_format)
 # h_add()
 
 def add_op3(args):
+    set_prefix(args)
     if args.chains: args.chains = sum(args.chains, [])
     st = fileio.read_structure(args.model)
     model_format = fileio.check_model_format(args.model)
-    
-    if not args.output:
-        tmp = fileio.splitext(os.path.basename(args.model))[0]
-        args.output = tmp + "_op3" + model_format
-    logger.writeln("Output file: {}".format(args.output))
-    
+    logger.writeln("Output file: {}".format(args.output_prefix + model_format))
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
                                              monomer_dir=args.monlib,
@@ -563,7 +548,7 @@ def add_op3(args):
         v = v1 + v2 + v3
         a_op3.pos = a_p.pos + v / v.length() * 1.517
     
-    fileio.write_model(st, file_name=args.output)
+    fileio.write_model(st, file_name=args.output_prefix + model_format)
 # add_op3()
 
 def read_map_and_oversample(map_in=None, mtz_in=None, mtz_labs=None, oversample_pixel=None):
@@ -726,13 +711,11 @@ gui = coot_serval_map_peak_list()
 def h_density_analysis(args):
     #if args.source != "electron":
     #    raise SystemExit("Only electron source is supported.")
+    set_prefix(args)
     model_format = fileio.check_model_format(args.model)
     st = fileio.read_structure(args.model)
     if not st[0].has_hydrogen():
         raise SystemExit("No hydrogen in model.")
-
-    if args.output_prefix is None:
-        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_hana"
 
     gr = read_map_and_oversample(map_in=args.map, mtz_in=args.mtz, mtz_labs=args.mtz_labels,
                                  oversample_pixel=args.oversample_pixel)
@@ -797,13 +780,10 @@ def h_density_analysis(args):
 # h_density_analysis()
 
 def fix_link(args):
+    set_prefix(args)
     st = fileio.read_structure(args.model)
     model_format = fileio.check_model_format(args.model)
-    
-    if not args.output:
-        tmp = fileio.splitext(os.path.basename(args.model))[0]
-        args.output = tmp + "_fixlink" + model_format
-    logger.writeln("Output file: {}".format(args.output))
+    logger.writeln("Output file: {}".format(args.output_prefix + model_format))
         
     args.ligand = sum(args.ligand, []) if args.ligand else []
     monlib = restraints.load_monomer_library(st,
@@ -812,7 +792,7 @@ def fix_link(args):
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib, bond_margin=args.bond_margin,
                                   metal_margin=args.metal_margin)
-    fileio.write_model(st, file_name=args.output)
+    fileio.write_model(st, file_name=args.output_prefix + model_format)
 # fix_link()
     
 def merge_models(args):
@@ -839,8 +819,8 @@ def merge_dicts(args):
 # merge_dicts()
 
 def geometry(args):
+    set_prefix(args)
     if args.ligand: args.ligand = sum(args.ligand, [])
-    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_geom"
     keywords = []
     if args.keywords or args.keyword_file:
         if args.keywords: keywords = sum(args.keywords, [])
@@ -1093,7 +1073,7 @@ gui = coot_serval_conf_list()
 # compare_conf()
 
 def adp_stats(args):
-    if not args.output_prefix: args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_adp"
+    set_prefix(args)
     st = fileio.read_structure(args.model)
     model.adp_analysis(st)
     b_all = [cra.atom.b_iso for cra in st[0].all() if cra.atom.occ > 0]
@@ -1182,13 +1162,12 @@ def show_power(args):
             
     hkldata.setup_relion_binning("stat")
 
-    ofs = open(args.output_prefix+".log", "w")
-    ofs.write("Input:\n")
+    logger.writeln("Input:")
     for i in range(len(maps_in)):
-        ofs.write("{} from {}\n".format(labs[i], " ".join(maps_in[i])))
-    ofs.write("\n")
+        logger.writeln("{} from {}".format(labs[i], " ".join(maps_in[i])))
+    logger.write("\n")
     
-    ofs.write("""$TABLE: Power spectrum :
+    logger.write("""$TABLE: Power spectrum :
 $GRAPHS
 : log10(Mn(|F|^2)) :A:1,{}:
 $$
@@ -1201,22 +1180,19 @@ $$
     for i_bin, idxes in hkldata.binned("stat"):
         bin_d_min = hkldata.binned_df["stat"].d_min[i_bin]
         bin_d_max = hkldata.binned_df["stat"].d_max[i_bin]
-        ofs.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, len(idxes), bin_d_max, bin_d_min,))
+        logger.write("{:.4f} {:7d} {:7.3f} {:7.3f}".format(1/bin_d_min**2, len(idxes), bin_d_max, bin_d_min,))
         for lab in labs:
             pwr = numpy.log10(numpy.average(abssqr[lab][idxes]))
-            ofs.write(" {:.4e}".format(pwr))
-        ofs.write("\n")
-    ofs.write("$$\n")
-    ofs.close()
+            logger.write(" {:.4e}".format(pwr))
+        logger.write("\n")
+    logger.write("$$\n")
 # show_power()
 
 def fcalc(args):
     if (args.auto_box_with_padding, args.cell).count(None) == 0:
         raise SystemExit("Error: you cannot specify both --auto_box_with_padding and --cell")
-    
+    set_prefix(args)
     if args.ligand: args.ligand = sum(args.ligand, [])
-    if not args.output_prefix: args.output_prefix = "{}_fcalc_{}".format(fileio.splitext(os.path.basename(args.model))[0], args.source)
-
     st = fileio.read_structure(args.model)
     ccu = model.CustomCoefUtil()
     if not args.keep_charges:
@@ -1326,9 +1302,7 @@ def nemap(args):
 # nemap()
 
 def blur(args):
-    if args.output_prefix is None:
-        args.output_prefix = fileio.splitext(os.path.basename(args.hklin))[0]
-    
+    set_prefix(args)
     if fileio.is_mmhkl_file(args.hklin):
         mtz = fileio.read_mmhkl(args.hklin)
         hkl.blur_mtz(mtz, args.B)
@@ -1349,9 +1323,7 @@ def mask_from_model(args):
 # mask_from_model()
 
 def applymask(args):
-    if args.output_prefix is None:
-        args.output_prefix = fileio.splitext(os.path.basename(args.map))[0] + "_masked"
-
+    set_prefix(args)
     grid, grid_start, _ = fileio.read_ccp4_map(args.map)
     mask = fileio.read_ccp4_map(args.mask)[0]
     logger.writeln("Applying mask")
@@ -1402,8 +1374,7 @@ def map2mtz(args):
 # map2mtz()
 
 def sm2mm(args):
-    if args.output_prefix is None:
-        args.output_prefix = os.path.basename(fileio.splitext(args.files[0])[0])
+    set_prefix(args)
     st, mtz = fileio.read_small_molecule_files(args.files)
     if st is not None:
         fileio.write_model(st, prefix=args.output_prefix, pdb=True, cif=True)
@@ -1579,13 +1550,44 @@ def show(args):
 # show()
 
 def json2csv(args):
-    if not args.output_prefix:
-        args.output_prefix = fileio.splitext(os.path.basename(args.json))[0]
-        
+    set_prefix(args)
     df = pandas.read_json(args.json)
     df.to_csv(args.output_prefix+".csv", index=False)
     logger.writeln("Output: {}".format(args.output_prefix+".csv"))
 # json2csv()
+
+def set_prefix(args):
+    if not hasattr(args, "output_prefix") or args.output_prefix:
+        return
+    if args.subcommand == "symmodel":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_asu"
+    elif args.subcommand == "helical_biomt":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_biomt"
+    elif args.subcommand == "expand":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0]
+    elif args.subcommand == "h_add":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_h"
+    elif args.subcommand == "add_op3":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_op3"
+    elif args.subcommand == "h_density":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_hana"
+    elif args.subcommand == "fix_link":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_fixlink"
+    elif args.subcommand == "geom":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_geom"
+    elif args.subcommand == "adp":
+        args.output_prefix = fileio.splitext(os.path.basename(args.model))[0] + "_adp"
+    elif args.subcommand == "fcalc":
+        args.output_prefix = f"{fileio.splitext(os.path.basename(args.model))[0]}_fcalc_{args.source}"
+    elif args.subcommand == "blur":
+        args.output_prefix = fileio.splitext(os.path.basename(args.hklin))[0]
+    elif args.subcommand == "applymask":
+        args.output_prefix = fileio.splitext(os.path.basename(args.map))[0] + "_masked"
+    elif args.subcommand == "sm2mm":
+        args.output_prefix = os.path.basename(fileio.splitext(args.files[0])[0])
+    elif args.subcommand == "json2csv":
+        args.output_prefix = fileio.splitext(os.path.basename(args.json))[0]
+# set_prefix()
 
 def main(args):
     comms = dict(show=show,
