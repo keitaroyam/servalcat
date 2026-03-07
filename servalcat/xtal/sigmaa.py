@@ -1044,11 +1044,11 @@ def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                     mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df["ml"][dlab][i_bin] * hkldata.df[fclab][idxes]))
                     hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
                 
-        logger.writeln("Refined estimates:")
-        logger.writeln(hkldata.binned_df["ml"].to_string())
+        #logger.writeln("Refined estimates:")
+        #logger.writeln(hkldata.binned_df["ml"].to_string())
         #numpy.testing.assert_allclose(hkldata.binned_df["ml"].S, twin_data.ml_sigma)
         #numpy.testing.assert_allclose(hkldata.binned_df["ml"][D_labs], twin_data.ml_scale)
-        logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
+        #logger.writeln("time: {:.1f} sec ({} evaluations)".format(time.time() - t0, nfev_total))
 
         if not use_int or twin_data:
             break # did not implement MLF B_aniso optimization
@@ -1130,26 +1130,27 @@ def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
 # refine_ml_params()
 
 def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
-                        D_trans=None, S_trans=None, use="all", n_cycle=1, smoothing="gauss",
-                        twin_data=None):
-    assert use in ("all", "work", "test")
+                        D_trans=None, S_trans=None, use_in_est="all", use_in_target="all",
+                        n_cycle=1, smoothing="gauss", twin_data=None):
+    assert use_in_est in ("all", "work", "test")
+    assert use_in_target in ("all", "work", "test")
     assert smoothing in (None, "gauss")
-    logger.write(f"Estimating sigma-A parameters from {'intensities' if use_int else 'amplitudes'} using {use} reflections")
+    logger.write(f"Estimating sigma-A parameters from {'intensities' if use_int else 'amplitudes'} using {use_in_est} reflections")
     logger.writeln(f"{' (twin)' if twin_data else ''}")
     centric_and_selections = hkldata.centric_and_selections["ml"]
 
     if not set(D_labs + ["S"]).issubset(hkldata.binned_df["ml"]):
-        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=twin_data)
+        initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use_in_est, twin_data=twin_data)
         for dlab, fclab in zip(D_labs, fc_labs):
             hkldata.binned_df["ml"]["Mn(|{}*{}|)".format(dlab, fclab)] = numpy.nan
 
+    t0 = time.time()
     if twin_data or use_int:
-        t0 = time.time()
-        if use == "all":
+        if use_in_est == "all":
             idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
                                        for sel in centric_and_selections[i_bin] for i in (1,2)])
         else:
-            i = 1 if use == "work" else 2
+            i = 1 if use_in_est == "work" else 2
             idxes = numpy.concatenate([sel[i] for i_bin, _ in hkldata.binned("ml")
                                        for sel in centric_and_selections[i_bin]])
         k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
@@ -1184,13 +1185,19 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                 for dlab, fclab in zip(D_labs, fc_labs):
                     mean_dfc = numpy.nanmean(numpy.abs(hkldata.binned_df["ml"][dlab][i_bin] * hkldata.df[fclab][idxes]))
                     hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
-        logger.writeln("Refined estimates:")
-        logger.writeln(hkldata.binned_df["ml"].to_string())
-        logger.writeln(f"time: {time.time()-t0:.1f} sec")
     else:
         b_aniso = refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
-                                   D_trans, S_trans, use, n_cycle, twin_data)
+                                   D_trans, S_trans, use_in_est, n_cycle, twin_data)
+
     smooth_params(hkldata, D_labs, smoothing)
+    if twin_data:
+        calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use_in_target)
+    else:
+        calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use_in_target)
+
+    logger.writeln("Refined estimates:")
+    logger.writeln(hkldata.binned_df["ml"].to_string())
+    logger.writeln(f"time: {time.time()-t0:.1f} sec")
     return b_aniso
 # determine_ml_params()
 
@@ -1237,56 +1244,6 @@ def calc_fc_dano(hkldata, D_labs, DFc):
     return fc_dano
 # calc_fc_dano()
 
-def calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, use="all"):
-    nmodels = len(fc_labs)
-    hkldata.df["FWT"] = 0j * numpy.nan
-    hkldata.df["DELFWT"] = 0j * numpy.nan
-    hkldata.df["F_est"] = numpy.nan
-    hkldata.df["FOM"] = numpy.nan # FOM proxy, |<F>| / <|F|>
-    has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
-    Io = hkldata.df.I.to_numpy()
-    sigIo = hkldata.df.SIGI.to_numpy()
-    k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
-    eps = hkldata.df.epsilon.to_numpy()
-    Ds = numpy.vstack([hkldata.df[lab].to_numpy() for lab in D_labs]).T
-    Fcs = numpy.vstack([hkldata.df[lab].to_numpy() for lab in fc_labs]).T
-    DFc = (Ds * Fcs).sum(axis=1)
-    hkldata.df["DFC"] = DFc
-    if has_ano:
-        hkldata.df["FAN"] = 0j * numpy.nan
-        ano_data = hkldata.df[["I(+)", "SIGI(+)", "I(-)", "SIGI(-)"]].to_numpy()
-        if "FC''" in hkldata.df:
-            fc_dano = calc_fc_dano(hkldata, D_labs, DFc)
-            hkldata.df["DELFAN"] = 0j * numpy.nan
-    for i_bin, idxes in hkldata.binned("ml"):
-        for c, work, test in hkldata.centric_and_selections["ml"][i_bin]:
-            cidxes = numpy.concatenate([work, test])
-            S = hkldata.df["S"].to_numpy()[cidxes]
-            f, m_proxy = expected_F_from_int(Io[cidxes], sigIo[cidxes], k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
-            exp_ip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
-            hkldata.df.loc[cidxes, "FWT"] = 2 * f * exp_ip - DFc[cidxes]
-            hkldata.df.loc[cidxes, "DELFWT"] = f * exp_ip - DFc[cidxes]
-            hkldata.df.loc[cidxes, "FOM"] = m_proxy
-            hkldata.df.loc[cidxes, "F_est"] = f
-            if has_ano:
-                f_p, _ = expected_F_from_int(ano_data[cidxes,0], ano_data[cidxes,1],
-                                             k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
-                f_m, _ = expected_F_from_int(ano_data[cidxes,2], ano_data[cidxes,3],
-                                             k_ani[cidxes], DFc[cidxes], eps[cidxes], c, S)
-                hkldata.df.loc[cidxes, "FAN"] = (f_p - f_m) * exp_ip / 2j
-                if has_ano and "FC''" in hkldata.df:
-                    # for centrics Fo_dano should be NaN; no need to mask fc_dano
-                    hkldata.df.loc[cidxes, "DELFAN"] = ((f_p - f_m) - fc_dano[cidxes]) * exp_ip / 2j
-            # remove reflections that should be hidden
-            if use != "all":
-                # usually use == "work"
-                tohide = test if use == "work" else work
-                hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
-                hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
-            fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
-            hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
-# calculate_maps_int()
-
 def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all"):
     k_ani2_inv = 1 / hkldata.debye_waller_factors(b_cart=b_aniso)**2
     Io = hkldata.df.I.to_numpy(copy=True) * k_ani2_inv
@@ -1309,19 +1266,31 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all")
     delfwt = Fexp * exp_ip - DFc
     sel = numpy.isnan(fwt)
     fwt[sel] = DFc[sel]
-    
-    hkldata2 = utils.hkl.HklData(hkldata.cell, hkldata.sg,
-                                 utils.hkl.df_from_twin_data(twin_data, fc_labs))
-    hkldata2.df["FWT"] = fwt
-    hkldata2.df["DELFWT"] = delfwt
-    hkldata2.df["FOM"] = m
-    hkldata2.df["F_est"] = Ft
-    hkldata2.df["F_exp"] = Fexp
-    hkldata2.df["FC"] = twin_data.f_calc.sum(axis=1)
-    hkldata2.df["DFC"] = DFc
-    hkldata2.df[D_labs] = Ds
-    hkldata2.df["S"] = twin_data.ml_sigma_array()
-    return hkldata2
+
+    # If this takes time, this should be part of twin_data
+    hmatch = gemmi.HklMatch(twin_data.asu, hkldata.miller_array())
+    pos = numpy.asarray(hmatch.pos)
+    assert not numpy.any(pos < 0)
+    hkldata.df[fc_labs] = twin_data.f_calc[pos,:]
+    hkldata.df["FWT"] = fwt[pos]
+    hkldata.df["DELFWT"] = delfwt[pos]
+    hkldata.df["FOM"] = m[pos]
+    hkldata.df["F_est"] = Ft[pos]
+    hkldata.df["F_exp"] = Fexp[pos]
+    hkldata.df["FC"] = twin_data.f_calc.sum(axis=1)[pos]
+    hkldata.df["DFC"] = DFc[pos]
+    hkldata.df[D_labs] = Ds[pos]
+    hkldata.df["S"] = twin_data.ml_sigma_array()[pos]
+
+    # Mean FOM
+    hkldata.binned_df["ml"][["FOM_a", "FOM_c"]] = numpy.nan
+    for i_bin, idxes in hkldata.binned("ml"):
+        for c, work, test in hkldata.centric_and_selections["ml"][i_bin]:
+            cidxes = numpy.concatenate([work, test])
+            m = hkldata.df["FOM"].to_numpy()[cidxes]
+            if numpy.any(numpy.isfinite(m)):
+                lab = "FOM_" + ("a", "c")[c]
+                hkldata.binned_df["ml"].loc[i_bin, lab] = numpy.nanmean(m)
 # calculate_maps_twin()
 
 def merge_models(sts): # simply merge models. no fix in chain ids etc.
@@ -1721,13 +1690,21 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     return scaling
 # bulk_solvent_and_lsq_scales()
 
-def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use="all"):
-    nmodels = len(fc_labs)
+def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
     hkldata.df["FWT"] = 0j * numpy.nan
     hkldata.df["DELFWT"] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan
-    hkldata.df["X"] = numpy.nan # for FOM
-    has_ano = "F(+)" in hkldata.df and "F(-)" in hkldata.df
+    hkldata.binned_df["ml"][["FOM_a", "FOM_c"]] = numpy.nan
+    if use_int:
+        hkldata.df["F_est"] = numpy.nan
+        has_ano = "I(+)" in hkldata.df and "I(-)" in hkldata.df
+        obs = hkldata.df.I.to_numpy()
+        sigobs = hkldata.df.SIGI.to_numpy()
+    else:
+        has_ano = "F(+)" in hkldata.df and "F(-)" in hkldata.df
+        obs = hkldata.df.FP.to_numpy()
+        sigobs = hkldata.df.SIGFP.to_numpy()
+        
     stats_data = []
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     Ds = numpy.vstack([hkldata.df[lab].to_numpy() for lab in D_labs]).T
@@ -1736,49 +1713,58 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use="all"):
     hkldata.df["DFC"] = DFc
     if has_ano:
         hkldata.df["FAN"] = 0j * numpy.nan
+        if use_int:
+            ano_data = hkldata.df[["I(+)", "SIGI(+)", "I(-)", "SIGI(-)"]].to_numpy()
+        else:
+            ano_data = hkldata.df[["F(+)", "SIGF(+)", "F(-)", "SIGF(-)"]].to_numpy()
         if "FC''" in hkldata.df:
             fc_dano = calc_fc_dano(hkldata, D_labs, DFc)
             hkldata.df["DELFAN"] = 0j * numpy.nan
     for i_bin, idxes in hkldata.binned("ml"):
-        bin_d_min = hkldata.binned_df["ml"].d_min[i_bin]
-        bin_d_max = hkldata.binned_df["ml"].d_max[i_bin]
         # 0: acentric 1: centric
-        mean_fom = [numpy.nan, numpy.nan]
-        nrefs = [0, 0]
         for c, work, test in hkldata.centric_and_selections["ml"][i_bin]:
             cidxes = numpy.concatenate([work, test])
             S = hkldata.df["S"].to_numpy()[cidxes]
             expip = numpy.exp(numpy.angle(DFc[cidxes])*1j)
-            Fo = hkldata.df.FP.to_numpy()[cidxes] / k_ani[cidxes]
-            SigFo = hkldata.df.SIGFP.to_numpy()[cidxes] / k_ani[cidxes]
-            epsilon = hkldata.df.epsilon.to_numpy()[cidxes]
-            nrefs[c] = numpy.sum(numpy.isfinite(Fo))
+            eps = hkldata.df.epsilon.to_numpy()[cidxes]
+            nrefs = numpy.sum(numpy.isfinite(obs))
             DFc_abs = numpy.abs(DFc[cidxes])
-            if c == 0:
-                Sigma = 2 * SigFo**2 + epsilon * S
-                X = 2 * Fo * DFc_abs / Sigma
-                m = gemmi.bessel_i1_over_i0(X)
+            if use_int:
+                # this is FOM proxy
+                f, m = expected_F_from_int(obs[cidxes], sigobs[cidxes], k_ani[cidxes], DFc[cidxes], eps, c, S)
+                hkldata.df.loc[cidxes, "F_est"] = f
             else:
-                Sigma = SigFo**2 + epsilon * S
-                X = Fo * DFc_abs / Sigma
-                m = numpy.tanh(X)
-            hkldata.df.loc[cidxes, "FWT"] = (2 * m * Fo - DFc_abs) * expip
-            hkldata.df.loc[cidxes, "DELFWT"] = (m * Fo - DFc_abs) * expip
+                Fo = obs[cidxes] / k_ani[cidxes]
+                SigFo = sigobs[cidxes] / k_ani[cidxes]
+                Sigma = (2 - c) * SigFo**2 + eps * S
+                X = (2 - c) * Fo * DFc_abs / Sigma
+                m = gemmi.bessel_i1_over_i0(X) if c == 0 else numpy.tanh(X)
+                f = m * Fo
+            hkldata.df.loc[cidxes, "FWT"] = (2 * f - DFc_abs) * expip
+            hkldata.df.loc[cidxes, "DELFWT"] = (f - DFc_abs) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
-            hkldata.df.loc[cidxes, "X"] = X
-            #hkldata.df.loc[cidxes, "LL"] = ext.ll_amp(hkldata.df.FP.to_numpy()[cidxes],
-            #                                          hkldata.df.SIGFP.to_numpy()[cidxes],
-            #                                          k_ani[cidxes], S * epsilon,
+            if nrefs > 0:
+                lab = "FOM_" + ("a", "c")[c]
+                hkldata.binned_df["ml"].loc[i_bin, lab] = numpy.nanmean(m)
+            #hkldata.df.loc[cidxes, "LL"] = ext.ll_amp(obs[cidxes],
+            #                                          sigobs[cidxes],
+            #                                          k_ani[cidxes], S * eps,
             #                                          DFc_abs, numpy.full(cidxes.shape, c + 1),
             #                                          hkldata.df.llweight.to_numpy()[cidxes])
             if has_ano:
-                Fo_dano = (hkldata.df["F(+)"].to_numpy()[cidxes] - hkldata.df["F(-)"].to_numpy()[cidxes]) / k_ani[cidxes]
-                hkldata.df.loc[cidxes, "FAN"] = m * Fo_dano * expip / 2j
+                if use_int:
+                    f_p, _ = expected_F_from_int(ano_data[cidxes,0], ano_data[cidxes,1],
+                                                 k_ani[cidxes], DFc[cidxes], eps, c, S)
+                    f_m, _ = expected_F_from_int(ano_data[cidxes,2], ano_data[cidxes,3],
+                                                 k_ani[cidxes], DFc[cidxes], eps, c, S)
+                    f_diff = f_p - f_m
+                else:
+                    f_diff = m * (ano_data[cidxes,0] - ano_data[cidxes,2]) / k_ani[cidxes]
+                hkldata.df.loc[cidxes, "FAN"] = f_diff * expip / 2j
                 if has_ano and "FC''" in hkldata.df:
                     # for centrics Fo_dano should be NaN; no need to mask fc_dano
-                    hkldata.df.loc[cidxes, "DELFAN"] = (m * Fo_dano - fc_dano[cidxes]) * expip / 2j
-            if nrefs[c] > 0: mean_fom[c] = numpy.nanmean(m)
-
+                    hkldata.df.loc[cidxes, "DELFAN"] = (f_diff - fc_dano[cidxes]) * expip / 2j
+            
             # remove reflections that should be hidden
             if use != "all":
                 # usually use == "work"
@@ -1787,43 +1773,6 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use="all"):
                 hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
             hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
-
-        Fc = hkldata.df.FC.to_numpy()[idxes] * k_ani[idxes]
-        Fo = hkldata.df.FP.to_numpy()[idxes]
-        mean_DFc2 = numpy.nanmean(numpy.abs((Ds[idxes,:] * Fcs[idxes,:]).sum(axis=1) * k_ani[idxes])**2)
-        with numpy.errstate(divide="ignore"):
-            mean_log_DFcs = numpy.log(numpy.nanmean(numpy.abs(Ds[idxes,:] * Fcs[idxes,:] * k_ani[idxes,None]), axis=0)).tolist()
-        mean_Ds = numpy.nanmean(Ds[idxes,:], axis=0).tolist()
-        if sum(nrefs) > 0:
-            r = numpy.nansum(numpy.abs(numpy.abs(Fc)-Fo)) / numpy.nansum(Fo)
-            cc = utils.hkl.correlation(Fo, numpy.abs(Fc))
-            mean_Fo2 = numpy.nanmean(numpy.abs(Fo)**2)
-        else:
-            r, cc, mean_Fo2 = numpy.nan, numpy.nan, numpy.nan
-        stats_data.append([i_bin, nrefs[0], nrefs[1], bin_d_max, bin_d_min,
-                           numpy.log(mean_Fo2),
-                           numpy.log(numpy.nanmean(numpy.abs(Fc)**2)),
-                           numpy.log(mean_DFc2),
-                           numpy.log(numpy.mean(hkldata.df["S"].to_numpy()[idxes])),
-                           mean_fom[0], mean_fom[1], r, cc] + mean_Ds + mean_log_DFcs)
-
-    DFc_labs = ["log(Mn(|{}{}|))".format(dl,fl) for dl,fl in zip(D_labs, fc_labs)]
-    cols = ["bin", "n_a", "n_c", "d_max", "d_min",
-            "log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))",
-            "log(Sigma)", "FOM_a", "FOM_c", "R", "CC(|Fo|,|Fc|)"] + D_labs + DFc_labs
-    stats = pandas.DataFrame(stats_data, columns=cols)
-    title_labs = [["log(Mn(|F|^2)) and variances", ["log(Mn(|Fo|^2))", "log(Mn(|Fc|^2))", "log(Mn(|DFc|^2))", "log(Sigma)"]],
-                  ["FOM", ["FOM_a", "FOM_c"]],
-                  ["D", D_labs],
-                  ["DFc", DFc_labs],
-                  ["R-factor", ["R"]],
-                  ["CC", ["CC(|Fo|,|Fc|)"]],
-                  ["number of reflections", ["n_a", "n_c"]]]
-    with open(log_out, "w") as ofs:
-        ofs.write(utils.make_loggraph_str(stats, main_title="Statistics",
-                                          title_labs=title_labs,
-                                          s2=1/stats["d_min"]**2))
-    logger.writeln("output log: {}".format(log_out))
 # calculate_maps()
 
 def main(args):
@@ -1903,22 +1852,15 @@ def main(args):
         assert not args.twin
         logger.writeln("Estimating sigma-A parameters from CC..")
         determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, args.use)
+        calculate_maps(hkldata, b_aniso, fc_labs, D_labs, False,
+                       {"all": "all", "work": "work", "test": "work"}[args.use])
     else:
         b_aniso = determine_ml_params(hkldata, is_int, fc_labs, D_labs, b_aniso, args.D_trans, args.S_trans, args.use,
+                                      {"all": "all", "work": "work", "test": "work"}[args.use],
                                       twin_data=twin_data)
         if twin_data and args.twin_mlalpha:
             mlopt_twin_fractions(hkldata, twin_data, b_aniso)
         
-    use = {"all": "all", "work": "work", "test": "work"}[args.use]
-    if twin_data:
-        # replace hkldata
-        hkldata = calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use)
-    elif is_int:
-        calculate_maps_int(hkldata, b_aniso, fc_labs, D_labs, use)
-    else:
-        log_out = "{}.log".format(args.output_prefix)
-        calculate_maps(hkldata, b_aniso, fc_labs, D_labs, log_out, use)
-
     # Write mtz file
     if twin_data:
         labs = ["F_est", "F_exp"]

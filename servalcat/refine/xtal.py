@@ -66,12 +66,14 @@ class LL_Xtal:
 
     def update_ml_params(self):
         self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
-                                                  use=self.use_in_est,
+                                                  use_in_est=self.use_in_est,
+                                                  use_in_target=self.use_in_target,
                                                   twin_data=self.twin_data)#D_trans="splus", S_trans="splus")
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs)
         if self.twin_data and self.twin_mlalpha:
             mlopt_twin_fractions(self.hkldata, self.twin_data, self.b_aniso)
+            # recalc maps?
     def update_fc(self):
         # modify st before fc calculation
         b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
@@ -191,6 +193,7 @@ class LL_Xtal:
     def calc_stats(self, bin_stats=False):
         stats, overall = sigmaa.calc_r_and_cc(self.hkldata, self.twin_data)
         ret = {"summary": overall}
+        ret["summary"]["FOM"] = numpy.nanmean(self.hkldata.df["FOM"])
         ret["summary"]["-LL"] = self.calc_target()
         if self.twin_data:
             ret["twin_alpha"] = {op.as_hkl().triplet(): a

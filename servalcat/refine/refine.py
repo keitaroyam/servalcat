@@ -1052,6 +1052,8 @@ class Refine:
         cc_keys = [x for x in data_keys if x.startswith("CC")]
         if cc_keys:
             forplot.append(["CC", ["Ncyc"] + cc_keys])
+        if "FOM" in data_keys:
+            forplot.append(["FOM", ["Ncyc", "FOM"]])
         if "-LL" in data_keys:
             forplot.append(["-LL", ["Ncyc", "-LL"]])
         rms_keys = [x for x in geom_keys if x.startswith("rms")]

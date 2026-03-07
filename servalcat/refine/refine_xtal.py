@@ -14,7 +14,7 @@ import shutil
 import argparse
 from servalcat.utils import logger
 from servalcat import utils
-from servalcat.xtal.sigmaa import decide_mtz_labels, process_input, calculate_maps, calculate_maps_int, calculate_maps_twin
+from servalcat.xtal.sigmaa import decide_mtz_labels, process_input
 from servalcat.refine.xtal import LL_Xtal
 from servalcat.refine.refine import Geom, Refine, RefineParams, update_meta, print_h_options, load_config
 from servalcat.refmac import refmac_keywords
@@ -302,16 +302,6 @@ def main(args):
         utils.fileio.write_model(st_hd_expand, args.output_prefix + "_hd_expand", pdb=True, cif=True, hout=True)
     if refine_cfg.write_trajectory:
         utils.fileio.write_model(refiner.st_traj, args.output_prefix + "_traj", cif=True)
-
-    if ll.twin_data:
-        # replace hkldata
-        hkldata = calculate_maps_twin(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, ll.twin_data,
-                                      use=use_in_target)
-    elif is_int:
-        calculate_maps_int(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, use=use_in_target)
-    else:
-        calculate_maps(ll.hkldata, ll.b_aniso, ll.fc_labs, ll.D_labs, args.output_prefix + "_stats.log",
-                       use=use_in_target)
 
     # Write mtz file
     if ll.twin_data:

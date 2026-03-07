@@ -56,7 +56,6 @@ class XtalTests(unittest.TestCase):
         args = sigmaa.parse_args(["--hklin", mtzin, "--model", pdbin, "--D_trans", "exp", "--S_trans", "exp",
                                   "--labin", "FP,SIGFP", "--nbins", "10", "--nbins_ml", "10", "--source", "xray"])
         hkldata = sigmaa.main(args)
-        os.remove("sigmaa.log")
         os.remove("sigmaa.mtz")
 
         numpy.testing.assert_allclose(hkldata.binned_df["ml"].d_min,
