@@ -310,7 +310,7 @@ def main(args):
         labs = ["I", "SIGI", "F_est"]
     else:
         labs = ["FP", "SIGFP"]
-    labs.extend(["FOM", "FWT", "DELFWT", "FC"])
+    labs.extend(["FOM", "FWT", "FWT_nofill", "DELFWT", "FC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
     if "DELFAN" in hkldata.df:

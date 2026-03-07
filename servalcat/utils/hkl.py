@@ -786,7 +786,7 @@ class HklData:
             if numpy.iscomplexobj(df[lab]):
                 mtz.add_column(lab, "F")
                 if phase_label_decorator is None:
-                    plab = {"FWT": "PHWT", "DELFWT": "PHDELWT", "FAN":"PHAN", "DELFAN":"PHDELAN"}.get(lab, "PH"+lab)
+                    plab = {"FWT": "PHWT", "DELFWT": "PHDELWT", "FWT_nofill": "PHWT_nofill", "FAN":"PHAN", "DELFAN":"PHDELAN"}.get(lab, "PH"+lab)
                 else:
                     plab = phase_label_decorator(lab)
                 mtz.add_column(plab, "P")

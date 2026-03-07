@@ -1264,8 +1264,6 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all")
     Fexp = twin_data.expected_F(Io, sigIo)
     fwt = 2 * Fexp * exp_ip - DFc
     delfwt = Fexp * exp_ip - DFc
-    sel = numpy.isnan(fwt)
-    fwt[sel] = DFc[sel]
 
     # If this takes time, this should be part of twin_data
     hmatch = gemmi.HklMatch(twin_data.asu, hkldata.miller_array())
@@ -1281,6 +1279,9 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all")
     hkldata.df["DFC"] = DFc[pos]
     hkldata.df[D_labs] = Ds[pos]
     hkldata.df["S"] = twin_data.ml_sigma_array()[pos]
+    hkldata.df["FWT_nofill"] = hkldata.df["FWT"]
+    fill_sel = numpy.isnan(hkldata.df["FWT"].to_numpy())
+    hkldata.df.loc[fill_sel, "FWT"] = hkldata.df["DFC"][fill_sel]
 
     # Mean FOM
     hkldata.binned_df["ml"][["FOM_a", "FOM_c"]] = numpy.nan
@@ -1691,8 +1692,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
 # bulk_solvent_and_lsq_scales()
 
 def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
-    hkldata.df["FWT"] = 0j * numpy.nan
-    hkldata.df["DELFWT"] = 0j * numpy.nan
+    hkldata.df[["FWT", "FWT_nofill", "DELFWT"]] = 0j * numpy.nan
     hkldata.df["FOM"] = numpy.nan
     hkldata.binned_df["ml"][["FOM_a", "FOM_c"]] = numpy.nan
     if use_int:
@@ -1772,6 +1772,7 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
                 hkldata.df.loc[tohide, "FWT"] = 0j * numpy.nan
                 hkldata.df.loc[tohide, "DELFWT"] = 0j * numpy.nan
             fill_sel = numpy.isnan(hkldata.df["FWT"][cidxes].to_numpy())
+            hkldata.df.loc[cidxes, "FWT_nofill"] = hkldata.df["FWT"][cidxes]
             hkldata.df.loc[cidxes[fill_sel], "FWT"] = DFc[cidxes][fill_sel]
 # calculate_maps()
 
@@ -1868,7 +1869,7 @@ def main(args):
         labs = ["I", "SIGI", "F_est"]
     else:
         labs = ["FP", "SIGFP"]
-    labs.extend(["FOM", "FWT", "DELFWT", "FC", "DFC"])
+    labs.extend(["FOM", "FWT", "FWT_nofill", "DELFWT", "FC", "DFC"])
     if "FAN" in hkldata.df:
         labs.append("FAN")
     if "DELFAN" in hkldata.df:
