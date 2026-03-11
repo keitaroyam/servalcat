@@ -478,7 +478,7 @@ class HklData:
                     work = g2.index[~test_sel]
                 else:
                     work = g2.index
-                    test = type(work)([], dtype=work.dtype)
+                    test = pandas.Index([], dtype=work.dtype)
                 centric_and_selections[i_bin].append((c, work, test))
     # setup_centric_and_selections()
         
