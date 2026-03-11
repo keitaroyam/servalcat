@@ -387,10 +387,11 @@ class LsqScale:
             dfdy = 2 * diff * diff_der
             dfdy2 = 2 * diff_der**2 + 2 * diff * diff_der2
         elif self.func_type == "log_cosh":
-            dfdy = numpy.tanh(diff) * diff_der
-            #dfdy2 = 1 /numpy.cosh(diff)**2 * diff_der**2 + numpy.tanh(diff) * diff_der2 # problematic with large diff
-            #dfdy2 = numpy.where(diff==0, 1., numpy.abs(numpy.tanh(diff)) / gemmi.log_cosh(diff)) * diff_der**2 + numpy.tanh(diff) * diff_der2
-            dfdy2 = numpy.where(diff==0, 1., numpy.tanh(diff) / diff) * diff_der**2 + numpy.tanh(diff) * diff_der2
+            tanh_diff = numpy.tanh(diff)
+            dfdy = tanh_diff * diff_der
+            #dfdy2 = 1 /numpy.cosh(diff)**2 * diff_der**2 + tanh_diff * diff_der2 # problematic with large diff
+            #dfdy2 = numpy.where(diff==0, 1., numpy.abs(tanh_diff) / gemmi.log_cosh(diff)) * diff_der**2 + tanh_diff * diff_der2
+            dfdy2 = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0) * diff_der**2 + tanh_diff * diff_der2
         else:
             raise RuntimeError("bad func_type")
         
