@@ -780,7 +780,7 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
             D = numpy.sqrt(mean_Io / mean_Ic * cc)
         else:
             D = 0 # will be taken care later
-        hkldata.binned_df["ml"].loc[i_bin, D_labs[0]] = D
+        hkldata.binned_df["ml"].loc[i_bin, D_labs] = D
         if mean_Io > 0:
             S = mean_Io - 2 * numpy.sqrt(mean_Io * mean_Ic * numpy.maximum(0, cc)) + mean_Ic
         else:
@@ -802,7 +802,8 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
 # initialize_ml_params()
 
 def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
-                     D_trans=None, S_trans=None, use="all", n_cycle=1, twin_data=None):
+                     D_trans=None, S_trans=None, use="all", n_cycle=1, twin_data=None,
+                     single_D=False):
     trans = VarTrans(D_trans, S_trans)
     lab_obs = "I" if use_int else "FP"
     centric_and_selections = hkldata.centric_and_selections["ml"]
@@ -864,6 +865,8 @@ def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                 if refpar in ("all", "D"):
                     g[:len(fc_labs)] = r[:len(fc_labs)]
                     g[:len(fc_labs)] *= trans.D_deriv(x[:len(fc_labs)])
+                    if single_D:
+                        g[:len(fc_labs)] = g[:len(fc_labs)].sum()
                 if refpar in ("all", "S"):
                     g[-1] = r[-1]
                     g[-1] *= trans.S_deriv(x[-1])
