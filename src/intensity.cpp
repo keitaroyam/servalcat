@@ -397,7 +397,7 @@ struct IntensityIntegrator {
   ll_refine_D_S_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
                    np_array<const double> S, np_array<const std::complex<double>, 2> Fc, np_array<const double, 2> D,
                    np_array<const int> c, np_array<const int> eps, np_array<const double> w, np_array<const int> bin,
-                   int max_cyc) const {
+                   int max_cyc, bool single_D) const {
     const bool use_exp = true; //par == 1;
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
@@ -536,7 +536,20 @@ struct IntensityIntegrator {
               else
                 f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
         }
-        shift = -SymMatEig(f0_ders.second.second).inv() * f0_ders.second.first;
+        if (single_D) {
+          Eigen::Vector2d red_g;
+          red_g(0) = f0_ders.second.first.head(n_models).sum();
+          red_g(1) = f0_ders.second.first(n_models);
+          Eigen::Matrix2d red_H;
+          red_H(0, 0) = f0_ders.second.second.topLeftCorner(n_models, n_models).sum();
+          red_H(0, 1) = f0_ders.second.second.col(n_models).head(n_models).sum();
+          red_H(1, 0) = red_H(0, 1);
+          red_H(1, 1) = f0_ders.second.second(n_models, n_models);
+          const Eigen::VectorXd red_shift = -SymMatEig(red_H).inv() * (red_g);
+          shift.head(n_models).setConstant(red_shift(0));
+          shift(n_models) = red_shift(1);
+        } else
+          shift = -SymMatEig(f0_ders.second.second).inv() * (f0_ders.second.first);
         if (use_exp)
           shift = shift.cwiseMin(5).cwiseMax(-5); // cap shift
         for (int i = 0; i < 6; ++i) {

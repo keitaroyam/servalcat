@@ -1149,7 +1149,7 @@ def refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
 
 def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                         D_trans=None, S_trans=None, use_in_est="all", use_in_target="all",
-                        n_cycle=1, smoothing="gauss", twin_data=None):
+                        n_cycle=1, smoothing="gauss", twin_data=None, single_D=True):
     assert use_in_est in ("all", "work", "test")
     assert use_in_target in ("all", "work", "test")
     assert smoothing in (None, "gauss")
@@ -1179,7 +1179,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
             i_sigi[0, idxes] = (hkldata.df.I.to_numpy() * kani2_inv)[idxes]
             i_sigi[1, idxes] = (hkldata.df.SIGI.to_numpy() * kani2_inv)[idxes]
             #twin_data.debug_open("twin_debug.json")
-            twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20)
+            twin_data.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], 20, single_D)
             #twin_data.debug_close()
             dfc = numpy.abs(twin_data.f_calc) * twin_data.ml_scale_array()
             for i_bin, idxes in hkldata.binned("ml"):
@@ -1197,7 +1197,7 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                                       hkldata.binned_df["ml"].loc[:, "S"].to_numpy(), hkldata.df[fc_labs].to_numpy(),
                                       hkldata.binned_df["ml"].loc[:, D_labs].to_numpy(), hkldata.df.centric.to_numpy()+1,
                                       hkldata.df.epsilon.to_numpy(), w,
-                                      hkldata.df.bin_ml.to_numpy(), 20)
+                                      hkldata.df.bin_ml.to_numpy(), 20, single_D)
             for i_bin, idxes in hkldata.binned("ml"):
                 hkldata.binned_df["ml"].loc[i_bin, D_labs] = DS[i_bin, :-1]
                 hkldata.binned_df["ml"].loc[i_bin, "S"] = DS[i_bin, -1]
@@ -1206,7 +1206,8 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                     hkldata.binned_df["ml"].loc[i_bin, "Mn(|{}*{}|)".format(dlab, fclab)] = mean_dfc
     else:
         b_aniso = refine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
-                                   D_trans, S_trans, use_in_est, n_cycle, twin_data)
+                                   D_trans, S_trans, use_in_est, n_cycle, twin_data,
+                                   single_D=single_D)
 
     smooth_params(hkldata, D_labs, smoothing)
     if twin_data:

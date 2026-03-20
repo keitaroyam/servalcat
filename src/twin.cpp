@@ -1137,7 +1137,7 @@ void add_twin(nb::module_& m) {
       }
       return nb::make_tuple(ret1, ret2);
     })
-    .def("ll_refine_D_S", [](TwinData &self, np_array<const double> Io, np_array<const double> sigIo, int max_cyc) {
+    .def("ll_refine_D_S", [](TwinData &self, np_array<const double> Io, np_array<const double> sigIo, int max_cyc, bool single_D) {
       auto Io_ = Io.view();
       auto sigIo_ = sigIo.view();
       const size_t n_bins = self.mlparams.size() / (self.n_models + 1);
@@ -1286,7 +1286,23 @@ void add_twin(nb::module_& m) {
             }
             if (par == 1)
               shift(0) = -f0_ders.second.first(0) / f0_ders.second.second(0,0);
-            else
+            else if (single_D) {
+              if (par == 0) // only D
+                shift(0) = -f0_ders.second.first.sum() / f0_ders.second.second.sum();
+              else {
+                Eigen::Vector2d red_g;
+                red_g(0) = f0_ders.second.first.head(self.n_models).sum();
+                red_g(1) = f0_ders.second.first(self.n_models);
+                Eigen::Matrix2d red_H;
+                red_H(0, 0) = f0_ders.second.second.topLeftCorner(self.n_models, self.n_models).sum();
+                red_H(0, 1) = f0_ders.second.second.col(self.n_models).head(self.n_models).sum();
+                red_H(1, 0) = red_H(0, 1);
+                red_H(1, 1) = f0_ders.second.second(self.n_models, self.n_models);
+                const Eigen::VectorXd red_shift = -SymMatEig(red_H).inv() * (red_g);
+                shift.head(self.n_models).setConstant(red_shift(0));
+                shift(self.n_models) = red_shift(1);
+              }
+            } else
               shift = -SymMatEig(f0_ders.second.second).inv() * f0_ders.second.first;
             //std::cout << "shift " << shift;
             if (use_exp)
