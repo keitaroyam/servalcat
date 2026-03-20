@@ -295,12 +295,15 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
     if args.mask_for_fofc:
         logger.writeln("  mask: {}".format(args.mask_for_fofc))
         mask = utils.fileio.read_ccp4_map(args.mask_for_fofc)[0]
+        mask_for_norm = None
     elif args.mask_radius_for_fofc:
         logger.writeln("  mask: using refined model with radius of {} A".format(args.mask_radius_for_fofc))
         mask = utils.maps.mask_from_model(st_expanded, args.mask_radius_for_fofc, grid=maps[0][0]) # use soft edge?
+        mask_for_norm = None
     else:
         logger.writeln("  mask: not used")
         mask = None
+        mask_for_norm = utils.maps.mask_from_model(st_expanded, 5, grid=maps[0][0]) # better than nothing..
         
     hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
                                                       half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
@@ -308,14 +311,15 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
                                                       source=source)
     spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
                          mask=mask, output_prefix=diffmap_prefix,
-                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz)
+                         trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
+                         mask_for_norm=mask_for_norm)
     
     # Create Coot script
     spa.fofc.write_coot_script("{}_coot.py".format(args.output_prefix),
                                model_file="{}.pdb".format(args.output_prefix), # as Coot is not good at mmcif file..
                                mtz_file="{}_maps.mtz".format(diffmap_prefix),
-                               contour_fo=None if mask is None else 1.2,
-                               contour_fofc=None if mask is None else 3.0,
+                               contour_fo=1.2,
+                               contour_fofc=4.0,
                                ncs_ops=st.ncs)
 
     # Create ChimeraX script
@@ -325,7 +329,7 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
                                    fofc_mrc_file="{}_normalized_fofc.mrc".format(diffmap_prefix))
 # calc_fofc()
 
-def write_final_summary(st, refmac_summary, fscavg_text, output_prefix, is_mask_given):
+def write_final_summary(st, refmac_summary, fscavg_text, output_prefix):
     if len(refmac_summary["cycles"]) > 1 and "actual_weight" in refmac_summary["cycles"][-2]:
         final_weight = refmac_summary["cycles"][-2]["actual_weight"]
     else:
@@ -339,13 +343,10 @@ def write_final_summary(st, refmac_summary, fscavg_text, output_prefix, is_mask_
         adpstats_txt += " Chain {0:{1}s}".format(chain, max_chain_len) if chain!="*" else " {0:{1}s}".format("All", max_chain_len+6)
         adpstats_txt += " ({0:{1}d} atoms) min={2:5.1f} median={3:5.1f} max={4:5.1f} A^2\n".format(natoms, max_num_len, qs[0],qs[2],qs[4])
 
-    if is_mask_given:
-        map_peaks_str = """\
+    map_peaks_str = """\
 List Fo-Fc map peaks in the ASU:
 servalcat util map_peaks --map diffmap_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
 """.format(prefix=output_prefix)
-    else:
-        map_peaks_str = "WARNING: --mask_for_fofc was not given, so the Fo-Fc map was not normalized."
 
     logger.writeln("""
 =============================================================================
@@ -968,8 +969,7 @@ def main(args):
     calc_fofc(st, st_expanded, maps, monlib, model_format, args)
     
     # Final summary
-    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix,
-                        args.mask_for_fofc or args.mask_radius_for_fofc)
+    write_final_summary(st, refmac_summary, fscavg_text, args.output_prefix)
 # main()
         
 if __name__ == "__main__":

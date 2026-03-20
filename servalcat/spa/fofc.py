@@ -277,8 +277,10 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
 
 def write_files(hkldata, map_labs, grid_start, stats_str,
                 mask=None, output_prefix="diffmap", trim_map=False, trim_mtz=False,
-                normalize_map=True, omit_h_electron=False):
+                omit_h_electron=False, mask_for_norm=None):
     # this function may modify the overall scale of FWT/DELFWT.
+    if mask is not None and mask_for_norm is None:
+        mask_for_norm = mask
 
     if mask is not None and (trim_map or trim_mtz):
         new_cell, new_shape, new_grid_start, shifts = shift_maps.determine_shape_and_shift(mask=gemmi.FloatGrid(mask.array,
@@ -300,12 +302,12 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         grid_start_for_map = grid_start
         shape_for_map = None
         
-    if normalize_map and mask is not None:
+    if mask_for_norm is not None:
         cutoff = 0.5
         if "DELFWT" in hkldata.df:
             logger.writeln("Normalized Fo-Fc map requested.")
-            delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask.shape)
-            masked = delfwt_map.array[mask.array>cutoff]
+            delfwt_map = hkldata.fft_map("DELFWT", grid_size=mask_for_norm.shape)
+            masked = delfwt_map.array[mask_for_norm.array>cutoff]
             logger.writeln("   Whole volume: {} voxels".format(delfwt_map.point_count))
             logger.writeln("  Masked volume: {} voxels (>{})".format(masked.size, cutoff))
             global_mean = numpy.average(delfwt_map)
@@ -330,8 +332,8 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
 
         # Write Fo map as well
         if "FWT" in hkldata.df:
-            fwt_map = hkldata.fft_map("FWT", grid_size=mask.shape)
-            masked = fwt_map.array[mask.array>cutoff]
+            fwt_map = hkldata.fft_map("FWT", grid_size=mask_for_norm.shape)
+            masked = fwt_map.array[mask_for_norm.array>cutoff]
             masked_mean = numpy.average(masked)
             masked_std = numpy.std(masked)
             scaled = (fwt_map - masked_mean)/masked_std # does not make much sense for Fo map though

@@ -354,13 +354,11 @@ def main(args):
         rmsangle = stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond angles, non H"]
     else:
         rmsbond, rmsangle = numpy.nan, numpy.nan
-    if args.mask_for_fofc:
-        map_peaks_str = """\
+    
+    map_peaks_str = """\
 List Fo-Fc map peaks in the ASU:
 servalcat util map_peaks --map {prefix}_normalized_fofc.mrc --model {prefix}.pdb --abs_level 4.0 \
 """.format(prefix=args.output_prefix)
-    else:
-        map_peaks_str = "WARNING: --mask_for_fofc was not given, so the Fo-Fc map was not normalized."
 
     logger.writeln("""
 =============================================================================
