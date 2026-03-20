@@ -116,6 +116,7 @@ def add_arguments(parser):
     parser.add_argument("--prefer_intensity", action='store_true')
     parser.add_argument("--use_fw", action='store_true',
                         help="For debugging purpose; use F&W-converted amplitudes but use intensity for stats")
+    parser.add_argument('--robust_function', help=argparse.SUPPRESS) # testing
     parser.add_argument("--config",
                         help="Config file (.yaml)")
 # add_arguments()
@@ -281,15 +282,20 @@ def main(args):
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
     if args.source == "custom":
         ccu.set_coeffs(st)
-    if 0:
-        if 1: # huber:
-            p = 1.345
+    if args.robust_function:
+        assert is_int and not args.twin
+        ft, p = args.robust_function.split(",")
+        p = float(p)
+        if ft == "huber":
+            #p = 1.345
             robust_func = lambda r: numpy.where(r < p, 1, p / r)
             logger.writeln(f"Will use Huber (cH= {p})")
-        else: # tukey
-            p = 4.685
+        elif ft == "tukey":
+            #p = 4.685
             robust_func = lambda r: numpy.where(r < p, (1-(r/p)**2)**2, 0)
             logger.writeln(f"Will use Tukey (cT= {p})")
+        else:
+            raise ValueError("unknown function type")
     else:
         robust_func = None
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
@@ -335,7 +341,8 @@ def main(args):
     if args.labin_llweight:
         labs.append("llweight")
     labs += ll.D_labs + ["S"] # for debugging, for now
-    #labs += ["robustweight", "intensity_z"]
+    if args.robust_function:
+        labs += ["robustweight", "intensity_z"]
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F", "llweight": "R"})
 
