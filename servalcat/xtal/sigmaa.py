@@ -612,6 +612,20 @@ def mli_shift_S(df, fc_labs, Ds, S, k_ani, idxes):
     return -g / H
 # mli_shift_S()
 
+def intensity_ml_weighted_residual(Io, sigIo, k_ani, DFc_abs, eps, S, c):
+    """
+    calculate (Io - <Io>) / sqrt(var(Io)),
+    with <Io> and var(Io) from the likelihood function.
+    c is 0 (acentric) or 1 (centric)
+    """
+    epsS = eps * S
+    k_ani2 = k_ani**2
+    Io_exp = DFc_abs**2 + epsS
+    Io_var = (c + 1) * (2 * DFc_abs**2 * epsS + epsS**2) + (sigIo / k_ani2)**2
+    r = (Io / k_ani2 - Io_exp) / numpy.sqrt(Io_var)
+    return r
+# intensity_ml_weighted_residual()
+
 #debug_twin_count = 0
 
 def mltwin_est_ftrue(twin_data, df, k_ani, idxes):
@@ -1178,10 +1192,11 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
         else:
             i_sigi[0, idxes] = hkldata.df.I.to_numpy()[idxes]
             i_sigi[1, idxes] = hkldata.df.SIGI.to_numpy()[idxes]
+            w = hkldata.df.llweight.to_numpy() * hkldata.df.robustweight.to_numpy()
             DS = integr.ll_refine_D_S(i_sigi[0,:], i_sigi[1,:], k_ani,
                                       hkldata.binned_df["ml"].loc[:, "S"].to_numpy(), hkldata.df[fc_labs].to_numpy(),
                                       hkldata.binned_df["ml"].loc[:, D_labs].to_numpy(), hkldata.df.centric.to_numpy()+1,
-                                      hkldata.df.epsilon.to_numpy(), hkldata.df.llweight.to_numpy(),
+                                      hkldata.df.epsilon.to_numpy(), w,
                                       hkldata.df.bin_ml.to_numpy(), 20)
             for i_bin, idxes in hkldata.binned("ml"):
                 hkldata.binned_df["ml"].loc[i_bin, D_labs] = DS[i_bin, :-1]
@@ -1512,6 +1527,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
 
     if "llweight" not in hkldata.df:
         hkldata.df["llweight"] = 1.
+    hkldata.df["robustweight"] = 1.
 
     if "FREE" in hkldata.df and free is None:
         free = hkldata.guess_free_number(newlabels[0]) # also check NaN
@@ -1733,6 +1749,7 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
             eps = hkldata.df.epsilon.to_numpy()[cidxes]
             nrefs = numpy.sum(numpy.isfinite(obs))
             DFc_abs = numpy.abs(DFc[cidxes])
+            w = hkldata.df.robustweight.to_numpy()[cidxes]
             if use_int:
                 # this is FOM proxy
                 f, m = expected_F_from_int(obs[cidxes], sigobs[cidxes], k_ani[cidxes], DFc[cidxes], eps, c, S)
@@ -1744,8 +1761,8 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
                 X = (2 - c) * Fo * DFc_abs / Sigma
                 m = gemmi.bessel_i1_over_i0(X) if c == 0 else numpy.tanh(X)
                 f = m * Fo
-            hkldata.df.loc[cidxes, "FWT"] = (2 * f - DFc_abs) * expip
-            hkldata.df.loc[cidxes, "DELFWT"] = (f - DFc_abs) * expip
+            hkldata.df.loc[cidxes, "FWT"] = w * (2 * f - DFc_abs) * expip
+            hkldata.df.loc[cidxes, "DELFWT"] = w * (f - DFc_abs) * expip
             hkldata.df.loc[cidxes, "FOM"] = m
             if nrefs > 0:
                 lab = "FOM_" + ("a", "c")[c]

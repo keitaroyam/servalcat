@@ -281,11 +281,23 @@ def main(args):
     if args.jellyonly: geom.geom.ridge_exclude_short_dist = False
     if args.source == "custom":
         ccu.set_coeffs(st)
+    if 0:
+        if 1: # huber:
+            p = 1.345
+            robust_func = lambda r: numpy.where(r < p, 1, p / r)
+            logger.writeln(f"Will use Huber (cH= {p})")
+        else: # tukey
+            p = 4.685
+            robust_func = lambda r: numpy.where(r < p, (1-(r/p)**2)**2, 0)
+            logger.writeln(f"Will use Tukey (cT= {p})")
+    else:
+        robust_func = None
     ll = LL_Xtal(hkldata, args.free, st, monlib, source=args.source,
                  use_solvent=0 if args.no_solvent else 2 if args.non_binary_solvent_mask else 1,
                  use_in_est=use_in_est, use_in_target=use_in_target,
                  twin=args.twin, twin_mlalpha=args.twin_mlalpha,
-                 addends=addends, addends2=addends2, is_int=is_int)
+                 addends=addends, addends2=addends2, is_int=is_int,
+                 robust_func=robust_func)
     refiner = Refine(st, geom, refine_cfg, refine_params, ll=ll,
                      unrestrained=args.unrestrained)
 
@@ -323,6 +335,7 @@ def main(args):
     if args.labin_llweight:
         labs.append("llweight")
     labs += ll.D_labs + ["S"] # for debugging, for now
+    #labs += ["robustweight", "intensity_z"]
     mtz_out = args.output_prefix+".mtz"
     hkldata.write_mtz(mtz_out, labs=labs, types={"FOM": "W", "FP":"F", "SIGFP":"Q", "I":"J", "SIGI":"Q", "F_est": "F", "F_exp": "F", "llweight": "R"})
 

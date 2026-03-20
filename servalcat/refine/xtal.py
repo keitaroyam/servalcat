@@ -22,7 +22,7 @@ integr = sigmaa.integr
 class LL_Xtal:
     def __init__(self, hkldata, free, st, monlib, source="xray", mott_bethe=True,
                  use_solvent=0, use_in_est="all", use_in_target="all", twin=False, twin_mlalpha=False,
-                 addends=None, addends2=None, is_int=None):
+                 addends=None, addends2=None, is_int=None, robust_func=None):
         assert source in ("electron", "xray", "neutron", "custom")
         self.source = source
         self.mott_bethe = False if source != "electron" else mott_bethe
@@ -58,6 +58,7 @@ class LL_Xtal:
             self.is_int = "I" in self.hkldata.df
         else:
             self.is_int = is_int
+        self.robust_func = robust_func
         logger.writeln("will use {} reflections for parameter estimation".format(self.use_in_est))
         logger.writeln("will use {} reflections for refinement".format(self.use_in_target))
 
@@ -65,11 +66,26 @@ class LL_Xtal:
         return {"xray": "X-RAY", "electron": "ELECTRON", "neutron": "NEUTRON", "custom": "CUSTOM"}.get(self.source, "") + " DIFFRACTION"
 
     def update_ml_params(self):
-        self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
-                                                  use_in_est=self.use_in_est,
-                                                  use_in_target=self.use_in_target,
-                                                  twin_data=self.twin_data)#D_trans="splus", S_trans="splus")
-        self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
+        is_first = not set(self.D_labs + ["S"]).issubset(self.hkldata.binned_df["ml"])
+        for i in range(2):
+            if i == 1 and (self.robust_func is None or not is_first): break
+            self.b_aniso = sigmaa.determine_ml_params(self.hkldata, self.is_int, self.fc_labs, self.D_labs, self.b_aniso,
+                                                      use_in_est=self.use_in_est,
+                                                      use_in_target=self.use_in_target,
+                                                      twin_data=self.twin_data)#D_trans="splus", S_trans="splus")
+            self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
+            if self.is_int and self.robust_func is not None:
+                Ds = numpy.vstack([self.hkldata.df[lab].to_numpy() for lab in self.D_labs]).T
+                Fcs = numpy.vstack([self.hkldata.df[lab].to_numpy() for lab in self.fc_labs]).T
+                DFc = (Ds * Fcs).sum(axis=1)
+                r = sigmaa.intensity_ml_weighted_residual(self.hkldata.df.I.to_numpy(),
+                                                          self.hkldata.df.SIGI.to_numpy(),
+                                                          self.hkldata.df.k_aniso.to_numpy(),
+                                                          numpy.abs(DFc), self.hkldata.df.epsilon.to_numpy(),
+                                                          self.hkldata.df.S.to_numpy(), self.hkldata.df.centric.to_numpy())
+                w = self.robust_func(numpy.abs(r))
+                self.hkldata.df["robustweight"] = w
+                self.hkldata.df["intensity_z"] = r
         #determine_mlf_params_from_cc(self.hkldata, self.fc_labs, self.D_labs)
         if self.twin_data and self.twin_mlalpha:
             mlopt_twin_fractions(self.hkldata, self.twin_data, self.b_aniso)
@@ -160,6 +176,12 @@ class LL_Xtal:
     
     def overall_scale(self, min_b=0.1):
         self._overall_scale(min_b)
+        #for i_bin, idxes in self.hkldata.binned("stat"):
+        #    obs = self.hkldata.df["FP"].to_numpy()[idxes]
+        #    calc = numpy.abs(self.hkldata.df["FC"].to_numpy()[idxes])
+        #    k = numpy.nansum(obs * calc) / numpy.nansum(obs**2)
+        #    #logger.writeln(f"debug: {k=}")
+        #    #self.hkldata.df.loc[idxes, "FP"] *= k
         if self.twin_data:
             estimate_twin_fractions_from_model(self.twin_data, self.hkldata)
             self._overall_scale(min_b)
@@ -275,8 +297,9 @@ class LL_Xtal:
             d2ll_dab2 *= gemmi.mott_bethe_const()**2
 
         if not self.twin_data:
-            dll_dab *= self.hkldata.df.llweight
-            d2ll_dab2 *= self.hkldata.df.llweight
+            w = self.hkldata.df.llweight * self.hkldata.df.robustweight
+            dll_dab *= w
+            d2ll_dab2 *= w
             
         # we need V**2/n for gradient.
         if self.twin_data:
