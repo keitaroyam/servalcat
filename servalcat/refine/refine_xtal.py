@@ -202,6 +202,7 @@ def main(args):
         
     st = sts[0]
     utils.model.fix_deuterium_residues(st)
+    use_nucleus = args.source in ("neutron", "electron")
     if args.unrestrained:
         monlib = gemmi.MonLib()
         topo = None
@@ -236,7 +237,7 @@ def main(args):
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
 
-        if h_change == gemmi.HydrogenChange.ReAddKnown and args.source != "xray":
+        if h_change == gemmi.HydrogenChange.ReAddKnown and use_nucleus:
             topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
                                            default_scale=utils.restraints.default_proton_scale)
 
@@ -267,7 +268,7 @@ def main(args):
                                  exclude_h_ll=not args.refine_h)
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
-                unrestrained=args.unrestrained or args.jellyonly, use_nucleus=(args.source!="xray"),
+                unrestrained=args.unrestrained or args.jellyonly, use_nucleus=use_nucleus,
                 ncslist=ncslist)
     geom.geom.angle_von_mises = args.vonmises
     geom.geom.adpr_max_dist = args.max_dist_for_adp_restraint

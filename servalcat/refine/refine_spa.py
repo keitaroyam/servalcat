@@ -204,6 +204,7 @@ def main(args):
     h_change = {"all":gemmi.HydrogenChange.ReAddKnown,
                 "yes":gemmi.HydrogenChange.NoChange,
                 "no":gemmi.HydrogenChange.Remove}[args.hydrogen]
+    use_nucleus = args.source in ("neutron", "electron")
     try:
         topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                     check_hydrogen=(args.hydrogen=="yes"),
@@ -211,7 +212,7 @@ def main(args):
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
-    if h_change == gemmi.HydrogenChange.ReAddKnown and args.source != "xray":
+    if h_change == gemmi.HydrogenChange.ReAddKnown and use_nucleus:
         topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
                                        default_scale=utils.restraints.default_proton_scale)
 
@@ -271,8 +272,7 @@ def main(args):
     geom = Geom(st, topo, monlib, refine_params,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
                 params=params, unrestrained=args.unrestrained or args.jellyonly,
-                use_nucleus=(args.source!="xray"),
-                ncslist=ncslist)
+                use_nucleus=use_nucleus, ncslist=ncslist)
     if args.source == "custom":
         ccu.set_coeffs(st)
     ll = spa.LL_SPA(hkldata, st, monlib,
