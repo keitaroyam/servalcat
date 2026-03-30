@@ -84,7 +84,8 @@ def nanaverage(cc, w):
     return numpy.average(cc[sel], weights=w[sel]) 
 
 def calc_r_and_cc(hkldata, twin_data=None):
-    has_int = "I" in hkldata.df
+    has_int = ("FP" not in hkldata.df) if twin_data else "I" in hkldata.df
+    not twin_data or "FP" in hkldata.df
     has_free = "FREE" in hkldata.df
     has_llw = (hkldata.df.llweight != 1.0).any()
     has_ano = not twin_data and ("I(+)" if has_int else "F(+)") in hkldata.df and "FC''" in hkldata.df
