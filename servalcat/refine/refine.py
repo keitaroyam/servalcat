@@ -204,7 +204,9 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
                     occ_groups[-1].append(atom)
                     nsel += 1
                 if nsel == 0:
-                    logger.writeln(f"Warning: no atom found for the selection {s}")
+                    logger.writeln(f"Warning: no atom found for the selection (group {occ_gr.id}): {s}")
+        if any(len(x) == 0 for x in occ_groups):
+            raise LookupError("The occ_groups field contains empty group(s). See above")
         ret.set_occ_groups(occ_groups)
         for o in cfg.occ_group_constraints:
             ret.occ_group_constraints.append((o.complete, [group_ids[x] for x in o.ids]))

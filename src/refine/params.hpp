@@ -499,7 +499,11 @@ struct RefineParams {
     };
     if (is_good())
       return;
-    const auto get_occ = [&](size_t j) { return atoms[occ_groups[j].front()]->occ; };
+    const auto get_occ = [&](size_t j) {
+      if (occ_groups[j].empty())
+        throw std::out_of_range("empty occ_group");
+      return atoms[occ_groups[j].front()]->occ;
+    };
     for (int cyc = 0; cyc < 10; ++cyc) {
       Eigen::VectorXd der1 = Eigen::VectorXd::Zero(occ_groups.size());
       Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(occ_groups.size(), occ_groups.size());
