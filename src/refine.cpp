@@ -7,6 +7,7 @@
 #include "refine/cgsolve.hpp" // for CgSolve
 #include "refine/ncsr.hpp"    // for
 #include "array.h"
+#include "math.hpp"
 #include <gemmi/it92.hpp>
 #include <gemmi/neutron92.hpp>
 #include <gemmi/c4322.hpp> // CustomCoef
@@ -136,8 +137,8 @@ void add_refine(nb::module_& m) {
         const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
         const int k = (restr->type == 2 ? 2 :
                        (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen()) ? 1 : 0);
-        delsq[k].push_back(gemmi::sq(db));
-        zsq[k].push_back(gemmi::sq(robustf.dfdy));
+        delsq[k].push_back(sq(db));
+        zsq[k].push_back(sq(robustf.dfdy));
         sigmas[k].push_back(sigma);
       }
       for (const auto& p : delsq)
@@ -151,7 +152,7 @@ void add_refine(nb::module_& m) {
       for (const auto& a : self.angles) {
         const auto& restr = std::get<0>(a);
         const auto& val = std::get<1>(a);
-        const double d2 = gemmi::sq(std::get<2>(a)), z2 = gemmi::sq(std::get<2>(a) / val->sigma);
+        const double d2 = sq(std::get<2>(a)), z2 = sq(std::get<2>(a) / val->sigma);
         const int k = (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen() || restr->atoms[2]->is_hydrogen()) ? 1 : 0;
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
@@ -166,7 +167,7 @@ void add_refine(nb::module_& m) {
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& t : self.torsions) {
         const auto& val = std::get<1>(t);
-        const double d2 = gemmi::sq(std::get<2>(t)), z2 = gemmi::sq(std::get<2>(t) / val->sigma);
+        const double d2 = sq(std::get<2>(t)), z2 = sq(std::get<2>(t) / val->sigma);
         const int period = std::max(1, val->period);
         delsq[period].push_back(d2);
         zsq[period].push_back(z2);
@@ -180,7 +181,7 @@ void add_refine(nb::module_& m) {
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& c : self.chirs) {
         const auto& val = std::get<0>(c);
-        const double d2 = gemmi::sq(std::get<1>(c)), z2 = gemmi::sq(std::get<1>(c) / val->sigma);
+        const double d2 = sq(std::get<1>(c)), z2 = sq(std::get<1>(c) / val->sigma);
         delsq[0].push_back(d2);
         zsq[0].push_back(z2);
         sigmas[0].push_back(val->sigma);
@@ -193,7 +194,7 @@ void add_refine(nb::module_& m) {
       for (const auto& p : self.planes) {
         const auto& val = std::get<0>(p);
         for (double d : std::get<1>(p)) {
-          const double d2 = gemmi::sq(d), z2 = gemmi::sq(d / val->sigma);
+          const double d2 = sq(d), z2 = sq(d / val->sigma);
           delsq[0].push_back(d2);
           zsq[0].push_back(z2);
           sigmas[0].push_back(val->sigma);
@@ -206,9 +207,9 @@ void add_refine(nb::module_& m) {
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& s : self.stackings) {
         const auto& restr = std::get<0>(s);
-        const double da2 = gemmi::sq(std::get<1>(s)), za2 = gemmi::sq(std::get<1>(s) / restr->sd_angle);
-        const double dd2 = 0.5 * (gemmi::sq(std::get<2>(s)) + gemmi::sq(std::get<3>(s)));
-        const double zd2 = dd2 / gemmi::sq(restr->sd_dist);
+        const double da2 = sq(std::get<1>(s)), za2 = sq(std::get<1>(s) / restr->sd_angle);
+        const double dd2 = 0.5 * (sq(std::get<2>(s)) + sq(std::get<3>(s)));
+        const double zd2 = dd2 / sq(restr->sd_dist);
         delsq[0].push_back(da2);
         zsq[0].push_back(za2);
         sigmas[0].push_back(restr->sd_angle);
@@ -227,7 +228,7 @@ void add_refine(nb::module_& m) {
       delsq.clear(); zsq.clear(); sigmas.clear();
       for (const auto& v : self.vdws) {
         const auto& restr = std::get<0>(v);
-        const double d2 = gemmi::sq(std::get<1>(v)), z2 = gemmi::sq(std::get<1>(v) / restr->sigma);
+        const double d2 = sq(std::get<1>(v)), z2 = sq(std::get<1>(v) / restr->sigma);
         delsq[restr->type].push_back(d2);
         zsq[restr->type].push_back(z2);
         sigmas[restr->type].push_back(restr->sigma);
@@ -250,7 +251,7 @@ void add_refine(nb::module_& m) {
       for (const auto& v : self.intervals) {
         const auto& restr = std::get<0>(v);
         const double sigma = std::get<2>(v) ? restr->smin : restr->smax;
-        const double d2 = gemmi::sq(std::get<1>(v)), z2 = gemmi::sq(std::get<1>(v) / sigma);
+        const double d2 = sq(std::get<1>(v)), z2 = sq(std::get<1>(v) / sigma);
         delsq[0].push_back(d2);
         zsq[0].push_back(z2);
         sigmas[0].push_back(sigma);
@@ -263,7 +264,7 @@ void add_refine(nb::module_& m) {
       for (const auto& v : self.ncsrs) {
         const auto& restr = std::get<0>(v);
         const double delta = std::get<1>(v) - std::get<2>(v);
-        const double d2 = gemmi::sq(delta), z2 = gemmi::sq(delta / restr->sigma);
+        const double d2 = sq(delta), z2 = sq(delta / restr->sigma);
         delsq[restr->idx].push_back(d2);
         zsq[restr->idx].push_back(z2);
         sigmas[restr->idx].push_back(restr->sigma);
@@ -280,7 +281,7 @@ void add_refine(nb::module_& m) {
         const int rkind = std::get<2>(a);
         const float delta_b = std::get<5>(a);
         const float sigma = std::get<4>(a);
-        const double d2 = gemmi::sq(delta_b), z2 = gemmi::sq(delta_b / sigma);
+        const double d2 = sq(delta_b), z2 = sq(delta_b / sigma);
         const int k = std::min(rkind, 3);
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
@@ -298,7 +299,7 @@ void add_refine(nb::module_& m) {
         const int rkind = std::get<2>(a);
         const float delta_b = std::get<5>(a);
         const float sigma = std::get<4>(a);
-        const double d2 = gemmi::sq(delta_b), z2 = gemmi::sq(delta_b / sigma);
+        const double d2 = sq(delta_b), z2 = sq(delta_b / sigma);
         const int k = std::min(rkind, 3);
         delsq[k].push_back(d2);
         zsq[k].push_back(z2);
@@ -621,7 +622,7 @@ void add_refine(nb::module_& m) {
         else if (imet == 1) // sum
           ret[idx][i] += std::abs(x);
         else { // mean
-          ret[idx][i] += gemmi::sq(x);
+          ret[idx][i] += sq(x);
           num[idx][i] += 1;
         }
       };
@@ -1112,7 +1113,7 @@ void add_refine(nb::module_& m) {
     // assume all values are sorted by resolution
     if (bin_cen_.shape(0) != bin_val_.shape(0)) throw std::runtime_error("bin_centers and bin_values shape mismatch");
     if (n < 1) throw std::runtime_error("non positive n");
-    const double krn2 = gemmi::sq(kernel_width) * 2;
+    const double krn2 = sq(kernel_width) * 2;
     const size_t n_par = bin_val_.shape(1);
     const size_t n_bin = bin_val_.shape(0);
     const size_t n_ref = s_.shape(0);
@@ -1127,7 +1128,7 @@ void add_refine(nb::module_& m) {
       const double s_i = s_(0) + s_step * (i + 0.5);
       double an = 0.;
       for (int j = 0; j < n_bin; ++j) {
-        double dx = gemmi::sq(s_i - bin_cen_(j)) / krn2;
+        double dx = sq(s_i - bin_cen_(j)) / krn2;
         if (dx > 30) continue; // skip small contribution
         double expdx = std::exp(-dx);
         an += expdx;

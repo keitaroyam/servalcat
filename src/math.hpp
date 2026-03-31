@@ -11,7 +11,8 @@
 
 namespace servalcat {
 
-constexpr double sq(double x) {return x * x;}
+template<typename T>
+constexpr T sq(T x) {return x * x;}
 
 inline double log_i0_or_cosh(double X, int c) {
   return c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);

@@ -4,6 +4,7 @@
 #ifndef SERVALCAT_REFINE_GEOM_HPP_
 #define SERVALCAT_REFINE_GEOM_HPP_
 
+#include "../math.hpp"
 #include "params.hpp"
 #include "ncsr.hpp"
 #include <set>
@@ -149,7 +150,6 @@ inline double chiral_abs_volume_sigma(double bond1, double bond2, double bond3,
                                       double angle1, double angle2, double angle3,
                                       double sigb1, double sigb2, double sigb3,
                                       double siga1, double siga2, double siga3) {
-  using gemmi::sq;
   using gemmi::rad;
   const double mult = bond1 * bond2 * bond3;
   auto cosine = [](double a) {return a == 90. ? 0. : std::cos(rad(a));};
@@ -1135,8 +1135,8 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
   ns.populate();
   const float max_vdwr = 2.98f; // max from ener_lib, Cs.
   // we can reduce memory usage when ridge/adpr/ncsr not used - these max_dist parameters should be set zero
-  const float max_other_sq = gemmi::sq(std::max(ridge_dmax, std::max(adpr_max_dist, ncsr_max_dist)));
-  const float max_dist_sq = std::max(max_other_sq, gemmi::sq(max_vdwr * 2));
+  const float max_other_sq = sq(std::max(ridge_dmax, std::max(adpr_max_dist, ncsr_max_dist)));
+  const float max_dist_sq = std::max(max_other_sq, sq(max_vdwr * 2));
   // XXX Refmac uses intervals for distances as well? vdw_and_contacts.f remove_bonds_and_angles()
   // ref: gemmi/contact.hpp ContactSearch::for_each_contact
   for (int n_ch = 0; n_ch != (int) ns.model->chains.size(); ++n_ch) {
@@ -1185,7 +1185,7 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                }
                                // don't include if too far. x1.5 is too large?
                                if (skip_critical_dist ? (dist_sq > max_other_sq)
-                                   : (dist_sq > std::min((double)max_other_sq, gemmi::sq(vdws.back().value * 1.5))))
+                                   : (dist_sq > std::min((double)max_other_sq, sq(vdws.back().value * 1.5))))
                                  vdws.pop_back();
                              }
                            }
@@ -1405,19 +1405,19 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
-    if (dsq > gemmi::sq(adpr_max_dist)) continue;
+    if (dsq > sq(adpr_max_dist)) continue;
     double w = 0;
     const int apos1 = target.params->get_pos_mat_geom(ia1, RefineParams::Type::B);
     const int apos2 = target.params->get_pos_mat_geom(ia2, RefineParams::Type::B);
     if (adpr_mode == 0) {
       const float sig = adpr_diff_sigs.at(pair_kind-1);
       const bool bonded = pair_kind < 3; // bond and angle related
-      w = gemmi::sq(wbskal / sig) * (bonded ? 1 : std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac));
+      w = sq(wbskal / sig) * (bonded ? 1 : std::exp(-std::pow(dsq, 0.5 * adpr_d_power) * adpr_exp_fac));
     } else {
       const float sig = adpr_kl_sigs.at(pair_kind-1);
-      w = gemmi::sq(wbskal / sig) / (std::max(4., dsq) / 4.);
+      w = sq(wbskal / sig) / (std::max(4., dsq) / 4.);
     };
-    w *= gemmi::sq(target.params->find_geom_weight({atom1, atom2}, true));
+    w *= sq(target.params->find_geom_weight({atom1, atom2}, true));
     if (adp_mode == 2) w /= 3;
 
     if (adp_mode == 1) {
@@ -1427,7 +1427,7 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
         delta = b_diff;
       else // KL divergence
         delta = b_diff / std::sqrt(atom1->b_iso * atom2->b_iso);
-      const double f = 0.5 * w * gemmi::sq(delta);
+      const double f = 0.5 * w * sq(delta);
       ret += f;
       if (!check_only) {
         target.target += f;
@@ -1442,11 +1442,11 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
         // gradient and diagonal
         if (pos1 >= 0) {
           target.vn[pos1] += w * delta * df1;
-          target.am[apos1] += w * gemmi::sq(df1);
+          target.am[apos1] += w * sq(df1);
         }
         if (pos2 >= 0) {
           target.vn[pos2] += w * delta * df2;
-          target.am[apos2] += w * gemmi::sq(df2);
+          target.am[apos2] += w * sq(df2);
         }
         // non-diagonal
         if (pos1 >= 0 && pos2 >= 0) {
@@ -1502,8 +1502,8 @@ inline double Geometry::calc_adp_restraint(bool check_only, double wbskal) {
           der1 = 0.5 * w * (v1 - v2 / B1);
           der2 = 0.5 * w * R.transpose() * (-v1 - v2 / B2);
           const Eigen::Matrix<double,6,6> tmp = 0.5 * w / B1_B2 * A;
-          am11 = tmp + 2 * f / gemmi::sq(B1) * B_B;
-          am22 = R.transpose() * (tmp + 2 * f / gemmi::sq(B2) * B_B) * R;
+          am11 = tmp + 2 * f / sq(B1) * B_B;
+          am22 = R.transpose() * (tmp + 2 * f / sq(B2) * B_B) * R;
           am12 = R.transpose() * (-tmp + f / B1_B2 * B_B);
         }
       }
@@ -1555,7 +1555,7 @@ inline double Geometry::calc_occ_constraint(bool check_only, const std::vector<d
     const double c = consts[i];
     if (c == 0) // otherwise gradient will be affected - should be?
       continue;
-    ret += 0.5 * u[i] * gemmi::sq(c) - ls[i] * c;
+    ret += 0.5 * u[i] * sq(c) - ls[i] * c;
     if (!check_only) {
       for (size_t j = 0; j < group_idxes.size(); ++j) {
         for (int ia : target.params->occ_groups[group_idxes[j]])
@@ -1609,12 +1609,12 @@ inline double Geometry::calc_occ_restraint(bool check_only, double wocc) {
     // calculate minimum distance - expensive?
     const gemmi::NearestImage im = st.cell.find_nearest_image(atom1->pos, atom2->pos, gemmi::Asu::Any);
     const double dsq = im.dist_sq;
-    if (dsq > gemmi::sq(occr_max_dist)) continue;
+    if (dsq > sq(occr_max_dist)) continue;
     const float sig = occr_sigs.at(pair_kind-1);
     const bool bonded = pair_kind < 3; // bond and angle related
-    const double w = gemmi::sq(wocc / sig) / (std::max(4., dsq) / 4.);
+    const double w = sq(wocc / sig) / (std::max(4., dsq) / 4.);
     const double delta = atom1->occ - atom2->occ;
-    const double f = 0.5 * w * gemmi::sq(delta);
+    const double f = 0.5 * w * sq(delta);
     ret += f;
     if (!check_only) {
       target.target += f;
@@ -1765,7 +1765,7 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   const double da = a - closest->value;
   const double a0_rad = gemmi::rad(closest->value);
   const bool close_to_180 = std::abs(closest->value - 180.0) < 0.5;
-  const double weight = gemmi::sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1));
+  const double weight = sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1));
   const double ret = close_to_180 ? (weight * (1. + cosa)) : von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
   if (target != nullptr) {
     int ia[3], pos[3], apos[3];
@@ -1778,8 +1778,8 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
       const gemmi::Vec3 h = v1 / v1n + v2 / v2n;
       gemmi::Vec3 dhdx[9]; // dh/dx11, dx12, dx13, dx21, ...
       for (int i = 0; i < 3; ++i) {
-        dhdx[i]   = -(gemmi::Vec3(i==0, i==1, i==2) - v1 * v1.at(i) / gemmi::sq(v1n)) / v1n;
-        dhdx[6+i] = -(gemmi::Vec3(i==0, i==1, i==2) - v2 * v2.at(i) / gemmi::sq(v2n)) / v2n;
+        dhdx[i]   = -(gemmi::Vec3(i==0, i==1, i==2) - v1 * v1.at(i) / sq(v1n)) / v1n;
+        dhdx[6+i] = -(gemmi::Vec3(i==0, i==1, i==2) - v2 * v2.at(i) / sq(v2n)) / v2n;
         dhdx[3+i] = -dhdx[i] - dhdx[6+i];
       }
       gemmi::Mat33 trs[3] = {tr1.mat, {}, tr2.mat};
@@ -1829,8 +1829,8 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
                                                 ? 1. : (std::sin(a0_rad) / sina))))
         : (weight * da * gemmi::deg(1) / sina);
       const double secder_fac = von_mises
-        ? (weight / gemmi::sq(sina))
-        : (weight * gemmi::sq(gemmi::deg(1) / sina));
+        ? (weight / sq(sina))
+        : (weight * sq(gemmi::deg(1) / sina));
       for(int i = 0; i < 3; ++i)
         if (pos[i] >= 0) {
           target->incr_vn(pos[i], deriv_fac, dcosadx[i]);

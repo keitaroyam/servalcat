@@ -4,6 +4,7 @@
 #ifndef SERVALCAT_REFINE_LL_HPP_
 #define SERVALCAT_REFINE_LL_HPP_
 
+#include "../math.hpp"
 #include "params.hpp"
 #include "geom.hpp"
 #include <memory>
@@ -39,11 +40,11 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
     double fn = 0.0;
     double dx = 0, dx0 = 1.0, dx1 = 0;
     for (int i = 0; i < n_points; ++i) {
-      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
+      dx = sq(x_current - x_points[i]) / kernel_width2;
       dx0 = std::min(std::abs(dx), dx0);
     }
     for (int i = 0; i < n_points; ++i) {
-      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
+      dx = sq(x_current - x_points[i]) / kernel_width2;
       dx1 = dx - dx0;
       if (dx1 <= 120.0) {
         const double expdx = std::exp(-dx1);
@@ -61,7 +62,7 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2;
+      const double dx = sq(x_current - x_points[i]) / kernel_width2;
       const double dx1 = dx - dx0;
       if (dx1 <= 120.0)
         y_derivs[i] /= an;
@@ -69,13 +70,13 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
         y_derivs[i] = 0.0;
     }
   } else if (x_current > x_points.back()) {
-    const double dx1 = gemmi::sq(x_current - x_points.back()) / kernel_width2;
+    const double dx1 = sq(x_current - x_points.back()) / kernel_width2;
     double an = 1.0;
     double fn = y_points.back();
     double dx;
     y_derivs.back() = 1.0;
     for (int i = 0; i < n_points-1; ++i) {
-      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
+      dx = sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0) {
         const double expdx = std::exp(-dx);
         an += expdx;
@@ -92,20 +93,20 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
+      const double dx = sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0)
         y_derivs[i] /= an;
       else
         y_derivs[i] = 0.0;
     }
   } else if (x_current < x_points.front()) {
-    const double dx1 = gemmi::sq(x_current-x_points.front()) / kernel_width2;
+    const double dx1 = sq(x_current-x_points.front()) / kernel_width2;
     double an = 1.0;
     double fn = y_points.front();
     double dx = 0;
     y_derivs[0] = 1.0;
     for (int i = 1; i < n_points; ++i) {
-      dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
+      dx = sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0) {
         const double expdx = std::exp(-dx);
         an += expdx;
@@ -122,7 +123,7 @@ std::pair<double, std::vector<double>> smooth_gauss_d(double kernel_width,
 
     // calculate derivatives
     for (int i = 0; i < n_points; ++i) {
-      const double dx = gemmi::sq(x_current - x_points[i]) / kernel_width2 - dx1;
+      const double dx = sq(x_current - x_points[i]) / kernel_width2 - dx1;
       if (dx <= 120.0)
         y_derivs[i] /= an;
       else
@@ -368,10 +369,10 @@ struct LL{
                                              radius);
         gx *= atom.occ * neutron_h_f_correction;
         if (adp_mode == 1)
-          gb *= atom.occ * 0.25 / gemmi::sq(gemmi::pi()) * neutron_h_f_correction;
+          gb *= atom.occ * 0.25 / sq(gemmi::pi()) * neutron_h_f_correction;
         else if (adp_mode == 2)
           for (int i = 0; i < 6; ++i)
-            gb_aniso[i] *= atom.occ * 0.25 / gemmi::sq(gemmi::pi()) * neutron_h_f_correction;
+            gb_aniso[i] *= atom.occ * 0.25 / sq(gemmi::pi()) * neutron_h_f_correction;
 
         if (pos_x >= 0) {
           const auto gx2 = tr.mat.transpose().multiply(gx);
@@ -661,8 +662,8 @@ struct LL{
           fac_q += ajak * interp_1d(table_bs, qq[0], b);
           fac_qb += ajak * interp_1d(table_bs, qb[0], b);
         }
-      fac_x *= gemmi::sq(neutron_h_f_correction);
-      fac_a *= gemmi::sq(neutron_h_f_correction);
+      fac_x *= sq(neutron_h_f_correction);
+      fac_a *= sq(neutron_h_f_correction);
       if (pos_x >= 0)
         for (int j = 0; j < 3; ++j)
           am[pos_x + j] += w * fac_x;
@@ -674,14 +675,14 @@ struct LL{
         for (int j : {6, 7, 11})    am[pos_b + j] += w * fac_a / 3; // 11-22, 11-33, 22-33
       }
       if (pos_q >= 0) {
-        am[pos_q] += fac_q * gemmi::sq(neutron_h_f_correction); // w = q^2 not needed
+        am[pos_q] += fac_q * sq(neutron_h_f_correction); // w = q^2 not needed
         const int pos_qb = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::Q);
         if (pos_qb >= 0) {
           if (adp_mode == 1)
-            am[pos_qb] += fac_qb * atom.occ * gemmi::sq(neutron_h_f_correction);
+            am[pos_qb] += fac_qb * atom.occ * sq(neutron_h_f_correction);
           else if (adp_mode == 2)
             for (int j = 0; j < 3; ++j)
-              am[pos_qb + j] += fac_qb * atom.occ / 3 * gemmi::sq(neutron_h_f_correction);
+              am[pos_qb + j] += fac_qb * atom.occ / 3 * sq(neutron_h_f_correction);
         }
       }
       if (pos_d >= 0) {

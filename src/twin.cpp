@@ -253,8 +253,8 @@ struct TwinData {
       double i_true_twin = 0;
       for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic)
         if (alphas[rbo2c[ib][io][ic]] > 0) // just in case f_true is nan
-          i_true_twin += alphas[rbo2c[ib][io][ic]] * gemmi::sq(f_true(rbo2a[ib][io][ic]));
-      ret += gemmi::sq((iobs[obs_idx] - i_true_twin) / sigo[obs_idx]) * 0.5;
+          i_true_twin += alphas[rbo2c[ib][io][ic]] * sq(f_true(rbo2a[ib][io][ic]));
+      ret += sq((iobs[obs_idx] - i_true_twin) / sigo[obs_idx]) * 0.5;
     }
     for (int ia = 0; ia < rb2a[ib].size(); ++ia) {
       if (std::isnan(f_true(ia))) continue;
@@ -262,7 +262,7 @@ struct TwinData {
       const int c = centric[a_idx] + 1;
       const double den = epsilon[a_idx] * ml_sigma(bin[a_idx]);
       const std::complex<double> DFc = sum_fcalc(a_idx, true);
-      ret += (gemmi::sq(f_true(ia)) + std::norm(DFc)) / den / c;
+      ret += (sq(f_true(ia)) + std::norm(DFc)) / den / c;
       const double X = std::abs(DFc) * f_true(ia) / den;
       ret -= log_i0_or_cosh(X, c);
       if (c == 1) // acentric
@@ -293,11 +293,11 @@ struct TwinData {
       const int obs_idx = rb2o[ib][io];
       if (std::isnan(iobs[obs_idx]))
         continue;
-      const double inv_varobs = 1. / gemmi::sq(sigo[obs_idx]);
+      const double inv_varobs = 1. / sq(sigo[obs_idx]);
       double i_true_twin = 0;
       for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic)
         if (alphas[rbo2c[ib][io][ic]] > 0)
-          i_true_twin += alphas[rbo2c[ib][io][ic]] * gemmi::sq(ft(rbo2a[ib][io][ic]));
+          i_true_twin += alphas[rbo2c[ib][io][ic]] * sq(ft(rbo2a[ib][io][ic]));
       for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic) {
         if (alphas[rbo2c[ib][io][ic]] > 0) {
           const double tmp = 2 * alphas[rbo2c[ib][io][ic]] * ft(rbo2a[ib][io][ic]);
@@ -314,9 +314,9 @@ struct TwinData {
           double i_true_twin = 0;
           for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic)
             if (alphas[rbo2c[ib][io][ic]] > 0)
-              i_true_twin += alphas[rbo2c[ib][io][ic]] * gemmi::sq(ft(rbo2a[ib][io][ic]));
+              i_true_twin += alphas[rbo2c[ib][io][ic]] * sq(ft(rbo2a[ib][io][ic]));
           double tmp1 = 0, tmp2 = 0, tmp3 = 0;
-          const double inv_varobs = 1. / gemmi::sq(sigo[obs_idx]);
+          const double inv_varobs = 1. / sq(sigo[obs_idx]);
           for (int ic = 0; ic < rbo2a[ib][io].size(); ++ic)
             if (alphas[rbo2c[ib][io][ic]] > 0) {
               const double a_f = 2 * alphas[rbo2c[ib][io][ic]] * ft(rbo2a[ib][io][ic]);
@@ -349,10 +349,10 @@ struct TwinData {
       const double f_inv_den = std::abs(DFc) * inv_den;
       der1(ia) -= m * f_inv_den * (3 - c);
       if (unstable_mode)
-        der2(ia, ia) -= fom_der(m, X, c) * gemmi::sq(f_inv_den) * (3 - c); // omit for stability
+        der2(ia, ia) -= fom_der(m, X, c) * sq(f_inv_den) * (3 - c); // omit for stability
       if (c == 1) { // acentric
         der1(ia) -= 1. / ft(ia);
-        der2(ia, ia) += 1. / gemmi::sq(ft(ia));
+        der2(ia, ia) += 1. / sq(ft(ia));
       }
     }
     return std::make_pair(der1, der2);
@@ -528,13 +528,13 @@ struct TwinData {
           double l12 = lambda - lambda_old;
           double r1 = f1 - f0 + lambda * g2p;
           double r2 = f2 - f0 + lambda_old * g2p;
-          double a = (r1 / gemmi::sq(lambda) - r2 / gemmi::sq(lambda_old)) / l12;
-          double b = (-lambda_old * r1 / gemmi::sq(lambda) + lambda * r2 / gemmi::sq(lambda_old)) / l12;
+          double a = (r1 / sq(lambda) - r2 / sq(lambda_old)) / l12;
+          double b = (-lambda_old * r1 / sq(lambda) + lambda * r2 / sq(lambda_old)) / l12;
           //printf("debug l12 r1 r2 a b %f %f %f %f %f\n", l12, r1, r2, a, b);
           if (a == 0)
             tmp = g2p / b * 0.5;
           else
-            tmp = (-b + std::sqrt(std::max(0., gemmi::sq(b) + 3 * a * g2p))) / 3. / a;
+            tmp = (-b + std::sqrt(std::max(0., sq(b) + 3 * a * g2p))) / 3. / a;
           if (std::isnan(tmp))
             std::cout << "lambda_tmp_nan " << l12 << " " << r1 << " " << r2 << " " << a << " " << b << " " << g2p << std::endl;;
         }
