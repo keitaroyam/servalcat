@@ -9,6 +9,7 @@ Mozilla Public License, version 2.0; see LICENSE.
 from __future__ import absolute_import, division, print_function, generators
 import gemmi
 import numpy
+import pandas
 import time
 from servalcat.utils import logger
 from servalcat import utils
@@ -66,19 +67,6 @@ def calc_D_and_S(hkldata, has_halfmaps=True, half1_only=False):#fo_asu, fc_asu, 
     bdf = hkldata.binned_df["ml"]
     bdf["D"] = 0.
     bdf["S"] = 0.
-    stats_str = """$TABLE: Statistics :
-$GRAPHS
-: log(Mn(|F|^2)) and variances :A:1,6,7,8,13,14:
-: FSC :A:1,9,10,11:
-: weights :A:1,12,15,16:
-: map weights :A:1,17:
-$$
-1/resol^2 bin n d_max d_min log(var(Fo)) log(var(Fc)) log(var(DFc)) FSC.model FSC.full sqrt(FSC.full) D log(var_U,T) log(var_noise) wFo wFc wFo.sharpen
-$$
-$$
-"""
-    tmpl = "{:.4f} {:3d} {:7d} {:7.3f} {:7.3f} {:.4e} {:.4e} {:4e} {: .4f}   {: .4f} {: .4f} {: .4e} {:.4e} {:.4e} {:.4f} {:.4f} {:.4e}\n"
-
     var_noise = None
     FP = hkldata.df.FP.to_numpy()
     if half1_only:
@@ -87,6 +75,7 @@ $$
     elif has_halfmaps:
         var_noise = hkldata.binned_df["ml"].var_noise
         
+    ret = []
     for i_bin, idxes in hkldata.binned("ml"):
         bin_d_min = hkldata.binned_df["ml"].d_min[i_bin]
         bin_d_max = hkldata.binned_df["ml"].d_max[i_bin]
@@ -110,14 +99,25 @@ $$
             w_sharpen = 1
 
         with numpy.errstate(divide="ignore", invalid="ignore"):
-            stats_str += tmpl.format(1/bin_d_min**2, i_bin, Fo.size, bin_d_max, bin_d_min,
-                                     numpy.log(numpy.average(numpy.abs(Fo)**2)),
-                                     numpy.log(numpy.average(numpy.abs(Fc)**2)),
-                                     numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
-                                     fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
-                                     numpy.log(bdf.S[i_bin]), numpy.log(varn),
-                                     w, 1-w, w_sharpen)
-    return stats_str
+            ret.append((i_bin, Fo.size, bin_d_max, bin_d_min,
+                        numpy.log(numpy.average(numpy.abs(Fo)**2)),
+                        numpy.log(numpy.average(numpy.abs(Fc)**2)),
+                        numpy.log(bdf.D[i_bin]**2*numpy.average(numpy.abs(Fc)**2)),
+                        fsc, fsc_full, numpy.sqrt(fsc_full), bdf.D[i_bin],
+                        numpy.log(bdf.S[i_bin]), numpy.log(varn),
+                        w, 1-w, w_sharpen))
+
+    df = pandas.DataFrame(ret, columns=['bin', 'n', 'd_max', 'd_min', 'log(var(Fo))',
+                                        'log(var(Fc))', 'log(var(DFc))', 'FSC.model',
+                                        'FSC.full', 'sqrt(FSC.full)', 'D', 'log(var_U,T)',
+                                        'log(var_noise)', 'wFo', 'wFc', 'wFo.sharpen'])
+    forplot = [["log(Mn(|F|^2)) and variances", ['log(var(Fo))', 'log(var(Fc))', 'log(var(DFc))', 'log(var_U,T)', 'log(var_noise)']],
+               ["FSC", ['FSC.model', 'FSC.full', 'sqrt(FSC.full)']],
+               ["weights", ['D', 'wFo', 'wFc', 'wFo.sharpen']]]
+    lstr = utils.make_loggraph_str(df, "Fo-Fc Statistics", forplot, s2=1/df["d_min"]**2,
+                                   float_format="{:.4f}".format)
+    logger.writeln(lstr)
+
 # calc_D_and_S()
 
 #import line_profiler
@@ -263,7 +263,7 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     if has_halfmaps:
         utils.maps.calc_noise_var_from_halfmaps(hkldata)
 
-    stats_str = calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
+    calc_D_and_S(hkldata, has_halfmaps=has_halfmaps, half1_only=half1_only)
 
     if omit_proton or omit_h_electron:
         hkldata.df["FC"] = utils.model.calc_fc_fft(st, d_min - 1e-6, monlib=monlib, source=source,
@@ -272,10 +272,10 @@ def calc_fofc(st, d_min, maps, mask=None, monlib=None, B=None, half1_only=False,
     
     map_labs = calc_maps(hkldata, B=B, has_halfmaps=has_halfmaps, half1_only=half1_only,
                          no_fsc_weights=no_fsc_weights, sharpening_b=sharpening_b)
-    return hkldata, map_labs, stats_str
+    return hkldata, map_labs
 # calc_fofc()
 
-def write_files(hkldata, map_labs, grid_start, stats_str,
+def write_files(hkldata, map_labs, grid_start,
                 mask=None, output_prefix="diffmap", trim_map=False, trim_mtz=False,
                 omit_h_electron=False, mask_for_norm=None):
     # this function may modify the overall scale of FWT/DELFWT.
@@ -360,9 +360,6 @@ def write_files(hkldata, map_labs, grid_start, stats_str,
         hkldata = hkldata2
         
     dump_to_mtz(hkldata, map_labs, "{}_maps.mtz".format(output_prefix))
-    if stats_str:
-        with open("{}_Fstats.log".format(output_prefix), "w") as f:
-            f.write(stats_str)
 # write_files()
 
 def write_coot_script(py_out, model_file, mtz_file, contour_fo=1.2, contour_fofc=3.0, ncs_ops=None):
@@ -458,12 +455,12 @@ def main(args):
         mask = None
         logger.writeln("Warning: Mask is needed for map normalization. Use --mask or --mask_radius if you want normalized map.")
 
-    hkldata, map_labs, stats_str = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
-                                             half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,
-                                             sharpening_b=args.sharpening_b, omit_proton=args.omit_proton,
-                                             omit_h_electron=args.omit_h_electron,
-                                             source=args.source)
-    write_files(hkldata, map_labs, grid_start, stats_str,
+    hkldata, map_labs = calc_fofc(st, args.resolution, maps, mask=mask, monlib=monlib, B=args.B,
+                                  half1_only=args.half1_only, no_fsc_weights=args.no_fsc_weights,
+                                  sharpening_b=args.sharpening_b, omit_proton=args.omit_proton,
+                                  omit_h_electron=args.omit_h_electron,
+                                  source=args.source)
+    write_files(hkldata, map_labs, grid_start,
                 mask=mask, output_prefix=args.output_prefix,
                 trim_map=args.trim, trim_mtz=args.trim_mtz, omit_h_electron=args.omit_h_electron)
 

@@ -305,11 +305,11 @@ def calc_fofc(st, st_expanded, maps, monlib, model_format, args, diffmap_prefix=
         mask = None
         mask_for_norm = utils.maps.mask_from_model(st_expanded, 5, grid=maps[0][0]) # better than nothing..
         
-    hkldata, map_labs, stats_str = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
+    hkldata, map_labs = spa.fofc.calc_fofc(st_expanded, args.resolution, maps, mask=mask, monlib=monlib,
                                                       half1_only=(args.cross_validation and args.cross_validation_method == "throughout"),
                                                       sharpening_b=None if args.halfmaps else 0., # assume already sharpened if fullmap is given
                                                       source=source)
-    spa.fofc.write_files(hkldata, map_labs, maps[0][1], stats_str,
+    spa.fofc.write_files(hkldata, map_labs, maps[0][1],
                          mask=mask, output_prefix=diffmap_prefix,
                          trim_map=mask is not None, trim_mtz=args.trim_fofc_mtz,
                          mask_for_norm=mask_for_norm)

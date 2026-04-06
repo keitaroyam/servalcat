@@ -1296,7 +1296,7 @@ def nemap(args):
         maps.calc_noise_var_from_halfmaps(hkldata)
         map_labs = fofc.calc_maps(hkldata, B=args.B, has_halfmaps=True, half1_only=args.half1_only,
                                   no_fsc_weights=args.no_fsc_weights, sharpening_b=args.sharpening_b)
-    fofc.write_files(hkldata, map_labs, grid_start=halfmaps[0][1], stats_str=None,
+    fofc.write_files(hkldata, map_labs, grid_start=halfmaps[0][1],
                      mask=mask, output_prefix=args.output_prefix,
                      trim_map=args.trim, trim_mtz=args.trim_mtz)
 # nemap()
