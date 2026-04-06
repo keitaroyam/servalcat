@@ -60,28 +60,29 @@ gemmi::Mat33 eigen_decomp_inv(const gemmi::SMat33<double> &m, double e, bool for
 
 // https://doi.org/10.48550/arXiv.1701.03077
 struct Barron2019 {
-  Barron2019(double alpha, double y) {
+  Barron2019(double alpha, double x, double invsig2) {
+    const double x2 = sq(x);
     if (std::abs(alpha - 2) < 1e-3) { // least square
-      f = 0.5 * y * y;
-      dfdy = y;
-      d2fdy = 1.0;
+      f = 0.5 * x2 * invsig2;
+      dfdx = x * invsig2;
+      d2fdx = invsig2;
     } else if (std::abs(alpha) < 1e-3) { // cauchy or lorentz
-      f = std::log(0.5 * y * y + 1.0);
-      dfdy = y / (0.5 * y * y + 1.0);
-      d2fdy = 1.0 / (0.5 * y * y + 1.0);
+      f = std::log(0.5 * x2 * invsig2 + 1.0);
+      dfdx = x / (0.5 * x2 * invsig2 + 1.0) * invsig2;
+      d2fdx = 1. / (0.5 * x2 * invsig2 + 1.0) * invsig2;
     } else if (alpha < -1000) { // -inf. welch
-      const double expy = std::exp(-0.5 * y * y);
+      const double expy = std::exp(-0.5 * x2 * invsig2);
       f = 1.0 - expy;
-      dfdy = y * expy;
-      d2fdy = expy;
+      dfdx = x * expy * invsig2;
+      d2fdx = expy * invsig2;
     } else { // other alpha
       const double alpha2 = std::abs(alpha - 2.0);
-      f = alpha2 / alpha * (std::pow(y * y / alpha2 + 1, 0.5 * alpha) - 1.0);
-      dfdy = y * std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
-      d2fdy = std::pow(y * y / alpha2 + 1, 0.5 * alpha - 1.0);
+      f = alpha2 / alpha * (std::pow(x2 * invsig2 / alpha2 + 1, 0.5 * alpha) - 1.0);
+      dfdx = x * invsig2 * std::pow(x2 * invsig2 / alpha2 + 1, 0.5 * alpha - 1.0);
+      d2fdx = invsig2 * std::pow(x2 * invsig2 / alpha2 + 1, 0.5 * alpha - 1.0);
     }
   }
-  double f, dfdy, d2fdy;
+  double f, dfdx, d2fdx;
 };
 
 struct PlaneDeriv {
@@ -441,7 +442,7 @@ struct Geometry {
       }
       return ret;
     }
-    double calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal,
+    double calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal, double wstiff,
                 GeomTarget* target, Reporting *reporting) const;
 
     int type = 1; // 0-2
@@ -502,7 +503,7 @@ struct Geometry {
       for (auto &value : values)
         value.value = gemmi::angle_abs_diff(value.value, 0.); // limit to [0,180]
     }
-    double calc(const gemmi::UnitCell& cell, double waskal, bool von_mises, GeomTarget* target, Reporting *reporting) const;
+    double calc(const gemmi::UnitCell& cell, double waskal, double wstiff, bool von_mises, GeomTarget* target, Reporting *reporting) const;
     int type = 1; // 0 or not
     int sym_idx_1 = 0, sym_idx_2 = 0;
     std::array<int, 3> pbc_shift_1 = {{0,0,0}}, pbc_shift_2 = {{0,0,0}};
@@ -536,14 +537,14 @@ struct Geometry {
       }
       return ret;
     }
-    double calc(double wtskal, GeomTarget* target, Reporting *reporting) const;
+    double calc(double wtskal, double wstiff, GeomTarget* target, Reporting *reporting) const;
     int type = 1; // 0 or not
     std::array<gemmi::Atom*, 4> atoms;
     std::vector<Value> values;
   };
   struct Chirality {
     Chirality(gemmi::Atom* atomc, gemmi::Atom* atom1, gemmi::Atom* atom2, gemmi::Atom* atom3) : atoms({atomc, atom1, atom2, atom3}) {}
-    double calc(double wchiral, GeomTarget* target, Reporting *reporting) const;
+    double calc(double wchiral, double wstiff, GeomTarget* target, Reporting *reporting) const;
     double value;
     double sigma;
     gemmi::ChiralityType sign;
@@ -551,7 +552,7 @@ struct Geometry {
   };
   struct Plane {
     Plane(std::vector<gemmi::Atom*> a) : atoms(a) {}
-    double calc(double wplane, GeomTarget* target, Reporting *reporting) const;
+    double calc(double wplane, double wstiff, GeomTarget* target, Reporting *reporting) const;
     double sigma;
     std::string label;
     std::vector<gemmi::Atom*> atoms;
@@ -625,7 +626,7 @@ struct Geometry {
     std::tuple<int,int,int,int,int,int> sort_key() const {
       return std::tie(atoms[0]->serial, atoms[1]->serial, sym_idx, pbc_shift[0], pbc_shift[1], pbc_shift[2]);
     }
-    double calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const;
+    double calc(const gemmi::UnitCell& cell, double wvdw, double wstiff, GeomTarget* target, Reporting *reporting) const;
     int type = 0; // 1: vdw, 2: torsion, 3: hbond, 4: metal, 5: dummy-nondummy, 6: dummy-dummy
     double value; // critical distance
     double sigma = 0.;
@@ -693,7 +694,8 @@ struct Geometry {
     std::fill(target.am.begin(), target.am.end(), 0.);
   }
   double calc(bool use_nucleus, bool check_only, double wbond, double wangle, double wtors,
-              double wchir, double wplane, double wstack, double wvdw, double wncs);
+              double wchir, double wplane, double wstack, double wvdw, double wncs,
+              double wbond2, double wangle2, double wtors2, double wchir2, double wplane2, double wvdw2);
   double calc_adp_restraint(bool check_only, double wbskal);
   double calc_occ_constraint(bool check_only, const std::vector<double> &ls, const std::vector<double> & u);
   double calc_occ_restraint(bool check_only, double wocc);
@@ -1321,7 +1323,9 @@ inline void Geometry::setup_target(bool use_occr) {
 inline double Geometry::calc(bool use_nucleus, bool check_only,
                              double wbond, double wangle, double wtors,
                              double wchir, double wplane, double wstack,
-                             double wvdw, double wncs) {
+                             double wvdw, double wncs, double wbond2,
+                             double wangle2, double wtors2, double wchir2,
+                             double wplane2, double wvdw2) {
   if (check_only)
     reporting = {}; // also deletes adp. is it ok?
   else
@@ -1343,19 +1347,19 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 
   for (const auto &t : bonds)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, use_nucleus, wbond * get_w(t.atoms), target_ptr, rep_ptr);
+      ret += t.calc(st.cell, use_nucleus, wbond * get_w(t.atoms), wbond2, target_ptr, rep_ptr);
   for (const auto &t : angles)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, wangle * get_w(t.atoms), angle_von_mises, target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wangle * get_w(t.atoms), wangle2, angle_von_mises, target_ptr, rep_ptr);
   for (const auto &t : torsions)
     if (has_selected(t.atoms))
-      ret += t.calc(wtors * get_w(t.atoms), target_ptr, rep_ptr);
+      ret += t.calc(wtors * get_w(t.atoms), wtors2, target_ptr, rep_ptr);
   for (const auto &t : chirs)
     if (has_selected(t.atoms))
-      ret += t.calc(wchir * get_w(t.atoms), target_ptr, rep_ptr);
+      ret += t.calc(wchir * get_w(t.atoms), wchir2, target_ptr, rep_ptr);
   for (const auto &t : planes)
     if (has_selected(t.atoms))
-      ret += t.calc(wplane * get_w(t.atoms), target_ptr, rep_ptr);
+      ret += t.calc(wplane * get_w(t.atoms), wplane2, target_ptr, rep_ptr);
   for (const auto &t : harmonics)
     t.calc(target_ptr); // get_w?
   for (const auto &t : stackings)
@@ -1363,7 +1367,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
       ret += t.calc(wstack * get_w(t.planes), use_stack_dist, target_ptr, rep_ptr);
   for (const auto &t : vdws)
     if (has_selected(t.atoms))
-      ret += t.calc(st.cell, wvdw * get_w(t.atoms), target_ptr, rep_ptr);
+      ret += t.calc(st.cell, wvdw * get_w(t.atoms), wvdw2, target_ptr, rep_ptr);
   for (const auto &t : intervals)
     ret += t.calc(st.cell, wbond * get_w(t.atoms), target_ptr, rep_ptr);
   for (const auto &t : ncsrs)
@@ -1687,7 +1691,7 @@ inline void Geometry::calc_jellybody() {
   }
 }
 
-inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal,
+inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus, double wdskal, double wstiff,
                                    GeomTarget* target, Reporting *reporting) const {
   assert(!values.empty());
   if (wdskal <= 0) return 0.;
@@ -1701,13 +1705,17 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   const double ideal = use_nucleus ? closest->value_nucleus : closest->value;
   const double db = b - ideal;
   const double sigma = (use_nucleus ? closest->sigma_nucleus : closest->sigma);
-  const double weight = wdskal / sigma;
-  const double y = db * weight;
-  Barron2019 robustf(type < 2 ? 2. : alpha, y);
+  const double weight = [&]() {
+    const double w = sq(wdskal / sigma);
+    if (type < 2 || std::abs(alpha - 2) < 1e-3)
+      return w * (1. + wstiff * sq(db / sigma));
+    return w;
+  }();
+  Barron2019 robustf(type < 2 ? 2. : alpha, db, weight);
 
   // note that second derivative is not exact in some alpha
   if (target != nullptr) {
-    const gemmi::Position dydx1 = weight * (x1 - x2) / std::max(b, 0.02);
+    const gemmi::Position dydx1 = (x1 - x2) / std::max(b, 0.02);
     const gemmi::Position dydx2 = same_asu() ? -dydx1 : gemmi::Position(tr.mat.transpose().multiply(-dydx1));
     const int ia1 = atom1->serial - 1;
     const int ia2 = atom2->serial - 1;
@@ -1716,22 +1724,22 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
     const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
     const int apos2 = target->params->get_pos_mat_geom(ia2, RefineParams::Type::X);
     if (pos1 >= 0) {
-      target->incr_vn(pos1, robustf.dfdy, dydx1);
-      target->incr_am_diag(apos1, robustf.d2fdy, dydx1);
+      target->incr_vn(pos1, robustf.dfdx, dydx1);
+      target->incr_am_diag(apos1, robustf.d2fdx, dydx1);
     }
     if (pos2 >= 0) {
-      target->incr_vn(pos2, robustf.dfdy, dydx2);
-      target->incr_am_diag(apos2, robustf.d2fdy, dydx2);
+      target->incr_vn(pos2, robustf.dfdx, dydx2);
+      target->incr_am_diag(apos2, robustf.d2fdx, dydx2);
     }
     if (pos1 >= 0 && pos2 >= 0) {
       if (pos1 != pos2) {
         auto mp = target->find_restraint(ia1, ia2);
         if (mp.imode == 0)
-          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx1, dydx2);
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx1, dydx2);
         else
-          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx2, dydx1);
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx2, dydx1);
       } else
-        target->incr_am_diag12(apos1, robustf.d2fdy, dydx1, dydx2);
+        target->incr_am_diag12(apos1, robustf.d2fdx, dydx1, dydx2);
     }
     target->target += robustf.f;
   }
@@ -1740,7 +1748,7 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   return robustf.f;
 }
 
-inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, bool von_mises,
+inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, double wstiff, bool von_mises,
                                     GeomTarget* target, Reporting *reporting) const {
   if (waskal <= 0) return 0.;
   // target functions:
@@ -1765,7 +1773,7 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   const double da = a - closest->value;
   const double a0_rad = gemmi::rad(closest->value);
   const bool close_to_180 = std::abs(closest->value - 180.0) < 0.5;
-  const double weight = sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1));
+  const double weight = sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1)) * (1. + wstiff * sq(da));
   const double ret = close_to_180 ? (weight * (1. + cosa)) : von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
   if (target != nullptr) {
     int ia[3], pos[3], apos[3];
@@ -1853,7 +1861,7 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
   return ret;
 }
 
-inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporting *reporting) const {
+inline double Geometry::Torsion::calc(double wtskal, double wstiff, GeomTarget* target, Reporting *reporting) const {
   if (wtskal <= 0) return 0.;
   const gemmi::Position& x1 = atoms[0]->pos;
   const gemmi::Position& x2 = atoms[1]->pos;
@@ -1870,10 +1878,10 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
   const double theta = gemmi::deg(std::atan2(s, t));
   auto closest = find_closest_value(theta);
   const int period = std::max(1, closest->period);
-  const double weight = wtskal * wtskal / (closest->sigma * closest->sigma);
   const double dtheta1 = gemmi::rad(period * (theta - closest->value));
   const double dtheta2 = gemmi::deg(std::atan2(std::sin(dtheta1), std::cos(dtheta1)));
   const double dtheta = dtheta2 / period;
+  const double weight = sq(wtskal / closest->sigma) * (1. + wstiff * sq(dtheta));
   const double ret = dtheta * dtheta * weight * 0.5;
 
   if (target != nullptr) {
@@ -1948,9 +1956,8 @@ inline double Geometry::Torsion::calc(double wtskal, GeomTarget* target, Reporti
   return ret;
 }
 
-inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Reporting *reporting) const {
+inline double Geometry::Chirality::calc(double wchiral, double wstiff, GeomTarget* target, Reporting *reporting) const {
   if (wchiral <= 0) return 0.;
-  const double weight = wchiral * wchiral / (sigma * sigma);
   const gemmi::Position& xc = atoms[0]->pos;
   const gemmi::Position& x1 = atoms[1]->pos;
   const gemmi::Position& x2 = atoms[2]->pos;
@@ -1963,6 +1970,7 @@ inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Repo
   const bool isneg = (sign == gemmi::ChiralityType::Negative || (sign == gemmi::ChiralityType::Both && v < 0));
   const double ideal = (isneg ? -1 : 1) * value;
   const double dv = v - ideal;
+  const double weight = sq(wchiral / sigma) * (1. + wstiff * sq(dv));
   const double ret = dv * dv * weight * 0.5;
 
   if (target != nullptr) {
@@ -2003,9 +2011,9 @@ inline double Geometry::Chirality::calc(double wchiral, GeomTarget* target, Repo
   return ret;
 }
 
-inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting *reporting) const {
+inline double Geometry::Plane::calc(double wplane, double wstiff, GeomTarget* target, Reporting *reporting) const {
   if (wplane <= 0) return 0.;
-  const double weight = wplane * wplane / (sigma * sigma);
+  const double weight = sq(wplane / sigma);
   const int natoms = atoms.size();
   const PlaneDeriv pder(atoms);
 
@@ -2013,7 +2021,8 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
   std::vector<double> deltas(natoms);
   for (int j = 0; j < natoms; ++j) {
     deltas[j] = pder.D - pder.vm.dot(atoms[j]->pos);
-    ret += deltas[j] * deltas[j] * weight * 0.5;
+    const double w = weight * (1. + wstiff * sq(deltas[j] / sigma));
+    ret += sq(deltas[j]) * w * 0.5;
   }
 
   if (target != nullptr) {
@@ -2023,11 +2032,12 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
         const int ial = atoms[l]->serial-1;
         const int posl = target->params->get_pos_vec_geom(ial, RefineParams::Type::X);
         const int aposl = target->params->get_pos_mat_geom(ial, RefineParams::Type::X);
+        const double w = weight * (1. + wstiff * sq(deltas[j] / sigma));
         gemmi::Position dpdx1;
         for (int m = 0; m < 3; ++m)
           dpdx1.at(m) = pder.dDdx[l].at(m) - xj.dot(pder.dvmdx[l][m]) - (j==l ? pder.vm.at(m) : 0);
 
-        if (posl >= 0) target->incr_vn(posl, deltas[j] * weight, dpdx1);
+        if (posl >= 0) target->incr_vn(posl, deltas[j] * w, dpdx1);
 
         for (int k = l; k < natoms; ++k) {
           const int iak = atoms[k]->serial-1;
@@ -2038,13 +2048,13 @@ inline double Geometry::Plane::calc(double wplane, GeomTarget* target, Reporting
 
           if (posl >= 0 && posk >= 0) {
             if (k == l)
-              target->incr_am_diag(aposl, weight, dpdx1);
+              target->incr_am_diag(aposl, w, dpdx1);
             else {
               auto mp = target->find_restraint(ial, iak);
               if (mp.imode == 0)
-                target->incr_am_ndiag(mp.ipos, weight, dpdx1, dpdx2);
+                target->incr_am_ndiag(mp.ipos, w, dpdx1, dpdx2);
               else
-                target->incr_am_ndiag(mp.ipos, weight, dpdx2, dpdx1);
+                target->incr_am_ndiag(mp.ipos, w, dpdx2, dpdx1);
             }
           }
         }
@@ -2227,9 +2237,8 @@ inline double Geometry::Stacking::calc(double wstack, bool use_dist, GeomTarget*
 }
 
 inline double
-Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target, Reporting *reporting) const {
+Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, double wstiff, GeomTarget* target, Reporting *reporting) const {
   if (sigma <= 0 || wvdw <= 0) return 0.;
-  const double weight = wvdw * wvdw / (sigma * sigma);
   const gemmi::Atom& atom1 = *atoms[0];
   const gemmi::Atom& atom2 = *atoms[1];
   const gemmi::Transform tr = get_transform(cell, sym_idx, pbc_shift);
@@ -2240,6 +2249,7 @@ Geometry::Vdw::calc(const gemmi::UnitCell& cell, double wvdw, GeomTarget* target
   if (db > 0)
     return 0.;
 
+  const double weight = sq(wvdw / sigma) * (1. + wstiff * sq(db / sigma));
   const double ret = db * db * weight * 0.5;
   if (target != nullptr) {
     const int ia1 = atom1.serial - 1;
@@ -2346,32 +2356,31 @@ Geometry::Ncsr::calc(const gemmi::UnitCell& cell, double wncsr, GeomTarget* targ
   const double b2 = x3.dist(x4);
   const double db = b1 - b2;
   const double weight = (std::abs(db) > ncsr_diff_cutoff || b1 > ncsr_max_dist || b2 > ncsr_max_dist) ? 0 : wncsr / sigma;
-  const double y = db * weight;
-  Barron2019 robustf(alpha, y);
+  Barron2019 robustf(alpha, db, weight);
 
   // note that second derivative is not exact in some alpha
   if (target != nullptr && weight > 0) {
     gemmi::Position dydx[4];
-    dydx[0] = weight * (x1 - x2) / std::max(b1, 0.02);
+    dydx[0] = (x1 - x2) / std::max(b1, 0.02);
     dydx[1] = vdw1.same_asu() ? -dydx[0] : gemmi::Position(tr1.mat.transpose().multiply(-dydx[0]));
-    dydx[2] = -weight * (x3 - x4) / std::max(b2, 0.02);
+    dydx[2] = -(x3 - x4) / std::max(b2, 0.02);
     dydx[3] = vdw2.same_asu() ? -dydx[2] : gemmi::Position(tr2.mat.transpose().multiply(-dydx[2]));
     for (int i = 0; i < 4; ++i) {
       const int iai = atoms[i]->serial-1;
       const int posi = target->params->get_pos_vec_geom(iai, RefineParams::Type::X);
       const int aposi = target->params->get_pos_mat_geom(iai, RefineParams::Type::X);
       if (posi < 0) continue;
-      target->incr_vn(posi, robustf.dfdy, dydx[i]);
-      target->incr_am_diag(aposi, robustf.d2fdy, dydx[i]);
+      target->incr_vn(posi, robustf.dfdx, dydx[i]);
+      target->incr_am_diag(aposi, robustf.d2fdx, dydx[i]);
       for (int j = 0; j < i; ++j) {
         const int iaj = atoms[j]->serial-1;
         const int posj = target->params->get_pos_vec_geom(iaj, RefineParams::Type::X);
         if (posj < 0) continue;
         auto mp = target->find_restraint(iai, iaj);
         if (mp.imode == 0)
-          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx[i], dydx[j]);
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx[i], dydx[j]);
         else
-          target->incr_am_ndiag(mp.ipos, robustf.d2fdy, dydx[j], dydx[i]);
+          target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx[j], dydx[i]);
         // could atoms[i] == atoms[j] happen?
       }
     }

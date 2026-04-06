@@ -282,6 +282,8 @@ class Geom:
             elif k in params:
                 self.calc_kwds[k] = params[k]
                 logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
+        #for k in ("wbond2", "wangle2", "wvdw2"): # "stiffness" parameters
+        #    self.calc_kwds[k] = 1.
         inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
         rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
         self.geom.mon_tors_names = rtors["monomer"]

@@ -134,11 +134,11 @@ void add_refine(nb::module_& m) {
         const auto& val = std::get<1>(b);
         const double sigma = use_nucleus ? val->sigma_nucleus : val->sigma;
         const double db = std::get<2>(b);
-        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
+        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db, 1. / sq(sigma));
         const int k = (restr->type == 2 ? 2 :
                        (restr->atoms[0]->is_hydrogen() || restr->atoms[1]->is_hydrogen()) ? 1 : 0);
         delsq[k].push_back(sq(db));
-        zsq[k].push_back(sq(robustf.dfdy));
+        zsq[k].push_back(sq(robustf.dfdx * sigma));
         sigmas[k].push_back(sigma);
       }
       for (const auto& p : delsq)
@@ -329,8 +329,8 @@ void add_refine(nb::module_& m) {
         const double ideal = use_nucleus ? val->value_nucleus : val->value;
         const double sigma = use_nucleus ? val->sigma_nucleus : val->sigma;
         const double db = std::get<2>(b);
-        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db / sigma);
-        const double z = robustf.dfdy;
+        const Barron2019 robustf(restr->type < 2 ? 2. : restr->alpha, db, 1. / sq(sigma));
+        const double z = robustf.dfdx * sigma;
         if (std::abs(z) >= min_z) {
           rr.push_back(restr);
           values.push_back(db + ideal);
@@ -973,7 +973,8 @@ void add_refine(nb::module_& m) {
     .def("calc", &Geometry::calc, nb::arg("use_nucleus"), nb::arg("check_only"),
          nb::arg("wbond")=1, nb::arg("wangle")=1, nb::arg("wtors")=1,
          nb::arg("wchir")=1, nb::arg("wplane")=1, nb::arg("wstack")=1, nb::arg("wvdw")=1,
-         nb::arg("wncs")=1)
+         nb::arg("wncs")=1, nb::arg("wbond2")=0, nb::arg("wangle2")=0, nb::arg("wtors2")=0,
+         nb::arg("wchir2")=0, nb::arg("wplane2")=0, nb::arg("wvdw2")=0)
     .def("calc_adp_restraint", &Geometry::calc_adp_restraint)
     .def("calc_occ_restraint", &Geometry::calc_occ_restraint)
     .def("calc_occ_constraint", &Geometry::calc_occ_constraint)
