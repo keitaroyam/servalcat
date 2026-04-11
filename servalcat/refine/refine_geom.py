@@ -114,7 +114,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, refine_cfg,
             raise SystemExit("Error: {}".format(e))
 
         refine_params = RefineParams(st, refine_xyz=True)
-        geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize)
+        geom = Geom(st, topo, monlib, refine_params, refine_cfg, shake_rms=randomize)
         refiner = Refine(st, geom, refine_cfg, refine_params)
         logger.writeln("Running {} cycles with wchir=4 wvdw=2 {} hydrogen".format(ncycle1, ["without","with"][i_macro]))
         geom.calc_kwds["wchir"] = 4
@@ -184,7 +184,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     else:
         ncslist = False
     refine_params = RefineParams(st, refine_xyz=True, cfg=refine_cfg)
-    geom = Geom(st, topo, monlib, refine_params, shake_rms=randomize, params=params, ncslist=ncslist)
+    geom = Geom(st, topo, monlib, refine_params, refine_cfg, shake_rms=randomize, params=params, ncslist=ncslist)
     refiner = Refine(st, geom, refine_cfg, refine_params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")

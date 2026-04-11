@@ -80,6 +80,8 @@ def add_arguments(parser):
                         help="ADP restraint weight (default: %(default)f)")
     parser.add_argument('--occr_weight', type=float, default=0.,
                         help="Occupancy restraint weight (default: %(default)f)")
+    parser.add_argument('--adaptive_restraint', type=float, default=0, metavar="ALPHA",
+                        help='Scale target by (1 + ALPHA * z^2). Only applies to bond, angle, plane, torsion, and vdw.')
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")
     parser.add_argument('--fix_xyz', action="store_true")
@@ -267,7 +269,7 @@ def main(args):
                                  refine_occ=args.refine_all_occ,
                                  refine_dfrac=args.refine_dfrac, cfg=refine_cfg,
                                  exclude_h_ll=not args.refine_h)
-    geom = Geom(st, topo, monlib, refine_params,
+    geom = Geom(st, topo, monlib, refine_params, refine_cfg,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=use_nucleus,
                 ncslist=ncslist)

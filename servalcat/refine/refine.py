@@ -57,6 +57,10 @@ occ_groups:
 occ_group_constraints:
   - ids: [1, 2]
     complete: true
+restraint_weights:
+  - bond:
+    weight: 1
+    adaptive_weight: 0
 local_geom_weights:
   - sel: ..
     w: 1
@@ -89,6 +93,22 @@ class SelectionAndWeightItem:
     sel: str = omegaconf.MISSING
     w: float = 1.
 @dataclass
+class RestraintWeight:
+    weight: float = 1.0
+@dataclass
+class RestraintWeightAdaptive(RestraintWeight):
+    adaptive_weight: float = 0.0
+@dataclass
+class RestraintWeights:
+    bond: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    angle: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    tors: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    chir: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    plane: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    vdw: RestraintWeightAdaptive = field(default_factory=RestraintWeightAdaptive)
+    ncs: RestraintWeight = field(default_factory=RestraintWeight)
+    stack: RestraintWeight = field(default_factory=RestraintWeight)
+@dataclass
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
         default_factory=lambda: {
@@ -105,6 +125,7 @@ class RefineConfig:
     occ_group_const_mu_update_factor: float = 1.1
     occ_group_const_mu_update_tol_rel: float = 0.25
     occ_group_const_mu_update_tol_abs: float = 0.01
+    geom_weights: RestraintWeights = field(default_factory=RestraintWeights)
     local_geom_weights: List[SelectionAndWeightItem] = field(default_factory=list)
     local_adpr_weights: List[SelectionAndWeightItem] = field(default_factory=list)
     initialisation: Dict[str, Dict[str, float]] = field(
@@ -142,6 +163,10 @@ def load_config(yaml_file, args, refmac_params):
     if getattr(args, "refine_dfrac", False):
         rcfg.atom_selection.dfrac.include = ["*"] # or H?
         rcfg.atom_selection.dfrac.exclude = []
+    if getattr(args, "adaptive_restraint", None):
+        for name, coeffs in rcfg.geom_weights.items():
+            if "adaptive_weight" in coeffs:
+                coeffs.adaptive_weight = args.adaptive_restraint
 
     # load Refmac params (unfinished)
     if refmac_params.get("occu", {}).get("groups"):
@@ -166,6 +191,9 @@ def load_config(yaml_file, args, refmac_params):
                     #occ_incl.append(selstr) # to do this, GroupOccupancy needs to be removed
         for cmpl, ids in rconst:
             occ_cnst.append(OccGroupConstItem(ids, cmpl))
+    for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
+        if k in refmac_params:
+            rcfg.geom_weights[k[1:]].weight = refmac_params[k]
     
     logger.writeln("Config loaded")
     logger.writeln("--")
@@ -247,7 +275,7 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
     return ret
 
 class Geom:
-    def __init__(self, st, topo, monlib, refine_params, adpr_w=1, occr_w=1, shake_rms=0,
+    def __init__(self, st, topo, monlib, refine_params, cfg, adpr_w=1, occr_w=1, shake_rms=0,
                  params=None, unrestrained=False, use_nucleus=False,
                  ncslist=None):
         self.st = st
@@ -279,11 +307,13 @@ class Geom:
         for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
             if self.unrestrained:
                 self.calc_kwds[k] = 0
-            elif k in params:
-                self.calc_kwds[k] = params[k]
-                logger.writeln("setting geometry weight {}= {}".format(k, params[k]))
-        #for k in ("wbond2", "wangle2", "wvdw2"): # "stiffness" parameters
-        #    self.calc_kwds[k] = 1.
+            else:
+                cfg_par = cfg.geom_weights[k[1:]]
+                self.calc_kwds[k] = cfg_par.weight
+                logger.writeln("setting geometry weight {}= {}".format(k, self.calc_kwds[k]))
+                if "adaptive_weight" in cfg_par:
+                    self.calc_kwds[f"{k}2"] = cfg_par.adaptive_weight
+                    logger.writeln(f"setting geometry adaptive weight {k}={cfg_par.adaptive_weight}")
         inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
         rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
         self.geom.mon_tors_names = rtors["monomer"]
@@ -705,6 +735,7 @@ class Refine:
         self.ll = ll
         self.gamma = 0
         self.unrestrained = unrestrained
+        self.prev_shift = None
         #self.h_inherit_parent_adp = self.params.is_refined(Type.B) and not self.refine_h and self.st[0].has_hydrogen()
         #if self.h_inherit_parent_adp:
         #    self.geom.set_h_parents()
@@ -752,11 +783,17 @@ class Refine:
             logger.writeln("mean(dx)= {}".format(numpy.mean(dxx)))
             dxx[dxx > shift_allow_high] = shift_allow_high
             dxx[dxx < shift_allow_low] = shift_allow_low
+            if self.prev_shift is not None:
+                cc = numpy.corrcoef(self.prev_shift[self.params.vec_selection(Type.X)], dxx)[0,1]
+                logger.writeln(f"cc_prev_dx = {cc}")
         if len(dxb) > 0:
             # TODO this is misleading in anisotropic case
             logger.writeln("min(dB) = {}".format(numpy.min(dxb)))
             logger.writeln("max(dB) = {}".format(numpy.max(dxb)))
             logger.writeln("mean(dB)= {}".format(numpy.mean(dxb)))
+            if self.prev_shift is not None:
+                cc = numpy.corrcoef(self.prev_shift[self.params.vec_selection(Type.B)], dxb)[0,1]
+                logger.writeln(f"cc_prev_dB = {cc}")
             # FIXME we should'nt apply eigen decomp to dxb
             if self.params.aniso:
                 for i in range(len(dxb)//6):
@@ -904,6 +941,7 @@ class Refine:
             logger.writeln("WARNING: function not minimised")
             #self.set_x(x0) # Refmac accepts it even when function increases
 
+        self.prev_shift = dx
         return ret, shift_scale, f1
 
     def run_cycles(self, ncycles, weight=1, weight_adjust=False, debug=False,
