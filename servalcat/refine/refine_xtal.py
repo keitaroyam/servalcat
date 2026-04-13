@@ -80,7 +80,7 @@ def add_arguments(parser):
                         help="ADP restraint weight (default: %(default)f)")
     parser.add_argument('--occr_weight', type=float, default=0.,
                         help="Occupancy restraint weight (default: %(default)f)")
-    parser.add_argument('--adaptive_restraint', type=float, default=0, metavar="ALPHA",
+    parser.add_argument('--adaptive_restraint', type=float, metavar="ALPHA",
                         help='Scale target by (1 + ALPHA * z^2). Only applies to bond, angle, plane, torsion, and vdw.')
     parser.add_argument('--bfactor', type=float,
                         help="reset all atomic B values to specified value")

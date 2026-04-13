@@ -163,7 +163,7 @@ def load_config(yaml_file, args, refmac_params):
     if getattr(args, "refine_dfrac", False):
         rcfg.atom_selection.dfrac.include = ["*"] # or H?
         rcfg.atom_selection.dfrac.exclude = []
-    if getattr(args, "adaptive_restraint", None):
+    if getattr(args, "adaptive_restraint", None) is not None:
         for name, coeffs in rcfg.geom_weights.items():
             if "adaptive_weight" in coeffs:
                 coeffs.adaptive_weight = args.adaptive_restraint
