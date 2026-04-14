@@ -878,8 +878,7 @@ def main(args):
             utils.model.setup_entities(st_tmp, clear=True, overwrite_entity_type=True, force_subchain_names=True)
             prepare_crd(st_tmp,
                         crdout=xyzin, ligand=[refmac_prefix+model_format],
-                        make={"hydr":"n"},
-                        fix_long_resnames=False) # we do not need output file - do we?
+                        make={"hydr":"n"})
         else:
             xyzin = refmac_prefix + model_format
         refmac_hm1 = refmac.copy(hklin=args.mtz_half[0],
@@ -907,8 +906,7 @@ def main(args):
                 utils.model.setup_entities(st_tmp, clear=True, overwrite_entity_type=True, force_subchain_names=True)
                 prepare_crd(st_tmp,
                             crdout=xyzin, ligand=[refmac_prefix+model_format],
-                            make={"hydr":"a"},
-                            fix_long_resnames=False) # we do not need output file - do we?
+                            make={"hydr":"a"})
             else:
                 xyzin = refmac_prefix_shaken + model_format
             refmac_prefix_shaken = refmac_prefix+"_shaken_refined2"

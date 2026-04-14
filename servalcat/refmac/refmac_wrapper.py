@@ -66,8 +66,7 @@ def read_stdin(stdin):
 # read_stdin()
 
 def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
-                no_adjust_hydrogen_distances=False, fix_long_resnames=True,
-                keep_entities=False, unre=False):
+                no_adjust_hydrogen_distances=False, keep_entities=False, unre=False):
     assert h_pos in ("elec", "nucl")
     h_change = dict(a=gemmi.HydrogenChange.ReAddButWater,
                     y=gemmi.HydrogenChange.NoChange,
@@ -156,8 +155,6 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
                 logger.writeln("adjusting hydrogen position to electron cloud")
                 topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
 
-    if fix_long_resnames: refmac_fixes.fix_long_resnames(st)
-
     # remove "given" ncs matrices
     # TODO write them back to the output files
     st.ncs = gemmi.NcsOpList(x for x in st.ncs if not x.given)
@@ -193,6 +190,8 @@ def prepare_crd(st, crdout, ligand, make, monlib_path=None, h_pos="elec",
         if st.name.lower() in block_names:
             st.name = st.name + str(i)
     doc = gemmi.prepare_refmac_crd(st, topo, monlib, h_change)
+    # hack. prepare_refmac_crd() shortens codes, and if it's done before, long name dictionaries won't be written
+    refmac_fixes.resn_old_new = [x for x in st.shortened_ccd_codes]
     doc.write_file(crdout, options=gemmi.cif.Style.NoBlankLines)
     logger.writeln("crd file written: {}".format(crdout))
     return refmac_fixes, [x+"\n" for x in metal_kws]
