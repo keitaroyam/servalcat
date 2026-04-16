@@ -14,6 +14,7 @@ import sys
 import tempfile
 import subprocess
 import argparse
+import threading
 from collections import OrderedDict
 import servalcat # for version
 from servalcat.utils import logger
@@ -301,6 +302,13 @@ def modify_output(pdbout, cifout, fixes, hout, cispeps, software_items, modres, 
         os.remove(cifout + suffix)
 # modify_output()
 
+def handle_output(p, resn_conv):
+    for l in iter(p.stdout.readline, ""):
+        for tn in resn_conv:
+            l = l.replace(tn, resn_conv[tn])
+        logger.write(l)
+# handle_output()
+
 def main(args):
     if len(args.opts) % 2 != 0: raise SystemExit("Invalid number of args")
     args.ligand = sum(args.ligand, []) if args.ligand else []
@@ -370,6 +378,14 @@ def main(args):
     if keywords["make"].get("exit"):
         return
 
+    # prepare conversion for long residue names
+    resn_conv = {}
+    if refmac_fixes:
+        for old, new in refmac_fixes.resn_old_new:
+            n = "{:4s}".format(old)
+            if len(n) > 4: n += " "
+            resn_conv[new] = n
+    
     # Run Refmac
     cmd = [args.exe] + list(sum(tuple(opts.items()), ()))
     env = os.environ
@@ -381,22 +397,21 @@ def main(args):
     p = subprocess.Popen(cmd, shell=False, stdin=subprocess.PIPE,
                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          universal_newlines=True, env=env)
-    if crdout: p.stdin.write("make cr prepared\n")
-    p.stdin.write("".join(inputs))
-    p.stdin.close()
-    # prepare conversion for long residue names
-    resn_conv = {}
-    if refmac_fixes:
-        for old, new in refmac_fixes.resn_old_new:
-            n = "{:4s}".format(old)
-            if len(n) > 4: n += " "
-            resn_conv[new] = n
-    # print raw output
-    for l in iter(p.stdout.readline, ""):
-        for tn in resn_conv:
-            l = l.replace(tn, resn_conv[tn])
-        logger.write(l)
+    # catch up stdout in another thread
+    t = threading.Thread(target=handle_output, args=(p, resn_conv))
+    t.daemon = True
+    t.start()
+    
+    # stdin
+    try:
+        if crdout: p.stdin.write("make cr prepared\n")
+        p.stdin.write("".join(inputs))
+        p.stdin.close()
+    except BrokenPipeError: # it seems to happen on Windows
+        pass
+    
     retcode = p.wait()
+    t.join()
     logger.writeln("\nRefmac finished with exit code= {}".format(retcode))
 
     if not args.keep_original_output and crdout and os.path.exists(crdout):
