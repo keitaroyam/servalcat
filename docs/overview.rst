@@ -77,7 +77,16 @@ While the ``refine_spa_norefmac`` command calculates the Fo-Fc map (explained ab
       [--mask mask.mrc] [-o output_prefix] [-B B value]
 
 
-``-B`` is to calculate weighted maps based on local B estimate. It may be useful for model building in noisy region.
+The ``-B`` option calculates weighted maps based on a local :math:`B`-factor estimate.
+This may be useful for model building in noisy regions.
+In this scheme, the FSC weighting will be modified to :math:`\frac{k_l^2 {\rm FSC_{full}}}{1 + (k_l^2 - 1){\rm FSC_{full}}}`, where :math:`k_l = e^{-Bs^2/4}`, and :math:`B` is the value specified by ``-B``.
+Consequently, the FWT map coefficient is:
+
+.. math::
+    \frac{k_l^2 {\rm FSC_{full}}}{1 + (k_l^2 - 1){\rm FSC_{full}}} \frac{1}{k k_l} F_{\rm o}.
+    
+Here, :math:`k` is the global sharpening factor, which is estimated by default as :math:`\sqrt{{\rm FSC_{full}} \langle |F_{\rm o}|^2 \rangle}`.
+See the equation 16 in `Yamashita et al. (2021) <https://doi.org/10.1107/S2059798321009475>`_.
 
 Map trimming
 ~~~~~~~~~~~~
