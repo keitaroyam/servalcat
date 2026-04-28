@@ -171,6 +171,8 @@ def add_arguments(p):
     parser.add_argument('--ligand', nargs="*", action="append")
     parser.add_argument("--monlib",
                         help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--find_links', action='store_true', 
+                        help='Automatically add links')
     parser.add_argument('--keywords', nargs='+', action="append",
                         help="refmac keyword(s)")
     parser.add_argument('--keyword_file', nargs='+', action="append",
@@ -837,7 +839,8 @@ def geometry(args):
         raise SystemExit("Error: {}".format(e))
 
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
-    restraints.find_and_fix_links(st, monlib)
+    restraints.find_and_fix_links(st, monlib, find_metal_links=args.find_links,
+                                  add_found=args.find_links)
     try:
         topo, _ = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
                                               check_hydrogen=True, params=params)
