@@ -36,6 +36,12 @@ To use the Refmac5 related commands, you also need to install [CCP4](https://www
 **Notice:**
 From ver. 0.4.6, Servalcat is no longer python-only package and has some C++ code. If you build Servalcat by yourself, probably you also need to build GEMMI using the same compiler.
 
+### Installing the lastest (unstable) version
+
+1. Go to https://github.com/keitaroyam/servalcat/actions/workflows/ci.yml and click on the latest (top) one
+2. Download "wheels2" from the Artifacts section (note: a GitHub account is required)
+3. Unzip the file and provide the path to the directory using the `--find-links` option: `python -mpip install -U --find-links=wheels2 servalcat`
+
 ## Usage
 Please read the documentation: https://servalcat.readthedocs.io/en/latest/
 
