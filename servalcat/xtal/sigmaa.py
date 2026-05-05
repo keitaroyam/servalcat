@@ -131,7 +131,7 @@ def calc_r_and_cc(hkldata, twin_data=None):
         calc_sqrt = Fc
     else:
         if has_ano:
-            obs = hkldata.df[["F(+)", "F(-)"]].to_numpy()
+            obs = obs_sqrt = hkldata.df[["F(+)", "F(-)"]].to_numpy()
         else:
             obs = obs_sqrt = hkldata.df.FP.to_numpy()
         calc = calc_sqrt = Fc
