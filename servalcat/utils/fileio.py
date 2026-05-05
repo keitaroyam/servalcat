@@ -711,14 +711,21 @@ def read_smcif_hkl(cif_in, cell_if_absent=None, sg_if_absent=None):
     # TODO check _refln_observed_status?
     logger.writeln("Reading hkl data from smcif: {}".format(cif_in))
     b = gemmi.cif.read(cif_in).sole_block()
-    try:
-        cell_par = [float(b.find_value("_cell_length_{}".format(x))) for x in ("a", "b", "c")]
-        cell_par += [float(b.find_value("_cell_angle_{}".format(x))) for x in ("alpha", "beta", "gamma")]
-        cell = gemmi.UnitCell(*cell_par)
-        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*cell.parameters))
-    except:
+    tab = b.find("_cell_", ["length_a", "length_b", "length_c",
+                            "angle_alpha", "angle_beta", "angle_gamma"])
+    if len(tab) > 1:
+        raise RuntimeError(f"{cif_in}: multiple _cell")
+    if len(tab) == 0:
         logger.writeln(" WARNING: no unit cell in this file")
         cell = cell_if_absent
+    else:
+        cell_par = []
+        for i in range(6):
+            s = tab[0].get(i)
+            if "(" in s: s = s[:s.index("(")]
+            cell_par.append(float(s))
+        cell = gemmi.UnitCell(*cell_par)
+        logger.writeln("    Unit cell: {:.4f} {:.4f} {:.4f} {:.3f} {:.3f} {:.3f}".format(*cell.parameters))
 
     for optag in ("_space_group_symop_operation_xyz", "_symmetry_equiv_pos_as_xyz"):
         ops = [gemmi.Op(gemmi.cif.as_string(x)) for x in b.find_loop(optag)]
@@ -809,10 +816,12 @@ def read_small_molecule_files(files):
                 logger.writeln("reflection data read from: {}".format(filename))
             elif b.find_loop("_refln_index_h") or b.find_loop("_diffrn_refln_index_h"):
                 mtz = read_smcif_hkl(filename, st.cell, st.find_spacegroup())
-        except ValueError: # not a cif file
+        except ValueError as e: # not a cif file
             if ext == ".hkl":
                 mtz = read_shelx_hkl(st.cell, st.find_spacegroup(), hklf, file_in=filename)
                 logger.writeln("reflection data read from: {}".format(filename))
+            else:
+                logger.writeln(f" {e}")                
 
     return st, mtz
 
