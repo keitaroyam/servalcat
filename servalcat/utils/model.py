@@ -568,7 +568,7 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
     return ret
 # find_special_positions()    
 
-def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.Short):
+def expand_ncs(st, special_pos_threshold=0.01, howtoname=gemmi.HowToNameCopiedChain.AddNumber):
     # TODO modify st.connections for atoms at special positions
     if len(st.ncs) == 0: return
     find_special_positions(st, special_pos_threshold) # just to show info, a bit waste of cpu time..

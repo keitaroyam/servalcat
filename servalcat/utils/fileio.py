@@ -126,8 +126,12 @@ def write_pdb(st, pdb_out):
     logger.writeln("Writing PDB file: {}".format(pdb_out))
     st = st.clone()
     chain_id_lens = [len(x) for x in model.all_chain_ids(st)]
-    if chain_id_lens and max(chain_id_lens) > 2:
-        st.shorten_chain_names()
+    if chain_id_lens and max(chain_id_lens) > 1:
+        try:
+            st.shorten_chain_names()
+        except RuntimeError:
+            logger.writeln(" failed due to too many chains")
+            return
     st.shorten_ccd_codes()
     if st.shortened_ccd_codes:
         msg = " ".join("{}->{}".format(o,n) for o,n in st.shortened_ccd_codes)
