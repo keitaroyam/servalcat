@@ -113,6 +113,8 @@ The refined_fsc.json file contains the same data as the plot. To use external pr
 
     $ servalcat util json2csv refined_fsc.json
 
+To generate a map-model FSC plot, use columns ``fsc_model`` vs ``d_min`` (inverse scale). If cross-validation was performed, use columns ``fsc_model_half1`` and ``fsc_model_half2`` vs ``d_min``.
+
 Check maps and model
 ~~~~~~~~~~~~~~~~~~~~
 Use the following command to open the refined model and maps in COOT with a script:
