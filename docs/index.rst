@@ -34,4 +34,5 @@ Table of Contents
    xtal
    refmac_keywords
    source
+   hydrogen
    commands
