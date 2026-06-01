@@ -1646,7 +1646,6 @@ def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     if use_non_binary_mask:
         logger.writeln("Using non-binary solvent mask")
         masker.use_atom_occupancy = True
-        masker.island_min_volume = 0
     masker.put_mask_on_float_grid(grid, st[0])
     #utils.maps.write_ccp4_map("solmask.ccp4", grid)
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
@@ -1659,7 +1658,7 @@ def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int
     miller_array = twin_data.asu if twin_data else hkldata.miller_array()
     d_min = twin_data.d_min(sts[0].cell) if twin_data else hkldata.d_min_max()[0]
     if use_solvent:
-        if mask is None:
+        if bmask is None:
             Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
