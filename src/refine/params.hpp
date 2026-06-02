@@ -71,6 +71,8 @@ struct RefineParams {
   std::vector<int> qd_mix_atoms; // Q-D
   std::array<std::set<int>, N> ll_exclusion; // set of atom indices
   std::array<std::set<int>, N> geom_exclusion; // set of atom indices
+  std::vector<int> vdw_exclusion; // sorted vector
+  std::vector<std::pair<std::vector<int>, std::vector<int>>> vdw_pair_exclusion; // vector of sorted vectors
   std::vector<std::vector<int>> occ_groups;  // vector of vector of atom indices
   std::vector<std::pair<bool, std::vector<size_t>>> occ_group_constraints; // vector of pair(is_complete, group_indices)
   RefineParams(bool use_aniso, bool use_q_b_mixed)
@@ -545,11 +547,30 @@ struct RefineParams {
     int count = 0;
     float total = std::accumulate(atomsets.begin(), atomsets.end(), 0.0f, [&](float sum, const auto& atoms) {
       count += atoms.size();
-      return sum + std::accumulate(atoms.begin(), atoms.end(), 0.0f, [&](float s, const gemmi::Atom *a) { 
+      return sum + std::accumulate(atoms.begin(), atoms.end(), 0.0f, [&](float s, const gemmi::Atom *a) {
         return s + weights.at(a->serial - 1);
       });
     });
     return total / count;
+  }
+  bool is_vdw_excluded(const gemmi::Atom *atom1, const gemmi::Atom *atom2) const {
+    const int a1 = atom1->serial - 1;
+    const int a2 = atom2->serial - 1;
+    if (std::binary_search(vdw_exclusion.begin(), vdw_exclusion.end(), a1))
+      return true;
+    if (std::binary_search(vdw_exclusion.begin(), vdw_exclusion.end(), a2))
+      return true;
+    for (const auto &pair : vdw_pair_exclusion) {
+      const bool a1_in_1 = std::binary_search(pair.first.begin(), pair.first.end(), a1);
+      const bool a2_in_1 = std::binary_search(pair.first.begin(), pair.first.end(), a2);
+      if (!a1_in_1 && !a2_in_1)
+        continue;
+      if (a1_in_1 && std::binary_search(pair.second.begin(), pair.second.end(), a2))
+        return true;
+      if (a2_in_1 && std::binary_search(pair.second.begin(), pair.second.end(), a1))
+        return true;
+    }
+    return false;
   }
 };
 

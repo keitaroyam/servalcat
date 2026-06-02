@@ -67,6 +67,9 @@ local_geom_weights:
 local_adpr_weights:
   - sel: ..
     w: 1
+vdw_exclusion:
+  selections: []
+  pair_selections: []
 initialisation:
   adp:
     '*': 50
@@ -109,6 +112,14 @@ class RestraintWeights:
     ncs: RestraintWeight = field(default_factory=RestraintWeight)
     stack: RestraintWeight = field(default_factory=RestraintWeight)
 @dataclass
+class PairSelection:
+    sel1: List[str] = field(default_factory=list)
+    sel2: List[str] = field(default_factory=list)
+@dataclass
+class VdwExclusion:
+    selections: List[str] = field(default_factory=list)
+    pair_selections: List[PairSelection] = field(default_factory=list)
+@dataclass
 class RefineConfig:
     atom_selection: Dict[str, SelectionConfig] = field(
         default_factory=lambda: {
@@ -119,6 +130,7 @@ class RefineConfig:
         },
         metadata={"help": "Configuration for atom selection during refinement"}
     )
+    vdw_exclusion: VdwExclusion = field(default_factory=VdwExclusion)
     occ_groups: List[OccGroupItem] = field(default_factory=list)
     occ_group_constraints: List[OccGroupConstItem] = field(default_factory=list)
     occ_group_const_mu: float = 10
@@ -258,6 +270,13 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
             for spec in specs:
                 for _, _, _, atom in iterate_selection(spec.sel, st):
                     weights[atom.serial-1] = spec.w
+        
+        # vdw exclusion
+        ret.set_vdw_exclusion([a.serial-1 for sel in cfg.vdw_exclusion.selections
+                               for *_,a in iterate_selection(sel, st)],
+                              [[[a.serial-1 for sel in psel.sel1 for *_,a in iterate_selection(sel, st)],
+                                [a.serial-1 for sel in psel.sel2 for *_,a in iterate_selection(sel, st)]]
+                               for psel in cfg.vdw_exclusion.pair_selections])
     else:
         ret.set_params(refine_xyz=refine_xyz, refine_adp=adp_mode > 0,
                        refine_occ=refine_occ, refine_dfrac=refine_dfrac)
