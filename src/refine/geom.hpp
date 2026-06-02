@@ -1366,7 +1366,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
     if (has_selected(t.planes[0]) || has_selected(t.planes[1]))
       ret += t.calc(wstack * get_w(t.planes), use_stack_dist, target_ptr, rep_ptr);
   for (const auto &t : vdws)
-    if (has_selected(t.atoms))
+    if (has_selected(t.atoms) && !target.params->is_vdw_excluded(t.atoms[0], t.atoms[1]))
       ret += t.calc(st.cell, wvdw * get_w(t.atoms), wvdw2, target_ptr, rep_ptr);
   for (const auto &t : intervals)
     ret += t.calc(st.cell, wbond * get_w(t.atoms), target_ptr, rep_ptr);

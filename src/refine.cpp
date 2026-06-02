@@ -895,6 +895,17 @@ void add_refine(nb::module_& m) {
     .def("constrained_occ_values", &RefineParams::constrained_occ_values)
     .def("occ_constraints", &RefineParams::occ_constraints)
     .def("ensure_occ_constraints", &RefineParams::ensure_occ_constraints)
+    .def("set_vdw_exclusion", [](RefineParams &self,
+                                 const std::vector<int> &exclusion,
+                                 const std::vector<std::pair<std::vector<int>, std::vector<int>>> &pair_exclusion) {
+      self.vdw_exclusion = exclusion;
+      self.vdw_pair_exclusion = pair_exclusion;
+      std::sort(self.vdw_exclusion.begin(), self.vdw_exclusion.end());
+      for (auto &pair : self.vdw_pair_exclusion) {
+        std::sort(pair.first.begin(), pair.first.end());
+        std::sort(pair.second.begin(), pair.second.end());
+      }
+    })
     .def("params_summary", [](const RefineParams &self) {
       nb::dict ret, n_atoms, n_params, n_excl_ll, n_excl_geom;
       for (RefineParams::Type tt : self.Types) {
