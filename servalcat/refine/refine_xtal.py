@@ -116,6 +116,7 @@ def add_arguments(parser):
     parser.add_argument("--vonmises", action='store_true',
                         help="Experimental: von Mises type restraint for angles")
     parser.add_argument("--prefer_intensity", action='store_true')
+    parser.add_argument("--prefer_anomalous", action='store_true')
     parser.add_argument("--use_fw", action='store_true',
                         help="For debugging purpose; use F&W-converted amplitudes but use intensity for stats")
     parser.add_argument('--robust_function', help=argparse.SUPPRESS) # testing
@@ -158,7 +159,8 @@ def main(args):
         labin = labin.split(",")
     elif utils.fileio.is_mmhkl_file(hklin):
         hklin = utils.fileio.read_mmhkl(hklin)
-        labin = decide_mtz_labels(hklin, prefer_intensity=args.prefer_intensity)
+        labin = decide_mtz_labels(hklin, prefer_intensity=args.prefer_intensity,
+                                  prefer_anomalous=args.prefer_anomalous)
     software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
         hkldata, sts, fc_labs, args.free, use_in_est = process_input(

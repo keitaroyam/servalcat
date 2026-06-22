@@ -1357,11 +1357,25 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st2
 # merge_models()
 
-def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False):
+def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False,
+                      prefer_anomalous=False):
+    """
+    https://www.ccp4.ac.uk/html/mtzformat.html
+    J intensity
+    F structure amplitude
+    G structure amplitude associated with one member of an hkl -h-k-l pair
+    K intensity associated with one member of an hkl -h-k-l pair, I(+) or I(-)
+    """
     if prefer_intensity:
-        obs_types = ("J", "F", "K", "G")
+        if prefer_anomalous:
+            obs_types = ("K", "G", "J", "F")
+        else:
+            obs_types = ("J", "K", "F", "G")
     else:
-        obs_types = ("F", "J", "G", "K")
+        if prefer_anomalous:
+            obs_types = ("G", "K", "F", "J")
+        else:
+            obs_types = ("F", "J", "G", "K")
     if require:
         assert set(require).issubset(obs_types)
     else:
