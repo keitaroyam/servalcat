@@ -22,6 +22,15 @@ This configuration is managed via the refinement YAML input file.
    
    It is also advisable to use the non-binary solvent mask when refining occupancies.
    Try the ``--non_binary_solvent_mask`` option.
+   
+   **Why is the non-binary solvent mask advisable when refining occupancies?**
+   
+   The choice between a binary and a non-binary solvent mask determines how the initial mask is constructed around the molecular model before any subsequent smoothing is applied.
+   
+   * **binary mask:** simply uses the atomic coordinates and radii to define boundaries. It treats any region within the atomic radius as fully occupied macromolecule (0) and everything else as solvent (1), completely ignoring the occupancy values of the atoms.
+   * **non-binary mask:** explicitly accounts for the occupancy of the atoms during mask generation. 
+
+   If you are refining alternative conformations with fractional occupancies, a binary mask will incorrectly treat a low-occupancy conformation as if it were fully present. As a result, the bulk solvent density that should physically occupy that partial vacancy will be completely missing from the calculation. The non-binary mask scales the mask density according to the refined occupancy values, ensuring that the bulk solvent model correctly accounts for the solvent density present in these partially vacant spaces.
 
 Example configuration
 ---------------------
