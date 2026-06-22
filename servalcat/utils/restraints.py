@@ -394,7 +394,7 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 logger.writeln("    gap between {} and {}".format(*gap))
         if "nonpolymer" in info[chain]:
             n_res = len(info[chain]["nonpolymer"])
-            uniq = set(info[chain]["nonpolymer"])
+            uniq = dict.fromkeys(info[chain]["nonpolymer"])
             logger.writeln("  ligands: {} ({} residues)".format(" ".join(uniq), n_res))
     logger.writeln("")
     
