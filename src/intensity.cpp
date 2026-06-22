@@ -458,51 +458,16 @@ struct IntensityIntegrator {
             const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
             const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
                                                    exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+            Eigen::VectorXd g_i = Eigen::VectorXd::Zero(n_par);
             const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
-            // wrt D
-            for (size_t j = 0; j < n_models; ++j) {
-              const double r_fcj_fc = (Fc_(i, j) * Fc_total_conj).real();
-              der1(j) += w_(i) * tmp * r_fcj_fc;
-              for (size_t k = 0; k < n_models; ++k) {
-                const double r_fck_fc = (Fc_(i, k) * Fc_total_conj).real();
-                der2(j,k) += w_(i) * (3-c_(i)) / (eps_(i) * S) * r_fcj_fc * r_fck_fc / sq(Fc_abs);
-              }
-              // mixed derivatives
-              const double tmp = -2 * r_fcj_fc / (eps_(i) * sq(S) * c_(i)) * (1. - j_ratio_2 / Fc_abs); // m' involving term ignored
-              der2(j, n_models) += w_(i) * tmp;
-              der2(n_models, j) += w_(i) * tmp;
-            }
-            // wrt S
-            const double tmp2 = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
-            der1(n_models) += w_(i) * tmp2;
-            der2(n_models, n_models) += w_(i) * sq(tmp2);
+            for (size_t j = 0; j < n_models; ++j)
+              g_i(j) = tmp * (Fc_(i, j) * Fc_total_conj).real();
+            g_i(n_models) = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
+            der1 += w_(i) * g_i;
+            der2 += w_(i) * (g_i * g_i.transpose());
           }
         }
       return std::make_pair(ll, std::make_pair(der1, der2));
-    };
-    auto find_sigma = [&](int i_bin) {
-      double numer = 0, denom = 0;
-      for (int i = 0; i < n_ref; ++i)
-        if (bin_(i) == i_bin && !std::isnan(Io_(i)) && !std::isnan(sigIo_(i)) && w_(i) != 0) {
-          const double S = DS(i_bin, n_models);
-          const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i, i_bin));
-          const double Fc_abs = std::abs(Fc_total_conj);
-          const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-          const double sqrt_sigIo = std::sqrt(sigIo_(i));
-          const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
-          const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
-          const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-          const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-          const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
-          const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
-                                                 exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
-          const double tmp = (sq(Fc_abs) + j_ratio_1) / c_(i) - (3 - c_(i)) * Fc_abs * j_ratio_2;
-          if (!std::isnan(tmp)) {
-            numer += w_(i) * tmp / eps_(i);
-            denom += w_(i) / c_(i);
-          }
-        }
-      return numer / denom;
     };
     auto get_par = [&](int i_bin, bool use_exp) {
       Eigen::VectorXd pval(n_models + 1);
@@ -519,11 +484,6 @@ struct IntensityIntegrator {
     for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
       for (int cyc = 0; cyc < max_cyc; ++cyc) {
         bool no_shift = false;
-        const double tmp = find_sigma(i_bin);
-        if (std::isfinite(tmp)) {
-          // printf("updating sigma %e to %e\n", DS(i_bin, n_models), tmp);
-          DS(i_bin, n_models) = tmp;
-        }
         auto f0_ders = calc_f_ders(i_bin, false);
         const Eigen::VectorXd pval = get_par(i_bin, use_exp);
         Eigen::VectorXd shift(pval.size());
@@ -531,11 +491,11 @@ struct IntensityIntegrator {
           f0_ders.second.first = f0_ders.second.first.array() * pval.array().exp();
           for (int i = 0; i < pval.size(); ++i)
             for (int j = 0; j < pval.size(); ++j)
-              if (i == j)
-                f0_ders.second.second(i,j) = f0_ders.second.second(i,j) * sq(std::exp(pval(i))) + f0_ders.second.first(i);
-              else
-                f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
+              f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
         }
+        // Ensure strictly positive definite to avoid singular inversion
+        for (int i = 0; i < f0_ders.second.second.rows(); ++i)
+          f0_ders.second.second(i,i) += 1e-6;
         if (single_D) {
           Eigen::Vector2d red_g;
           red_g(0) = f0_ders.second.first.head(n_models).sum();

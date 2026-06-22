@@ -1087,13 +1087,13 @@ class Refine:
                                            float_format="{:.4f}".format)
             logger.writeln(lstr)
             
-        data_keys, geom_keys = set(), set()
+        data_keys, geom_keys = {}, {} # use dict to preserve order
         tmp = []
         for d in stats:
             x = {"Ncyc": d["Ncyc"]}
             if "data" in d and "summary" in d["data"]:
                 x.update(d["data"]["summary"])
-                data_keys.update(d["data"]["summary"])
+                data_keys.update(dict.fromkeys(d["data"]["summary"]))
             if "geom" in d:
                 for k, n, l in (("r.m.s.d.", "Bond distances, non H", "rmsBOND"),
                                 ("r.m.s.Z", "Bond distances, non H", "zBOND"),
@@ -1101,7 +1101,7 @@ class Refine:
                                 ("r.m.s.Z", "Bond angles, non H", "zANGL")):
                     if k in d["geom"]["summary"] and n in d["geom"]["summary"][k]:
                         x[l] = d["geom"]["summary"][k].get(n)
-                        geom_keys.add(l)
+                        geom_keys[l] = None
             tmp.append(x)
         df = pandas.DataFrame(tmp)
         forplot = []

@@ -762,11 +762,12 @@ def determine_mlf_params_from_cc(hkldata, fc_labs, D_labs, use="all", smoothing=
 def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None):
     hkldata.binned_df["ml"]["n_ref"] = 0
     # Initial values
-    for lab in D_labs: hkldata.binned_df["ml"][lab] = 1.
+    hkldata.binned_df["ml"][D_labs] = 1.
     hkldata.binned_df["ml"]["S"] = 10000.
     k_ani = hkldata.debye_waller_factors(b_cart=b_aniso)
     lab_obs = "I" if use_int else "FP"
     centric_and_selections = hkldata.centric_and_selections["ml"]
+    eps = hkldata.df.epsilon.to_numpy()
     for i_bin, _ in hkldata.binned("ml"):
         if use == "all":
             idxes = numpy.concatenate([sel[i] for sel in centric_and_selections[i_bin] for i in (1,2)])
@@ -776,38 +777,67 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
         valid_sel = numpy.isfinite(hkldata.df.loc[idxes, lab_obs]) # as there is no nan-safe numpy.corrcoef
         valid_sel &= hkldata.df.llweight[idxes] > 0
         hkldata.binned_df["ml"].loc[i_bin, "n_ref"] = valid_sel.sum()
-        if numpy.sum(valid_sel) < 2:
+        if numpy.sum(valid_sel) < 3:
             continue
         idxes = idxes[valid_sel]
         if use_int:
             Io = hkldata.df.I.to_numpy()[idxes]
         else:
             Io = hkldata.df.FP.to_numpy()[idxes]**2
-        Io /= k_ani[idxes]**2
+        Io /= k_ani[idxes]**2 * eps[idxes]
         if twin_data:
             Ic = twin_data.i_calc_twin()[idxes]
         else:
             Ic = numpy.abs(hkldata.df.FC.to_numpy()[idxes])**2
-        mean_Io = numpy.mean(Io)
-        mean_Ic = numpy.mean(Ic)
-        cc = numpy.corrcoef(Io, Ic)[1,0]
-        if cc > 0 and mean_Io > 0:
-            D = numpy.sqrt(mean_Io / mean_Ic * cc)
+        Ic /= eps[idxes]
+
+        w = hkldata.df.llweight[idxes].to_numpy().copy()
+        D2, S = numpy.nan, numpy.nan
+        for itr in range(5):
+            w_sum = numpy.sum(w)
+            if w_sum <= 0:
+                break
+            mean_x = numpy.sum(w * Ic) / w_sum
+            mean_y = numpy.sum(w * Io) / w_sum
+            cov_xy = numpy.sum(w * (Ic - mean_x) * (Io - mean_y))
+            var_x = numpy.sum(w * (Ic - mean_x)**2)
+            if var_x > 1e-8:
+                D2 = cov_xy / var_x
+                S = mean_y - D2 * mean_x
+                if D2 < 0:
+                    D2 = 0.
+                    S = max(mean_y * 0.01, 0.01) # TODO use Wilson Sigma
+                elif S <= 1e-6:
+                    S = max(mean_y * 0.01, 0.01)
+                    num = numpy.sum(w * (Io - S) * Ic)
+                    den = numpy.sum(w * Ic**2)
+                    D2 = max(0.0, num / den) if den > 1e-8 else 0.
+            else:
+                D2 = 0.
+                S = max(mean_y * 0.01, 0.01)
+                break
+            # Huber reweighting
+            r = Io - (D2 * Ic + S)
+            scale = max(1.4826 * numpy.median(numpy.abs(r)), 1e-6)
+            huber_w = numpy.where(numpy.abs(r) / scale <= 1.345, 1, 1.345 / (numpy.abs(r) / scale))
+            w = hkldata.df.llweight[idxes].to_numpy().copy() * huber_w
+        
+        if D2 > 0:
+            D = numpy.sqrt(D2)
         else:
-            D = 0 # will be taken care later
-        hkldata.binned_df["ml"].loc[i_bin, D_labs] = D
-        if mean_Io > 0:
-            S = mean_Io - 2 * numpy.sqrt(mean_Io * mean_Ic * numpy.maximum(0, cc)) + mean_Ic
-        else:
-            S = numpy.std(Io) # similar initial to french_wilson
+            D = numpy.nan
+            S = max(mean_y, 0.01)
+        hkldata.binned_df["ml"].loc[i_bin, D_labs] = min(D, 2) # safe capping?
         hkldata.binned_df["ml"].loc[i_bin, "S"] = S
 
     for D_lab in D_labs:
-        if hkldata.binned_df["ml"][D_lab].min() <= 0:
-            min_D = hkldata.binned_df["ml"][D_lab][hkldata.binned_df["ml"][D_lab] > 0].min() * 0.1
-            logger.writeln("WARNING: negative {} is detected from initial estimates. Replacing it using minimum positive value {:.2e}".format(D_lab, min_D))
-            hkldata.binned_df["ml"].loc[hkldata.binned_df["ml"][D_lab] <= 0, D_lab] = min_D # arbitrary
-
+        last_valid_D = 0.9
+        for i_bin, _ in hkldata.binned("ml"):
+            if numpy.isnan(hkldata.binned_df["ml"].loc[i_bin, D_lab]):
+                hkldata.binned_df["ml"].loc[i_bin, D_lab] = last_valid_D * 0.8
+                logger.writeln(f"WARNING: negative {D_lab} is detected in bin {i_bin}; replacing with 0.8 * {last_valid_D}")
+            last_valid_D = hkldata.binned_df["ml"].loc[i_bin, D_lab]
+            
     if twin_data:
         twin_data.ml_scale[:] = hkldata.binned_df["ml"].loc[:, D_labs]
         twin_data.ml_sigma[:] = hkldata.binned_df["ml"].loc[:, "S"]
@@ -1327,11 +1357,25 @@ def merge_models(sts): # simply merge models. no fix in chain ids etc.
     return st2
 # merge_models()
 
-def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False):
+def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False,
+                      prefer_anomalous=False):
+    """
+    https://www.ccp4.ac.uk/html/mtzformat.html
+    J intensity
+    F structure amplitude
+    G structure amplitude associated with one member of an hkl -h-k-l pair
+    K intensity associated with one member of an hkl -h-k-l pair, I(+) or I(-)
+    """
     if prefer_intensity:
-        obs_types = ("J", "F", "K", "G")
+        if prefer_anomalous:
+            obs_types = ("K", "G", "J", "F")
+        else:
+            obs_types = ("J", "K", "F", "G")
     else:
-        obs_types = ("F", "J", "G", "K")
+        if prefer_anomalous:
+            obs_types = ("G", "K", "F", "J")
+        else:
+            obs_types = ("F", "J", "G", "K")
     if require:
         assert set(require).issubset(obs_types)
     else:
