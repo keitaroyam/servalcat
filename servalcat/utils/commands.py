@@ -1321,14 +1321,14 @@ def mask_from_model(args):
     st = fileio.read_structure(args.model) # TODO option to (or not to) expand NCS
     if args.selection:
         gemmi.Selection(args.selection).remove_not_selected(st)
-    gr, grid_start, _ = fileio.read_ccp4_map(args.map, header_only=True)
+    gr, grid_start, grid_shape = fileio.read_ccp4_map(args.map, header_only=True)
     mask = maps.mask_from_model(st, args.radius, soft_edge=args.soft_edge, grid=gr)
-    maps.write_ccp4_map(args.output, mask, grid_start=grid_start)
+    maps.write_ccp4_map(args.output, mask, grid_start=grid_start, grid_shape=grid_shape)
 # mask_from_model()
 
 def applymask(args):
     set_prefix(args)
-    grid, grid_start, _ = fileio.read_ccp4_map(args.map)
+    grid, grid_start, grid_shape = fileio.read_ccp4_map(args.map)
     mask = fileio.read_ccp4_map(args.mask)[0]
     logger.writeln("Applying mask")
     logger.writeln(" mask min: {:.3f} max: {:.3f}".format(numpy.min(mask), numpy.max(mask)))
@@ -1343,7 +1343,7 @@ def applymask(args):
         grid.array[:] = (grid.array - masked_mean) / masked_std
 
     maps.write_ccp4_map(args.output_prefix+".mrc", grid,
-                        grid_start=grid_start,
+                        grid_start=grid_start, grid_shape=grid_shape,
                         mask_for_extent=mask.array if args.trim else None,
                         mask_threshold=args.mask_cutoff)
 # applymask()
