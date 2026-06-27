@@ -14,7 +14,7 @@ from servalcat.utils import hkl
 from servalcat.utils import restraints
 from servalcat.utils import maps
 from servalcat.refmac import refmac_keywords
-from servalcat.refine.refine import load_config, Geom, RefineParams
+from servalcat.refine.refine import load_config, Geom, RefineParams, locate_hydrogen_in_map
 from servalcat import ext
 import os
 import gemmi
@@ -99,6 +99,7 @@ def add_arguments(p):
                         help="Monomer library path. Default: $CLIBD_MON")
     parser.add_argument('-o','--output_prefix')
     parser.add_argument("--pos", choices=["elec", "nucl"], default="elec")
+    parser.add_argument('--map', help="Expects hydrogen-omit normalised Fo-Fc map")
 
     # add_op3
     parser = subparsers.add_parser("add_op3", description = "Add OP3 atoms to 5' ends")
@@ -503,10 +504,17 @@ def h_add(args):
     model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
     restraints.find_and_fix_links(st, monlib, find_metal_links=False, add_found=False)
     try:
-        restraints.add_hydrogens(st, monlib, args.pos)
+        topo = restraints.add_hydrogens(st, monlib, args.pos)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
+    if args.map:
+        map_and_start = fileio.read_ccp4_map(args.map)
+        refine_cfg = load_config(None, args, {}) # dummy
+        refine_params = RefineParams(st, refine_xyz=True)
+        geom = Geom(st, topo, monlib, refine_params, refine_cfg, use_nucleus=(args.pos == "nucl"))
+        locate_hydrogen_in_map(st, geom, topo, map_and_start[0])
+    
     fileio.write_model(st, file_name=args.output_prefix + model_format)
 # h_add()
 

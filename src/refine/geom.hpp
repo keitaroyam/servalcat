@@ -670,6 +670,100 @@ struct Geometry {
     : st(s), bondindex(s.first_model()), ener_lib(ener_lib), target(params) {}
   void load_topo(const gemmi::Topo& topo);
   void finalize_restraints(); // sort_restraints?
+  void setup_hbtypes() {
+    hbtypes.clear();
+    for (auto& b : bonds)
+      if (b.atoms[0]->is_hydrogen() != b.atoms[1]->is_hydrogen()) {
+        const int p = b.atoms[0]->is_hydrogen() ? 1 : 0; // parent
+        const int h = 1 - p; // hydrogen
+        const std::string& p_chem_type = chemtypes.at(b.atoms[p]->serial);
+        const char p_hb_type = ener_lib->atoms.at(p_chem_type).hb_type;
+        hbtypes.emplace(b.atoms[h]->serial, p_hb_type == 'D' || p_hb_type == 'B' ? 'H' : 'N');
+      }
+  }
+  bool angle_defined(const gemmi::Atom *a1, const gemmi::Atom *a2) const { // setup_nonbonded helper
+    const auto key = a1->serial < a2->serial
+      ? std::make_pair(a1->serial, a2->serial)
+      : std::make_pair(a2->serial, a1->serial);
+    // ignore symmetry and pbc
+    struct cmp {
+      bool operator()(const Angle &lhs, decltype(key) &rhs) const {
+        return std::make_pair(lhs.atoms[0]->serial, lhs.atoms[2]->serial) < rhs;
+      }
+      bool operator()(decltype(key) &lhs, const Angle &rhs) const {
+        return lhs < std::make_pair(rhs.atoms[0]->serial, rhs.atoms[2]->serial);
+      }
+    };
+    return std::binary_search(angles.begin(), angles.end(), key, cmp());
+  }
+  bool test_skip_vdwr(const gemmi::Atom *a1, const gemmi::Atom *a2,
+                      bool same_res, bool sym_related) const { // setup_nonbonded helper
+    const bool sum_q_le1 = a1->occ + a2->occ < 1.0001;
+
+    // 1. if symmetry related, just check sum of occ
+    if (sym_related)
+      return sum_q_le1;
+
+    // 2. check occ group
+    const int idx_1 = a1->serial - 1, idx_2 = a2->serial - 1;
+    int gr_1 = -1, gr_2 = -1;
+    for (int i = 0; i < target.params->occ_groups.size(); ++i) {
+      const auto &gr = target.params->occ_groups[i];
+      if (std::find(gr.begin(), gr.end(), idx_1) != gr.end())
+        gr_1 = i;
+      if (std::find(gr.begin(), gr.end(), idx_2) != gr.end())
+        gr_2 = i;
+    }
+    // if defined, use it for decision
+    if (gr_1 >=0 || gr_2 >= 0) {
+      if (gr_1 >= 0 && gr_2 >= 0) {
+        if (gr_1 == gr_2)
+          return false; // do not skip if in the same group
+        for (const auto &gc : target.params->occ_group_constraints)
+          if (std::find(gc.second.begin(), gc.second.end(), gr_1) != gc.second.end() &&
+              std::find(gc.second.begin(), gc.second.end(), gr_2) != gc.second.end())
+            return true; // skip if belong to the constrained group
+      }
+      return false; // do not skip otherwise
+    }
+
+    // 3. check altlocs
+    const bool same_conf = gemmi::is_same_conformer(a1->altloc, a2->altloc);
+    if (same_res)
+      return !same_conf; // skip if not same conf
+    // if (a1->altloc == '\0' && a2->altloc == '\0') // not sure this is a good idea..
+    //   return sum_q_le1; // follow sum of occ if both are non-alts
+    return !same_conf;
+  }
+  template <typename OnValidVdw>
+  void process_vdw_candidate(gemmi::Atom* atom1, gemmi::Atom* atom2,
+                             const gemmi::NeighborSearch::Mark& m,
+                             const gemmi::Position& p,
+                             const gemmi::NeighborSearch& ns,
+                             bool skip_critical_dist,
+                             bool repulse_undefined_angles,
+                             OnValidVdw&& on_valid_vdw) const {
+    Geometry::Vdw vdw(atom1, atom2);
+    if (st.cell.is_crystal()) { // find pbc shift
+      auto fpos = ns.grid.unit_cell.fractionalize(atom2->pos);
+      ns.grid.unit_cell.apply_transform(fpos, m.image_idx, false);
+      const auto dvec = m.pos - p - ns.grid.unit_cell.orthogonalize(fpos) + atom1->pos;
+      vdw.set_image(m.image_idx, ns.grid.unit_cell.fractionalize(dvec));
+    } else
+      vdw.set_image(m.image_idx, {});
+    int d_1_2 = bondindex.graph_distance(*atom1, *atom2, vdw.same_asu());
+    if ((d_1_2 == 3 && in_same_plane(atom1, atom2)) ||
+        ((repulse_undefined_angles && d_1_2 == 2) ? angle_defined(atom1, atom2) : d_1_2 < 3)) {
+      return;
+    }
+    if (!skip_critical_dist) {
+      set_vdw_values(vdw, d_1_2);
+      assert(!std::isnan(vdw.value) && vdw.value > 0);
+      if (!vdw.same_asu())
+        vdw.type += 6;
+    }
+    on_valid_vdw(vdw);
+  }
   void setup_nonbonded(bool skip_critical_dist, bool repulse_undefined_angles);
   void setup_ncsr(const NcsList &ncslist);
   bool in_same_plane(const gemmi::Atom *a1, const gemmi::Atom *a2) const {
@@ -1065,71 +1159,8 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                       bool repulse_undefined_angles) {
   if (!skip_critical_dist && ener_lib == nullptr) gemmi::fail("set ener_lib");
   // set hbtypes for hydrogen
-  if (!skip_critical_dist && hbtypes.empty()) {
-    for (auto& b : bonds)
-      if (b.atoms[0]->is_hydrogen() != b.atoms[1]->is_hydrogen()) {
-        int p = b.atoms[0]->is_hydrogen() ? 1 : 0; // parent
-        int h = b.atoms[0]->is_hydrogen() ? 0 : 1; // hydrogen
-        const std::string& p_chem_type = chemtypes.at(b.atoms[p]->serial);
-        const char p_hb_type = ener_lib->atoms.at(p_chem_type).hb_type;
-        hbtypes.emplace(b.atoms[h]->serial, p_hb_type == 'D' || p_hb_type == 'B' ? 'H' : 'N');
-      }
-  }
-
-  auto angle_defined = [&](const gemmi::Atom *a1, const gemmi::Atom *a2) {
-    const auto key = a1->serial < a2->serial
-      ? std::make_pair(a1->serial, a2->serial)
-      : std::make_pair(a2->serial, a1->serial);
-    // ignore symmetry and pbc
-    struct cmp {
-      bool operator()(const Angle &lhs, decltype(key) &rhs) const {
-        return std::make_pair(lhs.atoms[0]->serial, lhs.atoms[2]->serial) < rhs;
-      }
-      bool operator()(decltype(key) &lhs, const Angle &rhs) const {
-        return lhs < std::make_pair(rhs.atoms[0]->serial, rhs.atoms[2]->serial);
-      }
-    };
-    return std::binary_search(angles.begin(), angles.end(), key, cmp());
-  };
-  auto test_skip_vdwr = [&](const gemmi::Atom *a1, const gemmi::Atom *a2, bool same_res, bool sym_related) {
-    const bool sum_q_le1 = a1->occ + a2->occ < 1.0001;
-
-    // 1. if symmetry related, just check sum of occ
-    if (sym_related)
-      return sum_q_le1;
-
-    // 2. check occ group
-    const int idx_1 = a1->serial - 1, idx_2 = a2->serial - 1;
-    int gr_1 = -1, gr_2 = -1;
-    for (int i = 0; i < target.params->occ_groups.size(); ++i) {
-      const auto &gr = target.params->occ_groups[i];
-      if (std::find(gr.begin(), gr.end(), idx_1) != gr.end())
-        gr_1 = i;
-      if (std::find(gr.begin(), gr.end(), idx_2) != gr.end())
-        gr_2 = i;
-    }
-    // if defined, use it for decision
-    if (gr_1 >=0 || gr_2 >= 0) {
-      if (gr_1 >= 0 && gr_2 >= 0) {
-        if (gr_1 == gr_2)
-          return false; // do not skip if in the same group
-        for (const auto &gc : target.params->occ_group_constraints)
-          if (std::find(gc.second.begin(), gc.second.end(), gr_1) != gc.second.end() &&
-              std::find(gc.second.begin(), gc.second.end(), gr_2) != gc.second.end())
-            return true; // skip if belong to the constrained group
-      }
-      return false; // do not skip otherwise
-    }
-
-    // 3. check altlocs
-    const bool same_conf = gemmi::is_same_conformer(a1->altloc, a2->altloc);
-    if (same_res)
-      return !same_conf; // skip if not same conf
-    // if (a1->altloc == '\0' && a2->altloc == '\0') // not sure this is a good idea..
-    //   return sum_q_le1; // follow sum of occ if both are non-alts
-    return !same_conf;
-  };
-
+  if (!skip_critical_dist && hbtypes.empty())
+    setup_hbtypes();
   vdws.clear();
 
   // Reference: Refmac vdw_and_contacts.f
@@ -1165,30 +1196,15 @@ inline void Geometry::setup_nonbonded(bool skip_critical_dist,
                                  continue;
                                if (test_skip_vdwr(&atom, cra2.atom, &res == cra2.residue, m.image_idx != 0))
                                  continue;
-                               vdws.emplace_back(&atom, cra2.atom);
-                               if (st.cell.is_crystal()) { // find pbc shift
-                                 auto fpos = ns.grid.unit_cell.fractionalize(cra2.atom->pos);
-                                 ns.grid.unit_cell.apply_transform(fpos, m.image_idx, false);
-                                 const auto dvec = m.pos - p - ns.grid.unit_cell.orthogonalize(fpos) + atom.pos;
-                                 vdws.back().set_image(m.image_idx, ns.grid.unit_cell.fractionalize(dvec));
-                               } else
-                                 vdws.back().set_image(m.image_idx, {});
-                               int d_1_2 = bondindex.graph_distance(atom, *cra2.atom, vdws.back().same_asu());
-                               if ((d_1_2 == 3 && in_same_plane(&atom, cra2.atom)) ||
-                                   ((repulse_undefined_angles && d_1_2 == 2) ? angle_defined(&atom, cra2.atom) : d_1_2 < 3)) {
-                                 vdws.pop_back();
-                                 continue;
-                               }
-                               if (!skip_critical_dist) {
-                                 set_vdw_values(vdws.back(), d_1_2);
-                                 assert(!std::isnan(vdws.back().value) && vdws.back().value > 0);
-                                 if (!vdws.back().same_asu())
-                                   vdws.back().type += 6;
-                               }
-                               // don't include if too far. x1.5 is too large?
-                               if (skip_critical_dist ? (dist_sq > max_other_sq)
-                                   : (dist_sq > std::min((double)max_other_sq, sq(vdws.back().value * 1.5))))
-                                 vdws.pop_back();
+                               process_vdw_candidate(&atom, cra2.atom, m, p, ns,
+                                                     skip_critical_dist, repulse_undefined_angles,
+                                                     [&](const Vdw& vdw) {
+                                                       // don't include if too far. x1.5 is too large?
+                                                       if (skip_critical_dist ? (dist_sq > max_other_sq)
+                                                           : (dist_sq > std::min((double)max_other_sq, sq(vdw.value * 1.5))))
+                                                         return;
+                                                       vdws.push_back(vdw);
+                                                     });
                              }
                            }
                          }, ns.sufficient_k(std::sqrt(max_dist_sq)));

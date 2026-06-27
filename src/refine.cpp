@@ -15,9 +15,11 @@
 #include <gemmi/unitcell.hpp>
 #include <gemmi/model.hpp>
 
+#include <unordered_map>
 #include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/map.h>
+#include <nanobind/stl/unordered_map.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
@@ -775,6 +777,9 @@ void add_refine(nb::module_& m) {
     .def("set_image", nb::overload_cast<const gemmi::UnitCell&, gemmi::Asu>(&Geometry::Vdw::set_image))
     .def("set_image", nb::overload_cast<int, const gemmi::Fractional&>(&Geometry::Vdw::set_image))
     .def("same_asu", &Geometry::Vdw::same_asu)
+    .def("calc", &Geometry::Vdw::calc,
+         nb::arg("cell"), nb::arg("wvdw")=1., nb::arg("wstiff")=1.,
+         nb::arg("target")=nullptr, nb::arg("reporting")=nullptr)
     .def_rw("type", &Geometry::Vdw::type)
     .def_rw("value", &Geometry::Vdw::value)
     .def_rw("sigma", &Geometry::Vdw::sigma)
@@ -1050,6 +1055,57 @@ void add_refine(nb::module_& m) {
     .def_rw("ncsr_max_dist", &Geometry::ncsr_max_dist)
     // stac
     .def_rw("use_stack_dist", &Geometry::use_stack_dist)
+    // helper function for hydrogen placement
+    .def("nonbonded_for_hydrogen_placement",
+         [](Geometry& self, const std::vector<gemmi::CRA> &targets,
+            bool repulse_undefined_angles) {
+           if (self.ener_lib == nullptr) gemmi::fail("set ener_lib");
+           if (self.hbtypes.empty())
+             self.setup_hbtypes();
+           // parent to hydrogen atoms
+           std::unordered_map<const gemmi::Atom*, std::vector<gemmi::Atom*>> h_children;
+           for (auto& b : self.bonds)
+             if (b.atoms[0]->is_hydrogen() != b.atoms[1]->is_hydrogen()) {
+               const int h = b.atoms[0]->is_hydrogen() ? 0 : 1;
+               h_children[b.atoms[1-h]].push_back(b.atoms[h]);
+             }
+           gemmi::NeighborSearch ns(self.st.first_model(), self.st.cell, 4);
+           ns.populate();
+           const double max_dist_sq = sq(4.);
+           std::unordered_map<const gemmi::Atom*, std::vector<Geometry::Vdw>> ret;
+           for (const auto cra : targets) {
+             ns.for_each_cell(cra.atom->pos,
+                              [&](std::vector<gemmi::NeighborSearch::Mark>& marks, const gemmi::Fractional &fr) {
+                                const gemmi::Position &p = ns.use_pbc ? ns.grid.unit_cell.orthogonalize(fr) : cra.atom->pos;
+                                for (gemmi::NeighborSearch::Mark& m : marks) {
+                                  const gemmi::CRA cra2 = m.to_cra(*ns.model);
+                                  if (cra2.atom->is_hydrogen()) // will be added from the parent
+                                    continue;
+                                  const double dist_sq = m.pos.dist_sq(p);
+                                  if (dist_sq < max_dist_sq) {
+                                    // contacting atom plus its hydrogen atoms
+                                    std::vector<gemmi::Atom*> tmp = {cra2.atom};
+                                    if (auto it = h_children.find(cra2.atom); it != h_children.end())
+                                      for (auto a : it->second)
+                                        tmp.push_back(a);
+                                    for (auto atom2 : tmp) {
+                                      // here I believe hydrogen and the parent are within the same residue
+                                      if (self.test_skip_vdwr(cra.atom, atom2, cra.residue == cra2.residue, m.image_idx != 0))
+                                        continue;
+                                      self.process_vdw_candidate(cra.atom, atom2, m, p, ns,
+                                                                 false, repulse_undefined_angles,
+                                                                 [&](const Geometry::Vdw& vdw) {
+                                                                   if (cra.atom == atom2 && vdw.same_asu())
+                                                                     return;
+                                                                   ret[cra.atom].push_back(vdw);
+                                                                 });
+                                    }
+                                  }
+                                }
+                              }, ns.sufficient_k(std::sqrt(max_dist_sq)));
+           }
+           return ret;
+         }, nb::arg("targets"), nb::arg("repulse_undefined_angles")=true)
     ;
 
   nb::class_<TableS3>(m, "TableS3")
@@ -1181,4 +1237,11 @@ void add_refine(nb::module_& m) {
     .def_ro("all_pairs", &NcsList::all_pairs)
     ;
   nb::bind_vector<std::vector<NcsList::Ncs>>(ncslist, "Ncs_vector");
+
+  m.def("set_torsion", [](const gemmi::Topo::Torsion &tors, double angle) {
+    const double rot_by = gemmi::rad(angle) - tors.calculate();
+    gemmi::Vec3 axis = (tors.atoms[2]->pos - tors.atoms[1]->pos).normalized();
+    gemmi::Vec3 v = gemmi::rotate_about_axis(tors.atoms[3]->pos - tors.atoms[2]->pos, axis, rot_by);
+    tors.atoms[3]->pos = gemmi::Position(v) + tors.atoms[2]->pos;
+  });
 }

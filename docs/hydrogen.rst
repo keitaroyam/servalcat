@@ -49,6 +49,20 @@ To generate all hydrogen atoms including those with multiple potential ideal pos
 
 This command places all hydrogen atoms at one of their ideal positions. It does *not* account for potential steric clashes with neighbouring atoms. Users must inspect the resulting positions and adjust them manually if necessary before proceeding to refinement. For the subsequent refinement, use ``--hydrogen yes --hout``.
 
+Experimental: density-guided hydrogen placement
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+An experimental option is available to optimise the placement of rotatable hydrogen atoms using experimental data:
+
+.. code-block:: bash
+
+    servalcat util h_add input.pdb --map diffmap_normalized_fofc.mrc --pos nucl
+
+By providing a hydrogen-omit normalised :math:`F_{\rm o} - F_{\rm c}` map via the ``--map`` option, this utility will attempt to place rotatable hydrogen atoms based on the density while simultaneously avoiding steric clashes. The candidates for placement are chosen from the ideal positions defined by the monomer library. Use ``--pos nucl`` (placing hydrogen at nucleus positions) when neutron or cryo-EM data is used.
+
+.. warning::
+    This feature is experimental. Users **must** carefully inspect the resulting model. Pay close attention to the end of the log file, where the utility lists any high-density hydrogen candidates that were rejected due to clashes with neighbouring atoms.
+    
 Tautomers and protonation states
 --------------------------------
 

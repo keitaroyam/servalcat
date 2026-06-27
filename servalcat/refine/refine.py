@@ -1225,3 +1225,84 @@ def update_meta(st, stats, ll=None):
     st.meta.refinement = [ri]
     st.raw_remarks = raw_remarks
 # update_meta()
+
+def locate_hydrogen_in_map(st, geom, topo, grid):
+    """
+    Determine hydrogen positions using a density map
+    Find best torsion angles that maximise the density and minimise the clash
+    Limitations:
+    - For HIS HD1/HE2, we need to decide whether each of them should be deleted, which is not implemented
+    - multiple rotatable H from the same parent (like H1/H2 of HSM) not accounted for now
+    """
+    lookup = geom.lookup
+    # find hydrogen to be located
+    h_tors = [] # list of gemmi.Topo for hydrogen
+    for t in topo.torsions:
+        if t.atoms[3].is_hydrogen() and t.atoms[3].occ == 0:
+            t.atoms[3].occ = 1
+            h_tors.append(t)
+
+    vdws = geom.geom.nonbonded_for_hydrogen_placement([lookup[t.atoms[3]] for t in h_tors])
+    hs = {t.atoms[3] for t in h_tors}
+
+    def choose_best(ignore_other_h=False):
+        ret, log_str, tocheck = [], "", []
+        # find best rotations
+        for t in h_tors:
+            h = t.atoms[3]
+            angles = [t.restr.value + i * 360. / t.restr.period for i in range(max(1, t.restr.period))]
+            log_str += f"{lookup[h]}\n"
+            res = []
+            for ang in angles:
+                ext.set_torsion(t, ang)
+                val = grid.interpolate_value(t.atoms[3].pos)
+                clashes = {}
+                for vdw in vdws[h]:
+                    cl = vdw.calc(st.cell)
+                    oth = vdw.atoms[1 if vdw.atoms[0] == h else 0]
+                    if cl > 0:
+                        clashes.setdefault(vdw.type, []).append((cl, lookup[oth], vdw.sym_idx))
+                cl = sum(c for t in clashes for c,*_ in clashes[t])
+                cl_h = sum(c for t in clashes for c,o,_ in clashes[t] if o.atom in hs)
+                if ignore_other_h:
+                    cl -= cl_h
+                res.append((val, -cl, -cl_h))
+            argmax = numpy.argmax(res, axis=0)
+            if argmax[0] == argmax[1]: # map maximum and clash minimum coincide
+                chosen = argmax[0]
+                scores = [numpy.nan for _ in res]
+            else:
+                scores = [val + 0.05 * ncl for val, ncl, _ in res] # arbitrary weight, assuming map is sigma-scaled
+                chosen = numpy.argmax(scores)
+                if chosen != argmax[0] and res[argmax[0]][0] > 1:
+                    tocheck.append(h)
+            ext.set_torsion(t, angles[chosen])
+            ret.append(chosen)
+            for i, ang in enumerate(angles):
+                lab = '*' if chosen == i else ' '
+                log_str += f" {lab}tor={ang:-6.1f} map={res[i][0]:-4.1f} cl={-res[i][1]:.1f} cl_other_h={-res[i][2]:.1f}"
+                if not numpy.isnan(scores[i]):
+                    log_str += f" score={scores[i]:.2f}"
+                log_str += "\n"
+            log_str += "\n"
+        if tocheck:
+            log_str += "Inspect the following hydrogen atoms; high density positions rejected because of clashes.\n"
+            log_str += "\n".join(f" {lookup[x]}" for x in tocheck)
+            log_str += "\n\n"
+        return numpy.array(ret), log_str
+
+    chosen0, _ = choose_best(True)
+    for cyc in range(10):
+        chosen, log_str = choose_best()
+        eq = chosen == chosen0
+        if eq.all():
+            logger.writeln(f"Converged in cycle {cyc}")
+            break
+        else:
+            changed = ", ".join(str(lookup[h_tors[i].atoms[3]]) for i in numpy.where(~eq)[0])
+            logger.writeln(f"cycle {cyc+2}: assignment changed in {changed}")
+        chosen0 = chosen
+    else:
+        logger.writeln(f"Not converged. Check unresolved hydrogen!")
+    logger.writeln(log_str)
+# locate_hydrogen_in_map()
