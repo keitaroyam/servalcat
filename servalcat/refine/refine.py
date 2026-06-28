@@ -813,7 +813,7 @@ class Refine:
             if self.prev_shift is not None:
                 cc = numpy.corrcoef(self.prev_shift[self.params.vec_selection(Type.B)], dxb)[0,1]
                 logger.writeln(f"cc_prev_dB = {cc}")
-            # FIXME we should'nt apply eigen decomp to dxb
+            # FIXME we shouldn't apply eigen decomp to dxb
             if self.params.aniso:
                 for i in range(len(dxb)//6):
                     j = i * 6
