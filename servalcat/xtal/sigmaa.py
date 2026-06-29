@@ -1573,6 +1573,8 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
 
     if "llweight" not in hkldata.df:
         hkldata.df["llweight"] = 1.
+    else:
+        hkldata.df["llweight"] = hkldata.df["llweight"].astype(float)
     hkldata.df["robustweight"] = 1.
 
     if "FREE" in hkldata.df and free is None:
