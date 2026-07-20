@@ -48,6 +48,63 @@ def parse_args(arg_list):
     return parser.parse_args(arg_list)
 # parse_args()
 
+def optimize_Sigma(hkldata, B, max_cycle=10):
+    S_converged = [False for _ in hkldata.binned("ml")]
+    k_ani = hkldata.debye_waller_factors(b_cart=B)
+    Io = hkldata.df.I.to_numpy()
+    sigIo = hkldata.df.SIGI.to_numpy()
+    epsilon = hkldata.df.epsilon.to_numpy()
+    c = hkldata.df.centric.to_numpy() + 1
+    llweight = hkldata.df.llweight.to_numpy()
+    
+    k_ani = hkldata.debye_waller_factors(b_cart=B)
+    binned_data = hkldata.binned("ml")
+    for i, (i_bin, idxes) in enumerate(hkldata.binned("ml")):
+        #logger.writeln("Bin {}".format(i_bin))
+        zeros_bin = numpy.zeros(len(idxes))
+        S = hkldata.binned_df["ml"].loc[i_bin, "S"]
+        for j in range(max_cycle):
+            #print(f"{i_bin=} {j=} {S=}")
+            f0 = numpy.nansum(integr.ll_int(Io[idxes], sigIo[idxes], k_ani[idxes],
+                                            S * epsilon[idxes],
+                                            zeros_bin, c[idxes],
+                                            llweight[idxes]))
+            ln_shift = ll_shift_bin_S(Io[idxes], sigIo[idxes], k_ani[idxes],
+                                      S, c[idxes], epsilon[idxes],
+                                      llweight[idxes])
+            if ln_shift == 0:
+                S_converged[i] = True
+                break
+
+            ln_shift = max(-1.0, min(1.0, ln_shift))
+            alpha = 1.0
+            step_accepted = False
+            for k in range(3):
+                S_trial = S * numpy.exp(alpha * ln_shift)
+                S_trial = max(S * 1e-6, S_trial) # safety
+                
+                f1 = numpy.nansum(integr.ll_int(Io[idxes], sigIo[idxes], k_ani[idxes],
+                                                S_trial * epsilon[idxes], zeros_bin, c[idxes],
+                                                llweight[idxes]))
+                if f1 < f0:
+                    S = S_trial
+                    step_accepted = True
+                    break
+                alpha *= 0.5  # Shrink step size
+            
+            if step_accepted and abs(numpy.exp(alpha * ln_shift) - 1.0) < 1e-4:
+                S_converged[i] = True
+                break
+                
+            if not step_accepted:
+                S_converged[i] = True
+                break
+            
+        hkldata.binned_df["ml"].loc[i_bin, "S"] = S
+    #print(f"{S_converged=}")
+    return S_converged
+# optimize_Sigma
+
 def determine_Sigma_and_aniso(hkldata):
     # initial estimate
     hkldata.binned_df["ml"]["S"] = 1.
@@ -93,34 +150,7 @@ def determine_Sigma_and_aniso(hkldata):
         #logger.writeln("time= {}".format(time.time() - t0))
         #logger.writeln("B_aniso= {}".format(B))
         #logger.writeln("Refine S")
-        S_converged = [False for _ in hkldata.binned("ml")]
-        k_ani = hkldata.debye_waller_factors(b_cart=B)
-        for i, (i_bin, idxes) in enumerate(hkldata.binned("ml")):
-            #logger.writeln("Bin {}".format(i_bin))
-            for j in range(10):
-                S = hkldata.binned_df["ml"].loc[i_bin, "S"]
-                f0 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                                S * hkldata.df.epsilon.to_numpy()[idxes],
-                                                numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
-                                                hkldata.df.llweight.to_numpy()[idxes]))
-                shift = numpy.exp(ll_shift_bin_S(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                                 S, hkldata.df.centric.to_numpy()[idxes]+1, hkldata.df.epsilon.to_numpy()[idxes],
-                                                 hkldata.df.llweight.to_numpy()[idxes]))
-                for k in range(3):
-                    ss = shift**(1. / 2**k)
-                    f1 = numpy.nansum(integr.ll_int(hkldata.df.I.to_numpy()[idxes], hkldata.df.SIGI.to_numpy()[idxes], k_ani[idxes],
-                                                    S * ss * hkldata.df.epsilon.to_numpy()[idxes],
-                                                    numpy.zeros(len(idxes)), hkldata.df.centric.to_numpy()[idxes]+1,
-                                                    hkldata.df.llweight.to_numpy()[idxes]))
-                    #logger.writeln("bin {:3d} f0 = {:.3e} shift = {:.3e} df = {:.3e}".format(i_bin, f0, ss, f1 - f0))
-                    if f1 < f0:
-                        hkldata.binned_df["ml"].loc[i_bin, "S"] = S * ss
-                        if ss > 0.9999: S_converged[i] = True
-                        break
-                else:
-                    S_converged[i] = True
-                if S_converged[i]: break
-
+        S_converged = optimize_Sigma(hkldata, B)
         #logger.writeln("Refined estimates in cycle {}:".format(icyc))
         #logger.writeln(hkldata.binned_df["ml"].to_string())
         #logger.writeln("B_aniso= {}".format(B))
@@ -155,9 +185,14 @@ def ll_all_B(x, ssqmat, hkldata, adpdirs):
 def ll_shift_bin_S(Io, sigIo, k_ani, S, c, eps, llw, exp_trans=True):
     tmp = integr.ll_int_fw_der1_S(Io, sigIo, k_ani, S, c, eps, llw)
     g = numpy.nansum(tmp)
+    if abs(g * S) < 1e-5: # early termination
+        return 0.
     H = numpy.nansum(tmp**2)
     if exp_trans:
-        return -g / (H * S + g)
+        denom = H * S + g
+        if denom <= 1e-8 / S:
+            denom = H * S + (1e-4 / S)
+        return -g / denom
     else:
         return -g / H
 
