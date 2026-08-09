@@ -60,14 +60,13 @@ def test_installation():
         print(msg_skip)
         
     return ret
-# test_installation()        
+# test_installation()
 
 def main():
     parser = argparse.ArgumentParser(prog="servalcat",
                                      description="A tool for model refinement and map calculation for crystallography and cryo-EM SPA.")
     parser.add_argument("--skip_test", action="store_true", help="Skip installation test")
-    parser.add_argument("-v", "--version", action="version",
-                        version=logger.versions_str())
+    parser.add_argument("-v", "--version", action="store_true")
     parser.add_argument("--logfile")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -94,6 +93,10 @@ def main():
         modules[n].add_arguments(p)
 
     args = parser.parse_args()
+
+    if args.version:
+        logger.write_header(head="", show_command=False)
+        return
     
     if not args.skip_test and not test_installation():
         return

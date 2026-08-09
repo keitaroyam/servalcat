@@ -7,11 +7,13 @@ Mozilla Public License, version 2.0; see LICENSE.
 """
 from __future__ import absolute_import, division, print_function, generators
 import sys
+import os
 import datetime
 import platform
 import getpass
 import traceback
 import shlex
+import importlib.metadata
 import servalcat
 
 class Logger(object):
@@ -105,20 +107,26 @@ def dependency_versions():
                 pandas=pandas.__version__)
 # dependency_versions()
 
-def versions_str():
+def versions_str(): # only used by refmacat, for backward compatibility
     tmpl = "Servalcat {servalcat} with Python {python} ({deps})"
     return tmpl.format(servalcat=servalcat.__version__,
                        python=platform.python_version(),
                        deps=", ".join([x[0]+" "+x[1] for x in dependency_versions().items()]))
 # versions_str()
 
-def write_header(command="servalcat"):
-    writeln("# Servalcat ver. {} (Python {})".format(servalcat.__version__, platform.python_version()))
-    writeln("# Library vers. {}".format(", ".join([x[0]+" "+x[1] for x in dependency_versions().items()])))
-    writeln("# Started on {}".format(datetime.datetime.now()))
-    writeln("# Host: {} User: {}".format(platform.node(), getpass.getuser()))
-    writeln("# Command-line:")
-    writeln("# {} {}".format(command, " ".join(map(lambda x: shlex.quote(x), sys.argv[1:]))))
+def write_header(command="servalcat", head="# ", show_command=True):
+    writeln(f"{head}Servalcat ver. {servalcat.__version__} (Python {platform.python_version()})")
+    writeln(f"{head}Library vers. {', '.join([x[0]+' '+x[1] for x in dependency_versions().items()])}")
+    try:
+        writeln(f"{head}Installed: {importlib.metadata.distribution('servalcat').locate_file('servalcat')}")
+    except:
+        pass
+    writeln(f"{head}Started on {datetime.datetime.now()}")
+    writeln(f"{head}Host: {platform.node()} User: {getpass.getuser()}")
+    if show_command:
+        writeln(f"{head}Workdir: {os.getcwd()}")
+        writeln(f"{head}Command-line:")
+        writeln(f"{head}{command} {' '.join(map(lambda x: shlex.quote(x), sys.argv[1:]))}")
 # write_header()
 
 def exit_success():
