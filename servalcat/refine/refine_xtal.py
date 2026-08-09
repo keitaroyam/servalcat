@@ -200,13 +200,6 @@ def main(args):
         use_in_target = "all"
 
     is_int = "I" in hkldata.df
-    ccu = utils.model.CustomCoefUtil()
-    if args.source == "custom":
-        ccu.read_from_cif(sts[0], args.model)
-        ccu.show_info()
-        addends, addends2 = None, None
-    else:
-        addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
     if args.use_fw:
         if not is_int:
             raise SystemExit("Error: need intensity input when -use_fw")
@@ -260,6 +253,14 @@ def main(args):
 
     print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
     
+    ccu = utils.model.CustomCoefUtil()
+    if args.source == "custom":
+        ccu.read_from_cif(sts[0], args.model)
+        ccu.show_info()
+        addends, addends2 = None, None
+    else:
+        addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
+
     # initialize values
     utils.model.reset_adp(st[0], args.bfactor, args.adp)
     utils.model.initialize_values(st[0], refine_cfg.initialisation)

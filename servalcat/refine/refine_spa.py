@@ -175,10 +175,6 @@ def main(args):
                                    fix_sequences=True)
     if not args.keep_charges:
         utils.model.remove_charge([st])
-    if args.source == "custom":
-        ccu.show_info()
-    else:
-        utils.model.check_atomsf([st], args.source)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)
@@ -219,6 +215,10 @@ def main(args):
                                        default_scale=utils.restraints.default_proton_scale)
 
     print_h_options(h_change, st[0].has_hydrogen(), args.refine_h, args.hout, geom_only=False)
+    if args.source == "custom":
+        ccu.show_info()
+    else:
+        utils.model.check_atomsf([st], args.source)
 
     # initialize values
     utils.model.reset_adp(st[0], args.bfactor, args.adp)

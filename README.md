@@ -30,7 +30,7 @@ conda install conda-forge::servalcat
 will install the stable version.
 
 Starting from ver. 0.4.146, a pre-release version of GEMMI is bundled with Servalcat by default.
-The current version in use is 0.7.6-dev ([v0.7.5-178-g0d90cc10](https://github.com/project-gemmi/gemmi/commit/0d90cc101ebe4458c327c77242c49f0d998ef5dc)).
+The current version in use is 0.7.6-dev ([v0.7.5-181-g92e8cfa8](https://github.com/project-gemmi/gemmi/commit/92e8cfa80cf10bd0d0927946da9f6a3aaf998c85)).
 
 To use the Refmac5 related commands, you also need to install [CCP4](https://www.ccp4.ac.uk/). For "No Refmac5" commands, you may just need [the monomer library](https://github.com/MonomerLibrary/monomers) if CCP4 is not installed.
 
