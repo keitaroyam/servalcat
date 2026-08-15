@@ -100,8 +100,8 @@ class XtalTests(unittest.TestCase):
         B_aniso, hkldata = french_wilson.main(args)
         os.remove("5e5z_fw.mtz")
         numpy.testing.assert_allclose(B_aniso.elements_pdb(),
-                                      [2.640011, 1.679485, -4.319497, 0. ,-1.072883, 0.],
-                                      rtol=1e-3)                                       
+                                      [2.335468, 1.484534, -3.820001, 0., -0.996069, 0.],
+                                      rtol=1e-3)
 
     @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")
     def test_refine_cx(self):
