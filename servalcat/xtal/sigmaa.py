@@ -84,12 +84,12 @@ def nanaverage(cc, w):
     return numpy.average(cc[sel], weights=w[sel]) 
 
 def calc_r_and_cc(hkldata, twin_data=None):
-    has_int = ("FP" not in hkldata.df) if twin_data else "I" in hkldata.df
-    not twin_data or "FP" in hkldata.df
+    has_int = twin_data.is_input_i if twin_data else "I" in hkldata.df
+    has_amp = "FP" in hkldata.df
     has_free = "FREE" in hkldata.df
     has_llw = (hkldata.df.llweight != 1.0).any()
     has_ano = not twin_data and ("I(+)" if has_int else "F(+)") in hkldata.df and "FC''" in hkldata.df
-    rlab = "R1" if has_int else "R"
+    rlab = "R" if has_amp else "R1"
     cclab = "CCI" if has_int else "CCF"
     olab = "Io" if has_int else "Fo"
     clab = "Ic" if has_int else "Fc"
@@ -118,6 +118,15 @@ def calc_r_and_cc(hkldata, twin_data=None):
         Fc = numpy.abs(hkldata.df.FC.to_numpy()[:,None] + fcpp) * hkldata.df.k_aniso.to_numpy()[:,None]
     else:
         Fc = numpy.abs(hkldata.df.FC.to_numpy() * hkldata.df.k_aniso.to_numpy())
+    if has_amp:
+        if has_ano:
+            obs_sqrt = hkldata.df[["F(+)", "F(-)"]].to_numpy()
+        else:
+            obs_sqrt = hkldata.df.FP.to_numpy()
+        calc_sqrt = Fc
+        if not has_int:
+            obs = obs_sqrt
+            calc = calc_sqrt
     if has_int:
         if has_ano:
             obs = hkldata.df[["I(+)", "I(-)"]].to_numpy()
@@ -125,16 +134,11 @@ def calc_r_and_cc(hkldata, twin_data=None):
         else:
             obs = hkldata.df.I.to_numpy()
             sigma = hkldata.df.SIGI.to_numpy()
-        obs_sqrt = numpy.sqrt(numpy.maximum(0, obs))
-        obs_sqrt[obs / sigma < 2] = numpy.nan # SHELX equivalent
         calc = Fc**2
-        calc_sqrt = Fc
-    else:
-        if has_ano:
-            obs = obs_sqrt = hkldata.df[["F(+)", "F(-)"]].to_numpy()
-        else:
-            obs = obs_sqrt = hkldata.df.FP.to_numpy()
-        calc = calc_sqrt = Fc
+        if not has_amp:
+            obs_sqrt = numpy.sqrt(numpy.maximum(0, obs))
+            obs_sqrt[obs / sigma < 2] = numpy.nan # SHELX equivalent
+            calc_sqrt = Fc
     if "CC*" in stats: # swap the positions
         stats.insert(len(stats.columns)-1, "CC*", stats.pop("CC*"))
     if has_free:
@@ -837,6 +841,9 @@ def initialize_ml_params(hkldata, use_int, D_labs, b_aniso, use, twin_data=None)
                 hkldata.binned_df["ml"].loc[i_bin, D_lab] = last_valid_D * 0.8
                 logger.writeln(f"WARNING: negative {D_lab} is detected in bin {i_bin}; replacing with 0.8 * {last_valid_D}")
             last_valid_D = hkldata.binned_df["ml"].loc[i_bin, D_lab]
+
+    if "S0" in hkldata.binned_df["ml"]:
+        hkldata.binned_df["ml"]["S"] = hkldata.binned_df["ml"][["S", "S0"]].min(axis=1)
             
     if twin_data:
         twin_data.ml_scale[:] = hkldata.binned_df["ml"].loc[:, D_labs]
@@ -1240,6 +1247,9 @@ def determine_ml_params(hkldata, use_int, fc_labs, D_labs, b_aniso,
                                    D_trans, S_trans, use_in_est, n_cycle, twin_data,
                                    single_D=single_D)
 
+    if "S0" in hkldata.binned_df["ml"]:
+        hkldata.binned_df["ml"]["S"] = hkldata.binned_df["ml"][["S", "S0"]].min(axis=1)
+    
     smooth_params(hkldata, D_labs, smoothing)
     if twin_data:
         calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use_in_target)
@@ -1909,7 +1919,7 @@ def main(args):
     b_aniso = lsq.b_aniso
     # stats
     stats, overall = calc_r_and_cc(hkldata, twin_data)
-    if is_int:
+    if any(l.startswith("R1") for l in stats):
         logger.writeln("R1 is calculated for reflections with I/sigma>2.")
 
     if twin_data:

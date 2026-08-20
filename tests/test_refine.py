@@ -134,7 +134,7 @@ class TestRefine(unittest.TestCase):
         main()
         with open("6mw0_refined_stats.json") as f:
             stats = json.load(f)
-        self.assertLess(stats[-1]["data"]["summary"]["R1"], 0.26)
+        self.assertLess(stats[-1]["data"]["summary"]["R"], 0.26)
         st = utils.fileio.read_structure("6mw0_refined.pdb")
         occ_a = tuple({round(a.occ, 6) for r in st[0]["A"] for a in r if a.altloc == "A"})
         occ_b = tuple({round(a.occ, 6) for r in st[0]["A"] for a in r if a.altloc == "B"})

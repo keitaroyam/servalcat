@@ -15,6 +15,11 @@ from servalcat.utils import logger
 from servalcat import utils
 from servalcat import ext
 
+class TwinData(ext.TwinData):
+    def __init__(self, is_input_i):
+        super().__init__()
+        self.is_input_i = is_input_i
+
 def calculate_obliquity(gv, twin_op):
     """
     Beforehand, the following calculation must be done
@@ -49,7 +54,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
         return None, None
     gv = gemmi.GruberVector(hkldata.cell, hkldata.sg.centring_type(), True)
     gv.niggli_reduce()
-    twin_data = ext.TwinData()
+    twin_data = TwinData(is_input_i="I" in hkldata.df)
     twin_data.setup(hkldata.miller_array(), hkldata.df.bin_ml, hkldata.sg, hkldata.cell, ops)
     if "I" in hkldata.df:
         Io = hkldata.df.I.to_numpy()
@@ -110,7 +115,7 @@ def find_twin_domains_from_data(hkldata, max_oblique=5, min_cc=0.2):
         df = df[sel]
         with logger.with_prefix(" "):
             logger.writeln(df.to_string(float_format="%.2f"))
-        twin_data = ext.TwinData()
+        twin_data = TwinData(is_input_i="I" in hkldata.df)
         twin_data.setup(hkldata.miller_array(), hkldata.df.bin_ml, hkldata.sg, hkldata.cell, ops)
     twin_data.alphas = [1. / len(twin_data.alphas) for _ in range(len(twin_data.alphas)) ]
     if "I" not in hkldata.df:

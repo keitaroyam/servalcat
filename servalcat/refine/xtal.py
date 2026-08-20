@@ -15,6 +15,7 @@ from servalcat.xtal import sigmaa
 from servalcat import utils
 from servalcat import ext
 from servalcat.xtal.twin import find_twin_domains_from_data, estimate_twin_fractions_from_model, mlopt_twin_fractions
+from servalcat.xtal import french_wilson as fw
 b_to_u = utils.model.b_to_u
 u_to_b = utils.model.u_to_b
 integr = sigmaa.integr
@@ -169,6 +170,15 @@ class LL_Xtal:
             for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
             self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)
 
+        if self.is_int:
+            if "S0" not in self.hkldata.binned_df["ml"]: # first cycle
+                fw.determine_initial_Sigma(self.hkldata, self.b_aniso)
+                fw.optimize_Sigma(self.hkldata, self.b_aniso)
+                fw.french_wilson(self.hkldata, self.b_aniso, labout=["FP", "SIGFP"])
+            else:
+                # do not update F every cycle (for now), to avoid complication in R stats
+                fw.optimize_Sigma(self.hkldata, self.b_aniso)
+            
         # for next cycle
         self.scaling.k_overall = 1.
         self.scaling.b_iso = 0.
@@ -226,7 +236,7 @@ class LL_Xtal:
             ret["ml"] = self.hkldata.binned_df["ml"].copy()
         for lab in "R", "CC":
             logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
-        if self.is_int:
+        if any(l.startswith("R1") for l in stats):
             logger.writeln("R1 is calculated for reflections with I/sigma>2.")
         return ret
 
