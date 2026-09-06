@@ -67,6 +67,8 @@ def add_arguments(parser):
                         help="A solvent mask (by default calculated from the coordinates)")
     parser.add_argument('--keep_charges',  action='store_true',
                         help="Use scattering factor for charged atoms. Use it with care.")
+    parser.add_argument("--prefer_intensity", action='store_true')
+    parser.add_argument("--prefer_anomalous", action='store_true')
     parser.add_argument('-o','--output_prefix', default="sigmaa",
                         help='output file name prefix (default: %(default)s)')
 # add_arguments()
@@ -1857,10 +1859,18 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
 def main(args):
     if args.wavelength is not None and args.source != "xray":
         raise SystemExit("Error: Wavelength is only available for X-ray source")
+    hklin = args.hklin
+    labin = args.labin
+    if labin is not None:
+        labin = labin.split(",")
+    elif utils.fileio.is_mmhkl_file(hklin):
+        hklin = utils.fileio.read_mmhkl(hklin)
+        labin = decide_mtz_labels(hklin, prefer_intensity=args.prefer_intensity,
+                                  prefer_anomalous=args.prefer_anomalous)
     try:
         hkldata, sts, fc_labs, free, args.use = process_input(
-            hklin=args.hklin,
-            labin=args.labin.split(",") if args.labin else None,
+            hklin=hklin,
+            labin=labin,
             n_bins_ml=args.nbins_ml,
             n_bins_stat=args.nbins,
             free=args.free,
