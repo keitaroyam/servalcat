@@ -519,6 +519,7 @@ def check_occupancies(st, raise_error=False):
 # check_occupancies()
 
 def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=True, fix_adp=True):
+    # XXX probably polymer atoms shouldn't be subjected to special position constraints
     ns = gemmi.NeighborSearch(st[0], st.cell, 3).populate()
     cs = gemmi.ContactSearch(special_pos_threshold * 2)
     cs.ignore = gemmi.ContactSearch.Ignore.SameAsu
@@ -531,9 +532,12 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
         found.setdefault(r.partner1.atom, []).append(r.image_idx)
         cra[r.partner1.atom] = r.partner1
 
-    if found: logger.writeln("Atoms on special position detected.")
-    tostr = lambda x: ", ".join("{:.3e}".format(v) for v in x)
     ret = []
+    if not found:
+        return ret
+    
+    logger.writeln("Atoms on special position detected.")
+    tostr = lambda x: ", ".join("{:.3e}".format(v) for v in x)
     for atom in found:
         images = found[atom]
         n_images = len(images) + 1
@@ -543,6 +547,14 @@ def find_special_positions(st, special_pos_threshold=0.2, fix_occ=True, fix_pos=
             new_occ = atom.occ / n_images
             logger.writeln("  correcting occupancy= {:.2f}".format(new_occ))
             atom.occ = new_occ
+        # propagate new occupancy to other atoms if the residue is an X-Hn type molecule
+        if all(a2.is_hydrogen() for a2 in cra[atom].residue if a2 != atom):
+            for a2 in cra[atom].residue:
+                if a2 != atom and a2 not in found and a2.altloc == atom.altloc:
+                    if a2.occ * n_images > 1.001 and fix_occ:
+                        a2.occ /= n_images
+                        a2str = a2.name + ("." + a2.altloc if a2.altloc != '\0' else "")
+                        logger.writeln(f"  propagating occupancy within residue to: {a2str}")
         if fix_pos:
             fpos = gemmi.Fractional(st.cell.frac.apply(atom.pos))
             fdiff = sum([(st.cell.images[i-1].apply(fpos) - fpos).wrap_to_zero() for i in images], gemmi.Fractional(0,0,0)) / n_images
