@@ -16,10 +16,12 @@ struct NcsList {
   struct Ncs {
     Ncs(const gemmi::AlignmentResult &al,
         gemmi::ConstResidueSpan fixed, gemmi::ConstResidueSpan movable,
-        const std::string &chain_fixed, const std::string &chain_movable)
-      : chains(std::make_pair(chain_fixed, chain_movable)) {
+        const gemmi::Chain &chain_fixed, const gemmi::Chain &chain_movable)
+      : chains(std::make_pair(chain_fixed.name, chain_movable.name)) {
       auto it1 = fixed.first_conformer().begin();
       auto it2 = movable.first_conformer().begin();
+      const gemmi::Residue* base1 = chain_fixed.residues.data();
+      const gemmi::Residue* base2 = chain_movable.residues.data();
       n_atoms.push_back(0);
       for (const auto &item : al.cigar) {
         char op = item.op();
@@ -29,6 +31,7 @@ struct NcsList {
               if (const gemmi::Atom* a2 = it2->find_atom(a1.name, a1.altloc, a1.element))
                 atoms.emplace_back(&a1, a2);
             seqids.emplace_back(it1->seqid, it2->seqid);
+            residue_indices.emplace_back(&*it1 - base1, &*it2 - base2);
             n_atoms.push_back(atoms.size());
           }
           if (op == 'M' || op == 'I')
@@ -58,6 +61,7 @@ struct NcsList {
 
     std::vector<std::pair<const gemmi::Atom*, const gemmi::Atom*>> atoms;
     std::vector<std::pair<gemmi::SeqId, gemmi::SeqId>> seqids;
+    std::vector<std::pair<size_t, size_t>> residue_indices;
     std::pair<std::string, std::string> chains;
     std::vector<size_t> n_atoms;
     std::vector<double> local_rms;

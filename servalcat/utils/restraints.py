@@ -750,6 +750,21 @@ def dictionary_block_names(monlib, topo):
     return used
 # dictionary_block_names()
 
+def print_alignment(al, chai1, chai2, rs1, rs2, lab1, lab2, wrap_width=100):
+    logger.writeln(f"{lab1}: {chai1} {rs1[0].seqid}..{rs1[-1].seqid}")
+    logger.writeln(f"{lab2}: {chai2} {rs2[0].seqid}..{rs2[-1].seqid}")
+    logger.writeln(f"match_count: {al.match_count} (identity: {al.calculate_identity(1):.2f})")
+    s1 = gemmi.one_letter_code(rs1.extract_sequence())
+    p_seq = gemmi.one_letter_code(rs2.extract_sequence())
+    p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
+    label_width = max(len(lab1), len(lab2))
+    indent = " " * (label_width + 2)
+    for k in range(0, len(p1), wrap_width):
+        logger.writeln(f" {lab1:>{label_width}} {p1[k:k+wrap_width]}")
+        logger.writeln(f"{indent}{al.match_string[k:k+wrap_width]}")
+        logger.writeln(f" {lab2:>{label_width}} {p2[k:k+wrap_width]}\n")
+# print_alignment()
+
 def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
     logger.writeln("Finding NCS..")
     polymers = {}
@@ -767,12 +782,14 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
         #print(pt, [x[0].name for x in polymers[pt]])
         pols = polymers[pt]
         for i in range(len(pols)-1):
-            q = [x.name for x in pols[i][1]]
+            chaii, rsi = pols[i]
+            q = [x.name for x in rsi]
             for j in range(i+1, len(pols)):
-                al = gemmi.align_sequence_to_polymer(q, pols[j][1], pt, scoring)
+                chaij, rsj = pols[j]
+                al = gemmi.align_sequence_to_polymer(q, rsj, pt, scoring)
                 if al.match_count < min_nalign: continue
-                su = gemmi.calculate_superposition(pols[i][1], pols[j][1], pt, gemmi.SupSelect.All)
-                obj = ext.NcsList.Ncs(al, pols[i][1], pols[j][1], pols[i][0].name, pols[j][0].name)
+                su = gemmi.calculate_superposition(rsi, rsj, pt, gemmi.SupSelect.All)
+                obj = ext.NcsList.Ncs(al, rsi, rsj, chaii, chaij)
                 obj.calculate_local_rms(rms_loc_nlen)
                 if len(obj.local_rms) == 0 or numpy.all(numpy.isnan(obj.local_rms)):
                     continue
@@ -787,17 +804,7 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
                                "ave(rmsloc)": ave_local_rms,
                                })
                 if al_res[-1]["identity"] < 100:
-                    wrap_width = 100
-                    logger.writeln(f"seq1: {pols[i][0].name} {pols[i][1][0].seqid}..{pols[i][1][-1].seqid}")
-                    logger.writeln(f"seq2: {pols[j][0].name} {pols[j][1][0].seqid}..{pols[j][1][-1].seqid}")
-                    logger.writeln(f"match_count: {al.match_count} (identity: {al_res[-1]['identity']:.2f})")
-                    s1 = gemmi.one_letter_code(q)
-                    p_seq = gemmi.one_letter_code(pols[j][1].extract_sequence())
-                    p1, p2 = al.add_gaps(s1, 1), al.add_gaps(p_seq, 2)
-                    for k in range(0, len(p1), wrap_width):
-                        logger.writeln(" seq1 {}".format(p1[k:k+wrap_width]))
-                        logger.writeln("      {}".format(al.match_string[k:k+wrap_width]))
-                        logger.writeln(" seq2 {}\n".format(p2[k:k+wrap_width]))
+                    print_alignment(al, chaii.name, chaij.name, rsi, rsj, "seq1", "seq2")
 
     ncslist.set_pairs()
     df = pandas.DataFrame(al_res)
@@ -805,6 +812,40 @@ def prepare_ncs_restraints(st, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0):
     logger.writeln(df.to_string(float_format="%.2f"))
     return ncslist
 # prepare_ncs_restraints()
+
+def match_exte(pp, pp_ref, rms_loc_nlen=5, min_nalign=10, max_rms_loc=2.0, show_alignment=True):
+    scoring = gemmi.AlignmentScoring("p")
+    al_res = []
+    ret = {}
+    
+    for pt in pp_ref:
+        for chair, rsr in pp_ref[pt]:
+            qr = [x.name for x in rsr]
+            for chai, rs in pp[pt]:
+                al = gemmi.align_sequence_to_polymer(qr, rs, pt, scoring)
+                if al.match_count < min_nalign: continue
+                su = gemmi.calculate_superposition(rsr, rs, pt, gemmi.SupSelect.All)
+                obj = ext.NcsList.Ncs(al, rsr, rs, chair, chai)
+                obj.calculate_local_rms(rms_loc_nlen)
+                if len(obj.local_rms) == 0 or numpy.all(numpy.isnan(obj.local_rms)):
+                    continue
+                ave_local_rms = numpy.nanmean(obj.local_rms)
+                if ave_local_rms > max_rms_loc: continue
+                al_res.append({"reference": "{} ({}..{})".format(obj.chains[0], obj.seqids[0][0], obj.seqids[-1][0]),
+                               "model": "{} ({}..{})".format(obj.chains[1], obj.seqids[0][1], obj.seqids[-1][1]),
+                               "aligned": al.match_count,
+                               "identity": al.calculate_identity(1),
+                               "rms": su.rmsd,
+                               "ave(rmsloc)": ave_local_rms,
+                               })
+                ret.setdefault(chai, []).append((chair, obj))
+                if show_alignment:
+                    print_alignment(al, chair.name, chai.name, rsr, rs, "ref", "mod")
+
+    df = pandas.DataFrame(al_res)
+    df.index += 1
+    logger.writeln(df.to_string(float_format="%.2f"))
+    return ret
 
 class MetalCoordination:
     def __init__(self, monlib, dbfile=None):

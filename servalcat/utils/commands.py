@@ -316,6 +316,19 @@ def add_arguments(p):
     parser.add_argument('--chains', nargs="*", action="append", help="Select chains to convert")
     parser.add_argument('-o', '--output')
 
+    # exte
+    parser = subparsers.add_parser("exte", description = 'Create restraints using external structures (experimental)')
+    parser.add_argument('model')
+    parser.add_argument("--reference", required=True)
+    parser.add_argument('-o', '--output', default="exte.txt")
+    parser.add_argument("--pae", help="PAE file")
+    parser.add_argument('--main', action='store_true', help="main chain only")
+    parser.add_argument("--monlib",
+                        help="Monomer library path. Default: $CLIBD_MON")
+    parser.add_argument('--rms_loc_nlen', type=int, default=5)
+    parser.add_argument('--min_nalign', type=int, default=10)
+    parser.add_argument('--max_rms_loc', type=float, default=2.)
+    parser.add_argument("--d_max", default=4.2, type=float, help="distance cutoff")
 # add_arguments()
 
 def parse_args(arg_list):
@@ -1553,6 +1566,111 @@ def dnarna(args):
     fileio.write_model(st, file_name=args.output)
 # dnarna()
 
+def exte(args): # experimental
+    def get_polymers(xyzin):
+        st = gemmi.read_structure(xyzin)
+        model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+        polymers = {}
+        for chain in st[0]:
+            rs = chain.get_polymer()
+            p_type = rs.check_polymer_type()
+            if p_type in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD,
+                          gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid):
+                polymers.setdefault(p_type, []).append((chain, rs))
+        return st, polymers
+
+    def make_exte(geom, ncs, lookup, get_pae, d_max=4.2, sigma=0.1):
+        ret = ""
+        conv = dict(ncs.atoms) # reference -> model
+        dd = []
+        for t in geom.vdws:
+            d = t.atoms[0].pos.dist(t.atoms[1].pos)
+            if d > d_max: continue
+            # should we compare t.value and d. drop when d is significantly smaller than vdw ideal
+            # perhaps, we should cap distance at vdw ideal, on servalcat side.
+            a1, a2 = conv.get(t.atoms[0]), conv.get(t.atoms[1]) # atoms in the model
+            print(t.atoms, a1, a2)
+            if a1 and a2:
+                specs = [restraints.make_atom_spec(lookup[x]) for x in (a1, a2)]
+                ret += "exte dist first {} seco {} valu {:.3f}".format(specs[0], specs[1], d)
+                if get_pae is not None:
+                    pae1, pae2 = get_pae(t.atoms[0], t.atoms[1]), get_pae(t.atoms[1], t.atoms[0])
+                    dd.append((lookup[a1], lookup[a2], d, a1.pos.dist(a2.pos), t.value, t.type, pae1, pae2))
+                    # using pae_max / sqrt(3) as sigma
+                    ret += f" sigm {max(pae1, pae2) * 0.57735:.3f}\n"
+                    # ! ideal {t.value} {t.same_asu()}\n"
+                else:
+                    ret += f" sigm {sigma:.3f}\n"
+        if 0: # debug
+            df = pandas.DataFrame(dd, columns=["atom1", "atom2", "d_ref", "d_model", "d_crit", "vdw_type", "pae1", "pae2"])
+            df.to_csv("dists.csv")
+        return ret
+
+    st, pp = get_polymers(args.model)
+    st_ref, pp_ref = get_polymers(args.reference)
+
+    if args.pae:
+        # boltz only
+        obj = numpy.load(args.pae)
+        pae = obj["pae"]
+    else:
+        pae = None
+    
+    if args.main: # main-chain only
+        # TODO non-standard monomers??
+        for pt in pp_ref:
+            if pt in (gemmi.PolymerType.PeptideL, gemmi.PolymerType.PeptideD):
+                mc_atoms = "N", "CA", "C", "O", "OXT"
+            elif pt in (gemmi.PolymerType.Dna, gemmi.PolymerType.Rna, gemmi.PolymerType.DnaRnaHybrid):
+                mc_atoms = "P", "O5'", "C5'", "C4'", "C3'", "C2'", "C1'", "O4'", "O2'", "O3'", "OP1", "OP2", "OP3"
+            for chai, rs in pp_ref[pt]:
+                for res in rs:
+                    for i in reversed(range(len(res))):
+                        if res[i].name not in mc_atoms:
+                            del res[i]
+    else:
+        pass # TODO resolve nomenclature differences
+
+    lookup = {x.atom: x for x in st[0].all()}
+    ncslist = restraints.match_exte(pp, pp_ref, args.rms_loc_nlen, args.min_nalign, args.max_rms_loc)
+
+    # prep geom
+    monlib = restraints.load_monomer_library(st_ref, monomer_dir=args.monlib)
+    try:
+        topo, _ = restraints.prepare_topology(st_ref, monlib, h_change=gemmi.HydrogenChange.NoChange)
+    except RuntimeError as e:
+        raise SystemExit("Error: {}".format(e))
+    refine_params = RefineParams(st_ref, refine_xyz=True)
+    geom = ext.Geometry(st_ref, refine_params, monlib.ener_lib)
+    geom.load_topo(topo)
+    geom.finalize_restraints()
+    geom.setup_nonbonded()
+
+    with open(args.output, "w") as ofs:
+        for chai in ncslist:
+            assert len(ncslist[chai]) == 1 # TODO handle this. should we take minimum rms_local?
+            chair, ncs = ncslist[chai][0]
+            if pae is not None:
+                offset = 0
+                for c in st_ref[0]:
+                    if c == chair:
+                        break
+                    offset += len(c)
+                pae_idx = {}
+                for i, (r1_idx, _) in enumerate(ncs.residue_indices):
+                    start, end = ncs.n_atoms[i], ncs.n_atoms[i+1]
+                    for ref_atom, _ in ncs.atoms[start:end]:
+                        pae_idx[ref_atom] = r1_idx + offset
+                get_pae = lambda a1, a2: pae[pae_idx[a1], pae_idx[a2]]
+            else:
+                get_pae = None
+
+            ofs.write(f"! reference {chair.name}/{ncs.seqids[0][0]}..{ncs.seqids[-1][0]}\n")
+            ofs.write(f"!     model { chai.name}/{ncs.seqids[0][1]}..{ncs.seqids[-1][1]}\n")
+            ofs.write(make_exte(geom, ncs, lookup, get_pae, d_max=args.d_max))
+        logger.writeln(f"written: {ofs.name}")
+# exte()
+
 def show(args):
     for filename in args.files:
         ext = fileio.splitext(filename)[1]
@@ -1627,7 +1745,8 @@ def main(args):
                  sm2mm=sm2mm,
                  mm2ins=mm2ins,
                  seq=seq,
-                 dnarna=dnarna)
+                 dnarna=dnarna,
+                 exte=exte)
     
     com = args.subcommand
     f = comms.get(com)

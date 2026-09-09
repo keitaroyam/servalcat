@@ -1220,12 +1220,13 @@ void add_refine(nb::module_& m) {
   nb::class_<NcsList> ncslist(m, "NcsList");
   nb::class_<NcsList::Ncs>(ncslist, "Ncs")
     .def("__init__", [](NcsList::Ncs* p, const gemmi::AlignmentResult &al, const gemmi::ResidueSpan &fixed, const gemmi::ResidueSpan &movable,
-                     const std::string &chain_fixed, const std::string &chain_movable) {
+                        const gemmi::Chain &chain_fixed, const gemmi::Chain &chain_movable) {
       new(p) NcsList::Ncs(al, fixed, movable, chain_fixed, chain_movable);
     })
     .def("calculate_local_rms", &NcsList::Ncs::calculate_local_rms)
     .def_ro("atoms", &NcsList::Ncs::atoms)
     .def_ro("seqids", &NcsList::Ncs::seqids)
+    .def_ro("residue_indices", &NcsList::Ncs::residue_indices)
     .def_ro("chains", &NcsList::Ncs::chains)
     .def_ro("n_atoms", &NcsList::Ncs::n_atoms)
     .def_ro("local_rms", &NcsList::Ncs::local_rms)
