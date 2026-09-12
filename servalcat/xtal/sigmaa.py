@@ -1685,7 +1685,7 @@ def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None,
                                      mott_bethe=mott_bethe,
                                      miller_array=hkl,
                                      addends=addends)
-        if addends2:
+        if addends2 and not twin_data:
             fcpp = utils.model.calc_fcpp_fft(st, d_min - 1e-6, addends2, miller_array=hkl)
             hkldata.df["FC''"] += fcpp
         if twin_data:
