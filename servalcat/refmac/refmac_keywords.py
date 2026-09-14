@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import model as model_util
 import gemmi
+import os
 b_to_u = model_util.b_to_u
 
 def parse_atom_spec(s, itk):
@@ -79,11 +80,11 @@ def parse_from_to(s, itk):
 def read_exte(s, raise_unknown=True):
     # using the same variable names as used in read_extra_restraints.f
     ret = dict(defaults={})
-    if not s: return ret
+    if not s: return {}
     defs = ret["defaults"]
     rest_flag_old = rest_flag = False
     if s[0].lower().startswith("exte"):
-        if s[1].lower().startswith("gene"): return ret
+        if s[1].lower().startswith("gene"): return {}
         elif s[1].lower().startswith("file"): # XXX not supported
             file_ext_now = s[2]
         elif s[1].lower().startswith("syma"): # symall
@@ -252,6 +253,10 @@ def read_exte(s, raise_unknown=True):
                 raise RuntimeError(msg)
             else:
                 logger.writeln(f"WARNING: {msg}")
+
+    if not ret["defaults"]:
+        del ret["defaults"]
+
     return ret
 # read_exte()
 
@@ -614,10 +619,12 @@ def get_lines(lines, depth=0):
         l = l.strip()
         if not l: continue
         if l[0] == "@":
-            f = l[1:]
+            f = l[1:].strip()
             try:
-                yield from get_lines(open(f).readlines(), depth+1)
-            except RuntimeError:
+                with open(f, "r") as fp:
+                    yield from get_lines(fp.readlines(), depth+1)
+            except (RuntimeError, OSError, IOError) as e:
+                logger.writeln(f"Warning: Could not open included file {f}: {e}")
                 return
             continue
         if l.split()[-1] == "-":
@@ -634,19 +641,55 @@ def get_lines(lines, depth=0):
             break
         yield l
 # get_lines()
-            
-def update_params(ret, inputs, raise_unknown=True):
-    if not inputs:
-        return
-    for l in get_lines(inputs):
-        parse_line(l, ret, raise_unknown=raise_unknown)
-# update_keywords()
 
-def parse_keywords(inputs, raise_unknown=True):
-    ret = {"make":{}, "ridge":{}, "refi":{}}
-    update_params(ret, inputs, raise_unknown)
-    return ret
-# parse_keywords()
+class RefmacKeywords:
+    def __init__(self, keywords=None, keyword_files=None):
+        self.params = {"make": {}, "ridge": {}, "refi": {}, "exte_blocks": {}}
+        self._visited_files = set()
+
+        # from args
+        if keywords:
+            self.read_cmdline(sum(keywords, []))
+        if keyword_files:
+            for f in sum(keyword_files, []):
+                self.read_file(f)
+    # __init__()
+
+    def read_file(self, filepath, source=None, depth=0, raise_unknown=True):
+        norm_path = os.path.normpath(os.path.abspath(filepath))
+        if norm_path in self._visited_files:
+            # because @file isn't parsed via this function, circular detection won't be working. Fix later
+            logger.writeln(f"Warning: Circular reference detected, skipping {filepath}")
+            return
+        self._visited_files.add(norm_path)
+
+        # If no explicit source context was passed, default to this file's path
+        if source is None:
+            source = filepath
+            
+        try:
+            with open(filepath, "r") as fp:
+                self.read_source(fp.readlines(), source=source, depth=depth, raise_unknown=raise_unknown)
+        except (RuntimeError, OSError, IOError) as e:
+            logger.writeln(f"Warning: Could not open keyword file {filepath}: {e}")
+
+    def read_cmdline(self, keywords, raise_unknown=True):
+        if keywords:
+            self.read_source(keywords, source="cmdline", raise_unknown=raise_unknown)
+
+    def read_source(self, lines, source="cmdline", depth=0, raise_unknown=True):
+        for l in get_lines(lines):
+            # Maintain parent 'source' when following '@' includes
+            s = l.split()
+            if not s: continue
+
+            if s[0].lower().startswith("exte"):
+                block = self.params["exte_blocks"].setdefault(source, [])
+                r = read_exte(s, raise_unknown=raise_unknown)
+                if r:
+                    block.append(r)
+            else:
+                parse_line(l, self.params, raise_unknown=raise_unknown)
 
 if __name__ == "__main__":
     import sys

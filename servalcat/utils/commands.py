@@ -523,7 +523,7 @@ def h_add(args):
 
     if args.map:
         map_and_start = fileio.read_ccp4_map(args.map)
-        refine_cfg = load_config(None, args, {}) # dummy
+        refine_cfg = load_config(None, args, None) # dummy
         refine_params = RefineParams(st, refine_xyz=True)
         geom = Geom(st, topo, monlib, refine_params, refine_cfg, use_nucleus=(args.pos == "nucl"))
         locate_hydrogen_in_map(st, geom, topo, map_and_start[0])
@@ -844,18 +844,14 @@ def merge_dicts(args):
 def geometry(args):
     set_prefix(args)
     if args.ligand: args.ligand = sum(args.ligand, [])
-    keywords = []
-    if args.keywords or args.keyword_file:
-        if args.keywords: keywords = sum(args.keywords, [])
-        if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
-    params = refmac_keywords.parse_keywords(keywords)
-    refine_cfg = load_config(None, args, params)
+    refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
+    refine_cfg = load_config(None, args, refmackwds)
     st = fileio.read_structure(args.model)
     if args.ignore_h:
         st.remove_hydrogens()
     try:
         monlib = restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand, 
-                                                 stop_for_unknowns=True, params=params)
+                                                 stop_for_unknowns=True, refmackwds=refmackwds)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -864,7 +860,7 @@ def geometry(args):
                                   add_found=args.find_links)
     try:
         topo, _ = restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
-                                              check_hydrogen=True, params=params)
+                                              check_hydrogen=True, refmackwds=refmackwds)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     
@@ -882,7 +878,7 @@ def geometry(args):
         refine_params.geom_weights[:] = geom_w
 
     geom = Geom(st, topo, monlib, refine_params, refine_cfg,
-                params=params, use_nucleus=args.nucleus)
+                refmackwds=refmackwds, use_nucleus=args.nucleus)
     for k in geom.outlier_sigmas: geom.outlier_sigmas[k] = args.sigma
     geom.setup_nonbonded()
     ret = geom.show_model_stats()

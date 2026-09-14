@@ -145,9 +145,9 @@ def main(args):
     args.invert_mask = False
     args.trim_fofc_mtz = args.mask_for_fofc is not None
     args.cross_validation_method = "throughout"
+    refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
     check_args(args)
-    params = refmac_keywords.parse_keywords(args.keywords + [l for f in args.keyword_file for l in open(f)])
-    refine_cfg = load_config(args.config, args, params)
+    refine_cfg = load_config(args.config, args, refmackwds)
 
     st = utils.fileio.read_structure(args.model)
     ccu = utils.model.CustomCoefUtil()
@@ -167,7 +167,7 @@ def main(args):
         try:
             monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                            stop_for_unknowns=not args.newligand_continue,
-                                                           params=params)
+                                                           refmackwds=refmackwds)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
     if not args.keep_entities:
@@ -206,7 +206,7 @@ def main(args):
     try:
         topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                     check_hydrogen=(args.hydrogen=="yes"),
-                                                    params=params)
+                                                    refmackwds=refmackwds)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -273,7 +273,7 @@ def main(args):
         
     geom = Geom(st, topo, monlib, refine_params, refine_cfg,
                 shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight,
-                params=params, unrestrained=args.unrestrained or args.jellyonly,
+                refmackwds=refmackwds, unrestrained=args.unrestrained or args.jellyonly,
                 use_nucleus=use_nucleus, ncslist=ncslist)
     if args.source == "custom":
         ccu.set_coeffs(st)

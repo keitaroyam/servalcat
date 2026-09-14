@@ -147,12 +147,8 @@ def main(args):
     # This could be confusing. Twinning may not be detected.
     if not args.use_in_est:
         args.use_in_est = "work" if args.twin else "test"
-    keywords = []
-    if args.keywords or args.keyword_file:
-        if args.keywords: keywords = sum(args.keywords, [])
-        if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
-    params = refmac_keywords.parse_keywords(keywords)
-    refine_cfg = load_config(args.config, args, params)
+    refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
+    refine_cfg = load_config(args.config, args, refmackwds)
     hklin = args.hklin
     labin = args.labin
     if labin is not None:
@@ -229,7 +225,7 @@ def main(args):
         try:
             monlib = utils.restraints.load_monomer_library(st, monomer_dir=args.monlib, cif_files=args.ligand,
                                                            stop_for_unknowns=not args.newligand_continue,
-                                                           params=params)
+                                                           refmackwds=refmackwds)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
         if not args.keep_entities:
@@ -243,7 +239,7 @@ def main(args):
         try:
             topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                         check_hydrogen=(args.hydrogen=="yes"),
-                                                        params=params)
+                                                        refmackwds=refmackwds)
         except RuntimeError as e:
             raise SystemExit("Error: {}".format(e))
 
@@ -285,7 +281,7 @@ def main(args):
                                  refine_dfrac=args.refine_dfrac, cfg=refine_cfg,
                                  exclude_h_ll=not args.refine_h)
     geom = Geom(st, topo, monlib, refine_params, refine_cfg,
-                shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, params=params,
+                shake_rms=args.randomize, adpr_w=args.adpr_weight, occr_w=args.occr_weight, refmackwds=refmackwds,
                 unrestrained=args.unrestrained or args.jellyonly, use_nucleus=use_nucleus,
                 ncslist=ncslist)
     geom.geom.angle_von_mises = args.vonmises

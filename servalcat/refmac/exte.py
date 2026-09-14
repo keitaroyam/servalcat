@@ -16,13 +16,13 @@ profile = line_profiler.LineProfiler()
 import atexit
 atexit.register(profile.print_stats)
 @profile"""
-def read_external_restraints(params, st, geom):
+def read_external_restraints(exte_blocks, st, geom):
     # default or current values
-    defs = dict(symall_block=False, exclude_self_block=False, type_default=2, alpha_default=1.,
-                ext_verbose=False, scale_sigma_dist=1., scale_sigma_angl=1., scale_sigma_tors=1.,
-                scale_sigma_chir=1., scale_sigma_plan=1., scale_sigma_inte=1.,
-                sigma_min_loc=0., sigma_max_loc=100., ignore_undefined=False, ignore_hydrogens=True,
-                dist_max_external=numpy.inf, dist_min_external=-numpy.inf, use_atoms="a", prefix_ch=" ")
+    defaults = dict(symall_block=False, exclude_self_block=False, type_default=2, alpha_default=1.,
+                    ext_verbose=False, scale_sigma_dist=1., scale_sigma_angl=1., scale_sigma_tors=1.,
+                    scale_sigma_chir=1., scale_sigma_plan=1., scale_sigma_inte=1.,
+                    sigma_min_loc=0., sigma_max_loc=100., ignore_undefined=False, ignore_hydrogens=True,
+                    dist_max_external=numpy.inf, dist_min_external=-numpy.inf, use_atoms="a", prefix_ch=" ")
     #exte = gemmi.ExternalRestraints(st)
     extypes = dict(dist=ext.Geometry.Bond,
                    angl=ext.Geometry.Angle,
@@ -36,20 +36,18 @@ def read_external_restraints(params, st, geom):
     exlists = dict(dist=geom.bonds, angl=geom.angles, tors=geom.torsions,
                    chir=geom.chirs, plan=geom.planes, inte=geom.intervals,
                    stac=geom.stackings, harm=geom.harmonics, spec=geom.specials)
-    num_org = {x: len(exlists[x]) for x in exlists}
 
     # XXX There may be duplication (same chain, resi, name, and alt) - we should give error?
     lookup = {(cra.chain.name, cra.residue.seqid.num, cra.residue.seqid.icode,
                cra.atom.name, cra.atom.altloc) : cra.atom for cra in st[0].all()}
 
     # TODO main chain / side chain filtering
-    for r in params:
-        if not r: continue
-        defs.update(r["defaults"])
-        if "rest_type" not in r: continue
+    def read_exte(r, defs):
+        defs.update(r.get("defaults", {}))
+        if "rest_type" not in r: return
         if r["rest_type"] not in extypes:
             logger.writeln("Warning: unknown external restraint type: {}".format(r["rest_type"]))
-            continue
+            return
 
         atoms = []
         skip = False
@@ -84,7 +82,7 @@ def read_external_restraints(params, st, geom):
                     else:
                         atoms.append(atom)
         if skip or not atoms:
-            continue
+            return
         if r["rest_type"] in ("spec", "harm"):
             if r["restr"]["rectype"] == "auto":
                 assert r["rest_type"] == "spec"
@@ -101,7 +99,7 @@ def read_external_restraints(params, st, geom):
                 else:
                     ex.sigma = r["restr"]["sigma_t"]
                 exlists[r["rest_type"]].append(ex)
-            continue
+            return
         elif r["rest_type"] == "plan":
             ex = extypes[r["rest_type"]](atoms)
         else:
@@ -124,7 +122,7 @@ def read_external_restraints(params, st, geom):
         
         if r["rest_type"] == "dist":
             if not (defs["dist_min_external"] < r["restr"]["value"] < defs["dist_max_external"]):
-                continue
+                return
             ex.alpha = r["restr"].get("alpha_in", defs["alpha_default"])
             ex.type = r["restr"].get("itype_in", defs["type_default"])
             symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
@@ -180,12 +178,25 @@ def read_external_restraints(params, st, geom):
             #print("stac=", ex.dist, ex.sd_dist, ex.angle, ex.sd_angle, ex.planes)
             
         exlists[r["rest_type"]].append(ex)
-
-    logger.writeln("External restraints from Refmac instructions")
+    # read_exte()
+        
     labs = dict(dist="distances", angl="angles", tors="torsions",
                 chir="chirals", plan="planes", inte="intervals",
                 stac="stackings", harm="harmonics", spec="special positions")
-    for lab in labs:
-        logger.writeln(" Number of {:18s} : {}".format(labs[lab], len(exlists[lab]) - num_org[lab]))
-    logger.writeln("")
+    
+    for source, block in exte_blocks.items():
+        num_org = {x: len(exlists[x]) for x in exlists}
+        if not block: continue
+        logger.writeln(f"Reading external restraints from {source}")
+        defs = defaults.copy() # reset default
+        for r in block:
+            read_exte(r, defs)
+
+        num_new = {lab: len(exlists[lab]) - num_org[lab] for lab in exlists}
+        if any(x > 0 for x in num_new.values()):
+            logger.writeln(f" External restraints read from {source}")
+            for lab in labs:
+                if num_new[lab] > 0:
+                    logger.writeln("  Number of {:18s} : {}".format(labs[lab], num_new[lab]))
+        logger.writeln("")
 # read_external_restraints()

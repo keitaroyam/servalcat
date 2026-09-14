@@ -74,7 +74,7 @@ def rename_cif_modification_if_necessary(doc, known_ids):
 
 def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns=False,
                          ignore_monomer_dir=False, update_old_atom_names=True,
-                         params=None):
+                         refmackwds=None):
     resnames = st[0].get_all_residue_names()
 
     if monomer_dir is None and not ignore_monomer_dir:
@@ -148,8 +148,8 @@ def load_monomer_library(st, monomer_dir=None, cif_files=None, stop_for_unknowns
     if update_old_atom_names:
         monlib.update_old_atom_names(st, logger)
 
-    if params:
-        update_torsions(monlib, params.get("restr", {}).get("torsion_include", {}))
+    if refmackwds:
+        update_torsions(monlib, refmackwds.params.get("restr", {}).get("torsion_include", {}))
     
     return monlib
 # load_monomer_library()
@@ -300,7 +300,7 @@ def select_restrained_torsions(monlib, include_rules, exclude_rules):
 # select_restrained_torsions()
 
 def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_error=True, check_hydrogen=False,
-                     remove_bad_hydrogen=True, use_cispeps=False, add_metal_restraints=True, params=None):
+                     remove_bad_hydrogen=True, use_cispeps=False, add_metal_restraints=True, refmackwds=None):
     # Check duplicated atoms
     bad = []
     for chain in st[0]:
@@ -325,10 +325,10 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
             # flag non-hydrogen
             cra2 = st[0].find_cra(con.partner2, ignore_segment=True)
             cra2.atom.calc_flag = gemmi.CalcFlag.NoHydrogen
-        if params:
-            parsed = refmac_keywords.parse_keywords(keywords).get("exte")
-            if parsed:
-                params["exte"] = parsed + params.get("exte", [])
+        if refmackwds: # should stop using keyword mechanism?
+            block = [refmac_keywords.read_exte(l.split()) for l in keywords]
+            if block:
+                refmackwds.params["exte_blocks"] = {"metals.json": block} | refmackwds.params["exte_blocks"]
     else:
         keywords = []
     # these checks can be done after sorting links

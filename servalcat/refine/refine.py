@@ -21,6 +21,7 @@ import servalcat # for version
 from servalcat.utils import logger
 from servalcat import utils
 from servalcat.refmac import exte
+from servalcat.refmac import refmac_keywords
 from servalcat import ext
 from . import cgsolve
 u_to_b = utils.model.u_to_b
@@ -150,7 +151,7 @@ class RefineConfig:
     )
     write_trajectory: bool = False
 
-def load_config(yaml_file, args, refmac_params):
+def load_config(yaml_file, args, refmackwds):
     cfg = omegaconf.OmegaConf.create({"refine": RefineConfig()})
     if yaml_file:
         conf = omegaconf.OmegaConf.load(yaml_file)
@@ -181,9 +182,12 @@ def load_config(yaml_file, args, refmac_params):
                 coeffs.adaptive_weight = args.adaptive_restraint
 
     # load Refmac params (unfinished)
-    if refmac_params.get("occu", {}).get("groups"):
-        rgroups = refmac_params["occu"]["groups"]
-        rconst = refmac_params["occu"].get("const", [])
+    if refmackwds is None:
+        refmackwds = refmac_keywords.RefmacKeywords()
+
+    if refmackwds.params.get("occu", {}).get("groups"):
+        rgroups = refmackwds.params["occu"]["groups"]
+        rconst = refmackwds.params["occu"].get("const", [])
         occ_grs = rcfg.occ_groups
         occ_cnst = rcfg.occ_group_constraints
         occ_incl = rcfg.atom_selection.occ.include
@@ -204,8 +208,8 @@ def load_config(yaml_file, args, refmac_params):
         for cmpl, ids in rconst:
             occ_cnst.append(OccGroupConstItem(ids, cmpl))
     for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
-        if k in refmac_params:
-            rcfg.geom_weights[k[1:]].weight = refmac_params[k]
+        if k in refmackwds.params:
+            rcfg.geom_weights[k[1:]].weight = refmackwds.params[k]
     
     logger.writeln("Config loaded")
     logger.writeln("--")
@@ -295,7 +299,7 @@ def RefineParams(st, refine_xyz=False, adp_mode=0, refine_occ=False,
 
 class Geom:
     def __init__(self, st, topo, monlib, refine_params, cfg, adpr_w=1, occr_w=1, shake_rms=0,
-                 params=None, unrestrained=False, use_nucleus=False,
+                 refmackwds=None, unrestrained=False, use_nucleus=False,
                  ncslist=None):
         self.st = st
         self.params = refine_params
@@ -321,8 +325,8 @@ class Geom:
             #utils.fileio.write_model(self.st, "shaken", pdb=True, cif=True)
         self.use_nucleus = use_nucleus
         self.calc_kwds = {"use_nucleus": self.use_nucleus}
-        if params is None:
-            params = {}
+        if refmackwds is None:
+            refmackwds = refmac_keywords.RefmacKeywords()
         for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
             if self.unrestrained:
                 self.calc_kwds[k] = 0
@@ -333,14 +337,14 @@ class Geom:
                 if "adaptive_weight" in cfg_par:
                     self.calc_kwds[f"{k}2"] = cfg_par.adaptive_weight
                     logger.writeln(f"setting geometry adaptive weight {k}={cfg_par.adaptive_weight}")
-        inc_tors, exc_tors = utils.restraints.make_torsion_rules(params.get("restr", {}))
+        inc_tors, exc_tors = utils.restraints.make_torsion_rules(refmackwds.params.get("restr", {}))
         rtors = utils.restraints.select_restrained_torsions(monlib, inc_tors, exc_tors)
         self.geom.mon_tors_names = rtors["monomer"]
         self.geom.link_tors_names = rtors["link"]
-        self.group_occ = GroupOccupancy(self.st, params.get("occu"))
+        self.group_occ = GroupOccupancy(self.st, refmackwds.params.get("occu"))
         if not self.unrestrained:
             self.geom.load_topo(topo)
-        exte.read_external_restraints(params.get("exte", []), self.st, self.geom)
+        exte.read_external_restraints(refmackwds.params.get("exte_blocks", []), self.st, self.geom)
         self.geom.finalize_restraints()
         self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5, interval=5)
         self.parents = {}

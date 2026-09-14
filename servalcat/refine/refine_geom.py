@@ -151,7 +151,7 @@ def refine_and_update_dictionary(cif_in, monomer_dir, output_prefix, refine_cfg,
         logger.writeln("Refinement statistics saved: {}".format(ofs.name))
 # refine_and_update_dictionary()
 
-def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, params,
+def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefix, randomize, refmackwds,
                 refine_cfg, find_links=False, use_ncsr=False):
     st = utils.fileio.read_structure(model_in)
     utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True,
@@ -165,7 +165,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
         monlib = utils.restraints.load_monomer_library(st, monomer_dir=monomer_dir,
                                                        cif_files=cif_files,
                                                        stop_for_unknowns=True,
-                                                       params=params)
+                                                       refmackwds=refmackwds)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
     utils.restraints.find_and_fix_links(st, monlib, find_metal_links=find_links,
@@ -173,7 +173,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     try:
         topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=h_change,
                                                     check_hydrogen=(h_change==gemmi.HydrogenChange.NoChange),
-                                                    params=params)
+                                                    refmackwds=refmackwds)
     except RuntimeError as e:
         raise SystemExit("Error: {}".format(e))
 
@@ -184,7 +184,7 @@ def refine_geom(model_in, monomer_dir, cif_files, h_change, ncycle, output_prefi
     else:
         ncslist = False
     refine_params = RefineParams(st, refine_xyz=True, cfg=refine_cfg)
-    geom = Geom(st, topo, monlib, refine_params, refine_cfg, shake_rms=randomize, params=params, ncslist=ncslist)
+    geom = Geom(st, topo, monlib, refine_params, refine_cfg, shake_rms=randomize, refmackwds=refmackwds, ncslist=ncslist)
     refiner = Refine(st, geom, refine_cfg, refine_params)
     stats = refiner.run_cycles(ncycle,
                                stats_json_out=output_prefix + "_stats.json")
@@ -202,11 +202,8 @@ def set_prefix(args):
 # set_prefix()
 
 def main(args):
-    keywords = []
-    if args.keywords: keywords = sum(args.keywords, [])
-    if args.keyword_file: keywords.extend(l for f in sum(args.keyword_file, []) for l in open(f))
-    params = refmac_keywords.parse_keywords(keywords)
-    refine_cfg = load_config(args.config, args, params)
+    refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
+    refine_cfg = load_config(args.config, args, refmackwds)
     set_prefix(args)
     if args.model:
         if args.ligand:
@@ -222,14 +219,14 @@ def main(args):
                     ncycle=args.ncycle,
                     output_prefix=args.output_prefix,
                     randomize=args.randomize,
-                    params=params,
+                    refmackwds=refmackwds,
                     refine_cfg=refine_cfg,
                     find_links=args.find_links,
                     use_ncsr=args.ncsr)
     else:
         if args.ligand:
             logger.writeln("WARNING: monlib and ligand are ignored in the dictionary updating mode")
-        if keywords:
+        if args.keywords or args.keyword_file:
             logger.writeln("WARNING: refmac keywords are ignored in the dictionary updating mode")
         refine_and_update_dictionary(cif_in=args.update_dictionary,
                                      monomer_dir=args.monlib,
