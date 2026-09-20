@@ -149,6 +149,7 @@ def main(args):
         args.use_in_est = "work" if args.twin else "test"
     refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
     refine_cfg = load_config(args.config, args, refmackwds)
+    refmackwds.dump_exte_blocks(args.output_prefix + "_exte.json")
     hklin = args.hklin
     labin = args.labin
     if labin is not None:

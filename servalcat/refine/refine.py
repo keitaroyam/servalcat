@@ -150,6 +150,7 @@ class RefineConfig:
         metadata={"help": ""}
     )
     write_trajectory: bool = False
+    exte_files: List[str] = field(default_factory=list)
 
 def load_config(yaml_file, args, refmackwds):
     cfg = omegaconf.OmegaConf.create({"refine": RefineConfig()})
@@ -210,6 +211,11 @@ def load_config(yaml_file, args, refmackwds):
     for k in ("wbond", "wangle", "wtors", "wplane", "wchir", "wstack", "wvdw", "wncs"):
         if k in refmackwds.params:
             rcfg.geom_weights[k[1:]].weight = refmackwds.params[k]
+
+    for exte_f in rcfg.exte_files:
+        with open(exte_f, "r") as fp:
+            # TODO validate json
+            refmackwds.params["exte_blocks"][exte_f] = json.load(fp)
     
     logger.writeln("Config loaded")
     logger.writeln("--")
@@ -346,7 +352,7 @@ class Geom:
             self.geom.load_topo(topo)
         exte.read_external_restraints(refmackwds.params.get("exte_blocks", []), self.st, self.geom)
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5, interval=5)
+        self.outlier_sigmas = dict(bond=5, cbond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5, interval=5)
         self.parents = {}
         self.ncslist = ncslist
         self.const_ls, self.const_u = [], []
@@ -412,6 +418,7 @@ class Geom:
         ret = {"outliers": {}}
         if show_outliers:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
+                             cbond=self.geom.reporting.get_cbond_outliers,
                              angle=self.geom.reporting.get_angle_outliers,
                              torsion=self.geom.reporting.get_torsion_outliers,
                              chir=self.geom.reporting.get_chiral_outliers,
@@ -423,6 +430,7 @@ class Geom:
                              #ncs=self.geom.reporting.get_ncsr_outliers, # not useful?
                              )
             labs = dict(bond="Bond distances",
+                        cbond="Centroid distances",
                         angle="Bond angles",
                         torsion="Torsion angles",
                         chir="Chiral centres",
@@ -435,6 +443,14 @@ class Geom:
 
             def atomlabel(r, i):
                 symstr = lambda idx, s: f" ({idx+1};{s[0]},{s[1]},{s[2]})"
+                if type(r) == ext.Geometry.CentroidBond:
+                    ret = []
+                    for ca in r.catoms[i]:
+                        ret.append(str(self.lookup[ca.atom]))
+                        if ca.sym:
+                            ret[-1] += symstr(ca.sym.sym_idx, ca.sym.pbc_shift)
+                    return ret
+
                 ret = str(self.lookup[r.atoms[i]])
                 if type(r) in (ext.Geometry.Bond, ext.Geometry.Interval, ext.Geometry.Vdw) and i > 0 and not r.same_asu():
                     return ret + symstr(r.sym_idx, r.pbc_shift)

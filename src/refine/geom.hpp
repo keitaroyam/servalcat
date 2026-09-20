@@ -10,6 +10,7 @@
 #include <set>
 #include <memory>
 #include <algorithm>
+#include <optional>
 #include <gemmi/model.hpp>    // for Structure, Atom
 #include <gemmi/contact.hpp>  // for NeighborSearch, ContactSearch
 #include <gemmi/topo.hpp>     // for Topo
@@ -145,6 +146,26 @@ struct PlaneDeriv {
   double D; // xs dot vm
   std::vector<std::vector<gemmi::Vec3>> dvmdx; // derivative of vm wrt positions
   std::vector<gemmi::Vec3> dDdx; // derivative of D wrt positions
+};
+
+struct CentroidAtom : SymAtom {
+  double weight;
+  CentroidAtom() = default;
+  CentroidAtom(const gemmi::Atom* a, double w)
+    : SymAtom(), weight(w) {
+    atom = a;
+  }
+  CentroidAtom(const CentroidAtom& other)
+    : SymAtom(other), weight(other.weight) {}
+  CentroidAtom& operator=(const CentroidAtom& other) {
+    if (this != &other) {
+      SymAtom::operator=(other);
+      weight = other.weight;
+    }
+    return *this;
+  }
+  CentroidAtom(CentroidAtom&&) noexcept = default;
+  CentroidAtom& operator=(CentroidAtom&&) noexcept = default;
 };
 
 inline double chiral_abs_volume_sigma(double bond1, double bond2, double bond3,
@@ -452,6 +473,33 @@ struct Geometry {
     std::array<gemmi::Atom*, 2> atoms;
     std::vector<Value> values;
   };
+  struct CentroidBond {
+    struct Value {
+      Value(double v, double s)
+        : value(v), sigma(s) {}
+      double value;
+      double sigma;
+    };
+    CentroidBond(const std::vector<CentroidAtom> &ca1, const std::vector<CentroidAtom> &ca2)
+      : catoms({ca1,ca2}) {}
+    const Value* find_closest_value(double dist) const {
+      double db = std::numeric_limits<double>::infinity();
+      const Value* ret = nullptr; // XXX safer to initialise with first item
+      for (const auto &v : values) {
+        double tmp = std::abs(v.value - dist);
+        if (tmp < db) {
+          db = tmp;
+          ret = &v;
+        }
+      }
+      return ret;
+    }
+    double calc(const gemmi::UnitCell& cell, double wdskal, double wstiff,
+                GeomTarget* target, Reporting *reporting) const;
+    double alpha = 2;
+    std::array<std::vector<CentroidAtom>, 2> catoms;
+    std::vector<Value> values;
+  };
   struct Angle {
     struct Value {
       Value(double v, double s) : value(v), sigma(s) {}
@@ -644,6 +692,7 @@ struct Geometry {
   };
   struct Reporting {
     using bond_reporting_t = std::tuple<const Bond*, const Bond::Value*, double>;
+    using cbond_reporting_t = std::tuple<const CentroidBond*, const CentroidBond::Value*, double>;
     using angle_reporting_t = std::tuple<const Angle*, const Angle::Value*, double>;
     using torsion_reporting_t = std::tuple<const Torsion*, const Torsion::Value*, double, double>; // delta, tors
     using chiral_reporting_t = std::tuple<const Chirality*, double, double>; // delta, ideal
@@ -655,6 +704,7 @@ struct Geometry {
     using interval_reporting_t = std::tuple<const Interval*, float, bool>; // delta_dist, lt_dmin
     using ncsr_reporting_t = std::tuple<const Ncsr*, float, float>; // dist1, dist2
     std::vector<bond_reporting_t> bonds;
+    std::vector<cbond_reporting_t> cbonds;
     std::vector<angle_reporting_t> angles;
     std::vector<torsion_reporting_t> torsions;
     std::vector<chiral_reporting_t> chirs;
@@ -796,6 +846,7 @@ struct Geometry {
   void calc_jellybody();
   void spec_correction(double alpha=1e-3, bool use_rr=true);
   std::vector<Bond> bonds;
+  std::vector<CentroidBond> cbonds;
   std::vector<Angle> angles;
   std::vector<Torsion> torsions;
   std::vector<Chirality> chirs;
@@ -1048,6 +1099,10 @@ inline void Geometry::finalize_restraints() {
       torsions.erase(torsions.begin() + (*it));
   }
 
+  // Should we do this for CentroidBond?
+  //  for (const auto& b : cbonds)
+  //    bondindex.add_link(*b.atoms[0], *b.atoms[1], b.same_asu());
+
   // make plane_pairs
   for (const auto &plane : planes)
     for (int i = 0; i < plane.atoms.size(); ++i)
@@ -1254,7 +1309,7 @@ inline void Geometry::setup_ncsr(const NcsList &ncslist) {
 
 inline void Geometry::setup_target(bool use_occr) {
   std::map<std::pair<int,int>, int> all_pairs;
-  auto add = [&](gemmi::Atom *a1, gemmi::Atom *a2, int n) {
+  auto add = [&](const gemmi::Atom *a1, const gemmi::Atom *a2, int n) {
     // should be called from smaller n so that smallest restraint kind will be kept
     const int i1 = a1->serial - 1;
     const int i2 = a2->serial - 1;
@@ -1324,6 +1379,18 @@ inline void Geometry::setup_target(bool use_occr) {
     }
   }
 
+  for (const auto &t : cbonds) {
+    for (size_t i = 0; i < 2; ++i)
+      for (size_t j = 1; j < t.catoms[i].size(); ++j)
+        for (size_t k = 0; k < j; ++k)
+          add(t.catoms[i][j].atom, t.catoms[i][k].atom, 12);
+
+    // todo: should we consider them bonds?
+    for (size_t j = 0; j < t.catoms[0].size(); ++j)
+      for (size_t k = 0; k < t.catoms[1].size(); ++k)
+        add(t.catoms[0][j].atom, t.catoms[1][k].atom, 12);
+  }
+
   // sort_and_compress_distances
   target.pairs.clear();
   target.pairs_kind.clear();
@@ -1353,17 +1420,23 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
 
   auto has_selected = [&](const auto &atoms) {
     for (const auto &a : atoms)
-      if (target.params->is_atom_refined(a->serial - 1, RefineParams::Type::X))
+      if (target.params->is_atom_refined(get_raw_atom(a)->serial - 1, RefineParams::Type::X))
         return true;
     return false;
   };
   auto get_w = [&](const auto &aa) {
     return target.params->find_geom_weight(aa);
   };
+  auto get_w2 = [&](const auto &aa) {
+    return target.params->find_geom_weight_multi(aa);
+  };
 
   for (const auto &t : bonds)
     if (has_selected(t.atoms))
       ret += t.calc(st.cell, use_nucleus, wbond * get_w(t.atoms), wbond2, target_ptr, rep_ptr);
+  for (const auto &t : cbonds)
+    if (has_selected(t.catoms[0]) || has_selected(t.catoms[1]))
+      ret += t.calc(st.cell, wbond * get_w2(t.catoms), wbond2, target_ptr, rep_ptr);
   for (const auto &t : angles)
     if (has_selected(t.atoms))
       ret += t.calc(st.cell, wangle * get_w(t.atoms), wangle2, angle_von_mises, target_ptr, rep_ptr);
@@ -1380,7 +1453,7 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
     t.calc(target_ptr); // get_w?
   for (const auto &t : stackings)
     if (has_selected(t.planes[0]) || has_selected(t.planes[1]))
-      ret += t.calc(wstack * get_w(t.planes), use_stack_dist, target_ptr, rep_ptr);
+      ret += t.calc(wstack * get_w2(t.planes), use_stack_dist, target_ptr, rep_ptr);
   for (const auto &t : vdws)
     if (has_selected(t.atoms) && !target.params->is_vdw_excluded(t.atoms[0], t.atoms[1]))
       ret += t.calc(st.cell, wvdw * get_w(t.atoms), wvdw2, target_ptr, rep_ptr);
@@ -1761,6 +1834,122 @@ inline double Geometry::Bond::calc(const gemmi::UnitCell& cell, bool use_nucleus
   }
   if (reporting != nullptr)
     reporting->bonds.emplace_back(this, closest, db);
+  return robustf.f;
+}
+
+inline double Geometry::CentroidBond::calc(const gemmi::UnitCell& cell, double wdskal, double wstiff,
+                                           GeomTarget* target, Reporting *reporting) const {
+  assert(!values.empty());
+  if (wdskal <= 0 || catoms[0].empty() || catoms[1].empty()) return 0.;
+
+  std::array<std::vector<std::optional<gemmi::Transform>>, 2> trs;
+  std::array<gemmi::Position, 2> cpos; // centroids
+  trs[0].reserve(catoms[0].size());
+  trs[1].reserve(catoms[1].size());
+
+  for (int i = 0; i < 2; ++i) {
+    for (const CentroidAtom &ca : catoms[i]) {
+      if (ca.same_asu()) {
+        trs[i].emplace_back(std::nullopt);
+        cpos[i] += ca.atom->pos * ca.weight;
+      } else {
+        trs[i].push_back(ca.get_transform(cell));
+        cpos[i] += gemmi::Position(trs[i].back().value().apply(ca.atom->pos)) * ca.weight;
+      }
+    }
+  }
+
+  const double b = cpos[0].dist(cpos[1]);
+  auto closest = find_closest_value(b);
+  const double db = b - closest->value;
+  const double weight = [&]() {
+    const double w = sq(wdskal / closest->sigma);
+    if (std::abs(alpha - 2) < 1e-3)
+      return w * (1. + wstiff * sq(db / closest->sigma));
+    return w;
+  }();
+  Barron2019 robustf(alpha, db, weight);
+
+  if (target != nullptr) {
+    const gemmi::Position dydx1_base = (cpos[0] - cpos[1]) / std::max(b, 0.02);
+    const gemmi::Position dydx2_base = -dydx1_base;
+
+    auto get_atom_dydx = [](const CentroidAtom& ca, const gemmi::Position& dydx_base,
+                            const std::optional<gemmi::Transform>& tr) {
+      gemmi::Position dydx = dydx_base * ca.weight;
+      if (tr.has_value()) {
+        dydx = gemmi::Position(tr->mat.transpose().multiply(dydx));
+      }
+      return dydx;
+    };
+    // diagonal blocks and off-diagonals within group
+    for (size_t g = 0; g < 2; ++g) {
+      const gemmi::Position& base_dir = (g == 0) ? dydx1_base : dydx2_base;
+
+      for (size_t i = 0; i < catoms[g].size(); ++i) {
+        const CentroidAtom& ca1 = catoms[g][i];
+        const int ia1 = ca1.atom->serial - 1;
+        const int pos1 = target->params->get_pos_vec_geom(ia1, RefineParams::Type::X);
+        const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+        if (pos1 >= 0) {
+          const gemmi::Position dydx1 = get_atom_dydx(ca1, base_dir, trs[g][i]);
+          target->incr_vn(pos1, robustf.dfdx, dydx1);
+          target->incr_am_diag(apos1, robustf.d2fdx, dydx1);
+
+          for (size_t j = i + 1; j < catoms[g].size(); ++j) {
+            const CentroidAtom& ca2 = catoms[g][j];
+            const int ia2 = ca2.atom->serial - 1;
+            const int pos2 = target->params->get_pos_vec_geom(ia2, RefineParams::Type::X);
+            if (pos2 >= 0) {
+              const gemmi::Position dydx2 = get_atom_dydx(ca2, base_dir, trs[g][j]);
+              if (pos1 != pos2) {
+                auto mp = target->find_restraint(ia1, ia2);
+                if (mp.imode == 0)
+                  target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx1, dydx2);
+                else
+                  target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx2, dydx1);
+              } else
+                target->incr_am_diag12(apos1, robustf.d2fdx, dydx1, dydx2);
+            }
+          }
+        }
+      }
+    }
+    // inter-group off-diagonal blocks
+    for (size_t i = 0; i < catoms[0].size(); ++i) {
+      const CentroidAtom& ca1 = catoms[0][i];
+      const int ia1 = ca1.atom->serial - 1;
+      const int pos1 = target->params->get_pos_vec_geom(ia1, RefineParams::Type::X);
+      if (pos1 < 0) continue;
+
+      const gemmi::Position dydx1 = get_atom_dydx(ca1, dydx1_base, trs[0][i]);
+
+      for (size_t j = 0; j < catoms[1].size(); ++j) {
+        const CentroidAtom& ca2 = catoms[1][j];
+        const int ia2 = ca2.atom->serial - 1;
+        const int pos2 = target->params->get_pos_vec_geom(ia2, RefineParams::Type::X);
+        if (pos2 < 0) continue;
+
+        const gemmi::Position dydx2 = get_atom_dydx(ca2, dydx2_base, trs[1][j]);
+
+        if (pos1 != pos2) {
+          auto mp = target->find_restraint(ia1, ia2);
+          if (mp.imode == 0)
+            target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx1, dydx2);
+          else
+            target->incr_am_ndiag(mp.ipos, robustf.d2fdx, dydx2, dydx1);
+        } else {
+          const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+          target->incr_am_diag12(apos1, robustf.d2fdx, dydx1, dydx2);
+        }
+      }
+    }
+    target->target += robustf.f;
+  }
+
+  if (reporting != nullptr)
+    reporting->cbonds.emplace_back(this, closest, db);
+
   return robustf.f;
 }
 

@@ -32,6 +32,8 @@ using namespace servalcat;
 
 NB_MAKE_OPAQUE(std::vector<Geometry::Bond>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Bond::Value>)
+NB_MAKE_OPAQUE(std::vector<Geometry::CentroidBond>)
+NB_MAKE_OPAQUE(std::vector<Geometry::CentroidBond::Value>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Angle>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Angle::Value>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Torsion>)
@@ -45,6 +47,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Special>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Vdw>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Ncsr>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::bond_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::cbond_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::angle_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::torsion_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
@@ -98,7 +101,37 @@ void add_refine(nb::module_& m) {
   nb::class_<Geometry> geom(m, "Geometry");
   nb::class_<RefineParams> params(m, "RefineParams");
 
+  nb::class_<SymAtom> sym_atom(m, "SymAtom");
+  nb::class_<SymAtom::SymData>(sym_atom, "SymData")
+    .def(nb::init<>())
+    .def(nb::init<int, const std::array<int, 3>&>(), nb::arg("idx"), nb::arg("shift"))
+    .def_rw("sym_idx", &SymAtom::SymData::sym_idx)
+    .def_rw("pbc_shift", &SymAtom::SymData::pbc_shift)
+    ;
+  sym_atom
+    .def(nb::init<>())
+    .def(nb::init<const gemmi::Atom*>())
+    .def(nb::init<const SymAtom&>())
+    .def_rw("atom", &SymAtom::atom, nb::rv_policy::reference)
+    .def_prop_rw("sym",
+                 [](SymAtom &self) -> SymAtom::SymData* {
+                   return self.sym.get(); },
+                 [](SymAtom &self, const SymAtom::SymData *data) {
+                   if (data) self.sym = std::make_unique<SymAtom::SymData>(*data);
+                   else self.sym.reset();
+                 }, nb::rv_policy::reference_internal
+      )
+    .def("same_asu", &SymAtom::same_asu)
+    .def("set_image", &SymAtom::set_image, nb::arg("ref"), nb::arg("cell"), nb::arg("asu"))
+    .def("get_transform", &SymAtom::get_transform, nb::arg("cell"));
+  nb::class_<CentroidAtom, SymAtom>(m, "CentroidAtom")
+    .def(nb::init<>())
+    .def(nb::init<const gemmi::Atom*, double>(), nb::arg("a"), nb::arg("w"), nb::rv_policy::reference)
+    .def(nb::init<const CentroidAtom&>())
+    .def_rw("weight", &CentroidAtom::weight);
+
   nb::class_<Geometry::Bond> bond(geom, "Bond");
+  nb::class_<Geometry::CentroidBond> cbond(geom, "CentroidBond");
   nb::class_<Geometry::Angle> angle(geom, "Angle");
   nb::class_<Geometry::Torsion> torsion(geom, "Torsion");
   nb::class_<Geometry::Chirality> chirality(geom, "Chirality");
@@ -108,6 +141,7 @@ void add_refine(nb::module_& m) {
 
   nb::class_<Geometry::Reporting>(geom, "Reporting")
     .def_ro("bonds", &Geometry::Reporting::bonds)
+    .def_ro("cbonds", &Geometry::Reporting::cbonds)
     .def_ro("angles", &Geometry::Reporting::angles)
     .def_ro("torsions", &Geometry::Reporting::torsions)
     .def_ro("chirs", &Geometry::Reporting::chirs)
@@ -148,6 +182,20 @@ void add_refine(nb::module_& m) {
           append(p.first == 2 ? "External distances" :
                  p.first == 1 ? "Bond distances, H" :
                  "Bond distances, non H", p.second, zsq[p.first], sigmas[p.first]);
+
+      // CentroidBond
+      delsq.clear(); zsq.clear(); sigmas.clear();
+      for (const auto& b : self.cbonds) {
+        const auto& restr = std::get<0>(b);
+        const auto& val = std::get<1>(b);
+        const double db = std::get<2>(b);
+        const Barron2019 robustf(restr->alpha, db, 1. / sq(val->sigma));
+        delsq[0].push_back(sq(db));
+        zsq[0].push_back(sq(robustf.dfdx * val->sigma));
+        sigmas[0].push_back(val->sigma);
+      }
+      if (!delsq[0].empty())
+        append("Centroid distances", delsq[0], zsq[0], sigmas[0]);
 
       // Angle
       delsq.clear(); zsq.clear(); sigmas.clear();
@@ -353,6 +401,33 @@ void add_refine(nb::module_& m) {
       d["alpha"] = alphas;
       return d;
     }, nb::arg("use_nucleus"), nb::arg("min_z"))
+    .def("get_cbond_outliers", [](const Geometry::Reporting& self, double min_z) {
+      std::vector<const Geometry::CentroidBond*> rr;
+      std::vector<double> values, ideals, sigmas, zs, alphas;
+      for (const auto& b : self.cbonds) {
+        const auto& restr = std::get<0>(b);
+        const auto& val = std::get<1>(b);
+        const double db = std::get<2>(b);
+        const Barron2019 robustf(restr->alpha, db, 1. / sq(val->sigma));
+        const double z = robustf.dfdx * val->sigma;
+        if (std::abs(z) >= min_z) {
+          rr.push_back(restr);
+          values.push_back(db + val->value);
+          ideals.push_back(val->value);
+          sigmas.push_back(val->sigma);
+          zs.push_back(z);
+          alphas.push_back(restr->alpha);
+        }
+      }
+      nb::dict d;
+      d["restr"] = rr;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      d["alpha"] = alphas;
+      return d;
+    }, nb::arg("min_z"))
     .def("get_angle_outliers", [](const Geometry::Reporting& self, double min_z) {
       std::vector<const Geometry::Angle*> rr;
       std::vector<double> values, ideals, sigmas, zs;
@@ -691,6 +766,11 @@ void add_refine(nb::module_& m) {
     .def_rw("value_nucleus", &Geometry::Bond::Value::value_nucleus)
     .def_rw("sigma_nucleus", &Geometry::Bond::Value::sigma_nucleus)
     ;
+  nb::class_<Geometry::CentroidBond::Value>(cbond, "Value")
+    .def(nb::init<double,double>())
+    .def_rw("value", &Geometry::CentroidBond::Value::value)
+    .def_rw("sigma", &Geometry::CentroidBond::Value::sigma)
+    ;
   nb::class_<Geometry::Angle::Value>(angle, "Value")
     .def(nb::init<double,double>())
     .def_rw("value", &Geometry::Angle::Value::value)
@@ -713,6 +793,12 @@ void add_refine(nb::module_& m) {
     .def_rw("pbc_shift", &Geometry::Bond::pbc_shift)
     .def_rw("atoms", &Geometry::Bond::atoms)
     .def_rw("values", &Geometry::Bond::values)
+    ;
+  cbond
+    .def(nb::init<const std::vector<CentroidAtom>&,const std::vector<CentroidAtom>&>())
+    .def_rw("alpha", &Geometry::CentroidBond::alpha)
+    .def_rw("catoms", &Geometry::CentroidBond::catoms)
+    .def_rw("values", &Geometry::CentroidBond::values)
     ;
   angle
     .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
@@ -795,6 +881,7 @@ void add_refine(nb::module_& m) {
     ;
 
   nb::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>, rv_ri>(geom, "ReportingBonds");
+  nb::bind_vector<std::vector<Geometry::Reporting::cbond_reporting_t>, rv_ri>(geom, "ReportingCentroidBonds");
   nb::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>, rv_ri>(geom, "ReportingAngles");
   nb::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>, rv_ri>(geom, "ReportingTorsions");
   nb::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>, rv_ri>(geom, "ReportingChirals");
@@ -803,6 +890,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Reporting::vdw_reporting_t>, rv_ri>(geom, "ReportingVdws");
   nb::bind_vector<std::vector<Geometry::Reporting::ncsr_reporting_t>, rv_ri>(geom, "ReportingNcsrs");
   nb::bind_vector<std::vector<Geometry::Bond>, rv_ri>(geom, "Bonds");
+  nb::bind_vector<std::vector<Geometry::CentroidBond>, rv_ri>(geom, "CentroidBonds");
   nb::bind_vector<std::vector<Geometry::Angle>, rv_ri>(geom, "Angles");
   nb::bind_vector<std::vector<Geometry::Chirality>, rv_ri>(geom, "Chiralitys");
   nb::bind_vector<std::vector<Geometry::Torsion>, rv_ri>(geom, "Torsions");
@@ -814,6 +902,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Vdw>, rv_ri>(geom, "Vdws");
   nb::bind_vector<std::vector<Geometry::Ncsr>, rv_ri>(geom, "Ncsrs");
   nb::bind_vector<std::vector<Geometry::Bond::Value>, rv_ri>(bond, "Values");
+  nb::bind_vector<std::vector<Geometry::CentroidBond::Value>, rv_ri>(cbond, "Values");
   nb::bind_vector<std::vector<Geometry::Angle::Value>, rv_ri>(angle, "Values");
   nb::bind_vector<std::vector<Geometry::Torsion::Value>, rv_ri>(torsion, "Values");
   nb::bind_vector<std::vector<std::pair<bool, std::vector<size_t>>> , rv_ri>(params, "OccGroupConsts");
@@ -966,6 +1055,7 @@ void add_refine(nb::module_& m) {
     .def(nb::init<gemmi::Structure&, std::shared_ptr<RefineParams>, const gemmi::EnerLib*>(),
          nb::arg("st"), nb::arg("params"), nb::arg("ener_lib")=nb::none())
     .def_ro("bonds", &Geometry::bonds)
+    .def_ro("cbonds", &Geometry::cbonds)
     .def_ro("angles", &Geometry::angles)
     .def_ro("chirs", &Geometry::chirs)
     .def_ro("torsions", &Geometry::torsions)

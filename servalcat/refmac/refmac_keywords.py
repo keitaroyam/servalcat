@@ -9,6 +9,7 @@ from __future__ import absolute_import, division, print_function, generators
 from servalcat.utils import logger
 from servalcat.utils import model as model_util
 import gemmi
+import json
 import os
 b_to_u = model_util.b_to_u
 
@@ -23,7 +24,8 @@ def parse_atom_spec(s, itk):
             ret["resi"] = int(s[itk+1])
             itk += 2
         elif s[itk].lower().startswith("ins"):
-            ret["icode"] = s[itk+1] if s[itk+1] != "." else " "
+            if s[itk+1] != ".":
+                ret["ins"] = s[itk+1]
             itk += 2
         elif s[itk].lower().startswith(("atom", "atna", "name")):
             if s[itk+1] == "{":
@@ -34,7 +36,7 @@ def parse_atom_spec(s, itk):
                 ret["names"] = [s[itk+1]]
                 itk += 2
         elif s[itk].lower().startswith("alt"):
-            ret["altloc"] = s[itk+1]
+            ret["alt"] = s[itk+1]
             itk += 2
         elif s[itk].lower().startswith("symm"):
             ret["symm"] = s[itk+1][0].lower() == "y"
@@ -154,30 +156,30 @@ def read_exte(s, raise_unknown=True):
             iat = 0
             ret["restr"] = {}
             n_expect = dict(plan=0, dist=2, inte=2, angl=3).get(ret["rest_type"], 4)
-            ret["restr"]["specs"] = [None for _ in range(n_expect)]
+            ret["restr"]["specs"] = [[None] for _ in range(n_expect)]
             while itk < len(s):
                 if s[itk].lower().startswith(("firs", "seco", "thir", "four", "next", "atre", "atin")):
                     iat = dict(firs=0, seco=1, thir=2, four=3).get(s[itk][:4].lower(), iat+1)
-                    atoms, itk = parse_atom_spec(s, itk+1)
+                    spec, itk = parse_atom_spec(s, itk+1)
                     if ret["rest_type"] == "plan":
-                        ret["restr"]["specs"].append(atoms)
+                        ret["restr"]["specs"][0].append(spec)
                     else:
-                        ret["restr"]["specs"][iat] = atoms
+                        ret["restr"]["specs"][iat] = [spec]
                 elif s[itk].lower().startswith("type"):
                     try:
-                        ret["restr"]["itype_in"] = int(s[itk+1])
+                        ret["restr"]["type"] = int(s[itk+1])
                     except ValueError:
-                        ret["restr"]["itype_in"] = dict(o=0, f=2).get(s[itk+1][0].lower(), 1)
-                    if not (0 <= ret["restr"]["itype_in"] <= 2):
+                        ret["restr"]["type"] = dict(o=0, f=2).get(s[itk+1][0].lower(), 1)
+                    if not (0 <= ret["restr"]["type"] <= 2):
                         logger.writeln("WARNING: wrong type is given. setting to 2.\n=> {}".format(" ".join(s)))
-                        ret["restr"]["itype_in"] = 2
+                        ret["restr"]["type"] = 2
                     itk += 2
                 elif s[itk].lower().startswith("symm"): # only for distance and angle
-                    ret["restr"]["symm_in"] = s[itk+1][0].lower() == "y"
+                    ret["restr"]["symm"] = s[itk+1][0].lower() == "y"
                     itk += 2
                 else:
                     d = dict(valu="value", dmin="dmin", dmax="dmax", smin="smin_value", smax="smax_value",
-                             sigm="sigma_value", alph="alpha_in", prob="prob_in")
+                             sigm="sigma", alph="alpha", prob="prob_in")
                     k = s[itk][:4].lower()
                     if k in d:
                         ret["restr"][d[k]] = float(s[itk+1])
@@ -199,8 +201,8 @@ def read_exte(s, raise_unknown=True):
                     if ip not in (1, 2):
                         raise RuntimeError("Problem with stacking instructions. Plane number can be 1 or 2.\n=> {}".format(" ".join(s)))
                 elif s[itk].lower().startswith(("firs", "next")):
-                    atoms, itk = parse_atom_spec(s, itk+1)
-                    ret["restr"]["specs"][ip-1] = atoms
+                    spec, itk = parse_atom_spec(s, itk+1)
+                    ret["restr"]["specs"][ip-1] = [spec]
                 elif s[itk].lower().startswith(("dist", "sddi", "angl", "sdan", "type")):
                     k = dict(dist="dist_id", sddi="dist_sd", angl="angle_id", sdan="angle_sd", type="type_r")[s[itk][:4].lower()]
                     ret["restr"][k] = float(s[itk+1]) if k != "type_r" else int(s[itk+1])
@@ -218,14 +220,14 @@ def read_exte(s, raise_unknown=True):
                     itk += 1
                 elif s[itk].lower().startswith("atin"):
                     ret["restr"]["rectype"] = "atom"
-                    atoms, itk = parse_atom_spec(s, itk+1)
-                    ret["restr"]["specs"] = [atoms]
+                    spec, itk = parse_atom_spec(s, itk+1)
+                    ret["restr"]["specs"] = [[spec]]
                 elif s[itk].lower().startswith("resi"):
                     ret["restr"]["rectype"] = "resi"
                     fromto, itk = parse_from_to(s, itk+1)
-                    ret["restr"]["specs"] = [fromto]
+                    ret["restr"]["specs"] = [[fromto]]
                     if s[itk].lower().startswith("atom"):
-                        ret["restr"]["specs"][0]["atom"] = s[itk+1] # called atom_resi in Refmac
+                        ret["restr"]["specs"][0][0]["atom"] = s[itk+1] # called atom_resi in Refmac
                         itk += 2
                 elif s[itk].lower().startswith("sigm"):
                     ret["restr"]["sigma_t"] = float(s[itk+1])
@@ -691,9 +693,13 @@ class RefmacKeywords:
             else:
                 parse_line(l, self.params, raise_unknown=raise_unknown)
 
+    def dump_exte_blocks(self, jsonout):
+        if self.params["exte_blocks"]:
+            with open(jsonout, "w") as ofs:
+                json.dump(self.params["exte_blocks"], ofs)
+
 if __name__ == "__main__":
     import sys
-    import json
     print("waiting for input")
     ret = {} #{"make":{}, "ridge":{}, "refi":{}}
     for l in get_lines(sys.stdin):

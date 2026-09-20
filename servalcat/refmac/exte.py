@@ -20,11 +20,12 @@ def read_external_restraints(exte_blocks, st, geom):
     # default or current values
     defaults = dict(symall_block=False, exclude_self_block=False, type_default=2, alpha_default=1.,
                     ext_verbose=False, scale_sigma_dist=1., scale_sigma_angl=1., scale_sigma_tors=1.,
-                    scale_sigma_chir=1., scale_sigma_plan=1., scale_sigma_inte=1.,
+                    scale_sigma_chir=1., scale_sigma_plan=1., scale_sigma_inte=1., scale_sigma_cdist=1.,
                     sigma_min_loc=0., sigma_max_loc=100., ignore_undefined=False, ignore_hydrogens=True,
                     dist_max_external=numpy.inf, dist_min_external=-numpy.inf, use_atoms="a", prefix_ch=" ")
     #exte = gemmi.ExternalRestraints(st)
     extypes = dict(dist=ext.Geometry.Bond,
+                   cdist=ext.Geometry.CentroidBond,
                    angl=ext.Geometry.Angle,
                    chir=ext.Geometry.Chirality,
                    tors=ext.Geometry.Torsion,
@@ -33,7 +34,7 @@ def read_external_restraints(exte_blocks, st, geom):
                    harm=ext.Geometry.Harmonic,
                    spec=ext.Geometry.Special,
                    stac=ext.Geometry.Stacking)
-    exlists = dict(dist=geom.bonds, angl=geom.angles, tors=geom.torsions,
+    exlists = dict(dist=geom.bonds, cdist=geom.cbonds, angl=geom.angles, tors=geom.torsions,
                    chir=geom.chirs, plan=geom.planes, inte=geom.intervals,
                    stac=geom.stackings, harm=geom.harmonics, spec=geom.specials)
 
@@ -51,36 +52,39 @@ def read_external_restraints(exte_blocks, st, geom):
 
         atoms = []
         skip = False
-        for i, spec in enumerate(r["restr"].get("specs", [])):
-            if r["rest_type"] == "stac":
+        for i, specs in enumerate(r["restr"].get("specs", [])):
+            if r["rest_type"] in ("stac", "cdist"):
                 atoms.append([])
-            if "ifirst" in spec:
-                for chain in st[0]:
-                    if chain.name != spec["chain"]: continue
-                    for res in chain:
-                        if spec["ifirst"] is not None and res.seqid.num < spec["ifirst"]: continue
-                        if spec["ilast"] is not None and res.seqid.num > spec["ilast"]: continue
-                        atoms.extend([a for a in res if spec.get("atom", "*") == "*" or a.name == spec["atom"]])
             else:
-                for name in spec["names"]: # only same altloc allowed?
-                    key = (spec["chain"], spec["resi"], spec.get("icode", " "),
-                           name, spec.get("altloc", "\0"))
-                    atom = lookup.get(key)
-                    if atom is None:
-                        if defs["ignore_undefined"]:
-                            logger.writeln("Warning: atom not found: {}".format(key))
-                            skip = True
+                assert len(specs) == 1
+            for spec in specs:
+                if "ifirst" in spec:
+                    for chain in st[0]:
+                        if chain.name != spec["chain"]: continue
+                        for res in chain:
+                            if spec["ifirst"] is not None and res.seqid.num < spec["ifirst"]: continue
+                            if spec["ilast"] is not None and res.seqid.num > spec["ilast"]: continue
+                            atoms.extend([a for a in res if spec.get("atom", "*") == "*" or a.name == spec["atom"]])
+                else:
+                    for name in spec["names"]: # only same altloc allowed?
+                        key = (spec["chain"], spec["resi"], spec.get("ins", " "),
+                               name, spec.get("alt", "\0"))
+                        atom = lookup.get(key)
+                        if atom is None:
+                            if defs["ignore_undefined"]:
+                                logger.writeln("Warning: atom not found: {}".format(key))
+                                skip = True
+                                continue
+                            raise RuntimeError("Atom not found: {}".format(key))
+                        if defs["ignore_hydrogens"] and atom.is_hydrogen():
+                            logger.writeln("External restraints with hydrogen atoms will be ignored: {}".format(key))
+                            if r["rest_type"] in ("dist", "angl", "tors", "inte"):
+                                skip = True
                             continue
-                        raise RuntimeError("Atom not found: {}".format(key))
-                    if defs["ignore_hydrogens"] and atom.is_hydrogen():
-                        logger.writeln("External restraints with hydrogen atoms will be ignored: {}".format(key))
-                        if r["rest_type"] in ("dist", "angl", "tors", "inte"):
-                            skip = True
-                        continue
-                    if r["rest_type"] == "stac":
-                        atoms[i].append(atom)
-                    else:
-                        atoms.append(atom)
+                        if r["rest_type"] in ("stac", "cdist"):
+                            atoms[i].append(atom)
+                        else:
+                            atoms.append(atom)
         if skip or not atoms:
             return
         if r["rest_type"] in ("spec", "harm"):
@@ -102,11 +106,27 @@ def read_external_restraints(exte_blocks, st, geom):
             return
         elif r["rest_type"] == "plan":
             ex = extypes[r["rest_type"]](atoms)
+        elif r["rest_type"] == "cdist":
+            if r["restr"].get("symm", defs["symall_block"]):
+                asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
+            else:
+                asu = None
+
+            groups = []
+            for aa in atoms:
+                weight = 1. / len(aa)
+                groups.append([ext.CentroidAtom(a, weight) for a in aa])
+                if asu:
+                    ref = groups[-1][0].pos
+                    for ia in range(1, len(groups[-1])):
+                        groups[-1][ia].set_image(ref, st.cell, asu)
+
+            ex = extypes[r["rest_type"]](groups[0], groups[1])
         else:
             ex = extypes[r["rest_type"]](*atoms)
-        if r["rest_type"] in ("dist", "angl", "chir", "tors"):
+        if r["rest_type"] in ("dist", "cdist", "angl", "chir", "tors"):
             value = r["restr"]["value"]
-            sigma = r["restr"]["sigma_value"] / defs["scale_sigma_{}".format(r["rest_type"])]
+            sigma = r["restr"]["sigma"] / defs["scale_sigma_{}".format(r["rest_type"])]
             if r["rest_type"] == "chir":
                 ex.value = value
                 ex.sigma = sigma
@@ -123,16 +143,18 @@ def read_external_restraints(exte_blocks, st, geom):
         if r["rest_type"] == "dist":
             if not (defs["dist_min_external"] < r["restr"]["value"] < defs["dist_max_external"]):
                 return
-            ex.alpha = r["restr"].get("alpha_in", defs["alpha_default"])
-            ex.type = r["restr"].get("itype_in", defs["type_default"])
-            symm1 = any([spec.get("symm") for spec in r["restr"]["specs"]]) # is it the intention?
-            if r["restr"].get("symm_in", defs["symall_block"]) or symm1:
+            ex.alpha = r["restr"].get("alpha", defs["alpha_default"])
+            ex.type = r["restr"].get("type", defs["type_default"])
+            symm1 = any([spec.get("symm") for specs in r["restr"]["specs"] for spec in specs]) # is it the intention?
+            if r["restr"].get("symm", defs["symall_block"]) or symm1:
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
                 ex.set_image(st.cell, asu)
             #print("dist=", ex.alpha, ex.type, ex.values[-1].value, ex.values[-1].sigma, ex.sym_idx, ex.pbc_shift, ex.atoms)
+        elif r["rest_type"] == "cdist":
+            ex.alpha = r["restr"].get("alpha", 2)
         elif r["rest_type"] == "angl":
-            if any(spec.get("symm") for spec in r["restr"]["specs"]):
-                asus = [gemmi.Asu.Different if r["restr"]["specs"][i].get("symm") else gemmi.Asu.Same
+            if any(spec.get("symm") for specs in r["restr"]["specs"] for spec in specs):
+                asus = [gemmi.Asu.Different if r["restr"]["specs"][i][0].get("symm") else gemmi.Asu.Same
                         for i in range(3)]
                 if atoms[0].serial > atoms[2].serial:
                     asus = asus[::-1]
@@ -146,7 +168,7 @@ def read_external_restraints(exte_blocks, st, geom):
             ex.sign = gemmi.ChiralityType.Positive if ex.value > 0 else gemmi.ChiralityType.Negative
             ex.value = abs(ex.value)
         elif r["rest_type"] == "plan":
-            ex.sigma = r["restr"]["sigma_value"] / defs["scale_sigma_{}".format(r["rest_type"])]
+            ex.sigma = r["restr"]["sigma"] / defs["scale_sigma_{}".format(r["rest_type"])]
             #print("plan=", ex.sigma, ex.atoms)
         elif r["rest_type"] == "inte":
             dmin, dmax = r["restr"].get("dmin"), r["restr"].get("dmax")
@@ -166,7 +188,7 @@ def read_external_restraints(exte_blocks, st, geom):
             ex.smin = smin
             ex.smax = smax
             symm1 = any(spec.get("symm") for spec in r["restr"]["specs"]) # not tested
-            if r["restr"].get("symm_in", defs["symall_block"]) or symm1:
+            if r["restr"].get("symm", defs["symall_block"]) or symm1:
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
                 ex.set_image(st.cell, asu)
             #print("inte=", ex.dmin, ex.dmax, ex.smin, ex.smax, ex.atoms)
@@ -180,7 +202,7 @@ def read_external_restraints(exte_blocks, st, geom):
         exlists[r["rest_type"]].append(ex)
     # read_exte()
         
-    labs = dict(dist="distances", angl="angles", tors="torsions",
+    labs = dict(dist="distances", cdist="centroid distances", angl="angles", tors="torsions",
                 chir="chirals", plan="planes", inte="intervals",
                 stac="stackings", harm="harmonics", spec="special positions")
     

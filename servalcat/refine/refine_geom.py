@@ -204,6 +204,7 @@ def set_prefix(args):
 def main(args):
     refmackwds = refmac_keywords.RefmacKeywords(args.keywords, args.keyword_file)
     refine_cfg = load_config(args.config, args, refmackwds)
+    refmackwds.dump_exte_blocks(args.output_prefix + "_exte.json")
     set_prefix(args)
     if args.model:
         if args.ligand:

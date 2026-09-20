@@ -8,12 +8,65 @@
 #include <set>
 #include <vector>
 #include <numeric>
+#include <memory>
 #include <gemmi/model.hpp>     // for Atom
 #include <gemmi/calculate.hpp> // for count_atom_sites
 #include <gemmi/eig3.hpp>      // eigen_decomposition
 #include <Eigen/Dense>
 #include "../math.hpp"
 namespace servalcat {
+
+struct SymAtom {
+  const gemmi::Atom* atom;
+  struct SymData {
+    int sym_idx = 0;
+    std::array<int, 3> pbc_shift = {{0,0,0}};
+    SymData(int idx, const std::array<int, 3> &shift)
+      : sym_idx(idx), pbc_shift(shift) {}
+    SymData(int idx, const int shift[3])
+        : sym_idx(idx), pbc_shift{shift[0], shift[1], shift[2]} {}
+    SymData() = default;
+  };
+  std::unique_ptr<SymData> sym = nullptr;
+
+  SymAtom() = default;
+  SymAtom(const gemmi::Atom *a) : atom(a) {}
+  SymAtom(const SymAtom &other) : atom(other.atom) {
+    if (other.sym)
+      sym = std::make_unique<SymData>(*other.sym);
+  }
+  SymAtom& operator=(const SymAtom &other) {
+    if (this != &other) {
+      atom = other.atom;
+      sym = other.sym ? std::make_unique<SymData>(*other.sym) : nullptr;
+    }
+    return *this;
+  }
+  SymAtom(SymAtom&&) noexcept = default;
+  SymAtom& operator=(SymAtom&&) noexcept = default;
+  bool same_asu() const {
+    if (sym == nullptr)
+      return true;
+    return sym->sym_idx == 0 && sym->pbc_shift[0]==0 && sym->pbc_shift[1]==0 && sym->pbc_shift[2]==0;
+  }
+  void set_image(const gemmi::Position& ref, const gemmi::UnitCell& cell, gemmi::Asu asu) {
+    if (!atom) return;
+    const gemmi::NearestImage im = cell.find_nearest_image(ref, atom->pos, asu);
+    if (im.same_asu())
+      sym.reset(); // reset to nullptr
+    else
+      sym = std::make_unique<SymData>(im.sym_idx, im.pbc_shift);
+  }
+  gemmi::Transform get_transform(const gemmi::UnitCell& cell) const {
+    gemmi::FTransform ft = (!sym || sym->sym_idx == 0) ? gemmi::FTransform() : cell.images[sym->sym_idx-1];
+    if (sym)
+      ft.vec += gemmi::Vec3(sym->pbc_shift);
+    return cell.orth.combine(ft).combine(cell.frac);
+  }
+};
+
+inline const gemmi::Atom* get_raw_atom(const gemmi::Atom* a) { return a; }
+inline const gemmi::Atom* get_raw_atom(const SymAtom& sa) { return sa.atom; }
 
 struct RefineParams {
   // Manage data structure
@@ -531,27 +584,30 @@ struct RefineParams {
   float find_geom_weight(const T &atoms, bool adpr=false) const {
     const auto &weights = adpr ? adpr_weights : geom_weights;
     return std::accumulate(atoms.begin(), atoms.end(), 0.0f,
-                           [&](float sum, const gemmi::Atom *a) {
+                           [&](float sum, const auto &item) {
+                             const gemmi::Atom *a = get_raw_atom(item);
                              return sum + weights.at(a->serial - 1);
                            }) / atoms.size();
   }
-  float find_geom_weight(const std::initializer_list<const gemmi::Atom*> &atoms, bool adpr=false) const {
-    const auto &weights = adpr ? adpr_weights : geom_weights;
-    return std::accumulate(atoms.begin(), atoms.end(), 0.0f,
-                           [&](float sum, const gemmi::Atom *a) {
-                             return sum + weights.at(a->serial - 1);
-                           }) / atoms.size();
+  template <typename E>
+  float find_geom_weight(std::initializer_list<E> atoms, bool adpr=false) const {
+    return find_geom_weight<std::initializer_list<E>>(atoms, adpr);
   }
-  float find_geom_weight(const std::array<std::vector<gemmi::Atom*>, 2> &atomsets, bool adpr=false) const {
+  template <typename ContainerArray>
+  float find_geom_weight_multi(const ContainerArray &atomsets, bool adpr=false) const {
     const auto &weights = adpr ? adpr_weights : geom_weights;
-    int count = 0;
-    float total = std::accumulate(atomsets.begin(), atomsets.end(), 0.0f, [&](float sum, const auto& atoms) {
-      count += atoms.size();
-      return sum + std::accumulate(atoms.begin(), atoms.end(), 0.0f, [&](float s, const gemmi::Atom *a) {
-        return s + weights.at(a->serial - 1);
-      });
-    });
-    return total / count;
+    size_t count = 0;
+    float total = 0.0f;
+
+    for (const auto& group : atomsets) {
+      count += group.size();
+      for (const auto& item : group) {
+        const gemmi::Atom* a = get_raw_atom(item);
+        total += weights.at(a->serial - 1);
+      }
+    }
+
+    return count > 0 ? (total / static_cast<float>(count)) : 0.0f;
   }
   bool is_vdw_excluded(const gemmi::Atom *atom1, const gemmi::Atom *atom2) const {
     const int a1 = atom1->serial - 1;
