@@ -13,8 +13,13 @@ import shutil
 import tempfile
 import sys
 import numpy
+import pandas
+import gemmi
 import test_spa
+from pandas.testing import assert_frame_equal
 from servalcat import utils
+from servalcat.refine.refine import Geom, RefineParams, load_config
+from servalcat.refmac import refmac_keywords
 from servalcat.__main__ import main
 
 root = os.path.abspath(os.path.dirname(__file__))
@@ -169,6 +174,53 @@ class TestRefine(unittest.TestCase):
         self.assertEqual(list(stats[-1]["twin_alpha"]), ['h,k,l', '-h,k,-l'])
         self.assertAlmostEqual(stats[-1]["twin_alpha"]["h,k,l"], 0.66, delta=0.02)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.81)
+
+    def test_exte(self):
+        xyzin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
+        st = utils.fileio.read_structure(xyzin)
+        utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True)
+        
+        def get_geom(keywords):
+            refmackwds = refmac_keywords.RefmacKeywords(keywords, None)
+            refine_cfg = load_config(None, None, refmackwds)
+            monlib = utils.restraints.load_monomer_library(st, stop_for_unknowns=True, refmackwds=refmackwds)
+            utils.restraints.find_and_fix_links(st, monlib, find_metal_links=False, add_found=True)
+            topo, _ = utils.restraints.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange,
+                                                        refmackwds=refmackwds)
+            refine_params = RefineParams(st, refine_xyz=True)
+            geom = Geom(st, topo, monlib, refine_params, refine_cfg, refmackwds=refmackwds)
+            geom.setup_nonbonded()
+            return geom.show_model_stats()
+
+        # test dist
+        geo = get_geom([["exte dist firs chai A resi 2 ins . atom O seco chai A resi 3 ins . atom N value 2.9 sigma 0.1 alph 2"]])
+        expected_df = pandas.DataFrame({"atom1": ["A/VAL 2/O"], "atom2": ["A/HIS 3/N"],
+                                        "value": [2.247], "ideal": [2.900], "sigma": [0.100],
+                                        "z": [-6.525], "type": [2], "alpha": [2.000]})
+        assert_frame_equal(geo["outliers"]["bond"], expected_df, atol=0.001)
+
+        # test dist symm
+        geo = get_geom([["exte symall y exclude self",
+                         "exte dist firs chai A resi 2 ins . atom O seco chai A resi 3 ins . atom N value 2.9 sigma 0.001 alph 2"]])
+        expected_df = pandas.DataFrame({"atom1": ["A/VAL 2/O"], "atom2": ["A/HIS 3/N (2;1,0,0)"],
+                                        "value": [2.941], "ideal": [2.900], "sigma": [0.001],
+                                        "z": [40.642489], "type": [2], "alpha": [2.000]})
+        assert_frame_equal(geo["outliers"]["bond"], expected_df, atol=0.001)
+
+        # test override dist
+        geo = get_geom([["exte dist firs chai A resi 2 ins . atom O seco chai A resi 2 ins . atom C value 1.2 sigma 0.001 type 0",
+                         "exte dist firs chai A resi 2 ins . atom O seco chai A resi 2 ins . atom C value 1.9 sigma 0.001 type 1"]])
+        expected_df = pandas.DataFrame({"atom1": ["A/VAL 2/C"], "atom2": ["A/VAL 2/O"],
+                                        "value": [1.231], "ideal": [1.2], "sigma": [0.001],
+                                        "z": [30.561], "type": [0], "alpha": [1.0]})
+        assert_frame_equal(geo["outliers"]["bond"], expected_df, atol=0.001)
+
+        # test tors
+        geo = get_geom([["exte tors firs chai A resi 2 atom N seco chai A resi 2 atom CA thir chai A resi 2 atom C four chai A resi 2 atom O valu 90 sigma 10"]])
+        expected_df = pandas.DataFrame({"label": "", "atom1": ["A/VAL 2/N"], "atom2": ["A/VAL 2/CA"], "atom3": ["A/VAL 2/C"], "atom4": ["A/VAL 2/O"], 
+                                        "value": [-45.12], "ideal": [90.], "sigma": [10.], "per": [1],
+                                        "z": [-13.512]})
+        assert_frame_equal(geo["outliers"]["torsion"], expected_df, atol=0.001)
 
 if __name__ == '__main__':
     unittest.main()
