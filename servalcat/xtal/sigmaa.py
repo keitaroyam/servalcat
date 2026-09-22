@@ -1424,7 +1424,7 @@ def decide_spacegroup(sg_user, sg_st, sg_hkl):
 
 def process_input(hklin, labin, n_bins_ml, free, xyzin=None, d_max=None, d_min=None,
                   n_per_mlbin=None, use="all", max_mlbins=None, cif_index=0, keep_charges=False,
-                  allow_unusual_occupancies=False, space_group=None,
+                  allow_unusual_occupancies=False, ignore_multi_models=True, space_group=None,
                   hklin_free=None, labin_free=None, labin_llweight=None, n_bins_stat=None, max_statbins=20):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
@@ -1447,6 +1447,9 @@ def process_input(hklin, labin, n_bins_ml, free, xyzin=None, d_max=None, d_min=N
         if None in (st, mtz):
             raise SystemExit("Failed to read small molecule file(s)")
 
+    if ignore_multi_models and st and len(st) > 1:
+        logger.writeln(f"{len(st)} models detected, but only the first one will be kept")
+        del st[1:]
     if st:
         utils.model.check_occupancies(st, raise_error=not allow_unusual_occupancies)
         
@@ -1686,9 +1689,19 @@ def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     grid.setup_from(st, spacing=min(0.6, (d_min-1e-6) / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
     if use_non_binary_mask:
-        logger.writeln("Using non-binary solvent mask")
+        logger.writeln(" Using non-binary solvent mask")
         masker.use_atom_occupancy = True
-    masker.put_mask_on_float_grid(grid, st[0])
+        
+    if len(st) == 1:
+        masker.put_mask_on_float_grid(grid, st[0])
+    else:
+        logger.writeln(f" Averaging solvent masks from {len(st)} models")
+        for model in st:
+            tmp = utils.maps.new_grid_like(grid)
+            masker.put_mask_on_float_grid(tmp, model)
+            grid.array[:] += tmp.array
+        grid.array[:] /= len(st)
+    
     #utils.maps.write_ccp4_map("solmask.ccp4", grid)
     fmask_gr = gemmi.transform_map_to_f_phi(grid)
     Fmask = fmask_gr.get_value_by_hkl(miller_array)
@@ -1864,6 +1877,7 @@ def main(args):
             use=args.use,
             max_mlbins=30,
             keep_charges=args.keep_charges,
+            ignore_multi_models=False,
             space_group=args.spacegroup,
             hklin_free=args.hklin_free,
             labin_free=args.labin_free)
@@ -1883,7 +1897,7 @@ def main(args):
         hkldata.wavelength = args.wavelength
 
     addends, addends2 = utils.model.check_atomsf(st, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
-    utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False)
+    utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False) # TODO support multiple models
 
     if args.twin:
         twin_data, _ = find_twin_domains_from_data(hkldata)

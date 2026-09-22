@@ -68,7 +68,7 @@ def setup_entities(st, clear=False, overwrite_entity_type=False, force_subchain_
 # setup_entities()
 
 def determine_blur_for_dencalc(st, grid):
-    b_min = st[0].calculate_b_aniso_range()[0]
+    b_min = min(m.calculate_b_aniso_range()[0] for m in st)
     b_need = grid**2*8*numpy.pi**2/1.1 # Refmac's way
     b_add = b_need - b_min
     return b_add
@@ -192,11 +192,12 @@ def check_atomsf(st, source, mott_bethe=True, wavelength=None):
 def calc_sum_ab(st):
     sum_ab = dict()
     ret = 0.
-    for cra in st[0].all():
-        if cra.atom.element not in sum_ab:
-            it92 = cra.atom.element.it92
-            sum_ab[cra.atom.element] = sum(x*y for x,y in zip(it92.a, it92.b))
-        ret += sum_ab[cra.atom.element] * cra.atom.occ
+    for model in st:
+        for cra in model.all():
+            if cra.atom.element not in sum_ab:
+                it92 = cra.atom.element.it92
+                sum_ab[cra.atom.element] = sum(x*y for x,y in zip(it92.a, it92.b))
+            ret += sum_ab[cra.atom.element] * cra.atom.occ
     return ret
 # calc_sum_ab()
 
@@ -204,8 +205,8 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
                 omit_proton=False, omit_h_electron=False, miller_array=None, addends=None):
     assert source in ("xray", "electron", "neutron", "custom")
     if source != "electron": mott_bethe = False
-    topo = None
-    if st[0].has_hydrogen():
+    topos = []
+    if any(m.has_hydrogen() for m in st):
         st = st.clone()
         if source == "neutron":
             # nothing happens if not st.has_d_fraction
@@ -217,11 +218,12 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
                 st.remove_hydrogens()
                 omit_proton = omit_h_electron = False
         if mott_bethe and not omit_proton and monlib is not None:
-            topo = gemmi.prepare_topology(st, monlib, warnings=logger, ignore_unknown_links=True)
-            resnames = st[0].get_all_residue_names()
+            resnames = list({x for m in st for x in m.get_all_residue_names()})
             restraints.check_monlib_support_nucleus_distances(monlib, resnames)
-            # Shift electron positions
-            topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
+            for i in range(len(st)):
+                topos.append(gemmi.prepare_topology(st, monlib, i, warnings=logger, ignore_unknown_links=True))
+                # Shift electron positions
+                topos[-1].adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.ElectronCloud)
     elif omit_proton or omit_h_electron:
         logger.writeln("WARNING: omit_proton/h_electron requested, but no hydrogen exists!")
         omit_proton = omit_h_electron = False
@@ -232,16 +234,18 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
         if omit_proton:
             method_str += "proton-omit "
         elif omit_h_electron:
-            if topo is None:
+            if not topos:
                 method_str += "hydrogen electron-omit "
             else:
                 method_str += "hydrogen electron-omit, proton-shifted "
-        elif topo is not None:
+        elif topos:
             method_str += "proton-shifted "
     method_str += f"Fc with {source} scattering factors"
     if mott_bethe:
         method_str += " through Mott-Bethe formula from X-ray sf"
     logger.writeln(f"Calculating {method_str}..")
+    if len(st) > 1:
+        logger.writeln(f" Averaging Fc from {len(st)} models")
     
     if blur is None: blur = determine_blur_for_dencalc(st, d_min/2/rate)
     #blur = max(0, blur) # negative blur may cause non-positive definite in case of anisotropic Bs
@@ -263,37 +267,42 @@ def calc_fc_fft(st, d_min, source, mott_bethe=True, monlib=None, blur=None, cuto
     dc.cutoff = cutoff
     dc.rate = rate
     dc.grid.setup_from(st)
+    dc.initialize_grid()
 
     t_start = time.time()
     if mott_bethe:
-        dc.initialize_grid()
         dc.addends.subtract_z(except_hydrogen=True)
 
         if omit_h_electron:
             st2 = st.clone()
             st2.remove_hydrogens()
-            dc.add_model_density_to_grid(st2[0])
+            for model in st2:
+                dc.add_model_density_to_grid(model)
         else:
-            dc.add_model_density_to_grid(st[0])
+            for model in st:
+                dc.add_model_density_to_grid(model)
 
         # Subtract hydrogen Z
-        if not omit_proton and st[0].has_hydrogen():
-            if topo is not None:
+        if not omit_proton and any(m.has_hydrogen() for m in st):
+            for topo in topos:
                 # Shift proton positions
                 topo.adjust_hydrogen_distances(gemmi.Restraints.DistanceOf.Nucleus,
                                                default_scale=restraints.default_proton_scale)
-            for cra in st[0].all():
-                if cra.atom.is_hydrogen():
-                    dc.add_c_contribution_to_grid(cra.atom, -1)
+            for model in st:
+                for cra in model.all():
+                    if cra.atom.is_hydrogen():
+                        dc.add_c_contribution_to_grid(cra.atom, -1)
 
-        dc.grid.symmetrize_sum()
         sum_ab = calc_sum_ab(st) * len(st.find_spacegroup().operations())
-        mb_000 = sum_ab * gemmi.mott_bethe_const() / 4
+        mb_000 = sum_ab * gemmi.mott_bethe_const() / 4 / len(st)
     else:
         if addends is not None: dc.addends = addends
-        dc.put_model_density_on_grid(st[0])
+        for model in st:
+            dc.add_model_density_to_grid(model)
         mb_000 = 0
 
+    dc.grid.symmetrize_sum()
+    dc.grid.array[:] /= len(st)
     logger.writeln(" done. Fc calculation time: {:.1f} s".format(time.time() - t_start))
     grid = gemmi.transform_map_to_f_phi(dc.grid)
     
@@ -313,7 +322,11 @@ def calc_fcpp_fft(st, d_min, addends2, blur=None, cutoff=1e-5, rate=1.5, miller_
     dc2.rate = rate
     dc2.grid.setup_from(st)
     dc2.addends = addends2
-    dc2.put_model_density_on_grid(st[0])
+    dc2.initialize_grid()
+    for model in st:
+        dc2.add_model_density_to_grid(model)
+    dc2.grid.symmetrize_sum()
+    dc2.grid.array[:] /= len(st)
     grid2 = gemmi.transform_map_to_f_phi(dc2.grid)
     if miller_array is None:
         return grid2.prepare_asu_data(dmin=d_min, unblur=dc2.blur)
