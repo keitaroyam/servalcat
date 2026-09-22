@@ -1,13 +1,13 @@
 [build-system]
-requires = ["scikit-build-core==0.12.1", "nanobind==2.12.0"]
+requires = ["scikit-build-core", "nanobind>=3.1.0,<4"]
 build-backend = "scikit_build_core.build"
 
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 [project]
 name = "servalcat"
 dynamic = ["version"]
-requires-python = ">=3.9"
-dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0', 'omegaconf==2.3.0']
+requires-python = ">=3.10"
+dependencies = ['packaging', 'numpy>=1.15', 'scipy', 'pandas>=1.1.0', 'omegaconf==2.3.0', "nanobind-backend>=1.0"]
 description="Structure refinement and validation for crystallography and single particle analysis"
 readme = "README.md"
 authors = [
@@ -26,6 +26,7 @@ refmacat  = "servalcat.refmac.refmac_wrapper:command_line"
 
 [tool.scikit-build]
 #build-dir = "/tmp/gemmi_build2/{wheel_tag}"
+wheel.py-api = "cp310"
 wheel.expand-macos-universal-tags = true  # not sure if this is useful
 cmake.build-type = "Release"
 build.verbose = true

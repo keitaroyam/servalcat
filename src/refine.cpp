@@ -26,6 +26,7 @@
 #include <nanobind/stl/bind_vector.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/eigen/sparse.h>
+#include <nanobind/eigen/dense.h>
 namespace nb = nanobind;
 constexpr auto rv_ri = nb::rv_policy::reference_internal;
 using namespace servalcat;

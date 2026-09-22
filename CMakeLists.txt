@@ -41,18 +41,20 @@ endif()
 if (${CMAKE_VERSION} VERSION_LESS 3.18 AND NOT SKBUILD)
   find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development)
 else()
-  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module)
+  find_package(Python ${PYTHON_VERSION} REQUIRED COMPONENTS Interpreter Development.Module
+               OPTIONAL_COMPONENTS Development.SABIModule)
 endif()
 
 execute_process(
   COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
   OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE NB_DIR)
 list(APPEND CMAKE_PREFIX_PATH "${NB_DIR}")
-find_package(nanobind 2.7.0 CONFIG REQUIRED)
+find_package(nanobind 3.1 CONFIG REQUIRED)
 message(STATUS "Found nanobind ${nanobind_VERSION}: ${NB_DIR}")
 
 # Build servalcat extension module named 'ext' (NB_MODULE(ext, m) in src/ext.cpp)
-nanobind_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp)
+nanobind_add_module(ext src/ext.cpp src/intensity.cpp src/amplitude.cpp src/refine.cpp src/twin.cpp
+                    BACKEND_MODULE nanobind_backend)
 
 # Ensure module filename base 'ext' (matches NB_MODULE name). Remove lib prefix on Unix.
 set_target_properties(ext PROPERTIES PREFIX "")
@@ -88,6 +90,7 @@ else()
   set(BUILD_GEMMI_PROGRAM OFF CACHE BOOL "" FORCE)
   set(INSTALL_DEV_FILES OFF CACHE BOOL "" FORCE)
   set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(ENABLE_SPLIT_MODE ON CACHE BOOL "" FORCE)
 
   message(STATUS "Configuring GEMMI (building from source)...")
   if (EXISTS "${CMAKE_HOME_DIRECTORY}/gemmi/include/gemmi")
@@ -99,7 +102,7 @@ else()
     FetchContent_Declare(
       gemmi
       GIT_REPOSITORY https://github.com/project-gemmi/gemmi.git
-      GIT_TAG        92e8cfa80cf10bd0d0927946da9f6a3aaf998c85
+      GIT_TAG        97c808222f468f8188f2ed87266e0d7c5a854ce2
     )
     FetchContent_GetProperties(gemmi)
     if (NOT gemmi_POPULATED)

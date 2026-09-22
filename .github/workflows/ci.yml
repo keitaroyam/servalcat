@@ -11,20 +11,19 @@ jobs:
         os: [ubuntu-22.04, macos-15-intel, macos-14, windows-2022]
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         submodules: true
     - name: Build wheels
-      uses: pypa/cibuildwheel@v3.3.1
+      uses: pypa/cibuildwheel@v4.2.1
       env:
-        CIBW_BUILD: 'cp*'
-        CIBW_SKIP: '*38* *musllinux* *_i686 *-win32'
-        CIBW_TEST_SKIP: 'cp38*_arm64'
+        CIBW_BUILD: 'cp310-*'
+        CIBW_SKIP: '*musllinux* *_i686 *-win32'
 
     - run: ls -lh wheelhouse
       shell: bash
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: wheels2-${{ matrix.os }}
         path: wheelhouse/*.whl
@@ -34,7 +33,7 @@ jobs:
     needs: build_wheels
     steps:
       - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v4
+        uses: actions/upload-artifact/merge@v7
         with:
           name: wheels2
           pattern: wheels2-*
@@ -45,27 +44,27 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, ubuntu-24.04, macos-15-intel, macos-14, macos-15, windows-latest]
-        py: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14', '3.14t']
+        py: ['3.10', '3.11', '3.12', '3.13', '3.14']
     name: ${{ matrix.os }} py${{ matrix.py }}
     runs-on: ${{ matrix.os }}
     needs: merge
     if: "!contains(github.event.head_commit.message, '[skip ci]')"
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         submodules: true
 
     - name: checkout monomers
-      uses: actions/checkout@v5
+      uses: actions/checkout@v7
       with:
         repository: MonomerLibrary/monomers
         path: monomers
 
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v7
       with:
         name: wheels2
         path: wheels2
-    - uses: actions/setup-python@v6
+    - uses: actions/setup-python@v7
       with:
         python-version: ${{ matrix.py }}
     - name: Python Setup
