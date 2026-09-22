@@ -412,13 +412,13 @@ def main(args):
     st = utils.fileio.read_structure(args.model)
     ccu = utils.model.CustomCoefUtil()
     if not args.keep_charges:
-        utils.model.remove_charge([st])
+        utils.model.remove_charge(st)
     if args.source == "custom":
         ccu.read_from_cif(st, args.model)
         ccu.show_info()
         ccu.set_coeffs(st)
     else:
-        utils.model.check_atomsf([st], args.source)
+        utils.model.check_atomsf(st, args.source)
     ncs_org = gemmi.NcsOpList(st.ncs)
     utils.model.expand_ncs(st)
 

@@ -317,7 +317,7 @@ def main(args):
                                                    labin=labin,
                                                    n_bins_ml=args.nbins,
                                                    free=None,
-                                                   xyzins=[],
+                                                   xyzin=None,
                                                    d_min=args.d_min,
                                                    n_per_mlbin=500,
                                                    max_mlbins=30,

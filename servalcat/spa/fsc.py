@@ -280,7 +280,7 @@ def main(args):
         st.spacegroup_hm = "P1"
         ccu = utils.model.CustomCoefUtil()
         if not args.keep_charges:
-            utils.model.remove_charge([st])
+            utils.model.remove_charge(st)
         if args.source == "custom":
             ccu.read_from_cif(st, args.model)
             ccu.show_info()

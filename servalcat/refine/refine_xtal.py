@@ -160,13 +160,13 @@ def main(args):
                                   prefer_anomalous=args.prefer_anomalous)
     software_items = utils.fileio.software_items_from_mtz(hklin)
     try:
-        hkldata, sts, fc_labs, args.free, use_in_est = process_input(
+        hkldata, st, fc_labs, args.free, use_in_est = process_input(
             hklin=hklin,
             labin=labin,
             n_bins_ml=args.nbins_ml,
             n_bins_stat=args.nbins,
             free=args.free,
-            xyzins=[args.model],
+            xyzin=args.model,
             d_max=args.d_max,
             d_min=args.d_min,
             use=args.use_in_est,
@@ -207,7 +207,6 @@ def main(args):
         del hkldata.binned_df["ml"]["S"]
         is_int = False
         
-    st = sts[0]
     utils.model.fix_deuterium_residues(st)
     use_nucleus = args.source in ("neutron", "electron")
     if args.unrestrained:
@@ -252,11 +251,11 @@ def main(args):
     
     ccu = utils.model.CustomCoefUtil()
     if args.source == "custom":
-        ccu.read_from_cif(sts[0], args.model)
+        ccu.read_from_cif(st, args.model)
         ccu.show_info()
         addends, addends2 = None, None
     else:
-        addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
+        addends, addends2 = utils.model.check_atomsf(st, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
 
     # initialize values
     utils.model.reset_adp(st[0], args.bfactor, args.adp)

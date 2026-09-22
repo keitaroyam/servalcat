@@ -1217,13 +1217,13 @@ def fcalc(args):
     st = fileio.read_structure(args.model)
     ccu = model.CustomCoefUtil()
     if not args.keep_charges:
-        model.remove_charge([st])
+        model.remove_charge(st)
     if args.source == "custom":
         ccu.read_from_cif(st, args.model)
         ccu.show_info()
         ccu.set_coeffs(st)
     else:
-        model.check_atomsf([st], args.source)
+        model.check_atomsf(st, args.source)
     if not args.no_expand_ncs:
         model.expand_ncs(st)    
 

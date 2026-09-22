@@ -171,7 +171,7 @@ def main(args):
 
     if args.model:
         st = utils.fileio.read_structure(args.model)
-        utils.model.remove_charge([st])
+        utils.model.remove_charge(st)
         ccu = utils.model.CustomCoefUtil()
         if args.source == "custom":
             ccu.read_from_cif(st, args.model)

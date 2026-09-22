@@ -93,10 +93,10 @@ class LL_Xtal:
             # recalc maps?
     def update_fc(self):
         # modify st before fc calculation
-        b_resid = sigmaa.subtract_common_aniso_from_model([self.st])
+        b_resid = sigmaa.subtract_common_aniso_from_model(self.st)
         self.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb()) # needed for target calculation
         d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
-        sigmaa.update_fc(st_list=[self.st], fc_labs=self.fc_labs,
+        sigmaa.update_fc(self.st, fc_labs=self.fc_labs,
                          d_min=d_min, monlib=self.monlib,
                          source=self.source, mott_bethe=self.mott_bethe,
                          hkldata=self.hkldata, twin_data=self.twin_data,

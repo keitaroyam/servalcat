@@ -175,7 +175,7 @@ def main(args):
         utils.model.setup_entities(st, clear=True, force_subchain_names=True, overwrite_entity_type=True,
                                    fix_sequences=True)
     if not args.keep_charges:
-        utils.model.remove_charge([st])
+        utils.model.remove_charge(st)
     if args.hklin:
         assert not args.cross_validation
         mtz = utils.fileio.read_mmhkl(args.hklin)
@@ -219,7 +219,7 @@ def main(args):
     if args.source == "custom":
         ccu.show_info()
     else:
-        utils.model.check_atomsf([st], args.source)
+        utils.model.check_atomsf(st, args.source)
 
     # initialize values
     utils.model.reset_adp(st[0], args.bfactor, args.adp)

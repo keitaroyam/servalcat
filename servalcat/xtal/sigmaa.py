@@ -40,8 +40,8 @@ def add_arguments(parser):
                         help='MTZ column of --hklin_free')
     parser.add_argument('--free', type=int,
                         help='flag number for test set')
-    parser.add_argument('--model', required=True, nargs="+", action="append",
-                        help='Input atomic model file(s)')
+    parser.add_argument('--model', required=True,
+                        help='Input atomic model file')
     parser.add_argument("-d", '--d_min', type=float)
     parser.add_argument('--d_max', type=float)
     parser.add_argument('--nbins', type=int,
@@ -208,9 +208,10 @@ def calc_r_and_cc(hkldata, twin_data=None):
     return stats, ret
 # calc_r_and_cc()
 
-def subtract_common_aniso_from_model(sts):
-    adpdirs = utils.model.adp_constraints(sts[0].find_spacegroup().operations(), sts[0].cell, tr0=True)
-    aniso_all = [cra.atom.aniso.added_kI(-cra.atom.aniso.trace()/3).elements_pdb() for st in sts for cra in st[0].all() if cra.atom.aniso.nonzero()]
+def subtract_common_aniso_from_model(st):
+    adpdirs = utils.model.adp_constraints(st.find_spacegroup().operations(), st.cell, tr0=True)
+    aniso_all = [cra.atom.aniso.added_kI(-cra.atom.aniso.trace()/3).elements_pdb()
+                 for model in st for cra in model.all() if cra.atom.aniso.nonzero()]
     if not aniso_all: # no atoms with aniso ADP
         return gemmi.SMat33f(0,0,0,0,0,0)
 
@@ -222,8 +223,8 @@ def subtract_common_aniso_from_model(sts):
 
     # correct atoms
     smat_sub = gemmi.SMat33f(*aniso_mean)
-    for st in sts:
-        for cra in st[0].all():
+    for model in st:
+        for cra in model.all():
             if cra.atom.aniso.nonzero():
                 cra.atom.aniso -= smat_sub
 
@@ -1357,18 +1358,6 @@ def calculate_maps_twin(hkldata, b_aniso, fc_labs, D_labs, twin_data, use="all")
                 hkldata.binned_df["ml"].loc[i_bin, lab] = numpy.nanmean(m)
 # calculate_maps_twin()
 
-def merge_models(sts): # simply merge models. no fix in chain ids etc.
-    st2 = sts[0].clone()
-    del st2[:]
-    model = gemmi.Model(1)
-    for st in sts:
-        for m in st:
-            for c in m:
-                model.add_chain(c)
-    st2.add_model(model)
-    return st2
-# merge_models()
-
 def decide_mtz_labels(mtz, find_free=True, require=None, prefer_intensity=False,
                       prefer_anomalous=False):
     """
@@ -1433,38 +1422,36 @@ def decide_spacegroup(sg_user, sg_st, sg_hkl):
     return ret
 # decide_spacegroup
 
-def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
+def process_input(hklin, labin, n_bins_ml, free, xyzin=None, d_max=None, d_min=None,
                   n_per_mlbin=None, use="all", max_mlbins=None, cif_index=0, keep_charges=False,
                   allow_unusual_occupancies=False, space_group=None,
                   hklin_free=None, labin_free=None, labin_llweight=None, n_bins_stat=None, max_statbins=20):
     if labin: assert 1 < len(labin) < 6
     assert use in ("all", "work", "test")
 
-    if len(xyzins) > 0 and type(xyzins[0]) is gemmi.Structure:
-        sts = xyzins
+    if type(xyzin) is gemmi.Structure:
+        st = xyzin
     else:
-        sts = []
+        st = None
     
     if type(hklin) is gemmi.Mtz or utils.fileio.is_mmhkl_file(hklin):
         if type(hklin) is gemmi.Mtz:
             mtz = hklin
         else:
             mtz = utils.fileio.read_mmhkl(hklin, cif_index=cif_index)
-        if not sts:
-            sts = [utils.fileio.read_structure(f) for f in xyzins]
+        if st is None and xyzin is not None:
+            st = utils.fileio.read_structure(xyzin)
     else:
-        assert len(xyzins) == 1
-        assert not sts
-        st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzins[0]])
+        assert not st
+        st, mtz = utils.fileio.read_small_molecule_files([hklin, xyzin])
         if None in (st, mtz):
             raise SystemExit("Failed to read small molecule file(s)")
-        sts = [st]
 
-    for st in sts:
+    if st:
         utils.model.check_occupancies(st, raise_error=not allow_unusual_occupancies)
         
     sg_use = decide_spacegroup(sg_user=gemmi.SpaceGroup(space_group) if space_group else None,
-                               sg_st=sts[0].find_spacegroup() if sts else None,
+                               sg_st=st.find_spacegroup() if st else None,
                                sg_hkl=mtz.spacegroup)
     if not labin:
         labin = decide_mtz_labels(mtz, find_free=hklin_free is None)
@@ -1517,21 +1504,19 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
     if hkldata.df.empty:
         raise RuntimeError("No data in hkl data")
 
-    if sts:
-        for st in sts:
-            if st[0].count_atom_sites() == 0:
-                raise RuntimeError("No atom in the model")
-        if not hkldata.cell.approx(sts[0].cell, 1e-3):
+    if st:
+        if st[0].count_atom_sites() == 0:
+            raise RuntimeError("No atom in the model")
+        if not hkldata.cell.approx(st.cell, 1e-3):
             logger.writeln("Warning: unit cell mismatch between model and reflection data")
             logger.writeln("         using unit cell from mtz")
 
-        for st in sts:
-            st.cell = hkldata.cell # mtz cell is used in any case
-            st.spacegroup_hm = sg_use.xhm()
-            st.setup_cell_images()
+        st.cell = hkldata.cell # mtz cell is used in any case
+        st.spacegroup_hm = sg_use.xhm()
+        st.setup_cell_images()
 
         if not keep_charges:
-            utils.model.remove_charge(sts)
+            utils.model.remove_charge(st)
 
     hkldata.switch_to_asu()
     hkldata.remove_systematic_absences()
@@ -1616,7 +1601,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
     hkldata.setup_binning(n_bins=n_bins_stat, name="stat")
     hkldata.setup_centric_and_selections("ml", data_lab=newlabels[0], free=free)
     hkldata.setup_centric_and_selections("stat", data_lab=newlabels[0], free=free)
-    fc_labs = ["FC{}".format(i)  for i, _ in enumerate(sts)]
+    fc_labs = ["FC0"] if st else []
 
     # Create a centric selection table for faster look up
     stats = hkldata.binned_df["stat"].copy()
@@ -1663,35 +1648,34 @@ def process_input(hklin, labin, n_bins_ml, free, xyzins, d_max=None, d_min=None,
             hkldata.binned_df[name]["CC*"] = numpy.sqrt(2 * cc12 / (1 + cc12))
     
     logger.writeln(stats.to_string())
-    return hkldata, sts, fc_labs, free, use
+    return hkldata, st, fc_labs, free, use
 # process_input()
 
-def update_fc(st_list, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None, addends=None, addends2=None):
+def update_fc(st, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin_data=None, addends=None, addends2=None):
     #assert (hkldata, twin_data).count(None) == 1
     # hkldata not updated when twin_data is given
     if addends2:
         hkldata.df["FC''"] = 0.
-    for i, st in enumerate(st_list):
-        if st.ncs:
-            st = st.clone()
-            st.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
-        if twin_data:
-            hkl = twin_data.asu
-        else:
-            hkl = hkldata.miller_array()
-        fc = utils.model.calc_fc_fft(st, d_min - 1e-6,
-                                     monlib=monlib,
-                                     source=source,
-                                     mott_bethe=mott_bethe,
-                                     miller_array=hkl,
-                                     addends=addends)
-        if addends2 and not twin_data:
-            fcpp = utils.model.calc_fcpp_fft(st, d_min - 1e-6, addends2, miller_array=hkl)
-            hkldata.df["FC''"] += fcpp
-        if twin_data:
-            twin_data.f_calc[:,i] = fc
-        else:
-            hkldata.df[fc_labs[i]] = fc
+    if st.ncs:
+        st = st.clone()
+        st.expand_ncs(gemmi.HowToNameCopiedChain.Dup, merge_dist=0)
+    if twin_data:
+        hkl = twin_data.asu
+    else:
+        hkl = hkldata.miller_array()
+    fc = utils.model.calc_fc_fft(st, d_min - 1e-6,
+                                 monlib=monlib,
+                                 source=source,
+                                 mott_bethe=mott_bethe,
+                                 miller_array=hkl,
+                                 addends=addends)
+    if addends2 and not twin_data:
+        fcpp = utils.model.calc_fcpp_fft(st, d_min - 1e-6, addends2, miller_array=hkl)
+        hkldata.df["FC''"] += fcpp
+    if twin_data:
+        twin_data.f_calc[:,0] = fc
+    else:
+        hkldata.df[fc_labs[0]] = fc
     if not twin_data:
         hkldata.df["FC"] = hkldata.df[fc_labs].sum(axis=1)
 # update_fc()
@@ -1711,13 +1695,13 @@ def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     return Fmask
 # calc_Fmask()
 
-def bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh", twin_data=None):
+def bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=True, use_int=False, mask=None, func_type="log_cosh", twin_data=None):
     # fc_labs must have solvent part at the end
     miller_array = twin_data.asu if twin_data else hkldata.miller_array()
-    d_min = twin_data.d_min(sts[0].cell) if twin_data else hkldata.d_min_max()[0]
+    d_min = twin_data.d_min(st.cell) if twin_data else hkldata.d_min_max()[0]
     if use_solvent:
         if mask is None:
-            Fmask = calc_Fmask(merge_models(sts), d_min, miller_array)
+            Fmask = calc_Fmask(st, d_min, miller_array)
         else:
             fmask_gr = gemmi.transform_map_to_f_phi(mask)
             Fmask = fmask_gr.get_value_by_hkl(miller_array)
@@ -1868,13 +1852,13 @@ def main(args):
         labin = decide_mtz_labels(hklin, prefer_intensity=args.prefer_intensity,
                                   prefer_anomalous=args.prefer_anomalous)
     try:
-        hkldata, sts, fc_labs, free, args.use = process_input(
+        hkldata, st, fc_labs, free, args.use = process_input(
             hklin=hklin,
             labin=labin,
             n_bins_ml=args.nbins_ml,
             n_bins_stat=args.nbins,
             free=args.free,
-            xyzins=sum(args.model, []),
+            xyzin=args.model,
             d_max=args.d_max,
             d_min=args.d_min,
             use=args.use,
@@ -1898,19 +1882,18 @@ def main(args):
             logger.writeln(f"Updating wavelength using --wavelength={args.wavelength}")
         hkldata.wavelength = args.wavelength
 
-    addends, addends2 = utils.model.check_atomsf(sts, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
-    for st in sts:
-        utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False)
+    addends, addends2 = utils.model.check_atomsf(st, args.source, mott_bethe=(args.source=="electron"), wavelength=hkldata.wavelength)
+    utils.model.find_special_positions(st, fix_occ=True, fix_pos=False, fix_adp=False)
 
     if args.twin:
         twin_data, _ = find_twin_domains_from_data(hkldata)
     else:
         twin_data = None
     if twin_data:
-        twin_data.setup_f_calc(len(sts) + (0 if args.no_solvent else 1))
+        twin_data.setup_f_calc(1 + (0 if args.no_solvent else 1))
 
-    subtract_common_aniso_from_model(sts)
-    update_fc(sts, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
+    subtract_common_aniso_from_model(st)
+    update_fc(st, fc_labs, d_min=hkldata.d_min_max()[0], monlib=None,
               source=args.source, mott_bethe=(args.source=="electron"),
               hkldata=hkldata, twin_data=twin_data, addends=addends, addends2=addends2)
     is_int = "I" in hkldata.df
@@ -1924,7 +1907,7 @@ def main(args):
     # FP/SIGFP will be scaled. Total FC will be added.
     if not args.no_solvent:
         fc_labs.append("Fbulk")
-    lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+    lsq = bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=not args.no_solvent,
                                       use_int=is_int, mask=mask, twin_data=twin_data)
     b_aniso = lsq.b_aniso
     # stats
@@ -1937,7 +1920,7 @@ def main(args):
         #del hkldata.df["FC"]
         #del hkldata.df["Fbulk"]
         # Need to redo scaling?
-        lsq = bulk_solvent_and_lsq_scales(hkldata, sts, fc_labs, use_solvent=not args.no_solvent,
+        lsq = bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=not args.no_solvent,
                                           use_int=is_int, mask=mask, twin_data=twin_data)
         b_aniso = lsq.b_aniso
         stats, overall = calc_r_and_cc(hkldata, twin_data)

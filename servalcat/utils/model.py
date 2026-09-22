@@ -74,10 +74,10 @@ def determine_blur_for_dencalc(st, grid):
     return b_add
 # determine_blur_for_dencalc()
 
-def remove_charge(sts):
+def remove_charge(st):
     nonzero = False
-    for st in sts:
-        for cra in st[0].all():
+    for model in st:
+        for cra in model.all():
             if cra.atom.charge != 0: nonzero = True
             cra.atom.charge = 0
     if nonzero:
@@ -142,14 +142,14 @@ class CustomCoefUtil:
     # show_info()
 # class CustomCoefUtil
 
-def check_atomsf(sts, source, mott_bethe=True, wavelength=None):
+def check_atomsf(st, source, mott_bethe=True, wavelength=None):
     assert source in ("xray", "electron", "neutron")
     if source != "electron": mott_bethe = False
     if wavelength is not None: assert source == "xray"
     logger.writeln("Atomic scattering factors for {}".format("xray (use Mott-Bethe to convert to electrons)" if mott_bethe else source))
     if source != "xray" and not mott_bethe:
         logger.writeln("  Note that charges will be ignored")
-    el_charges = {(cra.atom.element, cra.atom.charge) for st in sts for cra in st[0].all()}
+    el_charges = {(cra.atom.element, cra.atom.charge) for model in st for cra in model.all()}
     elems = {x[0] for x in el_charges}
     if wavelength is not None and source == "xray":
         addends = gemmi.Addends()
