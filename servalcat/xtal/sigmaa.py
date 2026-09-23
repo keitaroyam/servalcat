@@ -1924,11 +1924,6 @@ def main(args):
     lsq = bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=not args.no_solvent,
                                       use_int=is_int, mask=mask, twin_data=twin_data)
     b_aniso = lsq.b_aniso
-    # stats
-    stats, overall = calc_r_and_cc(hkldata, twin_data)
-    if any(l.startswith("R1") for l in stats):
-        logger.writeln("R1 is calculated for reflections with I/sigma>2.")
-
     if twin_data:
         estimate_twin_fractions_from_model(twin_data, hkldata)
         #del hkldata.df["FC"]
@@ -1937,10 +1932,12 @@ def main(args):
         lsq = bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=not args.no_solvent,
                                           use_int=is_int, mask=mask, twin_data=twin_data)
         b_aniso = lsq.b_aniso
-        stats, overall = calc_r_and_cc(hkldata, twin_data)
-    for lab in "R", "CC":
-        logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
-    logger.writeln(stats.to_string() + "\n")
+
+    if is_int:
+        from servalcat.xtal import french_wilson as fw
+        fw.determine_initial_Sigma(hkldata, b_aniso)
+        fw.optimize_Sigma(hkldata, b_aniso)
+        fw.french_wilson(hkldata, b_aniso, labout=["FP", "SIGFP"])
 
     # Estimate ML parameters
     D_labs = ["D{}".format(i) for i in range(len(fc_labs))]
@@ -1958,7 +1955,15 @@ def main(args):
                                       twin_data=twin_data)
         if twin_data and args.twin_mlalpha:
             mlopt_twin_fractions(hkldata, twin_data, b_aniso)
-        
+
+    # stats
+    stats, overall = calc_r_and_cc(hkldata, twin_data)
+    if any(l.startswith("R1") for l in stats):
+        logger.writeln("R1 is calculated for reflections with I/sigma>2.")
+    for lab in "R", "CC":
+        logger.writeln(" ".join("{} = {:.4f}".format(x, overall[x]) for x in overall if x.startswith(lab)))
+    logger.writeln(stats.to_string() + "\n")
+
     # Write mtz file
     if twin_data:
         labs = ["F_est", "F_exp"]
