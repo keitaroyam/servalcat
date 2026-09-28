@@ -558,6 +558,26 @@ struct Geometry {
     std::array<gemmi::Atom*, 3> atoms;
     std::vector<Value> values;
   };
+  struct CentroidAngle {
+    CentroidAngle(const std::vector<CentroidAtom> &ca1, const std::vector<CentroidAtom> &ca2, const std::vector<CentroidAtom> &ca3)
+      : catoms({ca1,ca2,ca3}) {}
+    const Angle::Value* find_closest_value(double dist) const {
+      double db = std::numeric_limits<double>::infinity();
+      const Angle::Value* ret = nullptr; // XXX safer to initialise with first item
+      for (const auto &v : values) {
+        double tmp = std::abs(v.value - dist);
+        if (tmp < db) {
+          db = tmp;
+          ret = &v;
+        }
+      }
+      return ret;
+    }
+    double calc(const gemmi::UnitCell& cell, double waskal, double wstiff, bool von_mises,
+                GeomTarget* target, Reporting *reporting) const;
+    std::array<std::vector<CentroidAtom>, 3> catoms;
+    std::vector<Angle::Value> values;
+  };
   struct Torsion {
     struct Value {
       Value(double v, double s, int p): value(v), sigma(s), period(p) {}
@@ -694,6 +714,7 @@ struct Geometry {
     using bond_reporting_t = std::tuple<const Bond*, const Bond::Value*, double>;
     using cbond_reporting_t = std::tuple<const CentroidBond*, const CentroidBond::Value*, double>;
     using angle_reporting_t = std::tuple<const Angle*, const Angle::Value*, double>;
+    using cangle_reporting_t = std::tuple<const CentroidAngle*, const Angle::Value*, double>;
     using torsion_reporting_t = std::tuple<const Torsion*, const Torsion::Value*, double, double>; // delta, tors
     using chiral_reporting_t = std::tuple<const Chirality*, double, double>; // delta, ideal
     using plane_reporting_t = std::tuple<const Plane*, std::vector<double>>;
@@ -706,6 +727,7 @@ struct Geometry {
     std::vector<bond_reporting_t> bonds;
     std::vector<cbond_reporting_t> cbonds;
     std::vector<angle_reporting_t> angles;
+    std::vector<cangle_reporting_t> cangles;
     std::vector<torsion_reporting_t> torsions;
     std::vector<chiral_reporting_t> chirs;
     std::vector<plane_reporting_t> planes;
@@ -848,6 +870,7 @@ struct Geometry {
   std::vector<Bond> bonds;
   std::vector<CentroidBond> cbonds;
   std::vector<Angle> angles;
+  std::vector<CentroidAngle> cangles;
   std::vector<Torsion> torsions;
   std::vector<Chirality> chirs;
   std::vector<Plane> planes;
@@ -1391,6 +1414,19 @@ inline void Geometry::setup_target(bool use_occr) {
         add(t.catoms[0][j].atom, t.catoms[1][k].atom, 12);
   }
 
+  for (const auto &t : cangles) {
+    for (size_t i = 0; i < 3; ++i)
+      for (size_t j = 1; j < t.catoms[i].size(); ++j)
+        for (size_t k = 0; k < j; ++k)
+          add(t.catoms[i][j].atom, t.catoms[i][k].atom, 13);
+
+    for (size_t i = 0; i < 2; ++i)
+      for (size_t j = i + 1; j < 3; ++j)
+        for (size_t k = 0; k < t.catoms[i].size(); ++k)
+          for (size_t l = 0; l < t.catoms[j].size(); ++l)
+            add(t.catoms[i][k].atom, t.catoms[j][l].atom, 13);
+  }
+
   // sort_and_compress_distances
   target.pairs.clear();
   target.pairs_kind.clear();
@@ -1440,6 +1476,9 @@ inline double Geometry::calc(bool use_nucleus, bool check_only,
   for (const auto &t : angles)
     if (has_selected(t.atoms))
       ret += t.calc(st.cell, wangle * get_w(t.atoms), wangle2, angle_von_mises, target_ptr, rep_ptr);
+  for (const auto &t : cangles)
+    if (has_selected(t.catoms[0]) || has_selected(t.catoms[1]) || has_selected(t.catoms[2]))
+      ret += t.calc(st.cell, wangle * get_w2(t.catoms), wangle2, angle_von_mises, target_ptr, rep_ptr);
   for (const auto &t : torsions)
     if (has_selected(t.atoms))
       ret += t.calc(wtors * get_w(t.atoms), wtors2, target_ptr, rep_ptr);
@@ -1953,33 +1992,88 @@ inline double Geometry::CentroidBond::calc(const gemmi::UnitCell& cell, double w
   return robustf.f;
 }
 
-inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, double wstiff, bool von_mises,
-                                    GeomTarget* target, Reporting *reporting) const {
-  if (waskal <= 0) return 0.;
+struct AngleDeriv {
   // target functions:
   //  when ideal close to 180: 0.5 * w * h^T h = w * (1 + cosa) where h = v1/|v1| + v2/|v2|
   //  if von_mises: w * (1 - cos(a - a0))
   //  otherwise: 0.5 * w * (a - a0)**2
+  bool close_to_180 = false;
+  const Geometry::Angle::Value* closest = nullptr;
+  double da = 0.;
+  double fval = 0.; // without weight
+  double grad_fac = 1.;
+  double secder_fac = 1.;
+  size_t num_terms = 0; // 1 or 3
+  gemmi::Vec3 grad[3] = {}; // grad for x1, x2, x3
+  gemmi::Vec3 u[3][3] = {}; // for hessian, up to num_terms
+
+  template<typename F>
+  AngleDeriv(const gemmi::Position& x1, const gemmi::Position& x2, const gemmi::Position& x3,
+             F find_closest_value, bool von_mises, bool calc_ders) {
+    const gemmi::Position v1 = x2 - x1;
+    const gemmi::Position v2 = x2 - x3;
+    const double v1n = std::max(v1.length(), 0.02);
+    const double v2n = std::max(v2.length(), 0.02);
+    const double v12 = v1.dot(v2);
+    const double cosa = gemmi::clamp(v12 / v1n / v2n, -1., 1.);
+    const double sina = gemmi::clamp(std::sqrt(1 - cosa * cosa), 0.001, 1.);
+    const double a_rad = std::acos(cosa);
+    const double a_deg = gemmi::deg(a_rad);
+    closest = find_closest_value(a_deg);
+    da = a_deg - closest->value;
+    close_to_180 = std::abs(closest->value - 180.0) < 0.5;
+    fval = close_to_180 ? (1. + cosa) : von_mises ? (1-std::cos(gemmi::rad(da))) : (da * da * 0.5);
+
+    if (!calc_ders)
+      return;
+
+    if (close_to_180) { // a special case.
+      num_terms = 3;
+      const gemmi::Vec3 h = v1 / v1n + v2 / v2n;
+      gemmi::Vec3 dhdx[3][3];
+      for (int i = 0; i < 3; ++i) {
+        const gemmi::Vec3 e_i(i==0, i==1, i==2);
+        dhdx[0][i] = -(e_i - v1 * v1.at(i) / sq(v1n)) / v1n;
+        dhdx[2][i] = -(e_i - v2 * v2.at(i) / sq(v2n)) / v2n;
+        dhdx[1][i] = -dhdx[0][i] - dhdx[2][i];
+      }
+      for(int i = 0; i < 3; ++i) {
+        grad[i] = {h.dot(dhdx[i][0]), h.dot(dhdx[i][1]), h.dot(dhdx[i][2])};
+        for (int j = 0; j < 3; ++j)
+          u[i][j] = {dhdx[i][0].at(j), dhdx[i][1].at(j), dhdx[i][2].at(j)};
+      }
+    } else {
+      num_terms = 1;
+      const double a0_rad = gemmi::rad(closest->value);
+      // d/dx cosa
+      grad[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n));
+      grad[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n));
+      grad[1] = -grad[0] - grad[2];
+      grad_fac = von_mises
+        // sin(a-a0) / sina
+        ? (std::cos(a0_rad) - cosa * (std::abs(a_rad - a0_rad) < 1e-4
+                                      ? 1. : (std::sin(a0_rad) / sina)))
+        : (da * gemmi::deg(1) / sina);
+      secder_fac = von_mises
+        ? (1. / sq(sina))
+        : (sq(gemmi::deg(1) / sina));
+      for (int i = 0; i < 3; ++i)
+        u[i][0] = grad[i];
+    }
+  }
+};
+
+inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, double wstiff, bool von_mises,
+                                    GeomTarget* target, Reporting *reporting) const {
+  if (waskal <= 0) return 0.;
   const gemmi::Transform tr1 = get_transform(cell, sym_idx_1, pbc_shift_1);
   const gemmi::Transform tr2 = get_transform(cell, sym_idx_2, pbc_shift_2);
   const gemmi::Position& x1 = same_asu(0) ? atoms[0]->pos : gemmi::Position(tr1.apply(atoms[0]->pos));
   const gemmi::Position& x2 = atoms[1]->pos;
   const gemmi::Position& x3 = same_asu(2) ? atoms[2]->pos : gemmi::Position(tr2.apply(atoms[2]->pos));
-  const gemmi::Position v1 = x2 - x1;
-  const gemmi::Position v2 = x2 - x3;
-  const double v1n = std::max(v1.length(), 0.02);
-  const double v2n = std::max(v2.length(), 0.02);
-  const double v12 = v1.dot(v2);
-  const double cosa = std::max(-1., std::min(1., v12 / v1n / v2n));
-  const double sina = std::min(1., std::max(std::sqrt(1 - cosa * cosa), 0.001));
-  const double a_rad = std::acos(cosa);
-  const double a = gemmi::deg(a_rad);
-  auto closest = find_closest_value(a);
-  const double da = a - closest->value;
-  const double a0_rad = gemmi::rad(closest->value);
-  const bool close_to_180 = std::abs(closest->value - 180.0) < 0.5;
-  const double weight = sq(waskal / closest->sigma * ((von_mises || close_to_180) ? gemmi::deg(1) : 1)) * (1. + wstiff * sq(da));
-  const double ret = close_to_180 ? (weight * (1. + cosa)) : von_mises ? ((1-std::cos(gemmi::rad(da))) * weight) : (da * da * weight * 0.5);
+  AngleDeriv ader(x1, x2, x3, [this](double deg){return find_closest_value(deg);}, von_mises, target != nullptr);
+  const double weight = sq(waskal / ader.closest->sigma * ((von_mises || ader.close_to_180) ? gemmi::deg(1) : 1)) * (1. + wstiff * sq(ader.da));
+  const double ret = weight * ader.fval;
   if (target != nullptr) {
     int ia[3], pos[3], apos[3];
     for (int i = 0; i < 3; ++i) {
@@ -1987,82 +2081,157 @@ inline double Geometry::Angle::calc(const gemmi::UnitCell& cell, double waskal, 
       pos[i] = target->params->get_pos_vec_geom(ia[i], RefineParams::Type::X);
       apos[i] = target->params->get_pos_mat_geom(ia[i], RefineParams::Type::X);
     }
-    if (close_to_180) { // a special case.
-      const gemmi::Vec3 h = v1 / v1n + v2 / v2n;
-      gemmi::Vec3 dhdx[9]; // dh/dx11, dx12, dx13, dx21, ...
-      for (int i = 0; i < 3; ++i) {
-        dhdx[i]   = -(gemmi::Vec3(i==0, i==1, i==2) - v1 * v1.at(i) / sq(v1n)) / v1n;
-        dhdx[6+i] = -(gemmi::Vec3(i==0, i==1, i==2) - v2 * v2.at(i) / sq(v2n)) / v2n;
-        dhdx[3+i] = -dhdx[i] - dhdx[6+i];
+    gemmi::Mat33 trs[3] = {tr1.mat, {}, tr2.mat};
+    for (int i = 0; i < 3; ++i)
+      if (!same_asu(i)) {
+        const auto tr_t = trs[i].transpose();
+        ader.grad[i] = tr_t.multiply(ader.grad[i]);
+        for (int j = 0; j < ader.num_terms; ++j)
+          ader.u[i][j] = tr_t.multiply(ader.u[i][j]);
       }
-      gemmi::Mat33 trs[3] = {tr1.mat, {}, tr2.mat};
-      for(int i = 0; i < 3; ++i)
-        if (pos[i] >= 0) {
-          gemmi::Vec3 v(h.dot(dhdx[3*i]), h.dot(dhdx[3*i+1]), h.dot(dhdx[3*i+2]));
-          if (!same_asu(i)) // same_asu(1) will always return true
-            v = trs[i].transpose().multiply(v);
-          target->incr_vn(pos[i], weight, v);
-          gemmi::SMat33<double> smat{dhdx[3*i].length_sq(), dhdx[3*i+1].length_sq(), dhdx[3*i+2].length_sq(),
-                                     dhdx[3*i].dot(dhdx[3*i+1]), dhdx[3*i].dot(dhdx[3*i+2]), dhdx[3*i+1].dot(dhdx[3*i+2])};
-          if (!same_asu(i))
-            smat = smat.transformed_by<double>(trs[i].transpose());
-          const int ia6 = ia[i] * 6;
-          target->am[apos[i]]   += weight * smat.u11;
-          target->am[apos[i]+1] += weight * smat.u22;
-          target->am[apos[i]+2] += weight * smat.u33;
-          target->am[apos[i]+3] += weight * smat.u12;
-          target->am[apos[i]+4] += weight * smat.u13;
-          target->am[apos[i]+5] += weight * smat.u23;
-        }
-      for (int i = 0; i < 2; ++i)
-        for (int j = i+1; j < 3; ++j)
-          if (pos[i] >= 0 && pos[j] >= 0) { // shouldn't we make sure pos[i] != pos[j]?
+    for(int i = 0; i < 3; ++i)
+      if (pos[i] >= 0) {
+        target->incr_vn(pos[i], weight * ader.grad_fac, ader.grad[i]);
+        for (int j = 0; j < ader.num_terms; ++j)
+          target->incr_am_diag(apos[i], weight * ader.secder_fac, ader.u[i][j]);
+      }
+    for (int i = 0; i < 2; ++i)
+      for (int j = i+1; j < 3; ++j)
+        if (pos[i] >= 0 && pos[j] >= 0) {
+          if (pos[i] != pos[j]) {
             auto mp = target->find_restraint(ia[i], ia[j]);
-            gemmi::Mat33 mat;
-            for (int k = 0; k < 3; ++k)
-              for (int l = 0; l < 3; ++l)
-                mat[l][k] = dhdx[3*i+l].dot(dhdx[3*j+k]);
-            mat = trs[mp.imode == 0 ? i : j].transpose().multiply(mat).multiply(trs[mp.imode == 0 ? j : i]); // correct?
-            for (int k = 0; k < 3; ++k)
-              for (int l = 0; l < 3; ++l)
-                target->am[mp.ipos+3*k+l] += weight * mat[l][k];
-          }
-    } else {
-      gemmi::Vec3 dcosadx[3]; // d/dx cosa
-      dcosadx[0] = (v2 / (v1n * v2n) - v1 * cosa / (v1n * v1n));
-      dcosadx[2] = (v1 / (v1n * v2n) - v2 * cosa / (v2n * v2n));
-      dcosadx[1] = -dcosadx[0] - dcosadx[2];
-      if (!same_asu(0))
-        dcosadx[0] = tr1.mat.transpose().multiply(dcosadx[0]);
-      if (!same_asu(2))
-        dcosadx[2] = tr2.mat.transpose().multiply(dcosadx[2]);
-      const double deriv_fac = von_mises
-        // sin(a-a0) / sina
-        ? (weight * (std::cos(a0_rad) - cosa * (std::abs(a_rad - a0_rad) < 1e-4
-                                                ? 1. : (std::sin(a0_rad) / sina))))
-        : (weight * da * gemmi::deg(1) / sina);
-      const double secder_fac = von_mises
-        ? (weight / sq(sina))
-        : (weight * sq(gemmi::deg(1) / sina));
-      for(int i = 0; i < 3; ++i)
-        if (pos[i] >= 0) {
-          target->incr_vn(pos[i], deriv_fac, dcosadx[i]);
-          target->incr_am_diag(apos[i], secder_fac, dcosadx[i]);
+            for (int k = 0; k < ader.num_terms; ++k) {
+              if (mp.imode == 0)
+                target->incr_am_ndiag(mp.ipos, weight * ader.secder_fac, ader.u[i][k], ader.u[j][k]);
+              else
+                target->incr_am_ndiag(mp.ipos, weight * ader.secder_fac, ader.u[j][k], ader.u[i][k]);
+            }
+          } else
+            for (int k = 0; k < ader.num_terms; ++k)
+              target->incr_am_diag12(apos[i], weight * ader.secder_fac, ader.u[i][k], ader.u[j][k]);
         }
-      for (int i = 0; i < 2; ++i)
-        for (int j = i+1; j < 3; ++j)
-          if (pos[i] >= 0 && pos[j] >= 0) {
-            auto mp = target->find_restraint(ia[i], ia[j]);
-            if (mp.imode == 0) // ia[i] > ia[j]
-              target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[i], dcosadx[j]);
-            else
-              target->incr_am_ndiag(mp.ipos, secder_fac, dcosadx[j], dcosadx[i]);
-          }
-    }
     target->target += ret;
   }
   if (reporting != nullptr)
-    reporting->angles.emplace_back(this, closest, da);
+    reporting->angles.emplace_back(this, ader.closest, ader.da);
+  return ret;
+}
+
+inline double Geometry::CentroidAngle::calc(const gemmi::UnitCell& cell, double waskal, double wstiff,
+                                            bool von_mises, GeomTarget* target, Reporting *reporting) const {
+  assert(!values.empty());
+  if (waskal <= 0 || catoms[0].empty() || catoms[1].empty() || catoms[2].empty()) return 0.;
+
+  std::array<std::vector<std::optional<gemmi::Transform>>, 3> trs;
+  std::array<gemmi::Position, 3> cpos; // centroids
+
+  for (int i = 0; i < 3; ++i) {
+    trs[i].reserve(catoms[i].size());
+    for (const CentroidAtom &ca : catoms[i]) {
+      if (ca.same_asu()) {
+        trs[i].emplace_back(std::nullopt);
+        cpos[i] += ca.atom->pos * ca.weight;
+      } else {
+        trs[i].push_back(ca.get_transform(cell));
+        cpos[i] += gemmi::Position(trs[i].back().value().apply(ca.atom->pos)) * ca.weight;
+      }
+    }
+  }
+
+  AngleDeriv ader(cpos[0], cpos[1], cpos[2], [this](double deg){return find_closest_value(deg);},
+                  von_mises, target != nullptr);
+  const double weight = sq(waskal / ader.closest->sigma * ((von_mises || ader.close_to_180) ? gemmi::deg(1) : 1)) * (1. + wstiff * sq(ader.da));
+  const double ret = weight * ader.fval;
+
+  if (target != nullptr) {
+    // redundant computation: will fix later (precalculate)
+    auto transform_vec = [](const gemmi::Vec3& vec, double w, const std::optional<gemmi::Transform>& tr) -> gemmi::Vec3 {
+      const gemmi::Vec3 wv = vec * w;
+      return tr.has_value() ? gemmi::Vec3(tr->mat.transpose().multiply(wv)) : wv;
+    };
+    auto process_terms = [&](int g1, int g2, int i, int j, double w1, double w2, auto&& f) {
+      for (int k = 0; k < ader.num_terms; ++k) {
+        const gemmi::Vec3 u[2] = {transform_vec(ader.u[g1][k], w1, trs[g1][i]),
+                                  transform_vec(ader.u[g2][k], w2, trs[g2][j])};
+        f(u);
+      }
+    };
+    // diagonal blocks and off-diagonals within group
+    for (size_t g = 0; g < 3; ++g) {
+      for (size_t i = 0; i < catoms[g].size(); ++i) {
+        const CentroidAtom& ca1 = catoms[g][i];
+        const int ia1 = ca1.atom->serial - 1;
+        const int pos1 = target->params->get_pos_vec_geom(ia1, RefineParams::Type::X);
+        const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+
+        if (pos1 >= 0) {
+          const gemmi::Vec3 grad_i = transform_vec(ader.grad[g], ca1.weight, trs[g][i]);
+          target->incr_vn(pos1, weight * ader.grad_fac, grad_i);
+
+          for (int k = 0; k < ader.num_terms; ++k) {
+            const gemmi::Vec3 u_ik = transform_vec(ader.u[g][k], ca1.weight, trs[g][i]);
+            target->incr_am_diag(apos1, weight * ader.secder_fac, u_ik);
+          }
+
+          for (size_t j = i + 1; j < catoms[g].size(); ++j) {
+            const CentroidAtom& ca2 = catoms[g][j];
+            const int ia2 = ca2.atom->serial - 1;
+            const int pos2 = target->params->get_pos_vec_geom(ia2, RefineParams::Type::X);
+            if (pos2 >= 0) {
+              if (pos1 != pos2) {
+                auto mp = target->find_restraint(ia1, ia2);
+                process_terms(g, g, i, j, ca1.weight, ca2.weight,
+                              [&](const gemmi::Vec3 u[2]) {
+                                target->incr_am_ndiag(mp.ipos, weight * ader.secder_fac, u[mp.imode], u[1 - mp.imode]);
+                              });
+              } else
+                process_terms(g, g, i, j, ca1.weight, ca2.weight,
+                              [&](const gemmi::Vec3 u[2]) {
+                                target->incr_am_diag12(apos1, weight * ader.secder_fac, u[0], u[1]);
+                              });
+            }
+          }
+        }
+      }
+    }
+    // inter-group off-diagonal blocks
+    for (int g1 = 0; g1 < 2; ++g1) {
+      for (int g2 = g1 + 1; g2 < 3; ++g2) {
+        for (size_t i = 0; i < catoms[g1].size(); ++i) {
+          const CentroidAtom& ca1 = catoms[g1][i];
+          const int ia1 = ca1.atom->serial - 1;
+          const int pos1 = target->params->get_pos_vec_geom(ia1, RefineParams::Type::X);
+          if (pos1 < 0) continue;
+
+          for (size_t j = 0; j < catoms[g2].size(); ++j) {
+            const CentroidAtom& ca2 = catoms[g2][j];
+            const int ia2 = ca2.atom->serial - 1;
+            const int pos2 = target->params->get_pos_vec_geom(ia2, RefineParams::Type::X);
+            if (pos2 < 0) continue;
+
+            if (pos1 != pos2) {
+              auto mp = target->find_restraint(ia1, ia2);
+              process_terms(g1, g2, i, j, ca1.weight, ca2.weight,
+                            [&](const gemmi::Vec3 u[2]) {
+                              target->incr_am_ndiag(mp.ipos, weight * ader.secder_fac, u[mp.imode], u[1 - mp.imode]);
+                            });
+            } else {
+              const int apos1 = target->params->get_pos_mat_geom(ia1, RefineParams::Type::X);
+              process_terms(g1, g2, i, j, ca1.weight, ca2.weight,
+                            [&](const gemmi::Vec3 u[2]) {
+                              target->incr_am_diag12(apos1, weight * ader.secder_fac, u[0], u[1]);
+                            });
+            }
+          }
+        }
+      }
+    }
+    target->target += ret;
+  }
+
+  if (reporting != nullptr)
+    reporting->cangles.emplace_back(this, ader.closest, ader.da);
+
   return ret;
 }
 

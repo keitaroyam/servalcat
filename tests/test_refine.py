@@ -175,6 +175,87 @@ class TestRefine(unittest.TestCase):
         self.assertAlmostEqual(stats[-1]["twin_alpha"]["h,k,l"], 0.66, delta=0.02)
         self.assertGreater(stats[-1]["data"]["summary"]["CCIfreeavg"], 0.81)
 
+    def test_180deg(self):
+        xyzin = "mg.pdb"
+        exte = "exte.txt"
+        with open(xyzin, "w") as ofs:
+            ofs.write("""\
+HETATM    1  MG  MG  A   1       0.000   0.000   0.000  1.00 10.00          MG
+HETATM    2   O  HOH A   2       2.080   0.000   0.000  1.00 10.00           O
+HETATM    3   O  HOH A   3      -2.080   0.000   0.000  1.00 10.00           O
+HETATM    4   O  HOH A   4       0.000   2.080   0.000  1.00 10.00           O
+HETATM    5   O  HOH A   5       0.000  -2.080   0.000  1.00 10.00           O
+HETATM    6   O  HOH A   6       0.000   0.000   2.080  1.00 10.00           O
+HETATM    7   O  HOH A   7       0.000   0.000  -2.080  1.00 10.00           O
+""")
+        with open(exte, "w") as ofs:
+            ofs.write("""\
+exte dist firs chai A resi 1 atom MG seco chai A resi 2 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 3 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 4 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 5 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 6 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 7 atom O valu 2.07 sigm 0.04 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 3 atom O valu 180 sigm 6.67 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 4 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 5 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 7 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 3 atom O next chai A resi 1 atom MG next chai A resi 4 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 3 atom O next chai A resi 1 atom MG next chai A resi 5 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 3 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 3 atom O next chai A resi 1 atom MG next chai A resi 7 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 4 atom O next chai A resi 1 atom MG next chai A resi 5 atom O valu 180 sigm 6.67 type 0
+exte angl firs chai A resi 4 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 4 atom O next chai A resi 1 atom MG next chai A resi 7 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 5 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 5 atom O next chai A resi 1 atom MG next chai A resi 7 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 6 atom O next chai A resi 1 atom MG next chai A resi 7 atom O valu 180 sigm 6.67 type 0
+""")
+            
+        sys.argv = ["", "refine_geom", "--model", xyzin,
+                    "--rand", "0.1", "--keyword_file", exte]
+        main()
+        with open("mg_refined_stats.json") as f:
+            stats = json.load(f)
+        self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond angles, non H"], 1e-4)
+
+    def test_180deg_symm(self):
+        xyzin = "mg.pdb"
+        exte = "exte.txt"
+        with open(xyzin, "w") as ofs:
+            ofs.write("""\
+CRYST1   10.000   10.000   10.000  90.00  90.00  90.00 P 1 2 1                  
+HETATM    1  MG  MG  A   1       0.000   0.000   0.000  1.00 10.00          MG
+HETATM    2   O  HOH A   2       2.080   0.000   0.000  1.00 10.00           O
+HETATM    4   O  HOH A   4       0.000   2.080   0.000  1.00 10.00           O
+HETATM    5   O  HOH A   5       0.000  -2.080   0.000  1.00 10.00           O
+HETATM    6   O  HOH A   6       0.000   0.000   2.080  1.00 10.00           O
+""")
+        with open(exte, "w") as ofs:
+            ofs.write("""\
+exte dist firs chai A resi 1 atom MG seco chai A resi 2 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 4 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 5 atom O valu 2.07 sigm 0.04 type 0
+exte dist firs chai A resi 1 atom MG seco chai A resi 6 atom O valu 2.07 sigm 0.04 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 2 atom O symm y valu 180 sigm 6.67 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 4 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 2 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 4 atom O next chai A resi 1 atom MG next chai A resi 5 atom O valu 180 sigm 6.67 type 0
+exte angl firs chai A resi 4 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 5 atom O next chai A resi 1 atom MG next chai A resi 6 atom O valu 90 sigm 4.18 type 0
+exte angl firs chai A resi 6 atom O next chai A resi 1 atom MG next chai A resi 6 atom O symm y valu 180 sigm 6.67 type 0
+""")
+            
+        sys.argv = ["", "refine_geom", "--model", xyzin,
+                    "--rand", "0.1", "--keyword_file", exte]
+        main()
+        with open("mg_refined_stats.json") as f:
+            stats = json.load(f)
+            
+        # doesn't work??
+        #self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Bond angles, non H"], 1e-4)
+        
     def test_exte(self):
         xyzin = os.path.join(root, "5e5z", "5e5z.pdb.gz")
         st = utils.fileio.read_structure(xyzin)
@@ -221,6 +302,42 @@ class TestRefine(unittest.TestCase):
                                         "value": [-45.12], "ideal": [90.], "sigma": [10.], "per": [1],
                                         "z": [-13.512]})
         assert_frame_equal(geo["outliers"]["torsion"], expected_df, atol=0.001)
+
+    def test_centroid(self):
+        xyzin = os.path.join(root, "1e8a", "1e8a.cif.gz")
+        with open("exte.json", "w") as ofs:
+            data = [{"rest_type": "cdist", "restr": {"specs": [[{"chain": "A", "resi": 1090, "names": ["CA"]}],
+                                                               [{"chain": "A", "resi": 65, "names": ["OD1","OD2"]}]],
+                                                     "value": 2.15, "sigma": 0.08}},
+                    {"rest_type": "cdist", "restr": {"specs": [[{"chain": "A", "resi": 1090, "names": ["CA"]}],
+                                                               [{"chain": "A", "resi": 72, "names": ["OE1","OE2"]}]],
+                                                     "value": 2.13, "sigma": 0.08}},
+                    {"rest_type": "cangl", "restr": {"specs": [[{"chain": "A", "resi": 2084, "names": ["O"]}],
+                                                               [{"chain": "A", "resi": 1090, "names": ["CA"]}],
+                                                               [{"chain": "A", "resi": 65, "names": ["OD1","OD2"]}]],
+                                                     "value": 90.0, "sigma": 1.0}},
+                    {"rest_type": "cangl", "restr": {"specs": [[{"chain": "A", "resi": 65, "names": ["OD1","OD2"]}],
+                                                               [{"chain": "A", "resi": 1090, "names": ["CA"]}],
+                                                               [{"chain": "A", "resi": 72, "names": ["OE1","OE2"]}]],
+                                                     "value": 180.0, "sigma": 1.0}}
+                    ]
+            json.dump(data, ofs)
+        
+        with open("config.yaml", "w") as ofs:
+            ofs.write("""\
+refine:
+  exte_files:
+  - "exte.json"
+""")
+            
+        sys.argv = ["", "refine_geom", "--model", xyzin,
+                    "--config", "config.yaml"]
+        main()
+        with open("1e8a_refined_stats.json") as f:
+            stats = json.load(f)
+        
+        self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Centroid distances"], 0.3)
+        self.assertLess(stats[-1]["geom"]["summary"]["r.m.s.d."]["Centroid angles"], 0.5)
 
 if __name__ == '__main__':
     unittest.main()

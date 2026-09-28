@@ -352,7 +352,8 @@ class Geom:
             self.geom.load_topo(topo)
         exte.read_external_restraints(refmackwds.params.get("exte_blocks", []), self.st, self.geom)
         self.geom.finalize_restraints()
-        self.outlier_sigmas = dict(bond=5, cbond=5, angle=5, torsion=5, vdw=5, ncs=5, chir=5, plane=5, staca=5, stacd=5, per_atom=5, interval=5)
+        self.outlier_sigmas = dict(bond=5, cbond=5, angle=5, cangle=5,torsion=5, vdw=5, ncs=5, chir=5,
+                                   plane=5, staca=5, stacd=5, per_atom=5, interval=5)
         self.parents = {}
         self.ncslist = ncslist
         self.const_ls, self.const_u = [], []
@@ -420,6 +421,7 @@ class Geom:
             get_table = dict(bond=self.geom.reporting.get_bond_outliers,
                              cbond=self.geom.reporting.get_cbond_outliers,
                              angle=self.geom.reporting.get_angle_outliers,
+                             cangle=self.geom.reporting.get_cangle_outliers,
                              torsion=self.geom.reporting.get_torsion_outliers,
                              chir=self.geom.reporting.get_chiral_outliers,
                              plane=self.geom.reporting.get_plane_outliers,
@@ -432,6 +434,7 @@ class Geom:
             labs = dict(bond="Bond distances",
                         cbond="Centroid distances",
                         angle="Bond angles",
+                        cangle="Centroid angles",
                         torsion="Torsion angles",
                         chir="Chiral centres",
                         plane="Planar groups",
@@ -443,7 +446,7 @@ class Geom:
 
             def atomlabel(r, i):
                 symstr = lambda idx, s: f" ({idx+1};{s[0]},{s[1]},{s[2]})"
-                if type(r) == ext.Geometry.CentroidBond:
+                if type(r) in (ext.Geometry.CentroidBond, ext.Geometry.CentroidAngle):
                     ret = []
                     for ca in r.catoms[i]:
                         ret.append(str(self.lookup[ca.atom]))
@@ -466,7 +469,7 @@ class Geom:
                 if table["z"]:
                     if "restr" in table:
                         tmp = {}
-                        for i in range(3 if k == "angle" else 2): # only bond/angle/interval/vdw return restr
+                        for i in range(3 if k in ("angle", "cangle") else 2): # only bond/angle/interval/vdw return restr
                             tmp[f"atom{i+1}"] = [atomlabel(r, i) for r in table["restr"]]
                         del table["restr"]
                         table = {**tmp, **table}

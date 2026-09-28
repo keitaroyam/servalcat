@@ -36,6 +36,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Bond::Value>)
 NB_MAKE_OPAQUE(std::vector<Geometry::CentroidBond>)
 NB_MAKE_OPAQUE(std::vector<Geometry::CentroidBond::Value>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Angle>)
+NB_MAKE_OPAQUE(std::vector<Geometry::CentroidAngle>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Angle::Value>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Torsion>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Torsion::Value>)
@@ -50,6 +51,7 @@ NB_MAKE_OPAQUE(std::vector<Geometry::Ncsr>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::bond_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::cbond_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::angle_reporting_t>)
+NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::cangle_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::torsion_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::chiral_reporting_t>)
 NB_MAKE_OPAQUE(std::vector<Geometry::Reporting::plane_reporting_t>)
@@ -134,6 +136,7 @@ void add_refine(nb::module_& m) {
   nb::class_<Geometry::Bond> bond(geom, "Bond");
   nb::class_<Geometry::CentroidBond> cbond(geom, "CentroidBond");
   nb::class_<Geometry::Angle> angle(geom, "Angle");
+  nb::class_<Geometry::CentroidAngle> cangle(geom, "CentroidAngle");
   nb::class_<Geometry::Torsion> torsion(geom, "Torsion");
   nb::class_<Geometry::Chirality> chirality(geom, "Chirality");
   nb::class_<Geometry::Plane> plane(geom, "Plane");
@@ -144,6 +147,7 @@ void add_refine(nb::module_& m) {
     .def_ro("bonds", &Geometry::Reporting::bonds)
     .def_ro("cbonds", &Geometry::Reporting::cbonds)
     .def_ro("angles", &Geometry::Reporting::angles)
+    .def_ro("cangles", &Geometry::Reporting::cangles)
     .def_ro("torsions", &Geometry::Reporting::torsions)
     .def_ro("chirs", &Geometry::Reporting::chirs)
     .def_ro("planes", &Geometry::Reporting::planes)
@@ -213,6 +217,19 @@ void add_refine(nb::module_& m) {
         if (!p.second.empty())
           append(p.first == 1 ? "Bond angles, H" : "Bond angles, non H",
                  p.second, zsq[p.first], sigmas[p.first]);
+
+      // CentroidAngle
+      delsq.clear(); zsq.clear(); sigmas.clear();
+      for (const auto& a : self.cangles) {
+        const auto& restr = std::get<0>(a);
+        const auto& val = std::get<1>(a);
+        const double d2 = sq(std::get<2>(a)), z2 = sq(std::get<2>(a) / val->sigma);
+        delsq[0].push_back(d2);
+        zsq[0].push_back(z2);
+        sigmas[0].push_back(val->sigma);
+      }
+      if (!delsq[0].empty())
+        append("Centroid angles", delsq[0], zsq[0], sigmas[0]);
 
       // Torsion
       delsq.clear(); zsq.clear(); sigmas.clear();
@@ -433,6 +450,29 @@ void add_refine(nb::module_& m) {
       std::vector<const Geometry::Angle*> rr;
       std::vector<double> values, ideals, sigmas, zs;
       for (const auto& t : self.angles) {
+        const auto& restr = std::get<0>(t);
+        const auto& val = std::get<1>(t);
+        const double z = std::get<2>(t) / val->sigma; // value - ideal
+        if (std::abs(z) >= min_z) {
+          rr.push_back(restr);
+          values.push_back(std::get<2>(t) + val->value);
+          sigmas.push_back(val->sigma);
+          ideals.push_back(val->value);
+          zs.push_back(z);
+        }
+      }
+      nb::dict d;
+      d["restr"] = rr;
+      d["value"] = values;
+      d["ideal"] = ideals;
+      d["sigma"] = sigmas;
+      d["z"] = zs;
+      return d;
+    }, nb::arg("min_z"))
+    .def("get_cangle_outliers", [](const Geometry::Reporting& self, double min_z) {
+      std::vector<const Geometry::CentroidAngle*> rr;
+      std::vector<double> values, ideals, sigmas, zs;
+      for (const auto& t : self.cangles) {
         const auto& restr = std::get<0>(t);
         const auto& val = std::get<1>(t);
         const double z = std::get<2>(t) / val->sigma; // value - ideal
@@ -812,6 +852,11 @@ void add_refine(nb::module_& m) {
     .def_rw("atoms", &Geometry::Angle::atoms)
     .def_rw("values", &Geometry::Angle::values)
     ;
+  cangle
+    .def(nb::init<const std::vector<CentroidAtom>&,const std::vector<CentroidAtom>&,const std::vector<CentroidAtom>&>())
+    .def_rw("catoms", &Geometry::CentroidAngle::catoms)
+    .def_rw("values", &Geometry::CentroidAngle::values)
+    ;
   torsion
     .def(nb::init<gemmi::Atom*,gemmi::Atom*,gemmi::Atom*,gemmi::Atom*>())
     .def_rw("atoms", &Geometry::Torsion::atoms)
@@ -884,6 +929,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Reporting::bond_reporting_t>, rv_ri>(geom, "ReportingBonds");
   nb::bind_vector<std::vector<Geometry::Reporting::cbond_reporting_t>, rv_ri>(geom, "ReportingCentroidBonds");
   nb::bind_vector<std::vector<Geometry::Reporting::angle_reporting_t>, rv_ri>(geom, "ReportingAngles");
+  nb::bind_vector<std::vector<Geometry::Reporting::cangle_reporting_t>, rv_ri>(geom, "ReportingCentroidAngles");
   nb::bind_vector<std::vector<Geometry::Reporting::torsion_reporting_t>, rv_ri>(geom, "ReportingTorsions");
   nb::bind_vector<std::vector<Geometry::Reporting::chiral_reporting_t>, rv_ri>(geom, "ReportingChirals");
   nb::bind_vector<std::vector<Geometry::Reporting::plane_reporting_t>, rv_ri>(geom, "ReportingPlanes");
@@ -893,6 +939,7 @@ void add_refine(nb::module_& m) {
   nb::bind_vector<std::vector<Geometry::Bond>, rv_ri>(geom, "Bonds");
   nb::bind_vector<std::vector<Geometry::CentroidBond>, rv_ri>(geom, "CentroidBonds");
   nb::bind_vector<std::vector<Geometry::Angle>, rv_ri>(geom, "Angles");
+  nb::bind_vector<std::vector<Geometry::CentroidAngle>, rv_ri>(geom, "CentroidAngles");
   nb::bind_vector<std::vector<Geometry::Chirality>, rv_ri>(geom, "Chiralitys");
   nb::bind_vector<std::vector<Geometry::Torsion>, rv_ri>(geom, "Torsions");
   nb::bind_vector<std::vector<Geometry::Plane>, rv_ri>(geom, "Planes");
@@ -1058,6 +1105,7 @@ void add_refine(nb::module_& m) {
     .def_ro("bonds", &Geometry::bonds)
     .def_ro("cbonds", &Geometry::cbonds)
     .def_ro("angles", &Geometry::angles)
+    .def_ro("cangles", &Geometry::cangles)
     .def_ro("chirs", &Geometry::chirs)
     .def_ro("torsions", &Geometry::torsions)
     .def_ro("planes", &Geometry::planes)

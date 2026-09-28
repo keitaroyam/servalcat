@@ -21,12 +21,14 @@ def read_external_restraints(exte_blocks, st, geom):
     defaults = dict(symall_block=False, exclude_self_block=False, type_default=2, alpha_default=1.,
                     ext_verbose=False, scale_sigma_dist=1., scale_sigma_angl=1., scale_sigma_tors=1.,
                     scale_sigma_chir=1., scale_sigma_plan=1., scale_sigma_inte=1., scale_sigma_cdist=1.,
+                    scale_sigma_cangl=1.,
                     sigma_min_loc=0., sigma_max_loc=100., ignore_undefined=False, ignore_hydrogens=True,
                     dist_max_external=numpy.inf, dist_min_external=-numpy.inf, use_atoms="a", prefix_ch=" ")
     #exte = gemmi.ExternalRestraints(st)
     extypes = dict(dist=ext.Geometry.Bond,
                    cdist=ext.Geometry.CentroidBond,
                    angl=ext.Geometry.Angle,
+                   cangl=ext.Geometry.CentroidAngle,
                    chir=ext.Geometry.Chirality,
                    tors=ext.Geometry.Torsion,
                    plan=ext.Geometry.Plane,
@@ -34,7 +36,7 @@ def read_external_restraints(exte_blocks, st, geom):
                    harm=ext.Geometry.Harmonic,
                    spec=ext.Geometry.Special,
                    stac=ext.Geometry.Stacking)
-    exlists = dict(dist=geom.bonds, cdist=geom.cbonds, angl=geom.angles, tors=geom.torsions,
+    exlists = dict(dist=geom.bonds, cdist=geom.cbonds, angl=geom.angles, cangl=geom.cangles, tors=geom.torsions,
                    chir=geom.chirs, plan=geom.planes, inte=geom.intervals,
                    stac=geom.stackings, harm=geom.harmonics, spec=geom.specials)
 
@@ -53,7 +55,7 @@ def read_external_restraints(exte_blocks, st, geom):
         atoms = []
         skip = False
         for i, specs in enumerate(r["restr"].get("specs", [])):
-            if r["rest_type"] in ("stac", "cdist"):
+            if r["rest_type"] in ("stac", "cdist", "cangl"):
                 atoms.append([])
             else:
                 assert len(specs) == 1
@@ -81,7 +83,7 @@ def read_external_restraints(exte_blocks, st, geom):
                             if r["rest_type"] in ("dist", "angl", "tors", "inte"):
                                 skip = True
                             continue
-                        if r["rest_type"] in ("stac", "cdist"):
+                        if r["rest_type"] in ("stac", "cdist", "cangl"):
                             atoms[i].append(atom)
                         else:
                             atoms.append(atom)
@@ -106,7 +108,12 @@ def read_external_restraints(exte_blocks, st, geom):
             return
         elif r["rest_type"] == "plan":
             ex = extypes[r["rest_type"]](atoms)
-        elif r["rest_type"] == "cdist":
+        elif r["rest_type"] in ("cdist", "cangl"):
+            if r["rest_type"] == "cdist":
+                assert len(atoms) == 2
+            else: # cangl
+                assert len(atoms) == 3
+
             if r["restr"].get("symm", defs["symall_block"]):
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
             else:
@@ -121,10 +128,10 @@ def read_external_restraints(exte_blocks, st, geom):
                     for ia in range(1, len(groups[-1])):
                         groups[-1][ia].set_image(ref, st.cell, asu)
 
-            ex = extypes[r["rest_type"]](groups[0], groups[1])
+            ex = extypes[r["rest_type"]](*groups)
         else:
             ex = extypes[r["rest_type"]](*atoms)
-        if r["rest_type"] in ("dist", "cdist", "angl", "chir", "tors"):
+        if r["rest_type"] in ("dist", "cdist", "angl", "cangl", "chir", "tors"):
             value = r["restr"]["value"]
             sigma = r["restr"]["sigma"] / defs["scale_sigma_{}".format(r["rest_type"])]
             if r["rest_type"] == "chir":
@@ -138,7 +145,11 @@ def read_external_restraints(exte_blocks, st, geom):
                     vals = (value, sigma, 1) # period. # Refmac does not seem to read it from instruction
                 else:
                     vals = (value, sigma)
-                ex.values.append(extypes[r["rest_type"]].Value(*vals))
+                if r["rest_type"] == "cangl":
+                    valtype = extypes["angl"].Value
+                else:
+                    valtype = extypes[r["rest_type"]].Value
+                ex.values.append(valtype(*vals))
         
         if r["rest_type"] == "dist":
             if not (defs["dist_min_external"] < r["restr"]["value"] < defs["dist_max_external"]):
@@ -202,7 +213,8 @@ def read_external_restraints(exte_blocks, st, geom):
         exlists[r["rest_type"]].append(ex)
     # read_exte()
         
-    labs = dict(dist="distances", cdist="centroid distances", angl="angles", tors="torsions",
+    labs = dict(dist="distances", cdist="centroid distances", angl="angles",
+                cangl="centroid angles", tors="torsions",
                 chir="chirals", plan="planes", inte="intervals",
                 stac="stackings", harm="harmonics", spec="special positions")
     
