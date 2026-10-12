@@ -12,144 +12,195 @@ namespace nb = nanobind;
 using namespace servalcat;
 
 // for MLI
-double f1_orig2(double x, double z, double to, double tf, double sig1, int c) {
+double f1_orig2(double x, double z, double to, double tf, double sig1, int c, bool l=false) {
   // z = 2k+1
   const double x2 = x * x;
-  const double ret = 0.5 * x2 * x2 - to * x2 - z * std::log(x);
+  double ret = 0.5 * x2 * x2 - to * x2 - z * std::log(x);
   if (tf == 0.) return ret;
   const double X = x * tf / sig1;
   const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);
-  return ret - log_ic0;
+  ret -= log_ic0;
+  if (!l) return ret;
+  return ret - std::log(fom_safe(X, c));
 }
-double f1_orig2_der1(double x, double z, double to, double tf, double sig1, int c) {
+double f1_orig2_der1(double x, double z, double to, double tf, double sig1, int c, bool l=false) {
   const double ret = 2 * x*x*x - 2 * to * x - z / x;
   if (tf == 0.) return ret;
-  const double X = x * tf / sig1;
-  const double m = fom(X, c);
-  return ret - m * (3-c) * tf / sig1;
+  const double X_der = tf / sig1;
+  const double X = x * X_der;
+  if (l) {
+    double m_der;
+    const double m = fom_safe(X, c, &m_der);
+    return ret - ((3-c) * m + m_der / m) * X_der;
+  } else {
+    const double m = fom_safe(X, c);
+    return ret - (3-c) * m * X_der;
+  }
 }
-double f1_orig2_der2(double x, double z, double to, double tf, double sig1, int c) {
+double f1_orig2_der2(double x, double z, double to, double tf, double sig1, int c, bool l=false) {
   const double x2 = x * x;
   const double ret = 6 * x2 - 2 * to + z / x2;
   if (tf == 0.) return ret;
-  const double X = x * tf / sig1;
-  const double m = fom(X, c);
-  const double m_der = fom_der(m, X, c);
-  const double ret2 = ret - (3-c) * tf*tf * m_der / (sig1*sig1);
-  // if (ret2 <= 0)
-  //   printf("f1_orig2_der2 %f x %f z= %f; to= %f; tf= %f; sig1= %f; c= %d\n", ret2, x, z, to, tf, sig1, c);
-  return ret2;
+  const double X_der = tf / sig1;
+  const double X = x * X_der;
+  double m_der;
+  if (l) {
+    double m_der2;
+    const double m = fom_safe(X, c, &m_der, &m_der2);
+    return ret - X_der * X_der * ((3 - c) * m_der + m_der2 / m - sq(m_der / m));
+  }
+  fom_safe(X, c, &m_der);
+  return ret - (3-c) * X_der * X_der * m_der;
 }
-double f1_exp2(double y, double z, double to, double tf, double sig1, int c) {
+double f1_exp2(double y, double z, double to, double tf, double sig1, int c, bool l=false) {
   // z = 2k+2
   const double e_y = std::exp(-y);
   const double exp2 = std::exp(2 * (y - e_y));
-  const double ret = 0.5 * exp2*exp2 - to * exp2 - z * (y - e_y) - std::log(1 + e_y);
+  double ret = 0.5 * exp2*exp2 - to * exp2 - z * (y - e_y) - std::log(1 + e_y);
   if (tf == 0.) return ret;
   const double X = std::exp(y - e_y) * tf / sig1;
   const double log_ic0 = c == 1 ? gemmi::log_bessel_i0(2*X) : gemmi::log_cosh(X);
-  return ret - log_ic0;
+  ret -= log_ic0;
+  if (!l) return ret;
+  return ret - std::log(fom_safe(X, c));
 }
-double f1_exp2_der1(double y, double z, double to, double tf, double sig1, int c) {
+double f1_exp2_der1(double y, double z, double to, double tf, double sig1, int c, bool l=false) {
   const double e_y = std::exp(-y);
-  const double exp2 = std::exp(2 * (y - e_y));
+  const double exp1 = std::exp(y - e_y);
+  const double exp2 = exp1 * exp1;
   const double ret = (1 + e_y) * (2 * exp2*exp2 - 2 * to * exp2 - z) + e_y / (1 + e_y);
   if (tf == 0.) return ret;
-  const double X = std::exp(y - e_y) * tf / sig1;
-  const double m = fom(X, c);
-  return ret - (1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y));
+  const double X_der = tf / sig1;
+  const double X = exp1 * X_der;
+  if (l) {
+    double m_der;
+    const double m = fom_safe(X, c, &m_der);
+    return ret - (1 + e_y) * X * ((3-c) * m + m_der / m);
+  } else {
+    const double m = fom_safe(X, c);
+    return ret - (1 + e_y) * X * (3-c) * m;
+  }
 }
-double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c) {
+double f1_exp2_der2(double y, double z, double to, double tf, double sig1, int c, bool l=false) {
   const double e_y = std::exp(-y);
-  const double exp2 = std::exp(2 * (y - e_y));
-  const double ret = -e_y * (2 * exp2*exp2 - 2 * to * exp2 - z) + sq(1 + e_y) * (8 * sq(exp2) - 4 * to * exp2) - e_y / sq(1 + e_y);
+  const double exp1 = std::exp(y - e_y);
+  const double exp2 = exp1 * exp1;
+  double ret = -e_y * (2 * exp2*exp2 - 2 * to * exp2 - z) + sq(1 + e_y) * (8 * sq(exp2) - 4 * to * exp2) - e_y / sq(1 + e_y);
   if (tf == 0.) return ret;
-  const double X = std::exp(y - e_y) * tf / sig1;
-  const double m = fom(X, c);
-  const double m_der = (tf == 0 || m > 0.9999) ? 0 : fom_der(m, X, c);
-  const double ret2 = ret + e_y * (3-c) * tf / sig1 * m * std::exp(y - e_y) - sq(1 + e_y) * ((3-c) * tf / sig1 * m * std::exp(y - e_y) + (3-c) * sq(tf / sig1) * m_der * exp2);
-  // if (ret2 <= 0)
-  //   printf("f1_exp2_der2 %f y %f z= %f; to= %f; tf= %f; sig1= %f; c= %d\n", ret2, y, z, to, tf, sig1, c);
-  return ret2;
+  const double X_der = tf / sig1;
+  const double X = exp1 * X_der;
+  double m_der;
+  if (l) {
+    double m_der2;
+    const double m = fom_safe(X, c, &m_der, &m_der2);
+    ret += e_y * (3-c) * X * m - sq(1 + e_y) * ((3-c) * X * m + (3-c) * sq(X) * m_der);
+    return ret - (m_der2 / m - sq(m_der / m)) * sq((1 + e_y) * X) - m_der / m * X * (-e_y + sq(1 + e_y));
+  } else {
+    const double m = fom_safe(X, c, &m_der);
+    return ret + e_y * (3-c) * X * m - sq(1 + e_y) * ((3-c) * X * m + (3-c) * sq(X) * m_der);
+  }
 }
-double find_root(double k, double to, double tf, double sig1, int c, double det, bool use_exp2) {
+double find_root(double k, double to, double tf, double sig1, int c, double det, bool l, bool use_exp2) {
   if (tf == 0.) {
     if (use_exp2)
       return solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4)), 1e-4); // XXX may not be exact
     return det;
   }
-  const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
-  auto fder1 = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
-  auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  double x0 = det, x1 = NAN;
-  if (use_exp2) {
-    const double X1 = tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 3.5));
-    const double m1 = fom(X1, c);
-    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * (3-c) * X1 * m1 + 3.5)), 1e-4);
-    if (std::isnan(x0))
-      printf("ERROR: x0= %e, use_exp2= %d, X1=%e, m1=%e in_log=%e\n", x0, use_exp2, X1, m1,
-             0.5 * x_plus_sqrt_xsq_plus_y(to, 4 * k + 4 * (3-c) * X1 * m1 + 3.5));
-    const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 1));
-    x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)))), 1e-4);
-  } else {
-    const double A = std::max(to, std::max((3-c) * tf / 4 / sig1, k + 0.5));
-    x1 = 0.5 * (std::sqrt(A) + std::sqrt(A + 4 * std::sqrt(A)));
-  }
-  if (std::isinf(x0) || std::isnan(x0))
-    printf("ERROR: x0= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n", x0, use_exp2, z, to, tf, sig1, c, det);
-  auto func = [&](double x) { return fder1(x, z, to, tf, sig1, c); };
-  auto fprime = [&](double x) { return fder2(x, z, to, tf, sig1, c); };
-  //printf("debug %d x0= %f x1= %f f'_x0= %f f'_x1= %f\n", use_exp2, x0, x1, func(x0), func(x1));
-  if (std::abs(func(x0)) < 1e-4) // need to check. 1e-2 is small enough?
-    return x0;
-  auto ret = newton(func, fprime, x0);
-  if (ret.success && std::abs(func(ret.x)) < 1e-4)
-    return ret.x;
-  //   printf("newton_success iter %d k=%f; to=%f; tf=%f; sig1=%f; c=%d; det=%f; use_exp2=%d\n", ret.iter, k, to, tf,sig1, c, det, use_exp2);
 
-  double a = x0, b = std::isnan(x1) ? x0 : x1;
-  double fa = func(a), fb = func(b);
-  if (fa * fb > 0) { // should not happen, just for safety
-    printf("DEBUG: bad_interval x0= %e, x1= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n",
-           x0, x1, use_exp2, z, to, tf, sig1, c, det);
-    double inc = fa < 0 ? 0.1 : -0.1;
-    for (int i = 0; i < 10000; ++i, b+=inc) { // to prevent infinite loop
-      fb = func(b);
-      if (fa * fb < 0) break;
+  if (!use_exp2) { // orig2
+    const auto func = [&](double x) {return f1_orig2_der1(x, 2 * k + 1, to, tf, sig1, c, l); };
+    constexpr double xmin = 1e-30;
+    double x0 = std::max(xmin, det);
+    const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 0.5));
+    const double sqrt_A = std::sqrt(A);
+    double x1 = 0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A));
+
+    double f0 = func(x0), f1 = func(x1);
+    if (f0 == 0.0) return x0;
+    if (f1 == 0.0) return x1;
+    if ((f0 > 0.0) != (f1 > 0.0))
+      return brent(func, std::min(x0, x1), std::max(x0, x1));
+
+    // Geometric search in log-space around initial estimate
+    double x_curr = (f0 > 0.0) ? std::min(x0, x1) : std::max(x0, x1);
+    double f_curr = (x_curr == x0) ? f0 : f1;
+    const double factor = (f_curr > 0.0) ? (1.0 / 1.5) : 1.5;
+
+    // Step left towards xmin, or right until sign flip / floating-point overflow
+    while (factor < 1.0 ? (x_curr > xmin) : std::isfinite(x_curr)) {
+      const double x_next = (factor < 1.0) ? std::max(xmin, x_curr * factor) : x_curr * factor;
+      const double f_next = func(x_next);
+
+      if ((f_curr > 0.0) != (f_next > 0.0))
+        return brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+
+      if (x_next == x_curr) break; // Reached xmin lower bound cap
+      x_curr = x_next;
+      f_curr = f_next;
     }
-    if (fa * fb >= 0) throw std::runtime_error("interval not found");
+
+    return (std::abs(f0) < std::abs(f_curr)) ? x0 : x_curr;
+  } else { // exp2
+    const double X1 = tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 3.5));
+    const double m1 = fom_safe(X1, c);
+    const double log_arg = 0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 4.0 * (3 - c) * X1 * m1 + 3.5);
+    double x0 = solve_y_minus_exp_minus_y(0.5 * std::log(log_arg), 1e-4);
+    if (std::isnan(x0))
+      printf("ERROR: x0= %e, use_exp2, X1=%e, m1=%e in_log=%e\n", x0, X1, m1, log_arg);
+    const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 1.0));
+    const double sqrt_A = std::sqrt(A);
+    const double x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A))), 1e-4);
+    const auto func = [&](double x) {return f1_exp2_der1(x, 2 * k + 2, to, tf, sig1, c, l); };
+
+    double f0 = func(x0), f1 = func(x1);
+    if (f0 == 0.0) return x0;
+    if (f1 == 0.0) return x1;
+    if ((f0 > 0.0) != (f1 > 0.0))
+      return brent(func, std::min(x0, x1), std::max(x0, x1));
+
+    // Both initial points are on the same side of the root.
+    // Select the outer boundary and step outward directionally.
+    double x_curr = (f0 > 0.0) ? std::min(x0, x1) : std::max(x0, x1);
+    double f_curr = (x_curr == x0) ? f0 : f1;
+    const double dir = (f_curr > 0.0) ? -1.0 : 1.0;
+    double step = 1.0;
+
+    for (int i = 0; i < 20; ++i) {
+      const double x_next = x_curr + dir * step;
+      const double f_next = func(x_next);
+
+      if ((f_curr > 0.0) != (f_next > 0.0))
+        return brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+
+      x_curr = x_next;
+      f_curr = f_next;
+      step *= 1.5;
+    }
+
+    return (std::abs(f0) < std::abs(f_curr)) ? x0 : x_curr;
   }
-  ret = bisect(func, a, b, 10000, 1e-4);
-  if (!ret.success) {
-    printf("DEBUG: bisect_fail x0= %e, x1= %e, use_exp2= %d, z=%e, to=%e, tf=%e, sig1=%e, c=%d, det=%e\n",
-           x0, x1, use_exp2, z, to, tf, sig1, c, det);
-    return NAN;
-  }
-  // printf("bisect_success %f iter %d k=%f; to=%f; tf=%f; sig1=%f; c=%d; det=%f; use_exp2=%d\n", func(ret.x), ret.iter, k, to, tf,sig1, c, det, use_exp2);
-  return ret.x;
 }
 
 // factor of (sig/k_ani^2)^(k+1) is needed, which should be done outside.
-double integ_j(double k, double to, double tf, double sig1, int c, bool return_log,
-               double exp2_threshold=3., double h=0.5, int N=200, double ewmax=20.) {
+double integ_j(double k, double to, double tf, double sig1, int c, bool l, bool return_log,
+               double exp2_threshold=2., double h=0.5, int N=200, double ewmax=20.) {
   if (std::isnan(to) || sig1 <= 0) return NAN; // perhaps sig1<0 should not return nan.. they considered 0 in sum
   const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k + 1)));
   const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k + 2 : 2 * k + 1;
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  const double root = find_root(k, to, tf, sig1, c, det, use_exp2);
-  const double f1val = f(root, z, to, tf, sig1, c);
-  const double f2der = fder2(root, z, to, tf, sig1, c);
+  const double root = find_root(k, to, tf, sig1, c, det, l, use_exp2);
+  const double f1val = f(root, z, to, tf, sig1, c, l);
+  const double f2der = fder2(root, z, to, tf, sig1, c, l);
   if (f2der <= 0)
     printf("integ_j bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root, z, to, tf, sig1, c);
-  if (f2der * f1val * f1val > 1e10) { // Laplace approximation threshould needs to be revisited
-    if (use_exp2) {
-      const double lap = -f1val - 0.5 * std::log(f2der) + 0.5 * std::log(gemmi::pi() * 0.5);
-      if (std::isinf(lap))
-        printf("log integ_j (Laplace) inf f1val %f f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f1val, f2der, use_exp2, root, z, to, tf, sig1, c);
-      return return_log ? lap : std::exp(lap);
-    }
+  // Laplace approximation, <0.2% rel err
+  if (!use_exp2 && f2der * f1val * f1val > 1e7) {
+    const double lap = -f1val - 0.5 * std::log(f2der) + 0.5 * std::log(gemmi::pi() * 2.0);
+    if (std::isinf(lap))
+      printf("log integ_j (Laplace) inf f1val %f f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f1val, f2der, use_exp2, root, z, to, tf, sig1, c);
+    return return_log ? lap : std::exp(lap);
   }
   const double delta = h * std::sqrt(2 / f2der);
   double s = 1; // for i = 0
@@ -157,7 +208,7 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
     for (int i = 1; i < N; ++i) {
       const double xx = sign * delta * i + root;
       if (!use_exp2 && xx <= 0) continue; //break?
-      const double ff = f(xx, z, to, tf, sig1, c) - f1val;
+      const double ff = f(xx, z, to, tf, sig1, c, l) - f1val;
       s += std::exp(-ff);
       if (ff > ewmax) break;
     }
@@ -170,7 +221,7 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool return_l
 }
 
 double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c,
-                     double exp2_threshold=3., double h=0.5, int N=200, double ewmax=20.) {
+                     double exp2_threshold=2., double h=0.5, int N=200, double ewmax=20.) {
   // factor of sig^{k_num - k_den} is needed, which should be done outside.
   if (std::isnan(to) || sig1 <= 0) return NAN;
   const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
@@ -179,21 +230,28 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   const double deltaz = 2 * (k_num - k_den);
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  const double root = find_root(k_den, to, tf, sig1, c, det, use_exp2);
-  const double f1val = f(root, z, to, tf, sig1, c);
-  const double f2der = fder2(root, z, to, tf, sig1, c);
+  const double root = find_root(k_den, to, tf, sig1, c, det, false, use_exp2);
+  const double f1val = f(root, z, to, tf, sig1, c, false);
+  const double f2der = fder2(root, z, to, tf, sig1, c, false);
   if (f2der <= 0)
     printf("integ_j_ratio bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root, z, to, tf, sig1, c);
-  const double delta = h * std::sqrt(2 / f2der);
-  auto calc_fom = [&](double xx) { return fom((use_exp2 ? std::exp(xx - std::exp(-xx)) : xx) * tf / sig1, c); };
+
+  auto calc_fom = [&](double xx) { return fom_safe((use_exp2 ? std::exp(xx - std::exp(-xx)) : xx) * tf / sig1, c); };
   const double tmp = use_exp2 ? root - std::exp(-root) : std::log(root);
   double sd = 1, sn = std::exp(deltaz * tmp);
   if (l) sn *= calc_fom(root);
+
+  // Laplace approximation, assuming the same root for numerator: \int g(x)exp(-f(x))dx / \int exp(-f(x))dx ~ g(x_0).
+  // thresholds adjusted empirically so that <0.2% rel error for orig2 and <0.08% for exp2 would be achieved
+  if (use_exp2 ? (f2der * f1val * f1val > 1e9) : (f2der * f1val * f1val > 1e6))
+    return sn;
+
+  const double delta = h * std::sqrt(2 / f2der);
   for (int sign : {-1, 1}) {
     for (int i = 1; i < N; ++i) {
       const double xx = sign * delta * i + root;
       if (!use_exp2 && xx <= 0) continue; //break?
-      const double ff = f(xx, z, to, tf, sig1, c) - f1val;
+      const double ff = f(xx, z, to, tf, sig1, c, false) - f1val;
       const double tmp = std::exp(-ff);
       double g = std::exp(deltaz * (use_exp2 ? xx - std::exp(-xx) : std::log(xx)));
       if (l) g *= calc_fom(xx);
@@ -220,7 +278,7 @@ struct IntensityIntegrator {
   double h = 0.5;
   int N = 200;
   double ewmax = 20.;
-  double exp2_threshold = 3.;
+  double exp2_threshold = 2.;
 
   // ML intensity target; -log(Io; Fc) without constants
   double ll_int(double Io, double sigIo, double k_ani, double S, double Fc, int c) const {
@@ -232,7 +290,7 @@ struct IntensityIntegrator {
     const double sig1 = sq(k_ani) * S / sigIo;
     if (sig1 < 0)
       printf("ERROR: negative sig1= %f k_ani= %f S= %f sigIo= %f\n", sig1, k_ani, S, sigIo);
-    const double logj = integ_j(k, to, tf, sig1, c, true, exp2_threshold, h, N, ewmax);
+    const double logj = integ_j(k, to, tf, sig1, c, false, true, exp2_threshold, h, N, ewmax);
     const double ret = (3-c) * std::log(k_ani) + (std::log(S) + Ic / S) / c - logj;
     if (std::isinf(ret))
       printf("-LL Inf S=%f; logj=%f; to=%f; tf=%f; sig1=%f; k=%f; c=%d\n", S, logj, to, tf, sig1, k, c);
@@ -450,7 +508,7 @@ struct IntensityIntegrator {
             printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
             continue;
           }
-          const double logj = integ_j(c_(i) == 1 ? 0 : -0.5, to, tf, sig1, c_(i), true, exp2_threshold, h, N, ewmax);
+          const double logj = integ_j(c_(i) == 1 ? 0 : -0.5, to, tf, sig1, c_(i), false, true, exp2_threshold, h, N, ewmax);
           ll += w_(i) * ((3-c_(i)) * std::log(k_ani_(i)) + (std::log(S) + sq(Fc_abs) / S) / c_(i) - logj);
           if (!ll_only) {
             const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
@@ -538,7 +596,7 @@ struct IntensityIntegrator {
 };
 
 void add_intensity(nb::module_& m) {
-  m.def("integ_J", [](double k, np_array<const double> to, np_array<const double> tf, np_array<const double> sig1, int c, bool return_log,
+  m.def("integ_J", [](double k, np_array<const double> to, np_array<const double> tf, np_array<const double> sig1, int c, bool l, bool return_log,
                       double exp2_threshold, double h, int N, double ewmax) {
     auto to_ = to.view();
     auto tf_ = tf.view();
@@ -549,11 +607,11 @@ void add_intensity(nb::module_& m) {
     auto ret = make_numpy_array<double>({len});
     double* retp = ret.data();
     for (size_t i = 0; i < len; ++i)
-      retp[i] = integ_j(k, to_(i), tf_(i), sig1_(i), c, return_log, exp2_threshold, h, N, ewmax);
+      retp[i] = integ_j(k, to_(i), tf_(i), sig1_(i), c, l, return_log, exp2_threshold, h, N, ewmax);
     return ret;
   },
-    nb::arg("k"), nb::arg("to"), nb::arg("tf"), nb::arg("sig1"), nb::arg("c"), nb::arg("return_log"),
-    nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
+        nb::arg("k"), nb::arg("to"), nb::arg("tf"), nb::arg("sig1"), nb::arg("c"), nb::arg("l"), nb::arg("return_log"),
+        nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   m.def("integ_J_ratio", [](np_array<const double> k_num, np_array<const double> k_den, bool l, np_array<const double> to, np_array<const double> tf,
                             np_array<const double> sig1, np_array<const int> c, double exp2_threshold, double h, int N, double ewmax) {
     auto k_num_ = k_num.view();
@@ -574,7 +632,7 @@ void add_intensity(nb::module_& m) {
   },
     nb::arg("k_num"), nb::arg("k_den"), nb::arg("l"), nb::arg("to"), nb::arg("tf"),
     nb::arg("sig1"), nb::arg("c"),
-    nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
+    nb::arg("exp2_threshold")=2, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   nb::class_<IntensityIntegrator>(m, "IntensityIntegrator")
     .def(nb::init<>())
     .def_rw("h", &IntensityIntegrator::h)

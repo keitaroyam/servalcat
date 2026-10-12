@@ -90,8 +90,8 @@ class XtalTests(unittest.TestCase):
                                        1.014157, 1.000922, 0.995466, 0.93671 , 0.932352],
                                       rtol=1e-2)
         numpy.testing.assert_allclose(hkldata.binned_df["ml"].S,
-                                      [89.637282,  97.784362,  68.782025,  99.382283,  74.905775,
-                                       112.326708, 126.651614, 106.853499,  83.032016,  42.909208],
+                                      [89.461656,  97.867636,  66.094579,  97.567988,  73.889395,
+                                       111.561558, 125.266531, 106.741313,  82.460183,  42.473756],
                                       rtol=1e-2)
 
     def test_fw(self):
@@ -100,7 +100,7 @@ class XtalTests(unittest.TestCase):
         B_aniso, hkldata = french_wilson.main(args)
         os.remove("5e5z_fw.mtz")
         numpy.testing.assert_allclose(B_aniso.elements_pdb(),
-                                      [2.335468, 1.484534, -3.820001, 0., -0.996069, 0.],
+                                      [1.970557, 1.893075, -3.863632, 0., -1.08882, 0.],
                                       rtol=1e-3)
 
     @unittest.skipUnless(utils.refmac.check_version(), "refmac unavailable")

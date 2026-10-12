@@ -34,6 +34,47 @@ inline double fom_der2(double m, double X, int c) {
   return c == 1 ? m / sq(X) - (4 * m + 1 / X) * (2 - m / X - 2 * sq(m)) : 2 * m * (sq(m) - 1);
 }
 
+inline double fom_safe(double X, int c, double *der1=nullptr, double *der2=nullptr) {
+  double m;
+  if (c == 1) // acentrics
+    m = X > 50. ? (1.0 - 1.0 / (4.0 * X) - 1.0 / (32.0 * X * X)) : gemmi::bessel_i1_over_i0(2 * X);
+  else // c == 2, centrics
+    m = X > 50. ? 1.0 : std::tanh(X);
+
+  if (!der1 && !der2) return m;
+
+  double m_der = 0.0;
+  if (c == 1) {
+    if (X > 50.0) {
+      const double invX2 = 1.0 / (X * X);
+      m_der = invX2 * (0.25 + 0.0625 / X);
+    } else if (X < 1e-4)
+      m_der = 1.0 - 1.5 * X * X;
+    else
+      m_der = 2.0 * (1.0 - m / (2.0 * X) - m * m);
+  } else
+    m_der = X > 50. ? 0.0 : (1. - m * m);
+
+  if (der1) *der1 = m_der;
+
+  if (der2) {
+    if (c == 1) {
+      if (X > 50.0) {
+        const double invX = 1.0 / X;
+        const double invX3 = invX * invX * invX;
+        *der2 = -0.5 * invX3 - 0.1875 * invX3 * invX - 0.09375 * invX3 * invX * invX;
+      } else if (X < 1e-3) {
+        const double X2 = X * X;
+        *der2 = -3.0 * X + (20.0 / 3.0) * X * X2 - 8.75 * X * X2 * X2;
+      } else
+        *der2 = m_der * (-4.0 * m - 1.0 / X) + m / (X * X);
+    } else
+      *der2 = X > 50.0 ? 0.0 : (-2.0 * m * m_der);
+  }
+
+  return m;
+}
+
 inline double x_plus_sqrt_xsq_plus_y(double x, double y) {
   // avoid precision loss
   const double tmp = std::sqrt(sq(x) + y);
@@ -53,6 +94,107 @@ struct RootfindResult {
   int iter = 0;
   double x;
 };
+
+template <typename Func>
+double brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15) {
+  double fa = func(a);
+  double fb = func(b);
+
+  if (fa == 0.0) return a;
+  if (fb == 0.0) return b;
+
+  // Endpoints must bracket a root
+  if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0)) {
+    throw std::invalid_argument("Endpoints a and b must have opposite signs in brent().");
+  }
+
+  if (std::abs(fa) < std::abs(fb)) {
+    std::swap(a, b);
+    std::swap(fa, fb);
+  }
+
+  double c = a;
+  double fc = fa;
+  double d = b - a;
+  double e = d;
+
+  const double eps = std::numeric_limits<double>::epsilon();
+
+  for (int iter = 0; iter < maxiter; ++iter) {
+    if (fb == 0.0) return b;
+
+    // Reset step if sign changed
+    if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
+      c = a;
+      fc = fa;
+      d = b - a;
+      e = d;
+    }
+
+    if (std::abs(fc) < std::abs(fb)) {
+      a = b; fa = fb;
+      b = c; fb = fc;
+      c = a; fc = fa;
+    }
+
+    double m = 0.5 * (c - b);
+    double tol1 = 2.0 * eps * std::abs(b) + atol;
+
+    if (std::abs(m) <= tol1 || m == 0.0) {
+      return b;
+    }
+
+    // Try inverse quadratic interpolation or secant method
+    if (std::abs(e) >= tol1 && std::abs(fa) > std::abs(fb)) {
+      double p, q;
+      if (a != c) {
+        // Inverse quadratic interpolation
+        double r1 = fa / fc;
+        double r2 = fb / fc;
+        double r3 = fb / fa;
+        p = r3 * (2.0 * m * r1 * (r1 - r2) - (b - a) * (r2 - 1.0));
+        q = (r1 - 1.0) * (r2 - 1.0) * (r3 - 1.0);
+      } else {
+        // Secant method
+        double s = fb / fa;
+        p = 2.0 * m * s;
+        q = 1.0 - s;
+      }
+
+      if (p > 0.0) {
+        q = -q;
+      } else {
+        p = -p;
+      }
+
+      // Accept interpolation step or fall back to bisection
+      if ((2.0 * p < 3.0 * m * q - std::abs(tol1 * q)) && (p < std::abs(0.5 * e * q))) {
+        e = d;
+        d = p / q;
+      } else {
+        d = m;
+        e = m;
+      }
+    } else {
+      // Bisection step
+      d = m;
+      e = m;
+    }
+
+    a = b;
+    fa = fb;
+
+    if (std::abs(d) > tol1) {
+      b += d;
+    } else {
+      b += (m > 0.0) ? tol1 : -tol1;
+    }
+
+    fb = func(b);
+  }
+
+  return b;
+}
 
 template<typename Func, typename Fprime>
 RootfindResult newton(Func&& func, Fprime&& fprime, double x0,
