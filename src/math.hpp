@@ -85,6 +85,12 @@ inline double x_plus_sqrt_xsq_plus_y(double x, double y) {
 // solution is y = W(exp(-x)) + x
 inline double solve_y_minus_exp_minus_y(double x, double prec) {
   if (x > 20) return x;
+  if (x > 3.0) { // expected relative error ~0.004%
+    const double z = std::exp(-x);
+    const double z2 = z * z;
+    const double w = z - z2 + 1.5 * z2 * z - (8.0 / 3.0) * z2 * z2;
+    return w + x;
+  }
   return lambertw::lambertw(std::exp(-x), prec) + x;
 }
 

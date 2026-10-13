@@ -258,10 +258,10 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
       if (!use_exp2 && xx <= 0) continue; //break?
       const double ff = f(xx, z, to, tf, sig1, c, false) - f1val;
       const double tmp = std::exp(-ff);
-      double g = std::exp(deltaz * (use_exp2 ? xx - std::exp(-xx) : std::log(xx)));
-      if (l) g *= calc_fom(xx);
+      double num = std::exp(deltaz * (use_exp2 ? xx - std::exp(-xx) : std::log(xx)) - ff);
+      if (l) num *= calc_fom(xx);
       sd += tmp;
-      sn += tmp * g;
+      sn += num;
       if (ff > ewmax) break;
     }
   }
