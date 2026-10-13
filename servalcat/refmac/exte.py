@@ -198,7 +198,7 @@ def read_external_restraints(exte_blocks, st, geom):
             ex.dmax = dmax
             ex.smin = smin
             ex.smax = smax
-            symm1 = any(spec.get("symm") for spec in r["restr"]["specs"]) # not tested
+            symm1 = any(spec.get("symm") for specs in r["restr"]["specs"] for spec in specs)
             if r["restr"].get("symm", defs["symall_block"]) or symm1:
                 asu = gemmi.Asu.Different if defs["exclude_self_block"] else gemmi.Asu.Any
                 ex.set_image(st.cell, asu)
