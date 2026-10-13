@@ -107,23 +107,47 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
     return det;
   }
 
+  const auto func = [&](double x) {return use_exp2
+      ? f1_exp2_der1(x, 2 * k + 2, to, tf, sig1, c, l)
+      : f1_orig2_der1(x, 2 * k + 1, to, tf, sig1, c, l);
+  };
+  double x0, x1;
+  constexpr double xmin = 1e-30; // for orig2
   if (!use_exp2) { // orig2
-    const auto func = [&](double x) {return f1_orig2_der1(x, 2 * k + 1, to, tf, sig1, c, l); };
-    constexpr double xmin = 1e-30;
-    double x0 = std::max(xmin, det);
+    x0 = std::max(xmin, det);
     const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 0.5));
     const double sqrt_A = std::sqrt(A);
-    double x1 = 0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A));
+    x1 = 0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A));
+  } else {
+    const double X1 = tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 3.5));
+    const double m1 = fom_safe(X1, c);
+    const double log_arg = 0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 4.0 * (3 - c) * X1 * m1 + 3.5);
+    x0 = solve_y_minus_exp_minus_y(0.5 * std::log(log_arg), 1e-4);
+    if (std::isnan(x0))
+      printf("ERROR: x0= %e, use_exp2, X1=%e, m1=%e in_log=%e\n", x0, X1, m1, log_arg);
+    const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 1.0));
+    const double sqrt_A = std::sqrt(A);
+    x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A))), 1e-4);
+  }
 
-    double f0 = func(x0), f1 = func(x1);
-    if (f0 == 0.0) return x0;
-    if (f1 == 0.0) return x1;
-    if ((f0 > 0.0) != (f1 > 0.0))
-      return brent(func, std::min(x0, x1), std::max(x0, x1));
+  double f0 = func(x0), f1 = func(x1);
+  if (f0 == 0.0) return x0;
+  if (f1 == 0.0) return x1;
+  RootfindResult ret;
+  if ((f0 > 0.0) != (f1 > 0.0))
+    ret = brent(func, std::min(x0, x1), std::max(x0, x1));
 
+  // printf("initial brent. ok=%d iter=%d", ret.success, ret.iter);
+  // if (ret.success) printf("\n");
+  // else printf(" why= %s det= %e f0= %e f1= %e \n", ret.reason.c_str(), det, f0, f1);
+
+  if (ret.success)
+    return ret.x;
+
+  double x_curr = (f0 > 0.0) ? std::min(x0, x1) : std::max(x0, x1);
+  double f_curr = (x_curr == x0) ? f0 : f1;
+  if (!use_exp2) {
     // Geometric search in log-space around initial estimate
-    double x_curr = (f0 > 0.0) ? std::min(x0, x1) : std::max(x0, x1);
-    double f_curr = (x_curr == x0) ? f0 : f1;
     const double factor = (f_curr > 0.0) ? (1.0 / 1.5) : 1.5;
 
     // Step left towards xmin, or right until sign flip / floating-point overflow
@@ -131,37 +155,19 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
       const double x_next = (factor < 1.0) ? std::max(xmin, x_curr * factor) : x_curr * factor;
       const double f_next = func(x_next);
 
-      if ((f_curr > 0.0) != (f_next > 0.0))
-        return brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+      if ((f_curr > 0.0) != (f_next > 0.0)) {
+        ret = brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+        // printf("second brent. ok=%d iter=%d\n", ret.success, ret.iter);
+        return ret.x;
+      }
 
       if (x_next == x_curr) break; // Reached xmin lower bound cap
       x_curr = x_next;
       f_curr = f_next;
     }
-
-    return (std::abs(f0) < std::abs(f_curr)) ? x0 : x_curr;
   } else { // exp2
-    const double X1 = tf * 0.5 / sig1 * std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 3.5));
-    const double m1 = fom_safe(X1, c);
-    const double log_arg = 0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 4.0 * (3 - c) * X1 * m1 + 3.5);
-    double x0 = solve_y_minus_exp_minus_y(0.5 * std::log(log_arg), 1e-4);
-    if (std::isnan(x0))
-      printf("ERROR: x0= %e, use_exp2, X1=%e, m1=%e in_log=%e\n", x0, X1, m1, log_arg);
-    const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 1.0));
-    const double sqrt_A = std::sqrt(A);
-    const double x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A))), 1e-4);
-    const auto func = [&](double x) {return f1_exp2_der1(x, 2 * k + 2, to, tf, sig1, c, l); };
-
-    double f0 = func(x0), f1 = func(x1);
-    if (f0 == 0.0) return x0;
-    if (f1 == 0.0) return x1;
-    if ((f0 > 0.0) != (f1 > 0.0))
-      return brent(func, std::min(x0, x1), std::max(x0, x1));
-
     // Both initial points are on the same side of the root.
     // Select the outer boundary and step outward directionally.
-    double x_curr = (f0 > 0.0) ? std::min(x0, x1) : std::max(x0, x1);
-    double f_curr = (x_curr == x0) ? f0 : f1;
     const double dir = (f_curr > 0.0) ? -1.0 : 1.0;
     double step = 1.0;
 
@@ -169,16 +175,18 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
       const double x_next = x_curr + dir * step;
       const double f_next = func(x_next);
 
-      if ((f_curr > 0.0) != (f_next > 0.0))
-        return brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+      if ((f_curr > 0.0) != (f_next > 0.0)) {
+        ret = brent(func, std::min(x_curr, x_next), std::max(x_curr, x_next));
+        // printf("second brent. ok=%d iter=%d\n", ret.success, ret.iter);
+        return ret.x;
+      }
 
       x_curr = x_next;
       f_curr = f_next;
       step *= 1.5;
     }
-
-    return (std::abs(f0) < std::abs(f_curr)) ? x0 : x_curr;
   }
+  return (std::abs(f0) < std::abs(f_curr)) ? x0 : x_curr;
 }
 
 // factor of (sig/k_ani^2)^(k+1) is needed, which should be done outside.
@@ -220,26 +228,23 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool l, bool 
   return return_log ? expon + std::log(laplace_correct) : std::exp(expon) * laplace_correct;
 }
 
-double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c,
-                     double exp2_threshold=2., double h=0.5, int N=200, double ewmax=20.) {
+double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c, double root_den,
+                     bool use_exp2, double h=0.5, int N=200, double ewmax=20.) {
   // factor of sig^{k_num - k_den} is needed, which should be done outside.
   if (std::isnan(to) || sig1 <= 0) return NAN;
-  const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
-  const bool use_exp2 = det < exp2_threshold;
   const double z = use_exp2 ? 2 * k_den + 2 : 2 * k_den + 1;
   const double deltaz = 2 * (k_num - k_den);
   auto f = use_exp2 ? f1_exp2 : f1_orig2;
   auto fder2 = use_exp2 ? f1_exp2_der2 : f1_orig2_der2;
-  const double root = find_root(k_den, to, tf, sig1, c, det, false, use_exp2);
-  const double f1val = f(root, z, to, tf, sig1, c, false);
-  const double f2der = fder2(root, z, to, tf, sig1, c, false);
+  const double f1val = f(root_den, z, to, tf, sig1, c, false);
+  const double f2der = fder2(root_den, z, to, tf, sig1, c, false);
   if (f2der <= 0)
-    printf("integ_j_ratio bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root, z, to, tf, sig1, c);
+    printf("integ_j_ratio bad f2der %f exp2=%d root=%f z=%f; to=%f; tf=%f; sig1=%f; c=%d;\n", f2der, use_exp2, root_den, z, to, tf, sig1, c);
 
   auto calc_fom = [&](double xx) { return fom_safe((use_exp2 ? std::exp(xx - std::exp(-xx)) : xx) * tf / sig1, c); };
-  const double tmp = use_exp2 ? root - std::exp(-root) : std::log(root);
+  const double tmp = use_exp2 ? root_den - std::exp(-root_den) : std::log(root_den);
   double sd = 1, sn = std::exp(deltaz * tmp);
-  if (l) sn *= calc_fom(root);
+  if (l) sn *= calc_fom(root_den);
 
   // Laplace approximation, assuming the same root for numerator: \int g(x)exp(-f(x))dx / \int exp(-f(x))dx ~ g(x_0).
   // thresholds adjusted empirically so that <0.2% rel error for orig2 and <0.08% for exp2 would be achieved
@@ -249,7 +254,7 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   const double delta = h * std::sqrt(2 / f2der);
   for (int sign : {-1, 1}) {
     for (int i = 1; i < N; ++i) {
-      const double xx = sign * delta * i + root;
+      const double xx = sign * delta * i + root_den;
       if (!use_exp2 && xx <= 0) continue; //break?
       const double ff = f(xx, z, to, tf, sig1, c, false) - f1val;
       const double tmp = std::exp(-ff);
@@ -312,7 +317,10 @@ struct IntensityIntegrator {
     const size_t n_models = Fcs_.shape(1);
     const size_t n_ref = Fcs_.shape(0);
     const size_t n_cols = for_DS ? n_models + 1 : 1;
-    if (Ds.size() != n_models) throw std::runtime_error("Fc and D shape mismatch");
+    if (Ds.size() != n_models) throw std::runtime_error("ll_int_der1_params: Fc and D shape mismatch");
+    if (n_ref != Io_.shape(0) || n_ref != sigIo_.shape(0) || n_ref != k_ani_.shape(0) || n_ref != c_.shape(0) || n_ref != eps_.shape(0)
+        || n_ref != w_.shape(0))
+      throw std::runtime_error("ll_int_der_fc: shape mismatch");
 
     // der1 wrt D1, D2, .., S, or k_ani
     auto ret = make_numpy_array<double>({n_ref, n_cols});
@@ -337,11 +345,12 @@ struct IntensityIntegrator {
       const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
       if (sig1 < 0)
         printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
-      const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-      const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-      double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax);
-      const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
-                                             exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      const double k_den = c_(i) == 1 ? 0. : -0.5;
+      const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+      const bool use_exp2 = det < exp2_threshold;
+      const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
+      double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax);
+      const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
       if (for_DS) {
         j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
         const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
@@ -354,8 +363,7 @@ struct IntensityIntegrator {
       else {
         // k_aniso * d/dk_aniso -log p(Io; Fc)
         // note k_aniso is multiplied to the derivative
-        const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
-        const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax); // * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
+        const double j_ratio_3 = integ_j_ratio(k_den + 2.0, k_den, false, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax); // * sq(sigIo_(i)) / sq(sq(k_ani_(i)));
         ptr[i] = w_(i) * (2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1);
       }
     }
@@ -376,6 +384,9 @@ struct IntensityIntegrator {
     const size_t n_models = Fcs_.shape(1);
     const size_t n_ref = Fcs_.shape(0);
     if (Ds.size() != (size_t)Fcs.shape(1)) throw std::runtime_error("Fc and D shape mismatch");
+    if (n_ref != Io_.shape(0) || n_ref != sigIo_.shape(0) || n_ref != k_ani_.shape(0) || n_ref != c_.shape(0) || n_ref != eps_.shape(0)
+        || n_ref != w_.shape(0))
+      throw std::runtime_error("find_ll_int_S_from_current_estimates: shape mismatch");
 
     auto sum_Fc = [&](int i) {
       std::complex<double> s = Fcs_(i, 0) * Ds[0];
@@ -396,12 +407,14 @@ struct IntensityIntegrator {
       const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
       if (sig1 < 0)
         printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
-      const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-      const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-      const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i),
-                                             exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
-      const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
-                                             exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      const double k_den = c_(i) == 1 ? 0. : -0.5;
+      const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+      const bool use_exp2 = det < exp2_threshold;
+      const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
+      const double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i),
+                                             root_den, use_exp2, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+      const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i),
+                                             root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
       const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
       if (c_(i) == 1) // acentrics
         ret += w_(i) * (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
@@ -411,6 +424,46 @@ struct IntensityIntegrator {
     }
     if (count == 0) return NAN;
     return ret / count;
+  }
+
+  nb::ndarray<nb::numpy, double>
+  ll_int_der_fc_py(np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                   np_array<const double> S, np_array<const double> Fc_abs,
+                   np_array<const int> c, np_array<const int> eps) const {
+    auto Io_ = Io.view();
+    auto sigIo_ = sigIo.view();
+    auto k_ani_ = k_ani.view();
+    auto S_ = S.view();
+    auto Fc_abs_ = Fc_abs.view();
+    auto c_ = c.view();
+    auto eps_ = eps.view();
+    const size_t len = Io_.shape(0);
+    if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) || len != Fc_abs_.shape(0) || len != c_.shape(0)
+        || len != eps_.shape(0))
+      throw std::runtime_error("ll_int_der_fc: shape mismatch");
+
+    auto ret = make_numpy_array<double>({len});
+    double* ptr = ret.data();
+    for (size_t i = 0; i < len; ++i) {
+      if (std::isnan(Io_(i))) {
+        ptr[i] = NAN;
+        continue;
+      }
+      const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S_(i) / eps_(i);
+      const double sqrt_sigIo = std::sqrt(sigIo_(i));
+      const double tf = k_ani_(i) * Fc_abs_(i) / sqrt_sigIo;
+      const double sig1 = sq(k_ani_(i)) * S_(i) * eps_(i) / sigIo_(i);
+      if (sig1 < 0)
+        printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S_(i), eps_(i), sigIo_(i));
+      const double k_den = c_(i) == 1 ? 0. : -0.5;
+      const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+      const bool use_exp2 = det < exp2_threshold;
+      const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
+      auto f = use_exp2 ? f1_exp2_der1 : f1_orig2_der1;
+      const double j_ratio = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      ptr[i] = (3 - c_(i)) * (Fc_abs_(i) - j_ratio) / eps_(i) / S_(i);
+    }
+    return ret;
   }
 
 // For French-Wilson
@@ -425,6 +478,9 @@ struct IntensityIntegrator {
     auto eps_ = eps.view();
     auto w_ = w.view();
     size_t n_ref = Io.shape(0);
+    if (n_ref != sigIo_.shape(0) || n_ref != k_ani_.shape(0) || n_ref != c_.shape(0) || n_ref != eps_.shape(0)
+        || n_ref != w_.shape(0))
+      throw std::runtime_error("ll_int_fw_der1_params: shape mismatch");
 
     // der1 wrt S or k_ani
     auto ret = make_numpy_array<double>({n_ref});
@@ -435,16 +491,18 @@ struct IntensityIntegrator {
         continue;
       }
       const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-      const double k_num = c_(i) == 1 ? 1. : 0.5;
-      double j_ratio_1 = integ_j_ratio(k_num, k_num - 1, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
+      const double k_den = c_(i) == 1 ? 0. : -0.5;
+      const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+      const bool use_exp2 = det < exp2_threshold;
+      const double root_den = find_root(k_den, to, 0., 1., c_(i), det, false, use_exp2);
+      double j_ratio_1 = integ_j_ratio(k_den + 1, k_den, false, to, 0., 1., c_(i), root_den, use_exp2, h, N, ewmax);
       if (for_S) {
         j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
         ptr[i] = w_(i) * ll_int_der1_S(S, 0., c_(i), eps_(i), j_ratio_1, 0.);
       }
       else {
         // note k_aniso is multiplied to the derivative
-        const double k_num_3 = c_(i) == 1 ? 2 : 1.5;
-        const double j_ratio_3 = integ_j_ratio(k_num_3, k_num_3 - 2, false, to, 0., 1., c_(i), exp2_threshold, h, N, ewmax);
+        const double j_ratio_3 = integ_j_ratio(k_den + 2.0, k_den, false, to, 0., 1., c_(i), root_den, use_exp2, h, N, ewmax);
         ptr[i] = w_(i) * (2 * j_ratio_3 - 2 * Io_(i) / sigIo_(i) * j_ratio_1);
       }
     }
@@ -511,11 +569,14 @@ struct IntensityIntegrator {
           const double logj = integ_j(c_(i) == 1 ? 0 : -0.5, to, tf, sig1, c_(i), false, true, exp2_threshold, h, N, ewmax);
           ll += w_(i) * ((3-c_(i)) * std::log(k_ani_(i)) + (std::log(S) + sq(Fc_abs) / S) / c_(i) - logj);
           if (!ll_only) {
-            const double k_num_1 = c_(i) == 1 ? 1. : 0.5;
-            const double k_num_2 = c_(i) == 1 ? 0.5 : 0.;
-            const double j_ratio_1 = integ_j_ratio(k_num_1, k_num_1 - 1, false, to, tf, sig1, c_(i), exp2_threshold, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
-            const double j_ratio_2 = integ_j_ratio(k_num_2, k_num_2 - 0.5, true, to, tf, sig1, c_(i),
-                                                   exp2_threshold, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+            const double k_den = c_(i) == 1 ? 0. : -0.5;
+            const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+            const bool use_exp2 = det < exp2_threshold;
+            const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
+            const double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i),
+                                                   root_den, use_exp2, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+            const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i),
+                                                   root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
             Eigen::VectorXd g_i = Eigen::VectorXd::Zero(n_par);
             const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
             for (size_t j = 0; j < n_models; ++j)
@@ -613,26 +674,29 @@ void add_intensity(nb::module_& m) {
         nb::arg("k"), nb::arg("to"), nb::arg("tf"), nb::arg("sig1"), nb::arg("c"), nb::arg("l"), nb::arg("return_log"),
         nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   m.def("integ_J_ratio", [](np_array<const double> k_num, np_array<const double> k_den, bool l, np_array<const double> to, np_array<const double> tf,
-                            np_array<const double> sig1, np_array<const int> c, double exp2_threshold, double h, int N, double ewmax) {
+                            np_array<const double> sig1, np_array<const int> c, np_array<const double> root_den, np_array<const bool> use_exp2,
+                            double h, int N, double ewmax) {
     auto k_num_ = k_num.view();
     auto k_den_ = k_den.view();
     auto to_ = to.view();
     auto tf_ = tf.view();
     auto sig1_ = sig1.view();
     auto c_ = c.view();
+    auto root_ = root_den.view();
+    auto use_exp2_ = use_exp2.view();
     size_t len = to_.shape(0);
     if (len != k_num_.shape(0) || len != k_den_.shape(0) || len != tf_.shape(0) ||
-        len != sig1_.shape(0) || len != c_.shape(0))
+        len != sig1_.shape(0) || len != c_.shape(0) || len != root_.shape(0) || len != use_exp2_.shape(0))
       throw std::runtime_error("integ_j_ratio: shape mismatch");
     auto ret = make_numpy_array<double>({len});
     double* retp = ret.data();
     for (size_t i = 0; i < len; ++i)
-      retp[i] = integ_j_ratio(k_num_(i), k_den_(i), l, to_(i), tf_(i), sig1_(i), c_(i), exp2_threshold, h, N, ewmax);
+      retp[i] = integ_j_ratio(k_num_(i), k_den_(i), l, to_(i), tf_(i), sig1_(i), c_(i), root_(i), use_exp2_(i), h, N, ewmax);
     return ret;
   },
-    nb::arg("k_num"), nb::arg("k_den"), nb::arg("l"), nb::arg("to"), nb::arg("tf"),
-    nb::arg("sig1"), nb::arg("c"),
-    nb::arg("exp2_threshold")=2, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
+        nb::arg("k_num"), nb::arg("k_den"), nb::arg("l"), nb::arg("to"), nb::arg("tf"),
+        nb::arg("sig1"), nb::arg("c"), nb::arg("root_den"), nb::arg("use_exp2"),
+        nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   nb::class_<IntensityIntegrator>(m, "IntensityIntegrator")
     .def(nb::init<>())
     .def_rw("h", &IntensityIntegrator::h)
@@ -659,9 +723,79 @@ void add_intensity(nb::module_& m) {
       return ret;
     },
          nb::arg("Io"), nb::arg("sigIo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"), nb::arg("w"))
+    .def("expected_F", [](const IntensityIntegrator& self, np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                          np_array<const double> S, np_array<const double> Fc, np_array<const int> c) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      auto k_ani_ = k_ani.view();
+      auto S_ = S.view(); // including epsilon
+      auto Fc_ = Fc.view();
+      auto c_ = c.view();
+      size_t len = Io_.shape(0);
+      if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S_.shape(0) || len != Fc_.shape(0) || len != c_.shape(0))
+        throw std::runtime_error("expected_F: shape mismatch");
+      auto ret_f = make_numpy_array<double>({len}); // <F>
+      auto ret_m = make_numpy_array<double>({len}); // FOM proxy
+      double *retp1 = ret_f.data(), *retp2 = ret_m.data();
+      for (size_t i = 0; i < len; ++i) {
+        if (std::isnan(Io_(i))) {
+          retp1[i] = retp2[i] = NAN;
+          continue;
+        }
+        const double k_den = c_(i) == 1 ? 0. : -0.5;
+        const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S_(i);
+        const double sqrt_sigIo = std::sqrt(sigIo_(i));
+        const double tf = k_ani_(i) * Fc_(i) / sqrt_sigIo;
+        const double sig1 = sq(k_ani_(i)) * S_(i) / sigIo_(i);
+        const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+        const bool use_exp2 = det < self.exp2_threshold;
+        const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
+
+        const double r_1 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i), root_den, use_exp2, self.h, self.N, self.ewmax);
+        const double r_2 = integ_j_ratio(k_den + 0.5, k_den, false, to, tf, sig1, c_(i), root_den, use_exp2, self.h, self.N, self.ewmax);
+        retp1[i] = r_1 * std::sqrt(sigIo_(i)) / k_ani_(i);
+        retp2[i] = r_1 / r_2; // should we calculate J(k_den+0.5, 1) / J(k_den+0.5, 0) directly?
+      }
+      return nb::make_tuple(ret_f, ret_m);
+    },
+         nb::arg("Io"), nb::arg("sigIo"), nb::arg("k_ani"), nb::arg("S"), nb::arg("Fc"), nb::arg("c"))
+    .def("fw", [](const IntensityIntegrator& self, np_array<const double> Io, np_array<const double> sigIo, np_array<const double> k_ani,
+                  np_array<const double> S0, np_array<const int> c) {
+      auto Io_ = Io.view();
+      auto sigIo_ = sigIo.view();
+      auto k_ani_ = k_ani.view();
+      auto S0_ = S0.view(); // should include epsilon
+      auto c_ = c.view();
+      size_t len = Io_.shape(0);
+      if (len != sigIo_.shape(0) || len != k_ani_.shape(0) || len != S0_.shape(0) || len != c_.shape(0))
+        throw std::runtime_error("fw: shape mismatch");
+      auto ret_f = make_numpy_array<double>({len}); // <|F|>
+      auto ret_f2 = make_numpy_array<double>({len}); // <|F|^2>
+      double *retp1 = ret_f.data(), *retp2 = ret_f2.data();
+      for (size_t i = 0; i < len; ++i) {
+        if (std::isnan(Io_(i))) {
+          retp1[i] = retp2[i] = NAN;
+          continue;
+        }
+        const double k_den = c_(i) == 1 ? 0. : -0.5;
+        const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S0_(i);
+        const double sqrt_sigIo = std::sqrt(sigIo_(i));
+        const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+        const bool use_exp2 = det < self.exp2_threshold;
+        // tf == 0 and sig1 doesn't matter
+        const double root_den = find_root(k_den, to, 0.0, 1.0, c_(i), det, false, use_exp2);
+
+        retp1[i] = integ_j_ratio(k_den + 0.5, k_den, false, to, 0.0, 1.0, c_(i), root_den, use_exp2, self.h, self.N, self.ewmax);
+        retp1[i] *= std::sqrt(sigIo_(i));
+        retp2[i] = integ_j_ratio(k_den + 1.0, k_den, false, to, 0.0, 1.0, c_(i), root_den, use_exp2, self.h, self.N, self.ewmax);
+        retp2[i] *= sigIo_(i);
+      }
+      return nb::make_tuple(ret_f, ret_f2);
+    })
     .def("ll_int_der1_DS", &IntensityIntegrator::ll_int_der1_params_py<true>)
     .def("ll_int_der1_ani", &IntensityIntegrator::ll_int_der1_params_py<false>)
     .def("find_ll_int_S_from_current_estimates", &IntensityIntegrator::find_ll_int_S_from_current_estimates_py)
+    .def("ll_int_der_fc", &IntensityIntegrator::ll_int_der_fc_py)
     .def("ll_int_fw_der1_S", &IntensityIntegrator::ll_int_fw_der1_params_py<true>)
     .def("ll_int_fw_der1_ani", &IntensityIntegrator::ll_int_fw_der1_params_py<false>)
     .def("ll_refine_D_S", &IntensityIntegrator::ll_refine_D_S_py)

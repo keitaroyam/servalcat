@@ -96,17 +96,17 @@ struct RootfindResult {
 };
 
 template <typename Func>
-double brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15) {
+RootfindResult brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15) {
+  RootfindResult ret;
   double fa = func(a);
   double fb = func(b);
 
-  if (fa == 0.0) return a;
-  if (fb == 0.0) return b;
+  if (fa == 0.0) return {true, "Exact root at lower bound a", 0, a};
+  if (fb == 0.0) return {true, "Exact root at upper bound b", 0, b};
 
   // Endpoints must bracket a root
-  if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0)) {
-    throw std::invalid_argument("Endpoints a and b must have opposite signs in brent().");
-  }
+  if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0))
+    return {false, "Endpoints a and b must have opposite signs in brent().", 0, std::numeric_limits<double>::quiet_NaN()};
 
   if (std::abs(fa) < std::abs(fb)) {
     std::swap(a, b);
@@ -121,7 +121,7 @@ double brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15
   const double eps = std::numeric_limits<double>::epsilon();
 
   for (int iter = 0; iter < maxiter; ++iter) {
-    if (fb == 0.0) return b;
+    if (fb == 0.0) return {true, "Exact root found", iter, b};
 
     // Reset step if sign changed
     if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
@@ -141,7 +141,7 @@ double brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15
     double tol1 = 2.0 * eps * std::abs(b) + atol;
 
     if (std::abs(m) <= tol1 || m == 0.0) {
-      return b;
+      return {true, "Converged within tolerance", iter - 1, b};
     }
 
     // Try inverse quadratic interpolation or secant method
@@ -193,7 +193,7 @@ double brent(Func&& func, double a, double b, int maxiter=100, double atol=1e-15
     fb = func(b);
   }
 
-  return b;
+  return {false, "Maximum iterations reached without convergence", maxiter, b};
 }
 
 template<typename Func, typename Fprime>

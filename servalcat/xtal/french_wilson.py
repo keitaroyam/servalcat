@@ -260,14 +260,7 @@ def ll_shift_B(x, ssqmat, hkldata, adpdirs):
     return -numpy.dot(g, numpy.linalg.pinv(H))
 
 def expected_F_from_int(Io, sigo, k_ani, eps, c, S0):
-    to = Io / sigo - sigo / c / k_ani**2 / S0 / eps
-    tf = numpy.zeros(Io.size)
-    sig1 = numpy.ones(Io.size)
-    k_num = numpy.where(c == 1,  0.5, 0.)
-    F = numpy.sqrt(sigo) * ext.integ_J_ratio(k_num, k_num - 0.5, False, to, tf, sig1, c,
-                                             integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
-    Fsq = sigo * ext.integ_J_ratio(k_num + 0.5, k_num - 0.5, False, to, tf, sig1, c,
-                                   integr.exp2_threshold, integr.h, integr.N, integr.ewmax)
+    F, Fsq = integr.fw(Io, sigo, k_ani, S0 * eps, c)
     varF = numpy.maximum(0.0, Fsq - F**2)
     return F, numpy.sqrt(varF)
 
