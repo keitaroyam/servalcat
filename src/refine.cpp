@@ -878,6 +878,7 @@ void add_refine(nb::module_& m) {
   nb::class_<Geometry::Interval>(geom, "Interval")
     .def(nb::init<gemmi::Atom*,gemmi::Atom*>())
     .def("set_image", &Geometry::Interval::set_image)
+    .def("same_asu", &Geometry::Interval::same_asu)
     .def_rw("dmin", &Geometry::Interval::dmin)
     .def_rw("dmax", &Geometry::Interval::dmax)
     .def_rw("smin", &Geometry::Interval::smin)
