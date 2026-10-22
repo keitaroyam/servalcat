@@ -530,7 +530,8 @@ def read_shelx_ins(ins_in=None, lines_in=None, ignore_q_peaks=True): # TODO supp
         if l.startswith("REM"): continue
         if l.startswith(";"): continue
         if not l.strip(): continue
-
+        if "!" in l:
+            l = l[:l.index("!")]
         if l.endswith("="):
             l = l[:l.rindex("=")]
             if concat_flag:
