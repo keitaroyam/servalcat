@@ -204,7 +204,6 @@ def main(args):
         from servalcat.xtal import french_wilson
         B_aniso = french_wilson.determine_Sigma_and_aniso(hkldata)
         french_wilson.french_wilson(hkldata, B_aniso, labout=["FP", "SIGFP"]) # TODO when anomalous
-        del hkldata.binned_df["ml"]["S"]
         is_int = False
         
     utils.model.fix_deuterium_residues(st)
