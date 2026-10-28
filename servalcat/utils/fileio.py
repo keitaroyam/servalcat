@@ -695,6 +695,12 @@ def read_shelx_hkl(cell, sg, hklf, file_in=None, lines_in=None):
         # batch = l[28:32]
         # wavelength = l[32:40]
 
+    if not hkls: # should raise an error?
+        mtz = gemmi.Mtz()
+        mtz.cell = cell
+        mtz.spacegroup = sg
+        return mtz
+        
     ints = gemmi.Intensities()
     ints.set_data(cell, sg, numpy.asarray(hkls), numpy.asarray(vals), numpy.asarray(sigs))
     ints.merge_in_place(gemmi.DataType.Anomalous)
@@ -840,7 +846,7 @@ def read_small_molecule_files(files):
             else:
                 logger.writeln(f" {e}")                
 
-    if wavelength and mtz:
+    if wavelength and mtz and len(mtz.datasets) > 1:
         mtz.datasets[1].wavelength = wavelength
     return st, mtz
 
