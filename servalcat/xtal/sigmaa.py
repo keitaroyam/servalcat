@@ -165,7 +165,8 @@ def calc_r_and_cc(hkldata, twin_data=None):
         else:
             stats.loc[i_bin, "n_all"] = len(idxes)
         stats.loc[i_bin, "Cmpl"] = stats.loc[i_bin, "n_obs"] / stats.loc[i_bin, "n_all"] * 100.
-        stats.loc[i_bin, f"Mn({olab})"] = numpy.nanmean(obs[idxes])
+        if stats.loc[i_bin, "n_obs"] > 0:
+            stats.loc[i_bin, f"Mn({olab})"] = numpy.nanmean(obs[idxes])
         stats.loc[i_bin, f"Mn({clab})"] = numpy.nanmean(calc[idxes])
         if has_free:
             for j, suf in ((1, "work"), (2, "free")):
@@ -399,7 +400,9 @@ class LsqScale:
             dfdy = tanh_diff * diff_der
             #dfdy2 = 1 /numpy.cosh(diff)**2 * diff_der**2 + tanh_diff * diff_der2 # problematic with large diff
             #dfdy2 = numpy.where(diff==0, 1., numpy.abs(tanh_diff) / gemmi.log_cosh(diff)) * diff_der**2 + tanh_diff * diff_der2
-            dfdy2 = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0) * diff_der**2 + tanh_diff * diff_der2
+            #dfdy2 = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0) * diff_der**2 + tanh_diff * diff_der2
+            w = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0)
+            dfdy2 = numpy.maximum(w, 1e-4) * diff_der**2
         else:
             raise RuntimeError("bad func_type")
         
@@ -413,8 +416,10 @@ class LsqScale:
         # no numpy.nandot..
         g, dfdy, dfdy2 = g[self.sel, :], dfdy[self.sel], dfdy2[self.sel]
         H = numpy.dot(g.T, g * dfdy2[:,None])
+        damping = 1e-6 * (numpy.trace(H) / H.shape[0]) if numpy.trace(H) > 0 else 1e-6
+        H_reg = H + damping * numpy.eye(H.shape[0])
         g = numpy.sum(dfdy[:,None] * g, axis=0)
-        dx = -numpy.dot(g, numpy.linalg.pinv(H))
+        dx = -numpy.dot(g, numpy.linalg.pinv(H_reg))
         return dx
 
     def initial_kb(self):
@@ -489,7 +494,7 @@ class LsqScale:
                                 ofs.write("{:4e} {:4e}\n".format(s, f1))
                     shift = dx * s
                     x = x_ini + shift
-                    if x[0] < 0: x[0] = x0[0]
+                    if self.k_trans(x[0]) < 0: x[0] = x0[0]
                     if use_sol:
                         if x[-1] < 10: x[-1] = 10
                         elif x[-1] > 400: x[-1] = 400
@@ -1626,7 +1631,7 @@ def process_input(hklin, labin, n_bins_ml, free, xyzin=None, d_max=None, d_min=N
             stats.loc[i_bin, snr] = numpy.nanmean(obs / sigma)
             mean_obs = numpy.nanmean(obs)
             stats.loc[i_bin, newlabels[0]] = mean_obs
-            if newlabels[0] == "I":
+            if newlabels[0] == "I" and obs.size > 0 and numpy.any(~numpy.isnan(obs)):
                 stats.loc[i_bin, "Mn(I)/Std(I)"] = mean_obs / numpy.nanstd(obs)
         if "FREE" in hkldata.df:
             stats.loc[i_bin, "n_work"] = n_work
@@ -1815,7 +1820,8 @@ def calculate_maps(hkldata, b_aniso, fc_labs, D_labs, use_int, use="all"):
             hkldata.df.loc[cidxes, "FOM"] = m
             if nrefs > 0:
                 lab = "FOM_" + ("a", "c")[c]
-                hkldata.binned_df["ml"].loc[i_bin, lab] = numpy.nanmean(m)
+                if m.size > 0 and numpy.any(~numpy.isnan(m)): # to suppress "RuntimeWarning: Mean of empty slice"
+                    hkldata.binned_df["ml"].loc[i_bin, lab] = numpy.nanmean(m)
             #hkldata.df.loc[cidxes, "LL"] = ext.ll_amp(obs[cidxes],
             #                                          sigobs[cidxes],
             #                                          k_ani[cidxes], S * eps,
