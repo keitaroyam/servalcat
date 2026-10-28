@@ -1683,6 +1683,10 @@ def update_fc(st, fc_labs, d_min, monlib, source, mott_bethe, hkldata=None, twin
 
 def calc_Fmask(st, d_min, miller_array, use_non_binary_mask=False):
     logger.writeln("Calculating solvent contribution..")
+    if st.ncs:
+        st = st.clone()
+        st.expand_ncs(gemmi.HowToNameCopiedChain.Short, merge_dist=0)
+        
     grid = gemmi.FloatGrid()
     grid.setup_from(st, spacing=min(0.6, (d_min-1e-6) / 2 - 1e-9))
     masker = gemmi.SolventMasker(gemmi.AtomicRadiiSet.Refmac)
