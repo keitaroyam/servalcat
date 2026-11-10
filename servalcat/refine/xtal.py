@@ -133,17 +133,12 @@ class LL_Xtal:
             else:
                 fc_list = [self.hkldata.df[self.fc_labs].sum(axis=1).to_numpy()]
         self.scaling.set_data(self.hkldata, fc_list, self.is_int, sigma_cutoff=0, twin_data=self.twin_data)
-        self.scaling.scale()
+        min_b_model = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too
+        self.scaling.scale(b_min=min_b - min_b_model)
         self.b_aniso = self.scaling.b_aniso
-        b = self.scaling.b_iso
-        min_b_iso = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too
-        tmp = min_b_iso + b
-        if tmp < min_b: # perhaps better only adjust b_iso that went too small, but we need to recalculate Fc
-            logger.writeln(" Adjusting overall B to avoid too small value")
-            b += min_b - tmp
-        logger.writeln(" Applying overall B to model: {:.2f}".format(b))
-        utils.model.shift_b(self.st[0], b)
-        k_iso = self.hkldata.debye_waller_factors(b_iso=b)
+        logger.writeln(" Applying overall B to model: {:.2f}".format(self.scaling.b_iso))
+        utils.model.shift_b(self.st[0], self.scaling.b_iso)
+        k_iso = self.hkldata.debye_waller_factors(b_iso=self.scaling.b_iso)
         self.hkldata.df["k_aniso"] = self.hkldata.debye_waller_factors(b_cart=self.b_aniso)
         if self.use_solvent:
             if self.twin_data:
@@ -165,7 +160,7 @@ class LL_Xtal:
             self.hkldata.df[o_labs] /= self.scaling.k_overall
 
         if self.twin_data:
-            self.twin_data.f_calc[:] *= self.twin_data.debye_waller_factors(b_iso=b)[:,None]
+            self.twin_data.f_calc[:] *= self.twin_data.debye_waller_factors(b_iso=self.scaling.b_iso)[:,None]
         else:
             for lab in self.fc_labs: self.hkldata.df[lab] *= k_iso
             self.hkldata.df["FC"] = self.hkldata.df[self.fc_labs].sum(axis=1)

@@ -253,13 +253,16 @@ class VarTrans:
 # class VarTrans
 
 class LsqScale:
-    # parameter x = [k_overall, adp_pars, k_sol, B_sol]
+    # parameter x = [k_overall, b_iso, adp_pars, k_sol, B_sol]
     def __init__(self, k_as_exp=False, func_type="log_cosh"):
         assert func_type in ("sq", "log_cosh")
         self.k_trans = lambda x: numpy.exp(x) if k_as_exp else x
         self.k_trans_der = lambda x: numpy.exp(x) if k_as_exp else 1
         self.k_trans_inv = lambda x: numpy.log(x) if k_as_exp else x
         self.func_type = func_type
+        self.b_min = 0
+        self.B_sol_lim = (10, 400)
+        self.k_sol_lim = (1e-4, numpy.inf)
         self.reset()
         
     def reset(self):
@@ -281,14 +284,14 @@ class LsqScale:
                 self.sel = hkldata.df.FP / hkldata.df.SIGFP > sigma_cutoff
                 self.labcut = "(F/SIGF>{})".format(sigma_cutoff)
         else:
-            self.sel = hkldata.df.index
+            self.sel = numpy.ones(len(hkldata.df), dtype=bool)
             self.labcut = ""
         self.obs = hkldata.df["I" if use_int else "FP"].to_numpy(copy=True)
         self.obs[~self.sel] = numpy.nan
         self.calc = [x for x in fc_list]
         self.s2mat = hkldata.ssq_mat()
         self.s2 = 1. / hkldata.d_spacings().to_numpy()**2
-        self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=False)
+        self.adpdirs = utils.model.adp_constraints(hkldata.sg.operations(), hkldata.cell, tr0=True)
         self.twin_data = twin_data
         if use_int:
             self.sqrt_obs = numpy.sqrt(self.obs)
@@ -297,6 +300,15 @@ class LsqScale:
         if s2 is None: s2 = self.s2
         return k_sol * numpy.exp(-b_sol * s2 / 4)
 
+    def get_b_overall(self, x):
+        b_iso = x[1]
+        iso_tensor = numpy.array([b_iso, b_iso, b_iso, 0.0, 0.0, 0.0])
+        nadp = self.adpdirs.shape[0]
+        if nadp > 0:
+            b_traceless = numpy.dot(x[2:nadp+2], self.adpdirs)
+            return iso_tensor + b_traceless
+        return iso_tensor
+    
     def fc_and_mask_grad(self, x):
         fc0 = self.calc[0]
         if len(self.calc) == 2:
@@ -310,7 +322,7 @@ class LsqScale:
                 fc = fc0 + fbulk
                 re_fmask_fcconj = (fmask * fc.conj()).real
                 fc_abs = numpy.abs(fc)
-                tmp = temp_sol / fc_abs * re_fmask_fcconj
+                tmp = temp_sol / numpy.maximum(fc_abs, 1e-12) * re_fmask_fcconj
                 return fc_abs, tmp, -tmp * x[-2] * self.s2 / 4
         else:
             if self.twin_data:
@@ -320,19 +332,13 @@ class LsqScale:
 
     def scaled_fc(self, x):
         fc = self.fc_and_mask_grad(x)[0]
-        nadp = self.adpdirs.shape[0]
-        B = numpy.dot(x[1:nadp+1], self.adpdirs)
-        kani = numpy.exp(numpy.dot(-B, self.s2mat))
+        B = self.get_b_overall(x)
+        kani = numpy.exp(numpy.clip(numpy.dot(-B, self.s2mat), -50., 50.))
         return self.k_trans(x[0]) * kani * fc
 
     def target(self, x):
         y = self.scaled_fc(x)
-        if self.use_int:
-            diff = self.sqrt_obs - y
-            #y2 = y**2
-            #diff = self.obs - y2
-        else:
-            diff = self.obs - y
+        diff = (self.sqrt_obs - y) if self.use_int else (self.obs - y)
 
         if self.func_type == "sq":
             return numpy.nansum(diff**2)
@@ -342,31 +348,22 @@ class LsqScale:
             raise RuntimeError("bad func_type")
         
     def grad(self, x):
+        assert self.func_type in ("sq", "log_cosh")
         g = numpy.zeros_like(x)
         fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
-        B = numpy.dot(x[1:nadp+1], self.adpdirs)
-        kani = numpy.exp(numpy.dot(-B, self.s2mat))
+        B = self.get_b_overall(x)
+        kani = numpy.exp(numpy.clip(numpy.dot(-B, self.s2mat), -50., 50.))
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
-        if self.use_int:
-            diff = self.sqrt_obs - y
-            diff_der = -1
-            #diff = self.obs - y**2
-            #diff_der = -2 * y
-        else:
-            diff = self.obs - y
-            diff_der = -1
-        if self.func_type == "sq":
-            dfdy = 2 * diff * diff_der
-        elif self.func_type == "log_cosh":
-            dfdy = numpy.tanh(diff) * diff_der
-        else:
-            raise RuntimeError("bad func_type")
-        
-        dfdb = numpy.nansum(-self.s2mat * k * fc_abs * kani * dfdy, axis=1)
+        diff = (self.sqrt_obs - y) if self.use_int else (self.obs - y)
+        dfdy = -2.0 * diff if self.func_type == "sq" else -numpy.tanh(diff)
+
         g[0] = numpy.nansum(kani * fc_abs * dfdy * self.k_trans_der(x[0]))
-        g[1:nadp+1] = numpy.dot(dfdb, self.adpdirs.T)
+        g[1] = numpy.nansum(-(self.s2 / 4.0) * y * dfdy)
+        if nadp > 0:
+            dfdb = numpy.nansum(-self.s2mat * y * dfdy, axis=1)
+            g[2:nadp+2] = numpy.dot(dfdb, self.adpdirs.T)
         if len(self.calc) == 2:
             g[-2] = numpy.nansum(k * kani * der_ksol * dfdy)
             g[-1] = numpy.nansum(k * kani * der_bsol * dfdy)
@@ -379,36 +376,28 @@ class LsqScale:
         H = numpy.zeros((len(x), len(x)))
         fc_abs, der_ksol, der_bsol  = self.fc_and_mask_grad(x)
         nadp = self.adpdirs.shape[0]
-        B = numpy.dot(x[1:nadp+1], self.adpdirs)
-        kani = numpy.exp(numpy.dot(-B, self.s2mat))
+        B = self.get_b_overall(x)
+        kani = numpy.exp(numpy.clip(numpy.dot(-B, self.s2mat), -50., 50.))
         k = self.k_trans(x[0])
         y = k * kani * fc_abs
-        if self.use_int:
-            diff = self.sqrt_obs - y
-            diff_der = -1
-            diff_der2 = 0
-        else:
-            diff = self.obs - y
-            diff_der = -1.
-            diff_der2 = 0.
+        diff = (self.sqrt_obs - y) if self.use_int else (self.obs - y)
             
         if self.func_type == "sq":
-            dfdy = 2 * diff * diff_der
-            dfdy2 = 2 * diff_der**2 + 2 * diff * diff_der2
+            dfdy = -2 * diff
+            dfdy2 = numpy.full_like(diff, 2.0)
         elif self.func_type == "log_cosh":
             tanh_diff = numpy.tanh(diff)
-            dfdy = tanh_diff * diff_der
-            #dfdy2 = 1 /numpy.cosh(diff)**2 * diff_der**2 + tanh_diff * diff_der2 # problematic with large diff
-            #dfdy2 = numpy.where(diff==0, 1., numpy.abs(tanh_diff) / gemmi.log_cosh(diff)) * diff_der**2 + tanh_diff * diff_der2
-            #dfdy2 = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0) * diff_der**2 + tanh_diff * diff_der2
+            dfdy = -tanh_diff
             w = numpy.divide(tanh_diff, diff, out=numpy.ones_like(diff), where=diff!=0)
-            dfdy2 = numpy.maximum(w, 1e-4) * diff_der**2
+            dfdy2 = numpy.maximum(w, 1e-4)
         else:
             raise RuntimeError("bad func_type")
         
-        dfdb = -self.s2mat * k * fc_abs * kani
         g[:,0] = kani * fc_abs * self.k_trans_der(x[0])
-        g[:,1:nadp+1] = numpy.dot(dfdb.T, self.adpdirs.T)
+        g[:,1] = -(self.s2 / 4.0) * y
+        if nadp > 0:
+            dfdb = -self.s2mat * y
+            g[:,2:nadp+2] = numpy.dot(dfdb.T, self.adpdirs.T)
         if len(self.calc) == 2:
             g[:,-2] = k * kani * der_ksol
             g[:,-1] = k * kani * der_bsol
@@ -416,10 +405,44 @@ class LsqScale:
         # no numpy.nandot..
         g, dfdy, dfdy2 = g[self.sel, :], dfdy[self.sel], dfdy2[self.sel]
         H = numpy.dot(g.T, g * dfdy2[:,None])
-        damping = 1e-6 * (numpy.trace(H) / H.shape[0]) if numpy.trace(H) > 0 else 1e-6
-        H_reg = H + damping * numpy.eye(H.shape[0])
+        # preconditioning
+        h_diag = numpy.diag(H)
+        h_diag_safe = numpy.where(h_diag > 1e-12, h_diag, 1.0)
+        d_inv = 1.0 / numpy.sqrt(h_diag_safe)
+        H_scaled = d_inv[:, None] * H * d_inv[None, :]
         g = numpy.sum(dfdy[:,None] * g, axis=0)
-        dx = -numpy.dot(g, numpy.linalg.pinv(H_reg))
+        g_scaled = g * d_inv
+        H_reg_scaled = H_scaled + 1e-5 * numpy.eye(H.shape[0])
+        dx_scaled = -numpy.dot(g_scaled, numpy.linalg.pinv(H_reg_scaled))
+        dx = dx_scaled * d_inv
+
+        # check parameters violating bounds
+        mask = numpy.zeros(len(x), dtype=bool)
+
+        if self.k_trans(x[0]) <= 1e-8 and dx[0] < 0:
+            mask[0] = True
+        if x[1] <= self.b_min and dx[1] < 0:
+            mask[1] = True
+        if len(self.calc) == 2:
+            if x[-2] <= self.k_sol_lim[0] and dx[-2] < 0:
+                mask[-2] = True
+            if x[-1] <= self.B_sol_lim[0] and dx[-1] < 0:
+                mask[-1] = True
+            elif x[-1] >= self.B_sol_lim[1] and dx[-1] > 0:
+                mask[-1] = True
+
+        # if any violation, zero out their rows/cols and re-solve
+        if numpy.any(mask):
+            for idx in numpy.where(mask)[0]:
+                H_reg_scaled[idx, :] = 0.0
+                H_reg_scaled[:, idx] = 0.0
+                H_reg_scaled[idx, idx] = 1.0
+                g_scaled[idx] = 0.0
+            
+            dx_scaled = -numpy.dot(g_scaled, numpy.linalg.pinv(H_reg_scaled))
+            dx = dx_scaled * d_inv
+            dx[mask] = 0.0
+        
         return dx
 
     def initial_kb(self):
@@ -442,7 +465,9 @@ class LsqScale:
         logger.writeln("           R{} = {:.4f}".format(self.labcut, utils.hkl.r_factor(f1p, f2p * k * numpy.exp(-b*self.s2[sel]/4))))
         return k, b
     
-    def scale(self):
+    def scale(self, b_min):
+        self.b_min = b_min
+        nadp = self.adpdirs.shape[0]
         use_sol = len(self.calc) == 2
         msg = "Scaling Fc to {} {} bulk solvent contribution".format("Io" if self.use_int else "Fo",
                                                                      "with" if use_sol else "without")
@@ -452,14 +477,15 @@ class LsqScale:
         else:
             k, b = self.k_overall, self.b_iso
         if self.b_aniso is None:
-            self.b_aniso = gemmi.SMat33d(b,b,b,0,0,0)
-        x0 = [self.k_trans_inv(k)]
-        bounds = [(0, None)]
-        x0.extend(numpy.dot(self.b_aniso.elements_pdb(), self.adpdirs.T))
-        bounds.extend([(None, None)]*(len(x0)-1))
+            self.b_aniso = gemmi.SMat33d(0,0,0,0,0,0)
+        x0 = [self.k_trans_inv(k), max(b, self.b_min)]
+        bounds = [(0, None), (self.b_min, None)]
+        if nadp > 0:
+            x0.extend(numpy.dot(self.b_aniso.elements_pdb(), self.adpdirs.T))
+            bounds.extend([(None, None)]*(len(x0)-2))
         if use_sol:
             x0.extend([self.k_sol, self.b_sol])
-            bounds.extend([(1e-4, None), (10., 400.)])
+            bounds.extend([self.k_sol_lim, self.B_sol_lim])
         if 0:
             f0 = self.target(x0)
             ader = self.grad(x0)
@@ -478,7 +504,7 @@ class LsqScale:
 
         t0 = time.time()
         if 1:
-            x = x0
+            x = numpy.array(x0)
             for i in range(40):
                 x_ini = x.copy()
                 f0 = f1 = self.target(x)
@@ -495,10 +521,12 @@ class LsqScale:
                     shift = dx * s
                     x = x_ini + shift
                     if self.k_trans(x[0]) < 0: x[0] = x0[0]
+                    if x[1] < self.b_min:
+                        x[1] = self.b_min
                     if use_sol:
-                        if x[-1] < 10: x[-1] = 10
-                        elif x[-1] > 400: x[-1] = 400
-                        if x[-2] < 1e-4: x[-2] = 1e-4
+                        if x[-1] < self.B_sol_lim[0]: x[-1] = self.B_sol_lim[0]
+                        elif x[-1] > self.B_sol_lim[1]: x[-1] = self.B_sol_lim[1]
+                        if x[-2] < self.k_sol_lim[0]: x[-2] = self.k_sol_lim[0]
                     f1 = self.target(x)
                     if f1 < f0: break
                 #logger.writeln("cycle {} {} {} {} {} {}".format(i, f0, f1, s, shift, (f0 - f1) / f0))
@@ -516,8 +544,7 @@ class LsqScale:
             self.stats["x"] = res.x
         logger.writeln(" time: {:.3f} sec".format(time.time() - t0))
         self.k_overall = self.k_trans(res_x[0])
-        nadp = self.adpdirs.shape[0]
-        b_overall = gemmi.SMat33d(*numpy.dot(res_x[1:nadp+1], self.adpdirs))
+        b_overall = gemmi.SMat33d(*self.get_b_overall(res_x))
         self.b_iso = b_overall.trace() / 3
         self.b_aniso = b_overall.added_kI(-self.b_iso) # subtract isotropic contribution
 
@@ -1733,7 +1760,8 @@ def bulk_solvent_and_lsq_scales(hkldata, st, fc_labs, use_solvent=True, use_int=
 
     scaling = LsqScale(func_type=func_type)
     scaling.set_data(hkldata, fc_list, use_int, sigma_cutoff=0, twin_data=twin_data)
-    scaling.scale()
+    min_b_model = st[0].calculate_b_aniso_range()[0]
+    scaling.scale(b_min=0.1 - min_b_model)
     b_iso = scaling.b_iso
     k_aniso = hkldata.debye_waller_factors(b_cart=scaling.b_aniso)
     hkldata.df["k_aniso"] = k_aniso # we need it later when calculating stats
