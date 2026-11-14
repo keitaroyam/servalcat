@@ -434,10 +434,17 @@ struct LL{
     }
     return ret;
   }
+  static double atom_min_b(const gemmi::Atom &atom) {
+    if (atom.aniso.nonzero()) {
+      const auto eig = atom.aniso.calculate_eigenvalues();
+      return gemmi::u_to_b() * std::min(std::min(eig[0], eig[1]), eig[2]);
+    }
+    return atom.b_iso;
+  }
   std::pair<double, double> b_min_max() const {
     double b_min = INFINITY, b_max = 0;
     for (const auto atom : params->atoms) {
-      const double b_iso = atom->aniso.nonzero() ? gemmi::u_to_b() * atom->aniso.trace() / 3 : atom->b_iso;
+      const double b_iso = atom_min_b(*atom);
       if (b_iso < b_min) b_min = b_iso;
       if (b_iso > b_max) b_max = b_iso;
     }
@@ -643,7 +650,7 @@ struct LL{
       }();
       const double w = atom.occ * atom.occ;
       const double c = coef.c() + (mott_bethe ? -atom.element.atomic_number(): addends.get(atom.element));
-      const double b_iso = atom.aniso.nonzero() ? gemmi::u_to_b() * atom.aniso.trace() / 3 : atom.b_iso;
+      const double b_iso = atom_min_b(atom); // safer (prevent overshoot), but convergence is slower
       double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
 
       // TODO can be reduced for the same elements
@@ -670,9 +677,9 @@ struct LL{
       if (adp_mode == 1)
         am[pos_b] += w * fac_b;
       else if (adp_mode == 2) {
-        for (int j = 0; j < 3; ++j) am[pos_b + j] += w * fac_a;     // 11-11, 22-22, 33-33
-        for (int j = 3; j < 6; ++j) am[pos_b + j] += w * fac_a * 4; // 12-12, 13-13, 23-23
-        for (int j : {6, 7, 11})    am[pos_b + j] += w * fac_a / 3; // 11-22, 11-33, 22-33
+        for (int j = 0; j < 3; ++j) am[pos_b + j] += w * fac_a;         // 11-11, 22-22, 33-33
+        for (int j = 3; j < 6; ++j) am[pos_b + j] += w * fac_a * 4 / 3; // 12-12, 13-13, 23-23
+        for (int j : {6, 7, 11})    am[pos_b + j] += w * fac_a / 3;     // 11-22, 11-33, 22-33
       }
       if (pos_q >= 0) {
         am[pos_q] += fac_q * sq(neutron_h_f_correction); // w = q^2 not needed
