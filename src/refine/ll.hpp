@@ -434,19 +434,20 @@ struct LL{
     }
     return ret;
   }
-  static double atom_min_b(const gemmi::Atom &atom) {
+  static std::pair<double, double> atom_min_max_b(const gemmi::Atom &atom) {
     if (atom.aniso.nonzero()) {
       const auto eig = atom.aniso.calculate_eigenvalues();
-      return gemmi::u_to_b() * std::min(std::min(eig[0], eig[1]), eig[2]);
+      return {gemmi::u_to_b() * std::min({eig[0], eig[1], eig[2]}),
+              gemmi::u_to_b() * std::max({eig[0], eig[1], eig[2]})};
     }
-    return atom.b_iso;
+    return {atom.b_iso, atom.b_iso};
   }
   std::pair<double, double> b_min_max() const {
     double b_min = INFINITY, b_max = 0;
     for (const auto atom : params->atoms) {
-      const double b_iso = atom_min_b(*atom);
-      if (b_iso < b_min) b_min = b_iso;
-      if (b_iso > b_max) b_max = b_iso;
+      const auto [b1, b2] = atom_min_max_b(*atom);
+      if (b1 < b_min) b_min = b1;
+      if (b2 > b_max) b_max = b2;
     }
     return std::make_pair(b_min, b_max);
   }
@@ -618,6 +619,36 @@ struct LL{
         return Table::get_(gemmi::El::D) - Table::get_(gemmi::El::H);
       return 1.; // never used
     }();
+
+    // 25-point hemisphere Lebedev quadrature (50-point degree-11 rule on S^2).
+    // Integrates polynomials on S^2 up to degree 11 to machine precision.
+    struct QuadPoint { gemmi::Vec3 v; double w; };
+    static const std::array<QuadPoint, 25> hemi_quad = []() {
+      const double s2 = std::sqrt(0.5);
+      const double s3 = std::sqrt(1. / 3.);
+      const double l  = std::sqrt(1. / 11.);
+      const double m  = std::sqrt(9. / 11.);
+      const double w1 = 2. * 4. / 315.;       // 3 antipodal pairs
+      const double w2 = 2. * 64. / 2835.;     // 6 antipodal pairs
+      const double w3 = 2. * 27. / 1280.;     // 4 antipodal pairs
+      const double w4 = 2. * 14641. / 725760.;// 12 antipodal pairs
+      return std::array<QuadPoint, 25>{{
+          // A1 (3)
+          {{1, 0, 0}, w1}, {{0, 1, 0}, w1}, {{0, 0, 1}, w1},
+          // A2 (6)
+          {{s2,  s2, 0}, w2}, {{s2, -s2, 0}, w2},
+          {{s2, 0,  s2}, w2}, {{s2, 0, -s2}, w2},
+          {{0,  s2,  s2}, w2}, {{0,  s2, -s2}, w2},
+          // A3 (4)
+          {{s3,  s3,  s3}, w3}, {{s3,  s3, -s3}, w3},
+          {{s3, -s3,  s3}, w3}, {{s3, -s3, -s3}, w3},
+          // B (12)
+          {{l,  l,  m}, w4}, {{l,  l, -m}, w4}, {{l, -l,  m}, w4}, {{l, -l, -m}, w4},
+          {{l,  m,  l}, w4}, {{l,  m, -l}, w4}, {{l, -m,  l}, w4}, {{l, -m, -l}, w4},
+          {{m,  l,  l}, w4}, {{m,  l, -l}, w4}, {{m, -l,  l}, w4}, {{m, -l, -l}, w4},
+        }};
+    }();
+
     const size_t n_atoms = params->atoms.size();
     const size_t n_a = params->n_fisher_ll();
     const int N = Table::Coef::ncoeffs;
@@ -650,46 +681,84 @@ struct LL{
       }();
       const double w = atom.occ * atom.occ;
       const double c = coef.c() + (mott_bethe ? -atom.element.atomic_number(): addends.get(atom.element));
-      const double b_iso = atom_min_b(atom); // safer (prevent overshoot), but convergence is slower
-      double fac_x = 0., fac_b = 0., fac_a = 0., fac_q = 0., fac_qb = 0.;
+      const double corr2 = sq(neutron_h_f_correction);
 
-      // TODO can be reduced for the same elements
-      for (int j = 0; j < N + 1; ++j)
-        for (int k = j; k < N + 1; ++k) {
-          // * -1 is needed for mott_bethe case, but we only need aj * ak so they cancel.
-          const double aj = j < N ? coef.a(j) : c;
-          const double ak = k < N ? coef.a(k) : c;
-          if (aj == 0 || ak == 0)
-            continue;
-          const double b = 2 * b_iso + (j < N ? coef.b(j) : 0) + (k < N ? coef.b(k) : 0);
-          const double ajak = j == k ? sq(aj) : 2 * aj * ak;
-          fac_x += ajak * interp_1d(table_bs, pp1[0], b);
-          fac_b += ajak * interp_1d(table_bs, bb[0], b);
-          fac_a += ajak * interp_1d(table_bs, aa[0], b);
-          fac_q += ajak * interp_1d(table_bs, qq[0], b);
-          fac_qb += ajak * interp_1d(table_bs, qb[0], b);
+      auto eval_radial = [&](double b_dir, double &fx, double &fb, double &fa, double &fq, double &fqb) {
+        fx = fb = fa = fq = fqb = 0.;
+        // TODO can be reduced for the same elements
+        for (int j = 0; j < N + 1; ++j)
+          for (int k = j; k < N + 1; ++k) {
+            // * -1 is needed for mott_bethe case, but we only need aj * ak so they cancel.
+            const double aj = j < N ? coef.a(j) : c;
+            const double ak = k < N ? coef.a(k) : c;
+            if (aj == 0 || ak == 0)
+              continue;
+            const double b = 2 * b_dir + (j < N ? coef.b(j) : 0) + (k < N ? coef.b(k) : 0);
+            const double ajak = j == k ? sq(aj) : 2 * aj * ak;
+            fx  += ajak * interp_1d(table_bs, pp1[0], b);
+            fb  += ajak * interp_1d(table_bs, bb[0], b);
+            fa  += ajak * interp_1d(table_bs, aa[0], b);
+            fq  += ajak * interp_1d(table_bs, qq[0], b);
+            fqb += ajak * interp_1d(table_bs, qb[0], b);
+          }
+      };
+
+      std::array<double, 6> fac_x{}, fac_qb{};
+      std::array<double, 21> fac_a{};
+      double fac_b = 0., fac_q = 0.;
+      if (!atom.aniso.nonzero()) {
+        double fx, fa, fqb;
+        eval_radial(atom.b_iso, fx, fac_b, fa, fac_q, fqb);
+        for (int j = 0; j < 3; ++j) {
+          fac_x[j] = fx;
+          fac_a[j] = fa;
+          fac_a[j + 3] = fa * 4 / 3;
+          fac_qb[j] = fqb / 3;
         }
-      fac_x *= sq(neutron_h_f_correction);
-      fac_a *= sq(neutron_h_f_correction);
-      if (pos_x >= 0)
-        for (int j = 0; j < 3; ++j)
-          am[pos_x + j] += w * fac_x;
-      if (adp_mode == 1)
-        am[pos_b] += w * fac_b;
-      else if (adp_mode == 2) {
-        for (int j = 0; j < 3; ++j) am[pos_b + j] += w * fac_a;         // 11-11, 22-22, 33-33
-        for (int j = 3; j < 6; ++j) am[pos_b + j] += w * fac_a * 4 / 3; // 12-12, 13-13, 23-23
-        for (int j : {6, 7, 11})    am[pos_b + j] += w * fac_a / 3;     // 11-22, 11-33, 22-33
+        for (int j : {6, 7, 11})
+          fac_a[j] = fa / 3;
+      } else {
+        double B_eig[3] = {};
+        const gemmi::Mat33 V = gemmi::eigen_decomposition(atom.aniso.scaled(gemmi::u_to_b()), B_eig);
+        for (const auto &qp : hemi_quad) {
+          const double b_dir = B_eig[0] * sq(qp.v.x) + B_eig[1] * sq(qp.v.y) + B_eig[2] * sq(qp.v.z);
+          const gemmi::Vec3 u = V.multiply(qp.v);
+          double fx, fb, fa, fq, fqb;
+          eval_radial(b_dir, fx, fb, fa, fq, fqb);
+          const double m[6] = {
+            sq(u.x), sq(u.y), sq(u.z),
+            2 * u.x * u.y, 2 * u.x * u.z, 2 * u.y * u.z
+          };
+          for (int j = 0; j < 6; ++j) {
+            fac_x[j] += qp.w * 3 * fx * (j < 3 ? m[j] : 0.5 * m[j]);
+            fac_a[j] += qp.w * 5 * fa * sq(m[j]);
+            fac_qb[j] += qp.w * fqb * m[j];
+          }
+          for (int j = 0, idx = 6; j < 6; ++j)
+            for (int k = j + 1; k < 6; ++k, ++idx)
+              fac_a[idx] += qp.w * 5 * fa * m[j] * m[k];
+          fac_b += qp.w * fb;
+          fac_q += qp.w * fq;
+        }
       }
+      const double fac_qb_iso = fac_qb[0] + fac_qb[1] + fac_qb[2];
+      if (pos_x >= 0)
+        for (int j = 0; j < 6; ++j)
+          am[pos_x + j] += w * corr2 * fac_x[j];
+      if (adp_mode == 1)
+        am[pos_b] += w * corr2 * fac_b;
+      else if (adp_mode == 2)
+        for (int j = 0; j < 21; ++j)
+          am[pos_b + j] += w * corr2 * fac_a[j];
       if (pos_q >= 0) {
-        am[pos_q] += fac_q * sq(neutron_h_f_correction); // w = q^2 not needed
+        am[pos_q] += corr2 * fac_q; // w = q^2 not needed
         const int pos_qb = params->get_pos_mat_mixed_ll(i, RefineParams::Type::B, RefineParams::Type::Q);
         if (pos_qb >= 0) {
           if (adp_mode == 1)
-            am[pos_qb] += fac_qb * atom.occ * sq(neutron_h_f_correction);
+            am[pos_qb] += atom.occ * corr2 * fac_qb_iso;
           else if (adp_mode == 2)
-            for (int j = 0; j < 3; ++j)
-              am[pos_qb + j] += fac_qb * atom.occ / 3 * sq(neutron_h_f_correction);
+            for (int j = 0; j < 6; ++j)
+              am[pos_qb + j] += atom.occ * corr2 * fac_qb[j];
         }
       }
       if (pos_d >= 0) {
@@ -698,14 +767,13 @@ struct LL{
         const int pos_qd = params->get_pos_mat_mixed_ll(i, RefineParams::Type::Q, RefineParams::Type::D);
         if (pos_bd >= 0) {
           if (adp_mode == 1)
-            am[pos_bd] += w * fac_qb * neutron_h_f_correction;
-          else if (adp_mode == 2) {
-            for (int j = 0; j < 3; ++j)
-              am[pos_bd + j] += w * fac_qb * neutron_h_f_correction / 3;
-          }
+            am[pos_bd] += w * neutron_h_f_correction * fac_qb_iso;
+          else if (adp_mode == 2)
+            for (int j = 0; j < 6; ++j)
+              am[pos_bd + j] += w * neutron_h_f_correction * fac_qb[j];
         }
         if (pos_qd >= 0)
-          am[pos_qd] += fac_q * atom.occ * neutron_h_f_correction;
+          am[pos_qd] += atom.occ * neutron_h_f_correction * fac_q;
       }
     }
   }
