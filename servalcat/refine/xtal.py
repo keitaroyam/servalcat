@@ -93,8 +93,6 @@ class LL_Xtal:
             # recalc maps?
     def update_fc(self):
         # modify st before fc calculation
-        b_resid = sigmaa.subtract_common_aniso_from_model(self.st)
-        self.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb()) # needed for target calculation
         d_min = max(self.twin_data.s2_array)**(-0.5) if self.twin_data else self.d_min_max[0]
         sigmaa.update_fc(self.st, fc_labs=self.fc_labs,
                          d_min=d_min, monlib=self.monlib,
@@ -134,6 +132,7 @@ class LL_Xtal:
                 fc_list = [self.hkldata.df[self.fc_labs].sum(axis=1).to_numpy()]
         self.scaling.set_data(self.hkldata, fc_list, self.is_int, sigma_cutoff=0, twin_data=self.twin_data)
         min_b_model = self.st[0].calculate_b_aniso_range()[0] # actually min of aniso too
+        self.scaling.b_aniso = self.b_aniso
         self.scaling.scale(b_min=min_b - min_b_model)
         self.b_aniso = self.scaling.b_aniso
         logger.writeln(" Applying overall B to model: {:.2f}".format(self.scaling.b_iso))
@@ -180,6 +179,11 @@ class LL_Xtal:
     # _overall_scale()
     
     def overall_scale(self, min_b=0.1):
+        b_resid = sigmaa.subtract_common_aniso_from_model(self.st)
+        if any(b_resid.elements_pdb()):
+            if self.scaling.b_aniso is not None:
+                self.scaling.b_aniso += gemmi.SMat33d(*b_resid.elements_pdb())
+            self.update_fc()
         self._overall_scale(min_b)
         #for i_bin, idxes in self.hkldata.binned("stat"):
         #    obs = self.hkldata.df["FP"].to_numpy()[idxes]

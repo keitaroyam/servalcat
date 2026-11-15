@@ -209,25 +209,66 @@ def calc_r_and_cc(hkldata, twin_data=None):
     return stats, ret
 # calc_r_and_cc()
 
-def subtract_common_aniso_from_model(st):
+def subtract_common_aniso_from_model(st, min_b=0.1):
     adpdirs = utils.model.adp_constraints(st.find_spacegroup().operations(), st.cell, tr0=True)
-    aniso_all = [cra.atom.aniso.added_kI(-cra.atom.aniso.trace()/3).elements_pdb()
-                 for model in st for cra in model.all() if cra.atom.aniso.nonzero()]
-    if not aniso_all: # no atoms with aniso ADP
+    if adpdirs.size == 0:
         return gemmi.SMat33f(0,0,0,0,0,0)
-
-    aniso_mean = numpy.mean(aniso_all, axis=0)
-    aniso_mean = adpdirs.dot(aniso_mean).dot(adpdirs)
-
-    if not numpy.any(aniso_mean):
-        return gemmi.SMat33f(0,0,0,0,0,0)
-
-    # correct atoms
-    smat_sub = gemmi.SMat33f(*aniso_mean)
+    cras = []
+    aniso_all = []
+    u_mat_all = []
     for model in st:
         for cra in model.all():
             if cra.atom.aniso.nonzero():
-                cra.atom.aniso -= smat_sub
+                cras.append(cra)
+                aniso_all.append(cra.atom.aniso.added_kI(-cra.atom.aniso.trace()/3).elements_pdb())
+                u_mat_all.append(cra.atom.aniso.as_mat33().array)
+    if not aniso_all: # no atoms with aniso ADP
+        return gemmi.SMat33f(0,0,0,0,0,0)
+    aniso_all = numpy.array(aniso_all)
+
+    # Geometric median (Weiszfeld's algorithm)
+    aniso_sub = numpy.median(aniso_all, axis=0)
+    aniso_sub = adpdirs.dot(aniso_sub).dot(adpdirs)
+    frob_scale = numpy.array([1., 1., 1., 2., 2., 2.])
+    for _ in range(50):
+        diff = aniso_all - aniso_sub
+        dist = numpy.sqrt(numpy.sum(diff * diff * frob_scale, axis=1))
+        w = 1.0 / numpy.maximum(dist, 1e-6)
+        new_sub = numpy.average(aniso_all, axis=0, weights=w)
+        new_sub = adpdirs.dot(new_sub).dot(adpdirs)
+        if numpy.max(numpy.abs(new_sub - aniso_sub)) < 1e-7:
+            aniso_sub = new_sub
+            break
+        aniso_sub = new_sub
+
+    if not numpy.any(aniso_sub):
+        return gemmi.SMat33f(0,0,0,0,0,0)
+
+    # Scale aniso_sub so all atoms remain >= min_u
+    min_u = min_b * utils.model.b_to_u
+    u_mat_all = numpy.array(u_mat_all)
+    u_sub_mat = gemmi.SMat33f(*aniso_sub).as_mat33().array
+    eigvals = numpy.linalg.eigvalsh(u_mat_all - u_sub_mat)
+    if numpy.any(eigvals[:, 0] < min_u):
+        alpha = 1.0
+        for idx in numpy.where(eigvals[:, 0] < min_u)[0]:
+            d, Q = numpy.linalg.eigh(u_mat_all[idx] - min_u * numpy.eye(3))
+            if d[0] <= 0:
+                alpha = 0.0
+                break
+            inv_sqrt_d = 1.0 / numpy.sqrt(d)
+            M = (Q.T @ u_sub_mat @ Q) * numpy.outer(inv_sqrt_d, inv_sqrt_d)
+            lmax = numpy.linalg.eigvalsh(M)[-1]
+            if lmax > 1.0:
+                alpha = min(alpha, 1.0 / lmax)
+        aniso_sub = aniso_sub * (alpha * (1.0 - 1e-5))
+        if not numpy.any(aniso_sub):
+            return gemmi.SMat33f(0,0,0,0,0,0)
+
+    # correct atoms
+    smat_sub = gemmi.SMat33f(*aniso_sub)
+    for cra in cras:
+        cra.atom.aniso -= smat_sub
 
     b_aniso = smat_sub.scaled(utils.model.u_to_b)
     logger.writeln(f"Subtracting common anisotropic component from model: B= {b_aniso}")
