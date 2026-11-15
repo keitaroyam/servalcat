@@ -356,6 +356,18 @@ def prepare_topology(st, monlib, h_change, ignore_unknown_links=False, raise_err
                 topo = gemmi.prepare_topology(st, monlib, h_change=gemmi.HydrogenChange.NoChange, warnings=logger, reorder=False,
                                               ignore_unknown_links=ignore_unknown_links, use_cispeps=use_cispeps)
 
+    if (any(cra.atom.aniso.nonzero() for cra in st[0].all()) and
+        h_change in (gemmi.HydrogenChange.ReAdd, gemmi.HydrogenChange.ReAddButWater, gemmi.HydrogenChange.ReAddKnown)):
+        for bond in topo.bonds:
+            if bond.atoms[0].is_hydrogen():
+                h, p = bond.atoms[0], bond.atoms[1]
+            elif bond.atoms[1].is_hydrogen():
+                h, p = bond.atoms[1], bond.atoms[0]
+            else:
+                continue
+            h.b_iso = p.b_iso # this is done in add_hydrogens_without_positions() in topo.cpp
+            h.aniso = p.aniso
+
     unknown_cc = set()
     link_related = set()
     nan_hydr = set()
