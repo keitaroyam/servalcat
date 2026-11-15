@@ -6,8 +6,8 @@ This software is released under the
 Mozilla Public License, version 2.0; see LICENSE.
 """
 
-__version__ = '0.4.153'
-__date__ = '2026-10-21'
+__version__ = '0.4.154'
+__date__ = '2026-11-15'
 
 import sys
 import importlib

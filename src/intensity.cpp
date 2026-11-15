@@ -124,7 +124,7 @@ double find_root(double k, double to, double tf, double sig1, int c, double det,
     const double log_arg = 0.5 * x_plus_sqrt_xsq_plus_y(to, 4.0 * k + 4.0 * (3 - c) * X1 * m1 + 3.5);
     x0 = solve_y_minus_exp_minus_y(0.5 * std::log(log_arg), 1e-4);
     if (std::isnan(x0))
-      printf("ERROR: x0= %e, use_exp2, X1=%e, m1=%e in_log=%e\n", x0, X1, m1, log_arg);
+      printf("ERROR: x0= %e, use_exp2, X1=%e, m1=%e in_log=%e tf=%e sig1=%e to=%e k=%f\n", x0, X1, m1, log_arg, tf, sig1, to, k);
     const double A = std::max(to, std::max((3-c) * tf / 4.0 / sig1, k + 1.0));
     const double sqrt_A = std::sqrt(A);
     x1 = solve_y_minus_exp_minus_y(std::log(0.5 * (sqrt_A + std::sqrt(A + 4.0 * sqrt_A))), 1e-4);
@@ -229,7 +229,7 @@ double integ_j(double k, double to, double tf, double sig1, int c, bool l, bool 
 }
 
 double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, double sig1, int c, double root_den,
-                     bool use_exp2, double h=0.5, int N=200, double ewmax=20.) {
+                     bool use_exp2, double h=0.5, int N=200, double ewmax=20., bool use_shortcut=true) {
   // factor of sig^{k_num - k_den} is needed, which should be done outside.
   if (std::isnan(to) || sig1 <= 0) return NAN;
   const double z = use_exp2 ? 2 * k_den + 2 : 2 * k_den + 1;
@@ -246,9 +246,10 @@ double integ_j_ratio(double k_num, double k_den, bool l, double to, double tf, d
   double sd = 1, sn = std::exp(deltaz * tmp);
   if (l) sn *= calc_fom(root_den);
 
-  // Laplace approximation, assuming the same root for numerator: \int g(x)exp(-f(x))dx / \int exp(-f(x))dx ~ g(x_0).
-  // thresholds adjusted empirically so that <0.2% rel error for orig2 and <0.08% for exp2 would be achieved
-  if (use_exp2 ? (f2der * f1val * f1val > 1e9) : (f2der * f1val * f1val > 1e6))
+  // Skip loop when the Laplace approximation is sufficiently accurate.
+  // Note: use_shortcut should be false when (Fc^2 + j_ratio_1 - 2*Fc*j_ratio_2) is formed for S,
+  // because cancellation of the leading g(x_0) terms requires the posterior variance term ~ 1/f''(x_0).
+  if (use_shortcut && (use_exp2 ? (f2der * f1val * f1val > 1e9) : (f2der * f1val * f1val > 1e6)))
     return sn;
 
   const double delta = h * std::sqrt(2 / f2der);
@@ -349,8 +350,8 @@ struct IntensityIntegrator {
       const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
       const bool use_exp2 = det < exp2_threshold;
       const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
-      double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax);
-      const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+      double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax, !for_DS);
+      const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i), root_den, use_exp2, h, N, ewmax, !for_DS) * sqrt_sigIo / k_ani_(i);
       if (for_DS) {
         j_ratio_1 *= sigIo_(i) / sq(k_ani_(i));
         const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
@@ -412,9 +413,9 @@ struct IntensityIntegrator {
       const bool use_exp2 = det < exp2_threshold;
       const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
       const double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i),
-                                             root_den, use_exp2, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
+                                             root_den, use_exp2, h, N, ewmax, false) * sigIo_(i) / sq(k_ani_(i));
       const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i),
-                                             root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
+                                             root_den, use_exp2, h, N, ewmax, false) * sqrt_sigIo / k_ani_(i);
       const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
       if (c_(i) == 1) // acentrics
         ret += w_(i) * (sq(Fc_abs) + j_ratio_1 / c_(i) - (3-c_(i)) * Fc_abs * j_ratio_2) / eps_(i);
@@ -514,7 +515,6 @@ struct IntensityIntegrator {
                    np_array<const double> S, np_array<const std::complex<double>, 2> Fc, np_array<const double, 2> D,
                    np_array<const int> c, np_array<const int> eps, np_array<const double> w, np_array<const int> bin,
                    int max_cyc, bool single_D) const {
-    const bool use_exp = true; //par == 1;
     auto Io_ = Io.view();
     auto sigIo_ = sigIo.view();
     auto k_ani_ = k_ani.view();
@@ -542,116 +542,130 @@ struct IntensityIntegrator {
         DS(i_bin, j) = D_(i_bin, j);
       DS(i_bin, n_models) = S_(i_bin);
     }
-    auto sum_Fc = [&](int i, int i_bin) {
-      std::complex<double> s = Fc_(i, 0) * DS(i_bin, 0);
-      for (size_t j = 1; j < n_models; ++j)
-        s += Fc_(i, j) * DS(i_bin, j);
-      return s;
-    };
-    auto calc_f_ders = [&](int i_bin, bool ll_only) {
-      double ll = 0;
-      const int n_par = n_models + 1;
-      Eigen::VectorXd der1 = Eigen::VectorXd::Zero(n_par);
-      Eigen::MatrixXd der2 = Eigen::MatrixXd::Zero(n_par, n_par);
-      for (int i = 0; i < n_ref; ++i)
-        if (bin_(i) == i_bin && !std::isnan(Io_(i)) && !std::isnan(sigIo_(i)) && w_(i) != 0) {
-          const double S = DS(i_bin, n_models);
-          const std::complex<double> Fc_total_conj = std::conj(sum_Fc(i, i_bin));
-          const double Fc_abs = std::abs(Fc_total_conj);
-          const double to = Io_(i) / sigIo_(i) - sigIo_(i) / c_(i) / sq(k_ani_(i)) / S / eps_(i);
-          const double sqrt_sigIo = std::sqrt(sigIo_(i));
-          const double tf = k_ani_(i) * Fc_abs / sqrt_sigIo;
-          const double sig1 = sq(k_ani_(i)) * S * eps_(i) / sigIo_(i);
-          if (sig1 < 0) {
-            printf("ERROR2: negative sig1= %f k_ani= %f S= %f eps= %d sigIo= %f\n", sig1, k_ani_(i), S, eps_(i), sigIo_(i));
-            continue;
-          }
-          const double logj = integ_j(c_(i) == 1 ? 0 : -0.5, to, tf, sig1, c_(i), false, true, exp2_threshold, h, N, ewmax);
-          ll += w_(i) * ((3-c_(i)) * std::log(k_ani_(i)) + (std::log(S) + sq(Fc_abs) / S) / c_(i) - logj);
-          if (!ll_only) {
-            const double k_den = c_(i) == 1 ? 0. : -0.5;
-            const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
-            const bool use_exp2 = det < exp2_threshold;
-            const double root_den = find_root(k_den, to, tf, sig1, c_(i), det, false, use_exp2);
-            const double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, c_(i),
-                                                   root_den, use_exp2, h, N, ewmax) * sigIo_(i) / sq(k_ani_(i));
-            const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, c_(i),
-                                                   root_den, use_exp2, h, N, ewmax) * sqrt_sigIo / k_ani_(i);
-            Eigen::VectorXd g_i = Eigen::VectorXd::Zero(n_par);
-            const double tmp = ll_int_der1_D(S, Fc_abs, c_(i), eps_(i), j_ratio_2);
-            for (size_t j = 0; j < n_models; ++j)
-              g_i(j) = tmp * (Fc_(i, j) * Fc_total_conj).real();
-            g_i(n_models) = ll_int_der1_S(S, Fc_abs, c_(i), eps_(i), j_ratio_1, j_ratio_2);
-            der1 += w_(i) * g_i;
-            der2 += w_(i) * (g_i * g_i.transpose());
-          }
-        }
-      return std::make_pair(ll, std::make_pair(der1, der2));
-    };
-    auto get_par = [&](int i_bin, bool use_exp) {
-      Eigen::VectorXd pval(n_models + 1);
-      for (size_t j = 0; j < n_models; ++j)
-        pval(j) = DS(i_bin, j);
-      pval(pval.size()-1) = DS(i_bin, n_models);
-      return use_exp ? pval.array().log() : pval;
-    };
-    auto set_par = [&](int i_bin, const auto &val, bool use_exp) {
-      for (size_t j = 0; j < n_models; ++j)
-        DS(i_bin, j) = std::max(1e-4, use_exp ? std::exp(val(j)) : val(j));
-      DS(i_bin, n_models) = std::max(1e-1, use_exp ? std::exp(val(val.size()-1)) : val(val.size()-1));
-    };
-    for (int i_bin = 0; i_bin < n_bins; ++i_bin) {
+
+    // Pre-group valid reflection indices by resolution bin
+    std::vector<std::vector<size_t>> bin_refs(n_bins);
+    for (size_t i = 0; i < n_ref; ++i) {
+      if (!std::isnan(Io_(i)) && !std::isnan(sigIo_(i)) && w_(i) > 0 && bin_(i) >= 0 && bin_(i) < static_cast<int>(n_bins)) {
+        bin_refs[bin_(i)].push_back(i);
+      }
+    }
+
+    for (size_t i_bin = 0; i_bin < n_bins; ++i_bin) {
+      const auto& refs = bin_refs[i_bin];
+      if (refs.empty()) continue;
+
       for (int cyc = 0; cyc < max_cyc; ++cyc) {
-        bool no_shift = false;
-        auto f0_ders = calc_f_ders(i_bin, false);
-        const Eigen::VectorXd pval = get_par(i_bin, use_exp);
-        Eigen::VectorXd shift(pval.size());
-        if (use_exp) {
-          f0_ders.second.first = f0_ders.second.first.array() * pval.array().exp();
-          for (int i = 0; i < pval.size(); ++i)
-            for (int j = 0; j < pval.size(); ++j)
-              f0_ders.second.second(i,j) *= std::exp(pval(i) + pval(j));
-        }
-        // Ensure strictly positive definite to avoid singular inversion
-        for (int i = 0; i < f0_ders.second.second.rows(); ++i)
-          f0_ders.second.second(i,i) += 1e-6;
-        if (single_D) {
-          Eigen::Vector2d red_g;
-          red_g(0) = f0_ders.second.first.head(n_models).sum();
-          red_g(1) = f0_ders.second.first(n_models);
-          Eigen::Matrix2d red_H;
-          red_H(0, 0) = f0_ders.second.second.topLeftCorner(n_models, n_models).sum();
-          red_H(0, 1) = f0_ders.second.second.col(n_models).head(n_models).sum();
-          red_H(1, 0) = red_H(0, 1);
-          red_H(1, 1) = f0_ders.second.second(n_models, n_models);
-          const Eigen::VectorXd red_shift = -SymMatEig(red_H).inv() * (red_g);
-          shift.head(n_models).setConstant(red_shift(0));
-          shift(n_models) = red_shift(1);
-        } else
-          shift = -SymMatEig(f0_ders.second.second).inv() * (f0_ders.second.first);
-        if (use_exp)
-          shift = shift.cwiseMin(5).cwiseMax(-5); // cap shift
-        for (int i = 0; i < 6; ++i) {
-          // printf("bin %d cyc %d ", i_bin, cyc);
-          // printf("D ");
-          // for (size_t j = 0; j < n_models; ++j)
-          //   printf("%f%+f ", DS(i_bin, j), shift(j));
-          // printf("S %f%+f ", DS(i_bin, n_models), shift(pval.size()-1));
-          set_par(i_bin, pval + shift, use_exp);
-          const double f1 = calc_f_ders(i_bin, true).first;
-          // printf("ll %f\n", f1 - f0_ders.first);
-          if (f1 < f0_ders.first)
-            break;
-          shift /= 2;
-          if (shift.array().abs().maxCoeff() < (use_exp ? 1e-2 : 1e-4)) { // arbitrary
-            no_shift = true;
-            break;
+        const double S_curr = DS(i_bin, n_models);
+
+        Eigen::VectorXd g_u_D = Eigen::VectorXd::Zero(n_models);
+        Eigen::MatrixXd H_u_D = Eigen::MatrixXd::Zero(n_models, n_models);
+        double S_num_sum = 0.0;
+        double Fc2_sum = 0.0;
+        double w_sum = 0.0;
+
+        for (size_t i : refs) {
+          const double w_i = w_(i);
+          const double eps_i = eps_(i);
+          const double c_i = c_(i); // 1 = acentric, 2 = centric
+          const double k_ani_i = k_ani_(i);
+          const double sigIo_i = sigIo_(i);
+          const double sqrt_sigIo = std::sqrt(sigIo_i);
+
+          // Sum Fc_total = sum_j (D_j * Fc_j)
+          std::complex<double> Fc_total = Fc_(i, 0) * DS(i_bin, 0);
+          for (size_t j = 1; j < n_models; ++j)
+            Fc_total += Fc_(i, j) * DS(i_bin, j);
+          const std::complex<double> Fc_total_conj = std::conj(Fc_total);
+          const double Fc_abs = std::abs(Fc_total_conj);
+
+          const double to = Io_(i) / sigIo_i - sigIo_i / c_i / sq(k_ani_i) / S_curr / eps_i;
+          const double tf = k_ani_i * Fc_abs / sqrt_sigIo;
+          if (std::isnan(tf)) {
+            printf("tf is NaN: k_ani=%e Fc_abs=%e sqrt_sigIo=%e ", k_ani_i, Fc_abs, sqrt_sigIo);
+            for (size_t j = 0; j < n_models; ++j)
+              printf("Fc=%e D=%e ", std::abs(Fc_(i, j)), DS(i_bin, j));
+            printf("\n");
           }
+          const double sig1 = sq(k_ani_i) * S_curr * eps_i / sigIo_i;
+          if (sig1 < 0) continue;
+
+          const double k_den = c_i == 1 ? 0.0 : -0.5;
+          const double det = std::sqrt(0.5 * x_plus_sqrt_xsq_plus_y(to, 2 * (2 * k_den + 1)));
+          const bool use_exp2 = det < exp2_threshold;
+          const double root_den = find_root(k_den, to, tf, sig1, static_cast<int>(c_i), det, false, use_exp2);
+
+          const double j_ratio_1 = integ_j_ratio(k_den + 1.0, k_den, false, to, tf, sig1, static_cast<int>(c_i),
+                                                 root_den, use_exp2, h, N, ewmax, false) * sigIo_i / sq(k_ani_i);
+          const double j_ratio_2 = integ_j_ratio(k_den + 0.5, k_den, true, to, tf, sig1, static_cast<int>(c_i),
+                                                 root_den, use_exp2, h, N, ewmax, false) * sqrt_sigIo / k_ani_i;
+
+          // Gradient wrt D in original space
+          const double tmp_D = ll_int_der1_D(S_curr, Fc_abs, static_cast<int>(c_i), static_cast<int>(eps_i), j_ratio_2);
+
+          // Expected Fisher Information weight factor for D
+          const double factor_D = sq(3.0 - c_i) / (S_curr * eps_i * (sq(Fc_abs) + 1e-8));
+
+          for (size_t j = 0; j < n_models; ++j) {
+            const double dF_j = (Fc_(i, j) * Fc_total_conj).real();
+            const double D_j = DS(i_bin, j);
+
+            // Log-space gradient: g_u(j) = D_j * (dLL / dD_j)
+            g_u_D(j) += w_i * tmp_D * dF_j * D_j;
+
+            for (size_t k = 0; k < n_models; ++k) {
+              const double dF_k = (Fc_(i, k) * Fc_total_conj).real();
+              const double D_k = DS(i_bin, k);
+
+              // Log-space Expected Hessian: H_u(j,k) = D_j * H_D(j,k) * D_k
+              H_u_D(j, k) += w_i * factor_D * dF_j * dF_k * D_j * D_k;
+            }
+          }
+
+          // Numerator term for analytical EM update of S
+          const double w_c = w_i / c_i;
+          const double S_num_i = (sq(Fc_abs) + j_ratio_1 - 2.0 * Fc_abs * j_ratio_2) / eps_i;
+          S_num_sum += w_c * S_num_i;
+          Fc2_sum += w_c * sq(Fc_abs) / eps_i;
+          w_sum += w_c;
         }
-        if (no_shift)
+
+        if (w_sum <= 0) break;
+
+        // Regularize Hessian diagonal
+        for (size_t j = 0; j < n_models; ++j)
+          H_u_D(j, j) += 1e-6;
+
+        // Solve shift for D in log-space: delta_u = - H_u^{-1} * g_u
+        Eigen::VectorXd delta_u(n_models);
+        if (single_D) {
+          const double g_sum = g_u_D.sum();
+          const double H_sum = H_u_D.sum();
+          delta_u.setConstant(-g_sum / H_sum);
+        } else {
+          delta_u = -SymMatEig(H_u_D).inv() * g_u_D;
+        }
+
+        // Update D_j in log-space with step capping
+        double max_abs_shift = 0.0;
+        for (size_t j = 0; j < n_models; ++j) {
+          const double shift = std::min(1.0, std::max(-1.0, delta_u(j)));
+          DS(i_bin, j) = std::max(1e-4, DS(i_bin, j) * std::exp(shift));
+          max_abs_shift = std::max(max_abs_shift, std::abs(shift));
+        }
+
+        // Analytical EM update for S with scale-invariant lower bound
+        const double S_min = std::max(1e-12, 1e-6 * (Fc2_sum / w_sum));
+        const double S_new = std::max(S_min, S_num_sum / w_sum);
+        const double S_rel_change = std::abs(S_new - S_curr) / S_curr;
+        DS(i_bin, n_models) = S_new;
+
+        // Convergence test: stop early when shifts are below 0.1%
+        if (max_abs_shift < 1e-3 && S_rel_change < 1e-3)
           break;
       }
     }
+
     return ret;
   }
 };
@@ -675,7 +689,7 @@ void add_intensity(nb::module_& m) {
         nb::arg("exp2_threshold")=10, nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
   m.def("integ_J_ratio", [](np_array<const double> k_num, np_array<const double> k_den, bool l, np_array<const double> to, np_array<const double> tf,
                             np_array<const double> sig1, np_array<const int> c, np_array<const double> root_den, np_array<const bool> use_exp2,
-                            double h, int N, double ewmax) {
+                            double h, int N, double ewmax, bool use_shortcut) {
     auto k_num_ = k_num.view();
     auto k_den_ = k_den.view();
     auto to_ = to.view();
@@ -691,12 +705,12 @@ void add_intensity(nb::module_& m) {
     auto ret = make_numpy_array<double>({len});
     double* retp = ret.data();
     for (size_t i = 0; i < len; ++i)
-      retp[i] = integ_j_ratio(k_num_(i), k_den_(i), l, to_(i), tf_(i), sig1_(i), c_(i), root_(i), use_exp2_(i), h, N, ewmax);
+      retp[i] = integ_j_ratio(k_num_(i), k_den_(i), l, to_(i), tf_(i), sig1_(i), c_(i), root_(i), use_exp2_(i), h, N, ewmax, use_shortcut);
     return ret;
   },
         nb::arg("k_num"), nb::arg("k_den"), nb::arg("l"), nb::arg("to"), nb::arg("tf"),
         nb::arg("sig1"), nb::arg("c"), nb::arg("root_den"), nb::arg("use_exp2"),
-        nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20.);
+        nb::arg("h")=0.5, nb::arg("N")=200, nb::arg("ewmax")=20., nb::arg("use_shortcut")=true);
   nb::class_<IntensityIntegrator>(m, "IntensityIntegrator")
     .def(nb::init<>())
     .def_rw("h", &IntensityIntegrator::h)
