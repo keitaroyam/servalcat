@@ -23,7 +23,7 @@ def r_factor(fo, fc):
 def correlation(obs, calc):
     obs, calc = obs.flatten(), calc.flatten() # for anomalous data
     sel = numpy.isfinite(obs)
-    if obs.size == 0 or numpy.all(~sel):
+    if numpy.sum(sel) < 2:
         return numpy.nan
     return numpy.corrcoef(obs[sel], calc[sel])[0,1]
 
