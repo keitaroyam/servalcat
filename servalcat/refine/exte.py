@@ -124,9 +124,10 @@ def read_external_restraints(exte_blocks, st, geom):
                 weight = 1. / len(aa)
                 groups.append([ext.CentroidAtom(a, weight) for a in aa])
                 if asu:
-                    ref = groups[-1][0].pos
-                    for ia in range(1, len(groups[-1])):
-                        groups[-1][ia].set_image(ref, st.cell, asu)
+                    ref = groups[0][0].atom
+                    for ia in range(0, len(groups[-1])):
+                        if ref != groups[-1][ia]:
+                            groups[-1][ia].set_image(ref.pos, st.cell, asu)
 
             ex = extypes[r["rest_type"]](*groups)
         else:

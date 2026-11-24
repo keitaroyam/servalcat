@@ -110,6 +110,10 @@ void add_refine(nb::module_& m) {
     .def(nb::init<int, const std::array<int, 3>&>(), nb::arg("idx"), nb::arg("shift"))
     .def_rw("sym_idx", &SymAtom::SymData::sym_idx)
     .def_rw("pbc_shift", &SymAtom::SymData::pbc_shift)
+    .def("__repr__", [](const SymAtom::SymData &self) {
+      return gemmi::cat("<SymData (", self.sym_idx, ";",
+                        self.pbc_shift[0], ",", self.pbc_shift[1], ",", self.pbc_shift[2], ")>");
+    })
     ;
   sym_atom
     .def(nb::init<>())
